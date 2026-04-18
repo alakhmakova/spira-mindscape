@@ -32,7 +32,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#1a1d24" },
+      { name: "theme-color", content: "#fbf9f4" },
       { title: "Spira — Structured thinking, planning, execution" },
       {
         name: "description",
@@ -57,7 +57,7 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <HeadContent />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
