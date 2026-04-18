@@ -5,8 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Spira — Soft Dark Workspace Design System
- * All colors in oklch. All tokens semantic. Never hardcode in components.
+ * Spira — Warm Light Workspace Design System
+ * Inspired by editorial / "thoughtful tool" aesthetics:
+ * warm off-white surfaces, deep teal accent, serif display headings,
+ * generous spacing, hairline borders, no busy chrome.
  */
 
 @theme inline {
@@ -29,6 +31,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -58,65 +61,71 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --shadow-soft: 0 1px 0 0 oklch(1 0 0 / 0.04) inset, 0 8px 24px -12px oklch(0 0 0 / 0.5);
-  --shadow-raised: 0 1px 0 0 oklch(1 0 0 / 0.06) inset, 0 16px 40px -16px oklch(0 0 0 / 0.6);
+  --shadow-soft: 0 1px 2px 0 oklch(0.2 0.02 200 / 0.04);
+  --shadow-raised:
+    0 1px 2px 0 oklch(0.2 0.02 200 / 0.04),
+    0 8px 28px -12px oklch(0.2 0.02 200 / 0.12);
 }
 
-/* Soft dark — single source of truth. No light mode for v1. */
+/* Warm light — single source of truth. */
 :root {
-  --radius: 0.875rem;
+  --radius: 0.5rem;
 
-  --background: oklch(0.18 0.012 260);
-  --foreground: oklch(0.94 0.005 250);
+  /* Soft warm off-white page */
+  --background: oklch(0.985 0.005 90);
+  --foreground: oklch(0.18 0.02 200);
 
-  --surface: oklch(0.215 0.012 260);
-  --surface-raised: oklch(0.25 0.013 260);
-  --surface-sunken: oklch(0.155 0.011 260);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+  --surface-sunken: oklch(0.965 0.006 90);
 
-  --card: oklch(0.22 0.012 260);
-  --card-foreground: oklch(0.94 0.005 250);
-  --popover: oklch(0.235 0.013 260);
-  --popover-foreground: oklch(0.94 0.005 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 200);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 200);
 
-  /* Restrained moss/sage accent — calm, premium */
-  --primary: oklch(0.78 0.09 165);
-  --primary-foreground: oklch(0.18 0.012 260);
+  /* Deep teal — calm, premium, editorial */
+  --primary: oklch(0.45 0.07 195);
+  --primary-foreground: oklch(0.99 0 0);
+  /* Tinted surface used by selected option / checkbox row */
+  --primary-soft: oklch(0.96 0.022 190);
 
-  --secondary: oklch(0.27 0.013 260);
-  --secondary-foreground: oklch(0.94 0.005 250);
-  --muted: oklch(0.245 0.012 260);
-  --muted-foreground: oklch(0.68 0.012 255);
-  --accent: oklch(0.3 0.015 260);
-  --accent-foreground: oklch(0.94 0.005 250);
+  --secondary: oklch(0.95 0.006 90);
+  --secondary-foreground: oklch(0.22 0.02 200);
+  --muted: oklch(0.95 0.006 90);
+  --muted-foreground: oklch(0.45 0.015 220);
+  --accent: oklch(0.955 0.008 195);
+  --accent-foreground: oklch(0.22 0.02 200);
 
-  --destructive: oklch(0.62 0.18 25);
-  --destructive-foreground: oklch(0.98 0.005 250);
-  --success: oklch(0.78 0.09 165);
-  --warning: oklch(0.78 0.13 75);
+  --destructive: oklch(0.58 0.21 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.55 0.1 165);
+  --warning: oklch(0.7 0.14 65);
 
-  --border: oklch(1 0 0 / 0.07);
-  --border-strong: oklch(1 0 0 / 0.14);
-  --input: oklch(1 0 0 / 0.08);
-  --ring: oklch(0.78 0.09 165 / 0.5);
+  --border: oklch(0.9 0.008 200);
+  --border-strong: oklch(0.78 0.012 200);
+  --input: oklch(0.9 0.008 200);
+  --ring: oklch(0.45 0.07 195 / 0.4);
 
-  --chart-1: oklch(0.78 0.09 165);
-  --chart-2: oklch(0.7 0.1 220);
-  --chart-3: oklch(0.78 0.13 75);
-  --chart-4: oklch(0.7 0.15 320);
-  --chart-5: oklch(0.62 0.18 25);
+  --chart-1: oklch(0.45 0.07 195);
+  --chart-2: oklch(0.6 0.1 220);
+  --chart-3: oklch(0.7 0.14 65);
+  --chart-4: oklch(0.6 0.15 320);
+  --chart-5: oklch(0.58 0.21 27);
 
-  --sidebar: oklch(0.165 0.011 260);
-  --sidebar-foreground: oklch(0.88 0.005 250);
-  --sidebar-primary: oklch(0.78 0.09 165);
-  --sidebar-primary-foreground: oklch(0.18 0.012 260);
-  --sidebar-accent: oklch(0.235 0.012 260);
-  --sidebar-accent-foreground: oklch(0.94 0.005 250);
-  --sidebar-border: oklch(1 0 0 / 0.06);
-  --sidebar-ring: oklch(0.78 0.09 165 / 0.4);
+  --sidebar: oklch(0.985 0.005 90);
+  --sidebar-foreground: oklch(0.22 0.02 200);
+  --sidebar-primary: oklch(0.45 0.07 195);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.955 0.008 195);
+  --sidebar-accent-foreground: oklch(0.22 0.02 200);
+  --sidebar-border: oklch(0.9 0.008 200);
+  --sidebar-ring: oklch(0.45 0.07 195 / 0.4);
 }
 
 @layer base {
@@ -133,15 +142,8 @@
     text-rendering: optimizeLegibility;
   }
 
-  body {
-    background-image:
-      radial-gradient(1200px 600px at 80% -10%, oklch(0.78 0.09 165 / 0.06), transparent 60%),
-      radial-gradient(900px 500px at -10% 110%, oklch(0.7 0.1 220 / 0.05), transparent 60%);
-    background-attachment: fixed;
-  }
-
   ::selection {
-    background-color: oklch(0.78 0.09 165 / 0.35);
+    background-color: oklch(0.45 0.07 195 / 0.18);
     color: var(--color-foreground);
   }
 
@@ -151,6 +153,7 @@
     font-family: var(--font-display);
     font-weight: 400;
     letter-spacing: -0.01em;
+    color: oklch(0.16 0.02 200);
   }
 
   .font-display {
@@ -189,8 +192,8 @@
     text-wrap: balance;
   }
   .num {
-    font-family: var(--font-mono);
-    font-feature-settings: "tnum" 1, "ss01" 1;
+    font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1;
   }
   .hairline {
     border-color: var(--color-border);
@@ -198,11 +201,21 @@
   .hairline-strong {
     border-color: var(--color-border-strong);
   }
-  /* Safe-area for mobile bottom nav */
+  /* Safe-area for mobile bottom padding */
   .pb-safe {
     padding-bottom: max(env(safe-area-inset-bottom), 0px);
   }
   .h-safe-bottom {
     height: env(safe-area-inset-bottom, 0px);
+  }
+  /* Underlined teal action link, used in cards */
+  .link-action {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  .link-action:hover {
+    text-decoration-thickness: 2px;
   }
 }
