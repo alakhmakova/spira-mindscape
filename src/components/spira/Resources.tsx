@@ -245,10 +245,14 @@ function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
   const submit = () => {
     if (type === "note") {
       if (!title.trim()) return;
-      addResource(goalId, { type: "note", title: title.trim(), body });
+      addResource(goalId, { type: "note", title: title.trim(), body } as Omit<Resource, "id">);
     } else if (type === "link") {
       if (!url.trim()) return;
-      addResource(goalId, { type: "link", title: title.trim() || url, url: url.trim() });
+      addResource(goalId, {
+        type: "link",
+        title: title.trim() || url,
+        url: url.trim(),
+      } as Omit<Resource, "id">);
     } else if (type === "file") {
       if (!fileData) return;
       addResource(goalId, {
@@ -256,10 +260,16 @@ function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
         title: title.trim() || fileData.name,
         mime: fileData.mime,
         dataUrl: fileData.dataUrl,
-      });
+      } as Omit<Resource, "id">);
     } else {
       if (!name.trim()) return;
-      addResource(goalId, { type: "contact", name: name.trim(), role, email, phone });
+      addResource(goalId, {
+        type: "contact",
+        name: name.trim(),
+        role,
+        email,
+        phone,
+      } as Omit<Resource, "id">);
     }
     onDone();
   };
