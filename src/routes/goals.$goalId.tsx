@@ -11,18 +11,9 @@ import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { OptionsList } from "@/components/spira/OptionsList";
 import { TargetsList, NewTargetSheet } from "@/components/spira/Targets";
 import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
 import { Input } from "@/components/ui/input";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import type { Confidence } from "@/lib/spira/types";
 
 export const Route = createFileRoute("/goals/$goalId")({
@@ -60,8 +51,8 @@ function GoalWorkspace() {
   if (!goal) {
     return (
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-20 text-center">
-        <h1 className="font-display text-3xl">Goal not found</h1>
-        <Link to="/" className="text-primary hover:underline mt-4 inline-block">
+        <h1 className="font-display text-4xl">Goal not found</h1>
+        <Link to="/" className="link-action mt-4 inline-block font-semibold">
           Back to goals
         </Link>
       </div>
@@ -71,25 +62,25 @@ function GoalWorkspace() {
   const progress = goalProgress(goal);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-5 sm:py-8 space-y-5">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
       {/* Top bar */}
       <div className="flex items-center justify-between">
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground font-medium"
         >
-          <ArrowLeft className="h-4 w-4" /> Goals
+          <ArrowLeft className="h-4 w-4" /> Back to goals
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => openAi({ goalId })}
-            className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border border-primary/30 bg-primary/10 text-primary text-xs hover:bg-primary/15"
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
           >
             <Sparkles className="h-3.5 w-3.5" /> Coach this goal
           </button>
           <button
             onClick={() => setConfirmDelete(true)}
-            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-accent"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
             aria-label="Delete goal"
           >
             <Trash2 className="h-4 w-4" />
@@ -97,27 +88,33 @@ function GoalWorkspace() {
         </div>
       </div>
 
-      {/* Header */}
-      <header className="surface-card p-5 sm:p-6 space-y-5">
+      {/* Header card */}
+      <header className="surface-card p-6 sm:p-8 space-y-6">
         <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+            Goal
+          </div>
           <AutoTextarea
             value={goal.title}
             onChange={(v) => updateGoal(goal.id, { title: v })}
-            className="font-display text-2xl sm:text-4xl leading-tight"
+            className="font-display text-3xl sm:text-5xl leading-tight"
             placeholder="Untitled goal"
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 md:items-center">
-          <div className="space-y-1.5">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 md:items-start pt-4 border-t hairline">
+          <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground uppercase tracking-wider">Progress</span>
-              <span className="num text-muted-foreground">{Math.round(progress * 100)}%</span>
+              <span className="text-muted-foreground uppercase tracking-wider font-semibold">
+                Progress
+              </span>
+              <span className="num font-semibold tabular-nums">
+                {Math.round(progress * 100)}%
+              </span>
             </div>
             <ProgressBar value={progress} />
-            <div className="flex items-center gap-3 pt-1 flex-wrap">
+            <div className="flex items-center gap-3 pt-2 flex-wrap">
               <DeadlineLabel iso={goal.deadline} />
-              <span className="text-muted-foreground/40">·</span>
               <Input
                 type="date"
                 value={goal.deadline ? goal.deadline.slice(0, 10) : ""}
@@ -126,13 +123,13 @@ function GoalWorkspace() {
                     deadline: e.target.value ? new Date(e.target.value).toISOString() : undefined,
                   })
                 }
-                className="h-7 w-[160px] bg-surface text-xs num"
+                className="h-8 w-[160px] bg-surface text-xs num border-2 border-border focus-visible:border-primary"
               />
             </div>
           </div>
-          <div className="md:w-72 space-y-2">
+          <div className="md:w-80 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
                 Confidence
               </span>
               <ConfidencePill value={goal.confidence} />
@@ -145,7 +142,6 @@ function GoalWorkspace() {
         </div>
       </header>
 
-      {/* Description */}
       <Section title="Description" hint="SMART description">
         <AutoTextarea
           value={goal.description}
@@ -155,15 +151,14 @@ function GoalWorkspace() {
         />
       </Section>
 
-      {/* Reality */}
       <Section
         title="Reality"
         hint="Where you are now"
         count={goal.reality.actions.length + goal.reality.obstacles.length}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h3 className="font-display text-base mb-2">Actions taken</h3>
+            <h3 className="font-display text-lg mb-3">Actions taken</h3>
             <InlineList
               items={goal.reality.actions}
               emptyHint="Nothing yet — what have you tried?"
@@ -175,7 +170,7 @@ function GoalWorkspace() {
             />
           </div>
           <div>
-            <h3 className="font-display text-base mb-2">Obstacles</h3>
+            <h3 className="font-display text-lg mb-3">Obstacles</h3>
             <InlineList
               items={goal.reality.obstacles}
               emptyHint="What's standing in the way?"
@@ -190,12 +185,10 @@ function GoalWorkspace() {
         </div>
       </Section>
 
-      {/* Options */}
       <Section title="Options" hint="Strategies — pick one to commit" count={goal.options.length}>
         <OptionsList goal={goal} />
       </Section>
 
-      {/* Targets */}
       <Section
         title="Targets"
         hint="How you execute"
@@ -203,7 +196,7 @@ function GoalWorkspace() {
         action={
           <button
             onClick={() => setNewTarget(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90"
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
           >
             <Plus className="h-3.5 w-3.5" /> Add target
           </button>
@@ -212,7 +205,6 @@ function GoalWorkspace() {
         <TargetsList goal={goal} />
       </Section>
 
-      {/* Resources */}
       <Section
         title="Resources"
         hint="Notes, links, files, contacts"
@@ -220,7 +212,7 @@ function GoalWorkspace() {
         action={
           <button
             onClick={() => setNewResource(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border hairline-strong text-xs hover:bg-accent"
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
           >
             <Plus className="h-3.5 w-3.5" /> Add resource
           </button>
@@ -233,28 +225,18 @@ function GoalWorkspace() {
       <NewTargetSheet goalId={goal.id} open={newTarget} onOpenChange={setNewTarget} />
       <NewResourceSheet goalId={goal.id} open={newResource} onOpenChange={setNewResource} />
 
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this goal?</AlertDialogTitle>
-            <AlertDialogDescription>
-              "{goal.title}" and everything inside it will be permanently removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                deleteGoal(goal.id);
-                router.navigate({ to: "/" });
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this goal?"
+        description={`Are you sure you want to permanently delete "${goal.title}"? Everything inside it — targets, options, resources — will be removed. You can't undo this.`}
+        confirmLabel="Yes, delete"
+        cancelLabel="No, go back"
+        onConfirm={() => {
+          deleteGoal(goal.id);
+          router.navigate({ to: "/" });
+        }}
+      />
     </div>
   );
 }
