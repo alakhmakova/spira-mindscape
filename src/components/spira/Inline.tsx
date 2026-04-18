@@ -35,7 +35,7 @@ export function InlineList({
   };
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {items.length === 0 && (
         <p className="text-sm text-muted-foreground italic">{emptyHint}</p>
       )}
@@ -43,7 +43,7 @@ export function InlineList({
         {items.map((it) => (
           <li
             key={it.id}
-            className="group flex items-start gap-3 rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
+            className="group flex items-start gap-3 rounded-md px-2 py-2 hover:bg-secondary/70 transition-colors"
           >
             <Marker kind={marker} tone={tone} />
             {editingId === it.id ? (
@@ -97,19 +97,19 @@ export function InlineList({
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2 mt-1 px-2">
+      <div className="flex items-center gap-2 mt-1 px-2 py-1.5 rounded-md border-2 border-dashed border-border focus-within:border-primary/40">
         <Plus className="h-3.5 w-3.5 text-muted-foreground" />
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder={placeholder}
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 py-1.5"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground py-1"
         />
         {draft && (
           <button
             onClick={add}
-            className="text-xs text-primary hover:underline"
+            className="text-xs link-action font-semibold"
           >
             Add
           </button>
@@ -122,8 +122,8 @@ export function InlineList({
 function Marker({ kind, tone }: { kind: "dot" | "check" | "warn"; tone: string }) {
   if (kind === "check")
     return (
-      <span className="mt-1 h-3.5 w-3.5 shrink-0 rounded-sm border hairline-strong grid place-items-center text-primary">
-        <Check className="h-2.5 w-2.5" />
+      <span className="mt-0.5 h-4 w-4 shrink-0 rounded-sm bg-primary-soft border border-primary/40 grid place-items-center text-primary">
+        <Check className="h-3 w-3" strokeWidth={3} />
       </span>
     );
   return (
@@ -162,7 +162,7 @@ export function AutoTextarea({
       placeholder={placeholder}
       rows={1}
       className={cn(
-        "w-full resize-none bg-transparent outline-none text-base leading-relaxed placeholder:text-muted-foreground/60",
+        "w-full resize-none bg-transparent outline-none text-base leading-relaxed placeholder:text-muted-foreground/70",
         className,
       )}
     />

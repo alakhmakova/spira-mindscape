@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { X } from "lucide-react";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
 import { ConfidenceStepper } from "./Confidence";
 import { useSpira } from "@/lib/spira/store";
 import type { Confidence } from "@/lib/spira/types";
@@ -16,7 +16,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
   const [confidence, setConfidence] = useState<Confidence>(5);
   const [deadline, setDeadline] = useState<string>("");
 
-  const submit = () => {
+  const submit = (publish = true) => {
     if (!title.trim()) return;
     addGoal({
       title: title.trim(),
@@ -25,63 +25,121 @@ function FormBody({ onDone }: { onDone: () => void }) {
       deadline: deadline ? new Date(deadline).toISOString() : undefined,
     });
     onDone();
+    void publish;
   };
 
   return (
-    <div className="space-y-5 px-1">
-      <div>
-        <label className="text-xs text-muted-foreground uppercase tracking-wider">
-          What do you want to achieve?
-        </label>
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Launch Spira to first 50 users"
-          className="mt-1.5 bg-surface border-border text-base h-11"
-          autoFocus
-        />
+    <>
+      {/* Header — sticky */}
+      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+        <h2 className="font-sans font-bold text-lg text-foreground">Add a new goal</h2>
+        <button
+          onClick={onDone}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
-      <div>
-        <label className="text-xs text-muted-foreground uppercase tracking-wider">
-          Description (SMART)
-        </label>
-        <Textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Specific, measurable, achievable, relevant, time-bound."
-          className="mt-1.5 bg-surface border-border min-h-24"
-        />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs text-muted-foreground uppercase tracking-wider">
-            Deadline
-          </label>
+
+      {/* Body */}
+      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1">
+        <Field label="Title" required>
           <Input
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            className="mt-1.5 bg-surface border-border h-11"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Launch Spira to first 50 users"
+            className="h-11 bg-surface border-2 border-border focus-visible:border-primary text-base"
+            autoFocus
           />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground uppercase tracking-wider flex justify-between">
-            <span>Confidence</span>
-            <span className="num">{confidence}/10</span>
-          </label>
-          <div className="mt-2">
-            <ConfidenceStepper value={confidence} onChange={(v) => setConfidence(v as Confidence)} />
-          </div>
+        </Field>
+
+        <Field
+          label="Description"
+          hint="Specific, measurable, achievable, relevant, time-bound."
+        >
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What does success look like?"
+            className="bg-surface border-2 border-border focus-visible:border-primary min-h-28"
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Deadline">
+            <Input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+            />
+          </Field>
+          <Field
+            label="Confidence"
+            hintRight={<span className="num font-semibold text-foreground">{confidence}/10</span>}
+          >
+            <div className="pt-1">
+              <ConfidenceStepper
+                value={confidence}
+                onChange={(v) => setConfidence(v as Confidence)}
+              />
+            </div>
+          </Field>
         </div>
       </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onDone}>
+
+      {/* Footer — sticky */}
+      <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
+        <button
+          onClick={onDone}
+          className="link-action h-11 px-4 text-sm font-semibold"
+        >
           Cancel
-        </Button>
-        <Button onClick={submit} disabled={!title.trim()}>
+        </button>
+        <button
+          onClick={() => submit(false)}
+          disabled={!title.trim()}
+          className="h-11 px-5 rounded-md border-2 border-primary text-primary font-semibold text-sm hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Save as draft
+        </button>
+        <button
+          onClick={() => submit(true)}
+          disabled={!title.trim()}
+          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
           Create goal
-        </Button>
+        </button>
       </div>
+    </>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  hintRight,
+  required,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  hintRight?: React.ReactNode;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-sm font-semibold text-foreground">
+          {label}
+          {required && <span className="text-destructive ml-0.5">*</span>}
+        </label>
+        {hintRight}
+      </div>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground mt-1.5">{hint}</p>}
     </div>
   );
 }
@@ -98,10 +156,7 @@ export function NewGoalSheet({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-4 pb-6">
-          <DrawerHeader className="px-0">
-            <DrawerTitle className="font-display text-2xl">New goal</DrawerTitle>
-          </DrawerHeader>
+        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
           <FormBody onDone={() => onOpenChange(false)} />
         </DrawerContent>
       </Drawer>
@@ -110,13 +165,11 @@ export function NewGoalSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col">
-        <SheetHeader>
-          <SheetTitle className="font-display text-2xl">New goal</SheetTitle>
-        </SheetHeader>
-        <div className="mt-4 flex-1 overflow-y-auto">
-          <FormBody onDone={() => onOpenChange(false)} />
-        </div>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-xl p-0 flex flex-col bg-surface border-l hairline"
+      >
+        <FormBody onDone={() => onOpenChange(false)} />
       </SheetContent>
     </Sheet>
   );

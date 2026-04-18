@@ -20,32 +20,32 @@ export function Section({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="surface-card overflow-hidden">
-      <header className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b hairline">
+      <header className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b hairline">
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 text-left flex-1 min-w-0"
+          className="flex items-center gap-3 text-left flex-1 min-w-0 group"
         >
           <ChevronDown
             className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform shrink-0",
+              "h-4 w-4 text-muted-foreground transition-transform shrink-0 group-hover:text-foreground",
               !open && "-rotate-90",
             )}
           />
-          <h2 className="font-display text-lg sm:text-xl">{title}</h2>
-          {typeof count === "number" && (
-            <span className="num text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+          <h2 className="font-display text-xl sm:text-2xl">{title}</h2>
+          {typeof count === "number" && count > 0 && (
+            <span className="num text-xs font-semibold text-primary bg-primary-soft border border-primary/20 px-2 py-0.5 rounded-full">
               {count}
             </span>
           )}
           {hint && (
-            <span className="hidden sm:inline text-xs text-muted-foreground ml-2 truncate">
-              {hint}
+            <span className="hidden sm:inline text-sm text-muted-foreground ml-1 truncate">
+              · {hint}
             </span>
           )}
         </button>
         {action}
       </header>
-      {open && <div className="p-4 sm:p-5">{children}</div>}
+      {open && <div className="p-5 sm:p-6">{children}</div>}
     </section>
   );
 }

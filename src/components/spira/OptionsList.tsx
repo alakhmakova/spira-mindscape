@@ -19,13 +19,13 @@ export function OptionsList({ goal }: { goal: Goal }) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {goal.options.length === 0 && (
         <p className="text-sm text-muted-foreground italic">
           What strategies could move you forward? Add a few, then choose one.
         </p>
       )}
-      <ul className="space-y-1.5">
+      <ul className="space-y-2">
         {goal.options.map((opt, idx) => (
           <li
             key={opt.id}
@@ -37,24 +37,27 @@ export function OptionsList({ goal }: { goal: Goal }) {
               setDragIdx(null);
             }}
             className={cn(
-              "group flex items-center gap-3 rounded-md border hairline px-3 py-2.5 transition-colors",
+              "group flex items-center gap-3 rounded-md border-2 px-3 py-3 transition-colors",
               opt.selected
-                ? "bg-primary/8 border-primary/40"
-                : "bg-surface hover:border-border-strong",
+                ? "bg-primary-soft border-primary/50"
+                : "bg-surface border-border hover:border-border-strong",
             )}
           >
-            <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0" />
+            <GripVertical className="h-4 w-4 text-muted-foreground/50 cursor-grab shrink-0" />
+            {/* Radio */}
             <button
               onClick={() => selectOption(goal.id, opt.id)}
               className={cn(
                 "h-5 w-5 rounded-full border-2 grid place-items-center shrink-0 transition-colors",
                 opt.selected
-                  ? "border-primary bg-primary text-primary-foreground"
+                  ? "border-primary"
                   : "border-border-strong hover:border-primary",
               )}
-              aria-label="Select"
+              aria-label="Select strategy"
             >
-              {opt.selected && <Check className="h-3 w-3" />}
+              {opt.selected && (
+                <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+              )}
             </button>
             {editingId === opt.id ? (
               <input
@@ -72,7 +75,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   }
                   if (e.key === "Escape") setEditingId(null);
                 }}
-                className="flex-1 bg-transparent outline-none text-sm"
+                className="flex-1 bg-transparent outline-none text-sm font-medium"
               />
             ) : (
               <button
@@ -80,7 +83,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   setEditingId(opt.id);
                   setEditText(opt.text);
                 }}
-                className="flex-1 text-left text-sm"
+                className="flex-1 text-left text-sm font-medium"
               >
                 {opt.text}
               </button>
@@ -95,17 +98,20 @@ export function OptionsList({ goal }: { goal: Goal }) {
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2 px-3">
-        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md border-2 border-dashed border-border focus-within:border-primary/40">
+        <Plus className="h-4 w-4 text-muted-foreground" />
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a strategy…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 py-2"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground py-1"
         />
         {draft && (
-          <button onClick={add} className="text-xs text-primary hover:underline">
+          <button
+            onClick={add}
+            className="text-xs link-action font-semibold"
+          >
             Add
           </button>
         )}
