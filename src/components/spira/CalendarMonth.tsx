@@ -54,30 +54,32 @@ export function CalendarMonth() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl sm:text-4xl">{format(cursor, "MMMM yyyy")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="font-display text-4xl sm:text-5xl tracking-tight">
+            {format(cursor, "MMMM yyyy")}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1.5">
             ISO weeks · Goal and target deadlines
           </p>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setCursor((c) => addMonths(c, -1))}
-            className="h-9 w-9 grid place-items-center rounded-md border hairline-strong hover:bg-accent"
+            className="h-10 w-10 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             onClick={() => setCursor(new Date())}
-            className="px-3 h-9 rounded-md border hairline-strong text-sm hover:bg-accent"
+            className="px-4 h-10 rounded-md border-2 border-border text-sm font-semibold hover:border-primary hover:text-primary"
           >
             Today
           </button>
           <button
             onClick={() => setCursor((c) => addMonths(c, 1))}
-            className="h-9 w-9 grid place-items-center rounded-md border hairline-strong hover:bg-accent"
+            className="h-10 w-10 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -85,14 +87,14 @@ export function CalendarMonth() {
       </div>
 
       <div className="surface-card overflow-hidden">
-        <div className="grid grid-cols-[44px_repeat(7,1fr)] border-b hairline">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground py-2 text-center">
+        <div className="grid grid-cols-[44px_repeat(7,1fr)] border-b hairline bg-secondary/40">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold py-2.5 text-center">
             Wk
           </div>
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
             <div
               key={d}
-              className="text-[10px] uppercase tracking-wider text-muted-foreground py-2 text-center"
+              className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold py-2.5 text-center"
             >
               <span className="hidden sm:inline">{d}</span>
               <span className="sm:hidden">{d[0]}</span>
@@ -100,8 +102,11 @@ export function CalendarMonth() {
           ))}
         </div>
         {weeks.map((week, wi) => (
-          <div key={wi} className="grid grid-cols-[44px_repeat(7,1fr)] border-b hairline last:border-b-0">
-            <div className="num text-xs text-muted-foreground grid place-items-center bg-surface-sunken/40">
+          <div
+            key={wi}
+            className="grid grid-cols-[44px_repeat(7,1fr)] border-b hairline last:border-b-0"
+          >
+            <div className="num text-xs text-muted-foreground font-semibold grid place-items-center bg-secondary/30">
               {getISOWeek(week[0])}
             </div>
             {week.map((day) => {
@@ -113,14 +118,16 @@ export function CalendarMonth() {
                 <div
                   key={key}
                   className={cn(
-                    "min-h-20 sm:min-h-24 p-1.5 border-l hairline space-y-1 relative",
-                    muted && "opacity-40",
+                    "min-h-24 sm:min-h-28 p-2 border-l hairline space-y-1 relative",
+                    muted && "bg-secondary/30 opacity-60",
                   )}
                 >
                   <div
                     className={cn(
-                      "text-xs num inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full",
-                      today && "bg-primary text-primary-foreground font-medium",
+                      "text-xs num inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-full font-semibold",
+                      today
+                        ? "bg-primary text-primary-foreground"
+                        : "text-foreground/70",
                     )}
                   >
                     {format(day, "d")}
@@ -131,10 +138,10 @@ export function CalendarMonth() {
                       to="/goals/$goalId"
                       params={{ goalId: ev.goalId }}
                       className={cn(
-                        "block text-[11px] leading-tight px-1.5 py-1 rounded-md truncate flex items-center gap-1",
+                        "text-[11px] leading-tight px-1.5 py-1 rounded truncate flex items-center gap-1 font-medium",
                         ev.kind === "goal"
-                          ? "bg-primary/15 text-primary border border-primary/20"
-                          : "bg-accent text-foreground border hairline",
+                          ? "bg-primary-soft text-primary border border-primary/20"
+                          : "bg-secondary text-foreground/80 border hairline",
                       )}
                       title={`${ev.label} — ${ev.goalTitle}`}
                     >
@@ -147,7 +154,7 @@ export function CalendarMonth() {
                     </Link>
                   ))}
                   {dayEvents.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground px-1.5">
+                    <div className="text-[10px] text-muted-foreground px-1.5 font-semibold">
                       +{dayEvents.length - 3} more
                     </div>
                   )}

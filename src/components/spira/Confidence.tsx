@@ -9,22 +9,24 @@ export function ConfidencePill({
 }) {
   const tone =
     value <= 3
-      ? "bg-destructive/15 text-destructive border-destructive/30"
+      ? "bg-destructive/10 text-destructive border-destructive/30"
       : value <= 6
-        ? "bg-warning/15 text-warning border-warning/30"
-        : "bg-primary/15 text-primary border-primary/30";
+        ? "bg-warning/15 text-[oklch(0.45_0.12_60)] border-warning/40"
+        : "bg-primary-soft text-primary border-primary/30";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs num",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold num",
         tone,
         className,
       )}
       title={`Confidence ${value}/10`}
     >
-      <span className="opacity-70">conf</span>
+      <span className="opacity-70 font-normal uppercase tracking-wider text-[10px]">
+        Conf
+      </span>
       <span>{value}</span>
-      <span className="opacity-50">/10</span>
+      <span className="opacity-50 font-normal">/10</span>
     </span>
   );
 }
@@ -40,17 +42,18 @@ export function ConfidenceStepper({
     <div className="flex items-center gap-1">
       {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
         const active = n <= value;
+        const isExact = n === value;
         return (
           <button
             key={n}
             onClick={() => onChange(n)}
             className={cn(
-              "h-7 flex-1 rounded-sm transition-colors num text-[11px]",
-              active
-                ? n === value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-primary/40 text-primary-foreground/90"
-                : "bg-muted text-muted-foreground hover:bg-accent",
+              "h-9 flex-1 rounded-md transition-colors num text-xs font-semibold border",
+              isExact
+                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                : active
+                  ? "bg-primary-soft text-primary border-primary/30"
+                  : "bg-surface text-muted-foreground border-border hover:border-border-strong hover:text-foreground",
             )}
             aria-label={`Confidence ${n}`}
           >

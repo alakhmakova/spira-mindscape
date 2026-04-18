@@ -13,7 +13,7 @@ export function ProgressBar({
   return (
     <div
       className={cn(
-        "relative h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken border hairline",
+        "relative h-2 w-full overflow-hidden rounded-full bg-secondary",
         className,
       )}
     >

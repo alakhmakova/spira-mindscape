@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { LayoutGrid, List, Plus, Search, Sparkles } from "lucide-react";
+import { LayoutGrid, List, Plus } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
+import { goalProgress } from "@/lib/spira/progress";
 import { GoalCard } from "@/components/spira/GoalCard";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
-import { useAi } from "@/components/ai/ai-store";
+import { useShellFilters } from "@/components/shell/shell-store";
+import { differenceInCalendarDays, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -24,40 +26,72 @@ export const Route = createFileRoute("/")({
 
 function GoalsOverview() {
   const goals = useSpira((s) => s.goals);
-  const openAi = useAi((s) => s.open);
+  const { query, sort, filterDeadline, filterConfidence } = useShellFilters();
   const [view, setView] = useState<"cards" | "table">("cards");
-  const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
-  const filtered = useMemo(
-    () =>
-      goals.filter((g) => g.title.toLowerCase().includes(q.toLowerCase().trim())),
-    [goals, q],
-  );
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    let arr = goals.filter((g) => g.title.toLowerCase().includes(q));
+    if (filterDeadline !== "all") {
+      arr = arr.filter((g) => {
+        if (!g.deadline) return false;
+        const d = new Date(g.deadline);
+        const days = differenceInCalendarDays(d, new Date());
+        if (filterDeadline === "overdue") return isPast(d) && days < 0;
+        if (filterDeadline === "week") return days >= 0 && days <= 7;
+        if (filterDeadline === "month") return days >= 0 && days <= 30;
+        return true;
+      });
+    }
+    if (filterConfidence !== "all") {
+      arr = arr.filter((g) => {
+        if (filterConfidence === "low") return g.confidence <= 3;
+        if (filterConfidence === "med") return g.confidence >= 4 && g.confidence <= 6;
+        return g.confidence >= 7;
+      });
+    }
+    const sorted = [...arr].sort((a, b) => {
+      switch (sort) {
+        case "deadline":
+          return (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999");
+        case "progress":
+          return goalProgress(b) - goalProgress(a);
+        case "confidence":
+          return b.confidence - a.confidence;
+        case "title":
+          return a.title.localeCompare(b.title);
+        default:
+          return b.createdAt.localeCompare(a.createdAt);
+      }
+    });
+    return sorted;
+  }, [goals, query, sort, filterDeadline, filterConfidence]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl sm:text-5xl tracking-tight">
+          <h1 className="font-display text-4xl sm:text-5xl tracking-tight text-balance">
             What are you working toward?
           </h1>
-          <p className="text-muted-foreground mt-2 text-sm sm:text-base">
+          <p className="text-muted-foreground mt-2 text-sm sm:text-[15px]">
             {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion. Pick one to dive
             into, or shape a new one.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => openAi()}
-            className="hidden sm:inline-flex items-center gap-2 px-3 h-10 rounded-md border border-primary/30 bg-primary/10 text-primary text-sm hover:bg-primary/15"
-          >
-            <Sparkles className="h-4 w-4" />
-            Plan with AI
-          </button>
+          <div className="inline-flex p-0.5 bg-secondary rounded-md border hairline">
+            <ViewBtn active={view === "cards"} onClick={() => setView("cards")} icon={LayoutGrid}>
+              Cards
+            </ViewBtn>
+            <ViewBtn active={view === "table"} onClick={() => setView("table")} icon={List}>
+              Table
+            </ViewBtn>
+          </div>
           <button
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 px-4 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 shadow-sm"
           >
             <Plus className="h-4 w-4" />
             New goal
@@ -65,42 +99,26 @@ function GoalsOverview() {
         </div>
       </header>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search goals…"
-            className="w-full h-10 pl-9 pr-3 rounded-md bg-surface border hairline text-sm outline-none focus:border-border-strong"
-          />
-        </div>
-        <div className="inline-flex p-0.5 surface-sunken rounded-md self-start sm:self-auto">
-          <ViewBtn active={view === "cards"} onClick={() => setView("cards")} icon={LayoutGrid}>
-            Cards
-          </ViewBtn>
-          <ViewBtn active={view === "table"} onClick={() => setView("table")} icon={List}>
-            Table
-          </ViewBtn>
-        </div>
-      </div>
-
       {filtered.length === 0 ? (
-        <div className="surface-card p-10 text-center">
-          <div className="font-display text-2xl">No goals yet</div>
-          <p className="text-muted-foreground text-sm mt-1">
-            Start with one. You can always shape it as you think.
+        <div className="surface-card p-12 text-center">
+          <div className="font-display text-3xl">No goals match</div>
+          <p className="text-muted-foreground text-sm mt-2 max-w-md mx-auto">
+            {goals.length === 0
+              ? "Start with one. You can always shape it as you think."
+              : "Try clearing your search or filters above."}
           </p>
-          <button
-            onClick={() => setOpen(true)}
-            className="mt-4 inline-flex items-center gap-2 px-4 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" />
-            Create your first goal
-          </button>
+          {goals.length === 0 && (
+            <button
+              onClick={() => setOpen(true)}
+              className="mt-5 inline-flex items-center gap-2 px-4 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" />
+              Create your first goal
+            </button>
+          )}
         </div>
       ) : view === "cards" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
           {filtered.map((g) => (
             <GoalCard key={g.id} goal={g} />
           ))}
@@ -129,8 +147,10 @@ function ViewBtn({
     <button
       onClick={onClick}
       className={cn(
-        "px-3 h-9 rounded-[6px] text-xs flex items-center gap-1.5 transition-colors",
-        active ? "bg-surface text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+        "px-3 h-9 rounded-md text-xs flex items-center gap-1.5 transition-colors font-medium",
+        active
+          ? "bg-surface text-foreground shadow-sm border hairline"
+          : "text-muted-foreground hover:text-foreground",
       )}
     >
       <Icon className="h-3.5 w-3.5" />

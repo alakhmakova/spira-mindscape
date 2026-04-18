@@ -7,14 +7,14 @@ import {
   Trash2,
   ExternalLink,
   Download,
+  X,
 } from "lucide-react";
 import type { Goal, Resource } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -39,26 +39,26 @@ export function ResourcesList({ goal }: { goal: Goal }) {
 
   return (
     <>
-      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {goal.resources.map((r) => {
           const Icon = typeMeta[r.type].icon;
           return (
             <li
               key={r.id}
-              className="surface-sunken p-3 flex items-start gap-3 group hover:border-border-strong transition-colors cursor-pointer"
+              className="surface-card p-4 flex items-start gap-3 group hover:border-primary/40 hover:shadow-[var(--shadow-soft)] transition-all cursor-pointer"
               onClick={() => {
                 if (r.type === "link") window.open(r.url, "_blank");
                 else setPreview(r);
               }}
             >
-              <div className="h-8 w-8 rounded-md bg-accent grid place-items-center shrink-0">
-                <Icon className="h-4 w-4 text-muted-foreground" />
+              <div className="h-9 w-9 rounded-md bg-primary-soft border border-primary/20 grid place-items-center shrink-0 text-primary">
+                <Icon className="h-4 w-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
                   {typeMeta[r.type].label}
                 </div>
-                <div className="text-sm font-medium truncate">
+                <div className="text-sm font-semibold truncate text-foreground">
                   {r.type === "contact" ? r.name : r.title}
                 </div>
                 {r.type === "link" && (
@@ -75,7 +75,7 @@ export function ResourcesList({ goal }: { goal: Goal }) {
                   e.stopPropagation();
                   removeResource(goal.id, r.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1"
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -99,69 +99,79 @@ function ResourcePreview({
   const isMobile = useIsMobile();
   const open = !!resource;
 
+  const title =
+    resource?.type === "contact" ? resource.name : (resource as any)?.title;
+
   const Body = resource && (
-    <div className="space-y-3">
-      {resource.type === "note" && (
-        <div className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed">
-          {resource.body || <em className="text-muted-foreground">Empty note</em>}
-        </div>
-      )}
-      {resource.type === "link" && (
-        <a
-          href={resource.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-2 text-primary hover:underline text-sm"
+    <>
+      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+        <h2 className="font-display text-2xl truncate">{title}</h2>
+        <button
+          onClick={onClose}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+          aria-label="Close"
         >
-          <ExternalLink className="h-4 w-4" />
-          {resource.url}
-        </a>
-      )}
-      {resource.type === "file" && (
-        <div className="space-y-3">
-          {resource.mime.startsWith("image/") && (
-            <img
-              src={resource.dataUrl}
-              alt={resource.title}
-              className="w-full rounded-md border hairline"
-            />
-          )}
-          {resource.mime === "application/pdf" && (
-            <iframe
-              src={resource.dataUrl}
-              className="w-full h-[60vh] rounded-md border hairline bg-surface-sunken"
-              title={resource.title}
-            />
-          )}
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="px-7 py-6 overflow-y-auto flex-1 space-y-3">
+        {resource.type === "note" && (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+            {resource.body || <em className="text-muted-foreground">Empty note</em>}
+          </div>
+        )}
+        {resource.type === "link" && (
           <a
-            href={resource.dataUrl}
-            download={resource.title}
-            className="inline-flex items-center gap-2 text-primary hover:underline text-sm"
+            href={resource.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 link-action text-sm font-semibold"
           >
-            <Download className="h-4 w-4" /> Download
+            <ExternalLink className="h-4 w-4" />
+            {resource.url}
           </a>
-        </div>
-      )}
-      {resource.type === "contact" && (
-        <div className="surface-sunken p-4 space-y-1.5">
-          <div className="font-display text-xl">{resource.name}</div>
-          {resource.role && <div className="text-sm text-muted-foreground">{resource.role}</div>}
-          {resource.email && <div className="text-sm">{resource.email}</div>}
-          {resource.phone && <div className="text-sm num">{resource.phone}</div>}
-        </div>
-      )}
-    </div>
+        )}
+        {resource.type === "file" && (
+          <div className="space-y-3">
+            {resource.mime.startsWith("image/") && (
+              <img
+                src={resource.dataUrl}
+                alt={resource.title}
+                className="w-full rounded-md border hairline"
+              />
+            )}
+            {resource.mime === "application/pdf" && (
+              <iframe
+                src={resource.dataUrl}
+                className="w-full h-[60vh] rounded-md border hairline bg-secondary"
+                title={resource.title}
+              />
+            )}
+            <a
+              href={resource.dataUrl}
+              download={resource.title}
+              className="inline-flex items-center gap-2 link-action text-sm font-semibold"
+            >
+              <Download className="h-4 w-4" /> Download
+            </a>
+          </div>
+        )}
+        {resource.type === "contact" && (
+          <div className="surface-card p-5 space-y-1.5">
+            <div className="font-display text-2xl">{resource.name}</div>
+            {resource.role && <div className="text-sm text-muted-foreground">{resource.role}</div>}
+            {resource.email && <div className="text-sm">{resource.email}</div>}
+            {resource.phone && <div className="text-sm num">{resource.phone}</div>}
+          </div>
+        )}
+      </div>
+    </>
   );
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
-        <DrawerContent className="px-4 pb-6">
-          <DrawerHeader className="px-0">
-            <DrawerTitle className="font-display text-xl truncate">
-              {resource?.type === "contact" ? resource.name : (resource as any)?.title}
-            </DrawerTitle>
-          </DrawerHeader>
+        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
           {Body}
         </DrawerContent>
       </Drawer>
@@ -169,13 +179,11 @@ function ResourcePreview({
   }
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="font-display text-2xl">
-            {resource?.type === "contact" ? resource.name : (resource as any)?.title}
-          </SheetTitle>
-        </SheetHeader>
-        <div className="mt-4">{Body}</div>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-2xl p-0 flex flex-col bg-surface border-l hairline"
+      >
+        {Body}
       </SheetContent>
     </Sheet>
   );
@@ -195,21 +203,18 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-4 pb-6">
-          <DrawerHeader className="px-0">
-            <DrawerTitle className="font-display text-2xl">Add resource</DrawerTitle>
-          </DrawerHeader>
+        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
           {Body}
         </DrawerContent>
       </Drawer>
     );
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="font-display text-2xl">Add resource</SheetTitle>
-        </SheetHeader>
-        <div className="mt-4">{Body}</div>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-lg p-0 flex flex-col bg-surface border-l hairline"
+      >
+        {Body}
       </SheetContent>
     </Sheet>
   );
@@ -219,17 +224,12 @@ function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
   const addResource = useSpira((s) => s.addResource);
   const [type, setType] = useState<Resource["type"]>("note");
 
-  // shared
   const [title, setTitle] = useState("");
-  // note
   const [body, setBody] = useState("");
-  // link
   const [url, setUrl] = useState("");
-  // file
   const [fileData, setFileData] = useState<{ name: string; mime: string; dataUrl: string } | null>(
     null,
   );
-  // contact
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [email, setEmail] = useState("");
@@ -275,110 +275,151 @@ function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-4 gap-1.5">
-        {(["note", "link", "file", "contact"] as const).map((t) => {
-          const Icon = typeMeta[t].icon;
-          return (
-            <button
-              key={t}
-              onClick={() => setType(t)}
-              className={cn(
-                "flex flex-col items-center gap-1.5 py-3 rounded-md border text-xs capitalize transition-colors",
-                type === t
-                  ? "bg-primary/15 border-primary/40 text-primary"
-                  : "bg-surface border-border hover:border-border-strong",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {typeMeta[t].label}
-            </button>
-          );
-        })}
+    <>
+      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+        <h2 className="font-sans font-bold text-lg">Add a resource</h2>
+        <button
+          onClick={onDone}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+          aria-label="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
-      {type !== "contact" && (
+      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1">
         <div>
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Title</label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-1.5 h-11 bg-surface"
-            autoFocus
-          />
+          <label className="text-sm font-semibold block mb-2">
+            Type <span className="text-destructive">*</span>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["note", "link", "file", "contact"] as const).map((t) => {
+              const Icon = typeMeta[t].icon;
+              return (
+                <button
+                  key={t}
+                  onClick={() => setType(t)}
+                  className={cn(
+                    "flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left",
+                    type === t
+                      ? "bg-primary-soft border-primary text-primary"
+                      : "bg-surface border-border hover:border-border-strong",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {typeMeta[t].label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
 
-      {type === "note" && (
-        <div>
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Note</label>
-          <Textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className="mt-1.5 min-h-32 bg-surface"
-          />
-        </div>
-      )}
-      {type === "link" && (
-        <div>
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">URL</label>
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://"
-            className="mt-1.5 h-11 bg-surface"
-          />
-        </div>
-      )}
-      {type === "file" && (
-        <div>
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">File</label>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-            className="mt-1.5 block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-accent file:text-foreground hover:file:bg-accent/80"
-          />
-          {fileData && (
-            <p className="text-xs text-muted-foreground mt-2 truncate">
-              {fileData.name} · {fileData.mime || "unknown"}
-            </p>
-          )}
-        </div>
-      )}
-      {type === "contact" && (
-        <div className="space-y-3">
+        {type !== "contact" && (
           <div>
-            <label className="text-xs uppercase tracking-wider text-muted-foreground">Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 h-11 bg-surface" />
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-wider text-muted-foreground">Role</label>
-            <Input value={role} onChange={(e) => setRole(e.target.value)} className="mt-1.5 h-11 bg-surface" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-sm font-semibold block mb-1.5">
+              Title {type !== "file" && <span className="text-destructive">*</span>}
+            </label>
             <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email"
-              className="h-11 bg-surface"
-            />
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="phone"
-              className="h-11 bg-surface"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+              autoFocus
             />
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onDone}>
+        {type === "note" && (
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Note</label>
+            <Textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="bg-surface border-2 border-border focus-visible:border-primary min-h-32"
+            />
+          </div>
+        )}
+        {type === "link" && (
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">
+              URL <span className="text-destructive">*</span>
+            </label>
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://"
+              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+            />
+          </div>
+        )}
+        {type === "file" && (
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">File</label>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+              className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-soft file:text-primary hover:file:bg-primary-soft/80"
+            />
+            {fileData && (
+              <p className="text-xs text-muted-foreground mt-2 truncate">
+                {fileData.name} · {fileData.mime || "unknown"}
+              </p>
+            )}
+          </div>
+        )}
+        {type === "contact" && (
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Role</label>
+              <Input
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold block mb-1.5">Email</label>
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold block mb-1.5">Phone</label>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
+        <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
           Cancel
-        </Button>
-        <Button onClick={submit}>Add</Button>
+        </button>
+        <button
+          onClick={submit}
+          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90"
+        >
+          Add resource
+        </button>
       </div>
-    </div>
+    </>
   );
 }
