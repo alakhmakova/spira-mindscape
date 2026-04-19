@@ -127,35 +127,30 @@ function NumericBody({
 }) {
   return (
     <div className="mt-4 space-y-2">
-      {/* Inline-editable current / total / unit */}
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <div className="flex items-center gap-1 num font-semibold tabular-nums">
-          <InlineNumber
-            value={target.current}
-            min={0}
-            onChange={(v) => onUpdate({ current: v } as Partial<Target>)}
-            ariaLabel="Current value"
-          />
-          <span className="text-muted-foreground font-normal">/</span>
-          <InlineNumber
-            value={target.total}
-            min={0}
-            onChange={(v) => onUpdate({ total: v } as Partial<Target>)}
-            ariaLabel="Total value"
-            tone="muted"
-          />
-          <InlineText
-            value={target.unit ?? ""}
-            placeholder="unit"
-            onChange={(v) => onUpdate({ unit: v || undefined } as Partial<Target>)}
-            ariaLabel="Unit"
-          />
-        </div>
-        <span className="num text-xs text-muted-foreground font-semibold tabular-nums">
-          {Math.round(progress * 100)}%
-        </span>
+      {/* Inline-editable current / total / unit — centered above the bar */}
+      <div className="flex items-center justify-center gap-1 num font-semibold tabular-nums text-sm">
+        <InlineNumber
+          value={target.current}
+          min={0}
+          onChange={(v) => onUpdate({ current: v } as Partial<Target>)}
+          ariaLabel="Current value"
+        />
+        <span className="text-muted-foreground font-normal">/</span>
+        <InlineNumber
+          value={target.total}
+          min={0}
+          onChange={(v) => onUpdate({ total: v } as Partial<Target>)}
+          ariaLabel="Total value"
+          tone="muted"
+        />
+        <InlineText
+          value={target.unit ?? ""}
+          placeholder="unit"
+          onChange={(v) => onUpdate({ unit: v || undefined } as Partial<Target>)}
+          ariaLabel="Unit"
+        />
       </div>
-      {/* Single progress bar with ± controls */}
+      {/* Single progress bar with ± controls; percentage sits inline before the + */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => onUpdate({ current: Math.max(0, target.current - 1) } as Partial<Target>)}
@@ -165,6 +160,9 @@ function NumericBody({
           <Minus className="h-4 w-4" />
         </button>
         <ProgressBar value={progress} className="flex-1" />
+        <span className="num text-xs font-semibold tabular-nums text-foreground/80 min-w-[3ch] text-right">
+          {Math.round(progress * 100)}%
+        </span>
         <button
           onClick={() => onUpdate({ current: target.current + 1 } as Partial<Target>)}
           className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
