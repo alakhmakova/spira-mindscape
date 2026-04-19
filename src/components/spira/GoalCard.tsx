@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, MoreHorizontal, Trash2, Pencil, Target as TargetIcon } from "lucide-react";
+import { MoreHorizontal, Trash2, Pencil, Target as TargetIcon } from "lucide-react";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
 import { goalProgress } from "@/lib/spira/progress";
 import { ConfidencePill } from "./Confidence";
 import { ProgressBar } from "./ProgressBar";
-import { DeadlineLabel } from "./DeadlineLabel";
+import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
@@ -18,6 +18,7 @@ import {
 export function GoalCard({ goal }: { goal: Goal }) {
   const progress = goalProgress(goal);
   const deleteGoal = useSpira((s) => s.deleteGoal);
+  const updateGoal = useSpira((s) => s.updateGoal);
   const [confirm, setConfirm] = useState(false);
 
   const selected = goal.options.find((o) => o.selected);
@@ -31,11 +32,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
             <TargetIcon className="h-3 w-3 text-primary" />
             Goal
           </div>
-          <Link
-            to="/goals/$goalId"
-            params={{ goalId: goal.id }}
-            className="block"
-          >
+          <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="block">
             <h3 className="font-display text-2xl leading-snug text-balance line-clamp-2 hover:text-primary transition-colors">
               {goal.title}
             </h3>
@@ -77,21 +74,12 @@ export function GoalCard({ goal }: { goal: Goal }) {
         <ProgressBar value={progress} />
       </div>
 
-      <div className="mt-5 pt-4 border-t hairline flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-xs">
-          <DeadlineLabel iso={goal.deadline} />
-        </div>
+      <div className="mt-5 pt-4 border-t hairline flex items-center justify-between gap-3 flex-wrap">
+        <DeadlinePopover
+          iso={goal.deadline}
+          onChange={(next) => updateGoal(goal.id, { deadline: next })}
+        />
         <ConfidencePill value={goal.confidence} />
-      </div>
-
-      <div className="mt-5">
-        <Link
-          to="/goals/$goalId"
-          params={{ goalId: goal.id }}
-          className="inline-flex items-center gap-1.5 h-10 px-4 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft transition-colors"
-        >
-          Open workspace <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
       </div>
 
       <ConfirmDialog
