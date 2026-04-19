@@ -63,7 +63,7 @@ function TargetRow({
         </div>
         <button
           onClick={onRemove}
-          className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
+          className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md hover:bg-secondary"
           aria-label="Delete target"
         >
           <Trash2 className="h-4 w-4" />
