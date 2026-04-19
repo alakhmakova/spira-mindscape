@@ -1,9 +1,18 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  History,
+  Plus,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import { goalProgress } from "@/lib/spira/progress";
-import { ConfidencePill } from "@/components/spira/Confidence";
 import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
@@ -14,7 +23,9 @@ import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
 import type { Confidence } from "@/lib/spira/types";
-import { differenceInCalendarDays, isPast } from "date-fns";
+import { differenceInCalendarDays, format, formatDistanceToNow, isPast } from "date-fns";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/goals/$goalId")({
   head: ({ params }) => ({
@@ -42,6 +53,13 @@ function GoalWorkspace() {
   const [newTarget, setNewTarget] = useState(false);
   const [newResource, setNewResource] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Local confidence history (mocked, in-memory for demo).
+  const [confidenceHistory, setConfidenceHistory] = useState<
+    { value: number; at: string }[]
+  >(() => [
+    { value: goal?.confidence ?? 5, at: new Date().toISOString() },
+  ]);
 
   useEffect(() => {
     setContext({ goalId });
@@ -61,31 +79,35 @@ function GoalWorkspace() {
 
   const progress = goalProgress(goal);
 
+  const changeConfidence = (next: number) => {
+    setConfidence(goal.id, next as Confidence);
+    setConfidenceHistory((h) => [{ value: next, at: new Date().toISOString() }, ...h]);
+  };
+
+  const jumpToTargets = () => {
+    document.getElementById("targets-section")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
-      {/* Top bar */}
-      <div className="flex items-center justify-between">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground font-medium"
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
+      {/* Top bar — no back link, only actions */}
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => openAi({ goalId })}
+          className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to goals
-        </Link>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => openAi({ goalId })}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Coach this goal
-          </button>
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
-            aria-label="Delete goal"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
+          <Sparkles className="h-3.5 w-3.5" /> Coach this goal
+        </button>
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
+          aria-label="Delete goal"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Title */}
@@ -101,16 +123,17 @@ function GoalWorkspace() {
         />
       </header>
 
-      {/* Three KPI cards: Progress · Confidence · Deadline (dashboard style) */}
+      {/* Three KPI cards: Progress · Confidence · Deadline */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <ProgressKpi value={progress} />
+        <ProgressKpi value={progress} onJump={jumpToTargets} />
         <ConfidenceKpi
           value={goal.confidence}
-          onChange={(v) => setConfidence(goal.id, v as Confidence)}
+          onChange={changeConfidence}
+          onOpenHistory={() => setHistoryOpen(true)}
         />
         <DeadlineKpi
-            iso={goal.deadline}
-            onChange={(next) => updateGoal(goal.id, { deadline: next })}
+          iso={goal.deadline}
+          onChange={(next) => updateGoal(goal.id, { deadline: next })}
         />
       </div>
 
@@ -129,7 +152,6 @@ function GoalWorkspace() {
         count={goal.reality.actions.length + goal.reality.obstacles.length}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-lg overflow-hidden border hairline">
-          {/* Left half — Actions taken (default surface) */}
           <div className="p-5 sm:p-6 bg-surface md:border-r hairline">
             <h3 className="font-display text-lg mb-3">Actions taken</h3>
             <InlineList
@@ -142,7 +164,6 @@ function GoalWorkspace() {
               marker="check"
             />
           </div>
-          {/* Right half — Obstacles (deep teal background, light text) */}
           <div className="p-5 sm:p-6 bg-primary text-primary-foreground">
             <h3 className="font-display text-lg mb-3 text-primary-foreground">Obstacles</h3>
             <InlineList
@@ -180,24 +201,33 @@ function GoalWorkspace() {
         <OptionsList goal={goal} />
       </Section>
 
-      <Section
-        title="Targets"
-        hint="How you execute"
-        count={goal.targets.length}
-        action={
-          <button
-            onClick={() => setNewTarget(true)}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add target
-          </button>
-        }
-      >
-        <TargetsList goal={goal} />
-      </Section>
+      <div id="targets-section">
+        <Section
+          title="Targets"
+          hint="How you execute"
+          count={goal.targets.length}
+          action={
+            <button
+              onClick={() => setNewTarget(true)}
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add target
+            </button>
+          }
+        >
+          <TargetsList goal={goal} />
+        </Section>
+      </div>
 
       <NewTargetSheet goalId={goal.id} open={newTarget} onOpenChange={setNewTarget} />
       <NewResourceSheet goalId={goal.id} open={newResource} onOpenChange={setNewResource} />
+
+      <ConfidenceHistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        history={confidenceHistory}
+        current={goal.confidence}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
@@ -215,52 +245,123 @@ function GoalWorkspace() {
   );
 }
 
-/* ────────────────  KPI cards (dashboard.png style)  ──────────────── */
+/* ────────────────  KPI cards  ──────────────── */
 
 function KpiCard({
   label,
-  hint,
   children,
+  hint,
+  footer,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  /** Always-visible footer element (link/button) below the hint */
+  footer?: React.ReactNode;
 }) {
   return (
-    <div className="surface-card p-5 sm:p-6 flex flex-col gap-3 min-h-[160px]">
-      <div>
-        <h3 className="font-display text-lg">{label}</h3>
-        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+    <div className="surface-card p-5 sm:p-6 flex flex-col gap-4 min-h-[180px]">
+      <h3 className="font-display text-lg">{label}</h3>
+      <div className="flex-1 flex items-center">{children}</div>
+      <div className="space-y-2">
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {footer}
       </div>
-      <div className="flex-1 flex flex-col justify-end">{children}</div>
     </div>
   );
 }
 
-function ProgressKpi({ value }: { value: number }) {
+function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
+  const pct = Math.round(value * 100);
   return (
-    <KpiCard label="Progress" hint="Across all targets">
-      <div className="flex items-baseline gap-1.5 num tabular-nums">
-        <span className="text-5xl font-bold tracking-tight text-foreground">
-          {Math.round(value * 100)}
-        </span>
-        <span className="text-2xl text-muted-foreground font-medium">%</span>
+    <KpiCard
+      label="Progress"
+      hint="Across all targets"
+      footer={
+        <button
+          onClick={onJump}
+          className="link-action text-sm font-semibold inline-flex items-center gap-1"
+        >
+          Jump to targets →
+        </button>
+      }
+    >
+      <div className="flex items-center gap-5 w-full">
+        <CircularProgress value={value} />
+        <div className="flex-1">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            Complete
+          </div>
+          <div className="num tabular-nums text-3xl font-bold mt-0.5">{pct}%</div>
+        </div>
       </div>
-      <ProgressBar value={value} className="mt-3" />
     </KpiCard>
+  );
+}
+
+function CircularProgress({ value, size = 96 }: { value: number; size?: number }) {
+  const stroke = 10;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(1, value));
+  const dash = c * pct;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="var(--color-secondary)"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth={stroke}
+          strokeDasharray={`${dash} ${c - dash}`}
+          strokeLinecap="round"
+          className="transition-[stroke-dasharray] duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center">
+        <span className="num tabular-nums text-lg font-bold">{Math.round(pct * 100)}%</span>
+      </div>
+    </div>
   );
 }
 
 function ConfidenceKpi({
   value,
   onChange,
+  onOpenHistory,
 }: {
   value: number;
   onChange: (v: number) => void;
+  onOpenHistory: () => void;
 }) {
   return (
-    <KpiCard label="Confidence" hint="Tap arrows to change · 1–10">
-      <div className="flex items-end justify-between gap-3">
+    <KpiCard
+      label="Confidence"
+      hint="Tap arrows to change · 1–10"
+      footer={
+        <button
+          onClick={onOpenHistory}
+          className={cn(
+            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-semibold",
+            "bg-primary-soft text-primary border border-primary/30 hover:bg-primary-soft/80 transition-colors",
+          )}
+        >
+          <History className="h-3.5 w-3.5" />
+          Confidence history
+        </button>
+      }
+    >
+      <div className="flex items-center justify-between gap-3 w-full">
         <div className="flex items-baseline gap-1.5 num tabular-nums">
           <span className="text-5xl font-bold tracking-tight text-foreground">{value}</span>
           <span className="text-2xl text-muted-foreground font-medium">/10</span>
@@ -284,9 +385,6 @@ function ConfidenceKpi({
           </button>
         </div>
       </div>
-      <div className="mt-3">
-        <ConfidencePill value={value} />
-      </div>
     </KpiCard>
   );
 }
@@ -302,26 +400,107 @@ function DeadlineKpi({
   const days = date ? differenceInCalendarDays(date, new Date()) : null;
   const overdue = !!date && isPast(date) && (days ?? 0) < 0;
   return (
-    <KpiCard label="Deadline" hint="Click to change or remove">
-      <div className="num tabular-nums">
+    <KpiCard
+      label="Deadline"
+      hint="Click to change or remove"
+      footer={<DeadlinePopover iso={iso} onChange={onChange} size="md" />}
+    >
+      <div className="num tabular-nums w-full">
         {date ? (
-          <>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-5xl font-bold tracking-tight text-foreground">
-                {Math.abs(days ?? 0)}
-              </span>
-              <span className="text-sm text-muted-foreground font-medium">
-                {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
-              </span>
-            </div>
-          </>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-5xl font-bold tracking-tight text-foreground">
+              {Math.abs(days ?? 0)}
+            </span>
+            <span className="text-sm text-muted-foreground font-medium">
+              {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
+            </span>
+          </div>
         ) : (
           <div className="text-2xl font-semibold text-muted-foreground">No deadline</div>
         )}
       </div>
-      <div className="mt-3">
-        <DeadlinePopover iso={iso} onChange={onChange} size="md" />
-      </div>
     </KpiCard>
+  );
+}
+
+/* ────────────────  Confidence history side panel  ──────────────── */
+
+function ConfidenceHistorySheet({
+  open,
+  onOpenChange,
+  history,
+  current,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  history: { value: number; at: string }[];
+  current: number;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline"
+      >
+        <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+          <div>
+            <h2 className="font-sans font-bold text-lg">Confidence history</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Current: <span className="num font-semibold text-foreground">{current}/10</span>
+            </p>
+          </div>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-7 py-6 space-y-3">
+          {history.length === 0 && (
+            <p className="text-sm text-muted-foreground italic">No changes yet.</p>
+          )}
+          {history.map((h, i) => {
+            const prev = history[i + 1];
+            const delta = prev ? h.value - prev.value : 0;
+            return (
+              <div
+                key={`${h.at}-${i}`}
+                className="flex items-center justify-between gap-3 p-3 rounded-md border hairline bg-surface-sunken/50"
+              >
+                <div>
+                  <div className="num tabular-nums text-base font-semibold">
+                    {h.value}
+                    <span className="text-muted-foreground font-normal">/10</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {format(new Date(h.at), "MMM d, yyyy · HH:mm")} ·{" "}
+                    {formatDistanceToNow(new Date(h.at), { addSuffix: true })}
+                  </div>
+                </div>
+                {delta !== 0 && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-xs font-semibold num tabular-nums px-2 py-0.5 rounded",
+                      delta > 0
+                        ? "text-success bg-success/10"
+                        : "text-destructive bg-destructive/10",
+                    )}
+                  >
+                    {delta > 0 ? (
+                      <ArrowUp className="h-3 w-3" />
+                    ) : (
+                      <ArrowDown className="h-3 w-3" />
+                    )}
+                    {Math.abs(delta)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

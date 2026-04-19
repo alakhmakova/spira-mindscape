@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { MoreHorizontal, Trash2, Pencil, Target as TargetIcon } from "lucide-react";
+import { Trash2, Trophy } from "lucide-react";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
 import { goalProgress } from "@/lib/spira/progress";
@@ -8,12 +8,6 @@ import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
 import { ConfirmDialog } from "./ConfirmDialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 export function GoalCard({ goal }: { goal: Goal }) {
   const progress = goalProgress(goal);
@@ -24,13 +18,12 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const selected = goal.options.find((o) => o.selected);
 
   return (
-    <div className="group surface-card p-6 hover:shadow-[var(--shadow-raised)] transition-shadow relative">
-      {/* Header */}
+    <div className="surface-card p-6 hover:shadow-[var(--shadow-raised)] transition-shadow relative">
+      {/* Header: trophy icon + delete button */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
-            <TargetIcon className="h-3 w-3 text-primary" />
-            Goal
+          <div className="h-12 w-12 rounded-md bg-primary-soft text-primary grid place-items-center mb-4">
+            <Trophy className="h-7 w-7" strokeWidth={1.75} />
           </div>
           <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="block">
             <h3 className="font-display text-2xl leading-snug text-balance line-clamp-2 hover:text-primary transition-colors">
@@ -38,24 +31,13 @@ export function GoalCard({ goal }: { goal: Goal }) {
             </h3>
           </Link>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 -m-1 rounded-md hover:bg-accent text-muted-foreground">
-            <MoreHorizontal className="h-4 w-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link to="/goals/$goalId" params={{ goalId: goal.id }}>
-                <Pencil className="h-4 w-4 mr-2" /> Edit
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => setConfirm(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          onClick={() => setConfirm(true)}
+          className="shrink-0 p-2 -m-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary"
+          aria-label="Delete goal"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
       {selected && (
@@ -74,7 +56,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
         <ProgressBar value={progress} />
       </div>
 
-      <div className="mt-5 pt-4 border-t hairline flex items-center justify-between gap-3 flex-wrap">
+      <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
         <DeadlinePopover
           iso={goal.deadline}
           onChange={(next) => updateGoal(goal.id, { deadline: next })}
