@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Check, Minus, Plus, Trash2, X } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
-import { DeadlineLabel } from "./DeadlineLabel";
+import { DeadlinePopover } from "./DeadlinePopover";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -45,23 +45,20 @@ function TargetRow({
   onRemove: () => void;
 }) {
   const progress = targetProgress(target);
-  const typeLabel =
-    target.type === "numeric" ? "Numeric" : target.type === "binary" ? "Binary" : "Checklist";
 
   return (
     <li className="surface-card p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-            <span className="px-1.5 py-0.5 rounded bg-secondary border hairline">
-              {typeLabel}
-            </span>
-            {target.deadline && <DeadlineLabel iso={target.deadline} />}
-          </div>
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Top row: deadline (replaces type label) */}
+          <DeadlinePopover
+            iso={target.deadline}
+            onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
+          />
           <input
             value={target.title}
             onChange={(e) => onUpdate({ title: e.target.value } as Partial<Target>)}
-            className="mt-1.5 w-full bg-transparent outline-none text-base font-semibold text-foreground"
+            className="w-full bg-transparent outline-none text-base font-semibold text-foreground"
           />
         </div>
         <button
@@ -74,68 +71,180 @@ function TargetRow({
       </div>
 
       {target.type === "numeric" && (
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={() => onUpdate({ current: Math.max(0, target.current - 1) } as Partial<Target>)}
-            className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-          <div className="flex-1 flex items-center gap-3">
-            <ProgressBar value={progress} className="flex-1" />
-            <span className="num text-sm tabular-nums font-semibold whitespace-nowrap">
-              {target.current}
-              <span className="text-muted-foreground font-normal"> / {target.total}</span>
-              {target.unit && <span className="text-muted-foreground ml-1 font-normal">{target.unit}</span>}
-            </span>
-          </div>
-          <button
-            onClick={() => onUpdate({ current: target.current + 1 } as Partial<Target>)}
-            className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
+        <NumericBody target={target} onUpdate={onUpdate} progress={progress} />
       )}
 
       {target.type === "binary" && (
         <button
           onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
           className={cn(
-            "mt-4 inline-flex items-center gap-2 px-4 h-10 rounded-md border-2 text-sm font-semibold transition-colors",
+            "mt-4 w-full flex items-center gap-3 px-4 h-12 rounded-md border-2 text-sm font-semibold transition-colors text-left",
             target.done
               ? "bg-primary-soft border-primary text-primary"
-              : "bg-surface border-border hover:border-primary",
+              : "bg-surface border-border-strong hover:border-primary",
           )}
         >
           <span
             className={cn(
-              "h-4 w-4 rounded-sm border-2 grid place-items-center",
+              "h-5 w-5 rounded-sm border-2 grid place-items-center shrink-0 transition-colors",
               target.done ? "bg-primary border-primary" : "border-border-strong",
             )}
           >
-            {target.done && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
+            {target.done && (
+              <Check className="h-3.5 w-3.5 text-primary-foreground" strokeWidth={3} />
+            )}
           </span>
-          {target.done ? "Done" : "Mark done"}
+          <span className="flex-1">{target.done ? "Done" : "Mark done"}</span>
         </button>
       )}
 
       {target.type === "checklist" && (
-        <ChecklistEditor
-          items={target.items}
-          onChange={(items) => onUpdate({ items } as Partial<Target>)}
-        />
-      )}
-
-      {target.type !== "binary" && (
-        <div className="mt-4 flex items-center justify-between">
-          <ProgressBar value={progress} className="flex-1 mr-3" />
-          <span className="num text-xs text-muted-foreground font-semibold">
-            {Math.round(progress * 100)}%
-          </span>
-        </div>
+        <>
+          <ChecklistEditor
+            items={target.items}
+            onChange={(items) => onUpdate({ items } as Partial<Target>)}
+          />
+          <div className="mt-4 flex items-center gap-3">
+            <ProgressBar value={progress} className="flex-1" />
+            <span className="num text-xs text-muted-foreground font-semibold">
+              {Math.round(progress * 100)}%
+            </span>
+          </div>
+        </>
       )}
     </li>
+  );
+}
+
+function NumericBody({
+  target,
+  onUpdate,
+  progress,
+}: {
+  target: Extract<Target, { type: "numeric" }>;
+  onUpdate: (patch: Partial<Target>) => void;
+  progress: number;
+}) {
+  return (
+    <div className="mt-4 space-y-2">
+      {/* Inline-editable current / total / unit */}
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <div className="flex items-center gap-1 num font-semibold tabular-nums">
+          <InlineNumber
+            value={target.current}
+            min={0}
+            onChange={(v) => onUpdate({ current: v } as Partial<Target>)}
+            ariaLabel="Current value"
+          />
+          <span className="text-muted-foreground font-normal">/</span>
+          <InlineNumber
+            value={target.total}
+            min={0}
+            onChange={(v) => onUpdate({ total: v } as Partial<Target>)}
+            ariaLabel="Total value"
+            tone="muted"
+          />
+          <InlineText
+            value={target.unit ?? ""}
+            placeholder="unit"
+            onChange={(v) => onUpdate({ unit: v || undefined } as Partial<Target>)}
+            ariaLabel="Unit"
+          />
+        </div>
+        <span className="num text-xs text-muted-foreground font-semibold tabular-nums">
+          {Math.round(progress * 100)}%
+        </span>
+      </div>
+      {/* Single progress bar with ± controls */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => onUpdate({ current: Math.max(0, target.current - 1) } as Partial<Target>)}
+          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
+          aria-label="Decrement"
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <ProgressBar value={progress} className="flex-1" />
+        <button
+          onClick={() => onUpdate({ current: target.current + 1 } as Partial<Target>)}
+          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
+          aria-label="Increment"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InlineNumber({
+  value,
+  onChange,
+  min,
+  ariaLabel,
+  tone = "default",
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  ariaLabel: string;
+  tone?: "default" | "muted";
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [w, setW] = useState(`${String(value).length || 1}ch`);
+  useEffect(() => {
+    setW(`${Math.max(1, String(value).length)}ch`);
+  }, [value]);
+  return (
+    <input
+      ref={ref}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={value}
+      aria-label={ariaLabel}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^0-9]/g, "");
+        const n = raw === "" ? 0 : parseInt(raw, 10);
+        if (typeof min === "number" && n < min) return;
+        onChange(n);
+      }}
+      style={{ width: w }}
+      className={cn(
+        "bg-transparent outline-none rounded-sm px-0.5 num tabular-nums focus:bg-primary-soft focus:ring-2 focus:ring-primary/30 transition-colors text-center",
+        tone === "muted" && "text-muted-foreground font-normal",
+      )}
+    />
+  );
+}
+
+function InlineText({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  ariaLabel: string;
+}) {
+  const [w, setW] = useState("4ch");
+  useEffect(() => {
+    setW(`${Math.max(value.length || placeholder.length, 3)}ch`);
+  }, [value, placeholder]);
+  return (
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: w }}
+      className="ml-1 bg-transparent outline-none rounded-sm px-0.5 text-muted-foreground font-normal placeholder:text-muted-foreground/50 focus:bg-primary-soft focus:text-foreground focus:ring-2 focus:ring-primary/30 transition-colors"
+    />
   );
 }
 
@@ -159,7 +268,9 @@ function ChecklistEditor({
           )}
         >
           <button
-            onClick={() => onChange(items.map((i) => (i.id === it.id ? { ...i, done: !i.done } : i)))}
+            onClick={() =>
+              onChange(items.map((i) => (i.id === it.id ? { ...i, done: !i.done } : i)))
+            }
             className={cn(
               "h-4 w-4 rounded-sm border-2 grid place-items-center shrink-0 transition-colors",
               it.done ? "bg-primary border-primary" : "border-border-strong hover:border-primary",
@@ -214,16 +325,12 @@ export function NewTargetSheet({
   onOpenChange: (o: boolean) => void;
 }) {
   const isMobile = useIsMobile();
-  const Body = (
-    <NewTargetForm goalId={goalId} onDone={() => onOpenChange(false)} />
-  );
+  const Body = <NewTargetForm goalId={goalId} onDone={() => onOpenChange(false)} />;
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
-          {Body}
-        </DrawerContent>
+        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">{Body}</DrawerContent>
       </Drawer>
     );
   }
@@ -254,7 +361,13 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
       deadline: deadline ? new Date(deadline).toISOString() : undefined,
     };
     if (type === "numeric") {
-      addTarget(goalId, { ...base, type: "numeric", current: 0, total, unit: unit || undefined } as any);
+      addTarget(goalId, {
+        ...base,
+        type: "numeric",
+        current: 0,
+        total,
+        unit: unit || undefined,
+      } as any);
     } else if (type === "binary") {
       addTarget(goalId, { ...base, type: "binary", done: false } as any);
     } else {
@@ -284,7 +397,11 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
           <div className="space-y-2">
             {(
               [
-                { v: "numeric", t: "Numeric", d: "Track a number toward a target (e.g. 12 / 40 apps)" },
+                {
+                  v: "numeric",
+                  t: "Numeric",
+                  d: "Track a number toward a target (e.g. 12 / 40 apps)",
+                },
                 { v: "binary", t: "Binary", d: "A single done / not-done outcome" },
                 { v: "checklist", t: "Checklist", d: "Subtasks with optional deadlines" },
               ] as const

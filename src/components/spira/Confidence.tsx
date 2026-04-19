@@ -23,7 +23,7 @@ export function ConfidencePill({
       title={`Confidence ${value}/10`}
     >
       <span className="opacity-70 font-normal uppercase tracking-wider text-[10px]">
-        Conf
+        Confidence
       </span>
       <span>{value}</span>
       <span className="opacity-50 font-normal">/10</span>

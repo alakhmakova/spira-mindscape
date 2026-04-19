@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Sparkles, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import { goalProgress } from "@/lib/spira/progress";
-import { ConfidenceStepper, ConfidencePill } from "@/components/spira/Confidence";
+import { ConfidencePill } from "@/components/spira/Confidence";
 import { ProgressBar } from "@/components/spira/ProgressBar";
-import { DeadlineLabel } from "@/components/spira/DeadlineLabel";
+import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { OptionsList } from "@/components/spira/OptionsList";
@@ -13,8 +13,8 @@ import { TargetsList, NewTargetSheet } from "@/components/spira/Targets";
 import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
-import { Input } from "@/components/ui/input";
 import type { Confidence } from "@/lib/spira/types";
+import { differenceInCalendarDays, isPast } from "date-fns";
 
 export const Route = createFileRoute("/goals/$goalId")({
   head: ({ params }) => ({
@@ -62,7 +62,7 @@ function GoalWorkspace() {
   const progress = goalProgress(goal);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
       {/* Top bar */}
       <div className="flex items-center justify-between">
         <Link
@@ -88,59 +88,31 @@ function GoalWorkspace() {
         </div>
       </div>
 
-      {/* Header card */}
-      <header className="surface-card p-6 sm:p-8 space-y-6">
-        <div>
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-            Goal
-          </div>
-          <AutoTextarea
-            value={goal.title}
-            onChange={(v) => updateGoal(goal.id, { title: v })}
-            className="font-display text-3xl sm:text-5xl leading-tight"
-            placeholder="Untitled goal"
-          />
+      {/* Title */}
+      <header className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Goal
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 md:items-start pt-4 border-t hairline">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground uppercase tracking-wider font-semibold">
-                Progress
-              </span>
-              <span className="num font-semibold tabular-nums">
-                {Math.round(progress * 100)}%
-              </span>
-            </div>
-            <ProgressBar value={progress} />
-            <div className="flex items-center gap-3 pt-2 flex-wrap">
-              <DeadlineLabel iso={goal.deadline} />
-              <Input
-                type="date"
-                value={goal.deadline ? goal.deadline.slice(0, 10) : ""}
-                onChange={(e) =>
-                  updateGoal(goal.id, {
-                    deadline: e.target.value ? new Date(e.target.value).toISOString() : undefined,
-                  })
-                }
-                className="h-8 w-[160px] bg-surface text-xs num border-2 border-border focus-visible:border-primary"
-              />
-            </div>
-          </div>
-          <div className="md:w-80 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                Confidence
-              </span>
-              <ConfidencePill value={goal.confidence} />
-            </div>
-            <ConfidenceStepper
-              value={goal.confidence}
-              onChange={(v) => setConfidence(goal.id, v as Confidence)}
-            />
-          </div>
-        </div>
+        <AutoTextarea
+          value={goal.title}
+          onChange={(v) => updateGoal(goal.id, { title: v })}
+          className="font-display text-3xl sm:text-5xl leading-tight"
+          placeholder="Untitled goal"
+        />
       </header>
+
+      {/* Three KPI cards: Progress · Confidence · Deadline (dashboard style) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <ProgressKpi value={progress} />
+        <ConfidenceKpi
+          value={goal.confidence}
+          onChange={(v) => setConfidence(goal.id, v as Confidence)}
+        />
+        <DeadlineKpi
+            iso={goal.deadline}
+            onChange={(next) => updateGoal(goal.id, { deadline: next })}
+        />
+      </div>
 
       <Section title="Description" hint="SMART description">
         <AutoTextarea
@@ -156,8 +128,9 @@ function GoalWorkspace() {
         hint="Where you are now"
         count={goal.reality.actions.length + goal.reality.obstacles.length}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-lg overflow-hidden border hairline">
+          {/* Left half — Actions taken (default surface) */}
+          <div className="p-5 sm:p-6 bg-surface md:border-r hairline">
             <h3 className="font-display text-lg mb-3">Actions taken</h3>
             <InlineList
               items={goal.reality.actions}
@@ -169,8 +142,9 @@ function GoalWorkspace() {
               marker="check"
             />
           </div>
-          <div>
-            <h3 className="font-display text-lg mb-3">Obstacles</h3>
+          {/* Right half — Obstacles (deep teal background, light text) */}
+          <div className="p-5 sm:p-6 bg-primary text-primary-foreground">
+            <h3 className="font-display text-lg mb-3 text-primary-foreground">Obstacles</h3>
             <InlineList
               items={goal.reality.obstacles}
               emptyHint="What's standing in the way?"
@@ -180,9 +154,26 @@ function GoalWorkspace() {
               onRemove={(id) => removeReality(goal.id, "obstacles", id)}
               marker="dot"
               tone="warning"
+              variant="onPrimary"
             />
           </div>
         </div>
+      </Section>
+
+      <Section
+        title="Resources"
+        hint="Notes, links, files, contacts"
+        count={goal.resources.length}
+        action={
+          <button
+            onClick={() => setNewResource(true)}
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add resource
+          </button>
+        }
+      >
+        <ResourcesList goal={goal} />
       </Section>
 
       <Section title="Options" hint="Strategies — pick one to commit" count={goal.options.length}>
@@ -205,23 +196,6 @@ function GoalWorkspace() {
         <TargetsList goal={goal} />
       </Section>
 
-      <Section
-        title="Resources"
-        hint="Notes, links, files, contacts"
-        count={goal.resources.length}
-        action={
-          <button
-            onClick={() => setNewResource(true)}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add resource
-          </button>
-        }
-        defaultOpen={false}
-      >
-        <ResourcesList goal={goal} />
-      </Section>
-
       <NewTargetSheet goalId={goal.id} open={newTarget} onOpenChange={setNewTarget} />
       <NewResourceSheet goalId={goal.id} open={newResource} onOpenChange={setNewResource} />
 
@@ -238,5 +212,116 @@ function GoalWorkspace() {
         }}
       />
     </div>
+  );
+}
+
+/* ────────────────  KPI cards (dashboard.png style)  ──────────────── */
+
+function KpiCard({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="surface-card p-5 sm:p-6 flex flex-col gap-3 min-h-[160px]">
+      <div>
+        <h3 className="font-display text-lg">{label}</h3>
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
+      <div className="flex-1 flex flex-col justify-end">{children}</div>
+    </div>
+  );
+}
+
+function ProgressKpi({ value }: { value: number }) {
+  return (
+    <KpiCard label="Progress" hint="Across all targets">
+      <div className="flex items-baseline gap-1.5 num tabular-nums">
+        <span className="text-5xl font-bold tracking-tight text-foreground">
+          {Math.round(value * 100)}
+        </span>
+        <span className="text-2xl text-muted-foreground font-medium">%</span>
+      </div>
+      <ProgressBar value={value} className="mt-3" />
+    </KpiCard>
+  );
+}
+
+function ConfidenceKpi({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <KpiCard label="Confidence" hint="Tap arrows to change · 1–10">
+      <div className="flex items-end justify-between gap-3">
+        <div className="flex items-baseline gap-1.5 num tabular-nums">
+          <span className="text-5xl font-bold tracking-tight text-foreground">{value}</span>
+          <span className="text-2xl text-muted-foreground font-medium">/10</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => onChange(Math.min(10, value + 1))}
+            disabled={value >= 10}
+            className="h-7 w-7 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-30"
+            aria-label="Increase confidence"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onChange(Math.max(1, value - 1))}
+            disabled={value <= 1}
+            className="h-7 w-7 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-30"
+            aria-label="Decrease confidence"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className="mt-3">
+        <ConfidencePill value={value} />
+      </div>
+    </KpiCard>
+  );
+}
+
+function DeadlineKpi({
+  iso,
+  onChange,
+}: {
+  iso?: string;
+  onChange: (next: string | undefined) => void;
+}) {
+  const date = iso ? new Date(iso) : undefined;
+  const days = date ? differenceInCalendarDays(date, new Date()) : null;
+  const overdue = !!date && isPast(date) && (days ?? 0) < 0;
+  return (
+    <KpiCard label="Deadline" hint="Click to change or remove">
+      <div className="num tabular-nums">
+        {date ? (
+          <>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-5xl font-bold tracking-tight text-foreground">
+                {Math.abs(days ?? 0)}
+              </span>
+              <span className="text-sm text-muted-foreground font-medium">
+                {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="text-2xl font-semibold text-muted-foreground">No deadline</div>
+        )}
+      </div>
+      <div className="mt-3">
+        <DeadlinePopover iso={iso} onChange={onChange} size="md" />
+      </div>
+    </KpiCard>
   );
 }
