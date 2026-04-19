@@ -261,7 +261,7 @@ function ChecklistEditor({
         <div
           key={it.id}
           className={cn(
-            "group flex items-center gap-3 px-2 py-1.5 rounded-md transition-colors",
+            "flex items-center gap-3 px-2 py-1.5 rounded-md transition-colors",
             it.done ? "bg-primary-soft/40" : "hover:bg-secondary/60",
           )}
         >
@@ -288,9 +288,10 @@ function ChecklistEditor({
           />
           <button
             onClick={() => onChange(items.filter((i) => i.id !== it.id))}
-            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1"
+            className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
+            aria-label="Remove subtask"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       ))}
