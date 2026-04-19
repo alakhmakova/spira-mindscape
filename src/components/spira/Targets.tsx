@@ -210,7 +210,7 @@ function InlineNumber({
       }}
       style={{ width: w }}
       className={cn(
-        "bg-transparent outline-none rounded-sm px-0.5 num tabular-nums focus:bg-primary-soft focus:ring-2 focus:ring-primary/30 transition-colors text-center",
+        "bg-transparent outline-none rounded-sm px-0.5 num tabular-nums text-center cursor-text border-b border-dashed border-border-strong/60 hover:border-primary hover:bg-primary-soft/40 focus:bg-primary-soft focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors",
         tone === "muted" && "text-muted-foreground font-normal",
       )}
     />
@@ -241,7 +241,7 @@ function InlineText({
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => onChange(e.target.value)}
       style={{ width: w }}
-      className="ml-1 bg-transparent outline-none rounded-sm px-0.5 text-muted-foreground font-normal placeholder:text-muted-foreground/50 focus:bg-primary-soft focus:text-foreground focus:ring-2 focus:ring-primary/30 transition-colors"
+      className="ml-1 bg-transparent outline-none rounded-sm px-0.5 text-muted-foreground font-normal cursor-text border-b border-dashed border-border-strong/60 placeholder:text-muted-foreground/50 hover:border-primary hover:bg-primary-soft/40 focus:bg-primary-soft focus:text-foreground focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
     />
   );
 }
