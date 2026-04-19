@@ -50,16 +50,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          {/* Sub-route hint chip */}
-          {(isCalendar || isWorkspace) && (
-            <Link
-              to="/"
-              className="hidden sm:inline-flex text-xs text-muted-foreground hover:text-foreground"
-            >
-              ← Goals
-            </Link>
-          )}
-
           {/* Search */}
           <div className="relative flex-1 max-w-xl">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
