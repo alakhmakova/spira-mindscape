@@ -6,6 +6,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Highlight from "@tiptap/extension-highlight";
 import { useEffect } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Heading1,
   Heading2,
