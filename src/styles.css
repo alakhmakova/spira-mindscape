@@ -224,4 +224,119 @@
   .link-action:hover {
     text-decoration-thickness: 2px;
   }
+
+  /* Tiptap rich text content */
+  .tiptap-content :where(h1) {
+    font-size: 1.625rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 1.25rem 0 0.5rem;
+  }
+  .tiptap-content :where(h2) {
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 1rem 0 0.4rem;
+  }
+  .tiptap-content :where(h3) {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0.85rem 0 0.35rem;
+  }
+  .tiptap-content :where(p) { margin: 0.5rem 0; }
+  .tiptap-content :where(ul, ol) { padding-left: 1.4rem; margin: 0.5rem 0; }
+  .tiptap-content :where(ul) { list-style: disc; }
+  .tiptap-content :where(ol) { list-style: decimal; }
+  .tiptap-content :where(li) { margin: 0.2rem 0; }
+  .tiptap-content :where(blockquote) {
+    border-left: 3px solid var(--color-primary);
+    padding-left: 0.85rem;
+    color: var(--color-muted-foreground);
+    margin: 0.75rem 0;
+  }
+  .tiptap-content :where(code) {
+    background: var(--color-secondary);
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.25rem;
+    font-size: 0.9em;
+  }
+  .tiptap-content :where(pre) {
+    background: var(--color-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    margin: 0.75rem 0;
+  }
+  .tiptap-content :where(pre code) { background: transparent; padding: 0; }
+  .tiptap-content :where(hr) {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: 1.25rem 0;
+  }
+  .tiptap-content :where(a) {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .tiptap-content :where(mark) {
+    background: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    color: inherit;
+    padding: 0.05rem 0.15rem;
+    border-radius: 0.2rem;
+  }
+  .tiptap-content :where(ul[data-type="taskList"]) {
+    list-style: none;
+    padding-left: 0.25rem;
+  }
+  .tiptap-content :where(ul[data-type="taskList"] li) {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+  }
+  .tiptap-content :where(ul[data-type="taskList"] li > label) {
+    margin-top: 0.25rem;
+  }
+  .tiptap-content :where(ul[data-type="taskList"] li > div) { flex: 1; }
+  .tiptap-content :where(ul[data-type="taskList"] input[type="checkbox"]) {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--color-primary);
+  }
+  .tiptap-content[data-placeholder]:empty::before,
+  .tiptap-content p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--color-muted-foreground);
+    pointer-events: none;
+    float: left;
+    height: 0;
+  }
+
+  /* Resizable side panel handle */
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    left: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 60;
+    touch-action: none;
+  }
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 56px;
+    border-radius: 9999px;
+    background: var(--color-border);
+    transition: background 0.15s, height 0.15s;
+  }
+  .resize-handle:hover::after,
+  .resize-handle[data-dragging="true"]::after {
+    background: var(--color-primary);
+    height: 80px;
+  }
 }
