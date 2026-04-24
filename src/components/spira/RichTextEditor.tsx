@@ -112,7 +112,7 @@ function Toolbar({ editor, variant = "desktop" }: { editor: Editor; variant?: "d
       aria-label={label}
       title={label}
       className={cn(
-        "h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:hover:bg-transparent",
+        "h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:hover:bg-transparent",
         active && "bg-primary-soft text-primary hover:bg-primary-soft",
       )}
     >
