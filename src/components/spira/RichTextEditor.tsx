@@ -76,8 +76,10 @@ export function RichTextEditor({
 
   if (isMobile) {
     return (
-      <div className="flex flex-col gap-3">
-        <EditorContent editor={editor} />
+      <div className="flex flex-col">
+        <div className="pb-16">
+          <EditorContent editor={editor} />
+        </div>
         <Toolbar editor={editor} variant="mobile" />
       </div>
     );
