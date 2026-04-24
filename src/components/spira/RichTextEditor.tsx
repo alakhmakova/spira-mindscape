@@ -140,7 +140,7 @@ function Toolbar({ editor, variant = "desktop" }: { editor: Editor; variant?: "d
         "z-20 flex items-center gap-0.5 rounded-md border hairline bg-surface/95 backdrop-blur px-1 py-1",
         variant === "desktop" && "sticky top-0 -mx-1 flex-wrap",
         variant === "mobile" &&
-          "sticky bottom-0 -mx-7 px-2 py-1.5 rounded-none border-x-0 border-b-0 flex-nowrap overflow-x-auto",
+          "sticky bottom-0 -mx-7 px-2 py-1.5 rounded-none border-x-0 border-b-0 flex-nowrap overflow-x-auto hide-scrollbar",
       )}
       style={variant === "mobile" ? { WebkitOverflowScrolling: "touch" } : undefined}
     >
