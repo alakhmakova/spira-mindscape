@@ -120,7 +120,7 @@ function Toolbar({ editor, variant = "desktop" }: { editor: Editor; variant?: "d
     </button>
   );
 
-  const Sep = () => <span className="mx-1 h-6 w-px bg-border" />;
+  const Sep = () => <span className="mx-1 h-6 w-px shrink-0 bg-border" />;
 
   const setLink = () => {
     const prev = editor.getAttributes("link").href as string | undefined;
