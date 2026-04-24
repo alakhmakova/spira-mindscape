@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, X, Check, Pencil } from "lucide-react";
+import { Plus, X, Check, Pencil, BookmarkCheck, BookmarkX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = { id: string; text: string };
@@ -39,24 +39,56 @@ export function InlineList({
   };
 
   return (
-    <div className="space-y-2">
-      {items.length === 0 && (
-        <p
+    <div className="space-y-4">
+      <div
+        className={cn(
+          "flex items-center gap-2 mt-1 px-3 py-2 rounded-lg border-2 border-dashed bg-white/50 shadow-sm transition-colors",
+          tone === "warning"
+            ? "border-[#f45d48]/30 focus-within:border-[#f45d48]/60 focus-within:bg-white"
+            : "border-primary/30 focus-within:border-primary/60 focus-within:bg-white",
+        )}
+      >
+        <Plus
           className={cn(
-            "text-sm italic",
-            onPrimary ? "text-primary-foreground/70" : "text-muted-foreground",
+            "h-4 w-4",
+            tone === "warning" ? "text-[#f45d48]/70" : "text-primary/70",
           )}
-        >
+        />
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent text-[15px] outline-none py-1 placeholder:text-muted-foreground"
+        />
+        {draft && (
+          <button
+            onClick={add}
+            className={cn(
+              "text-xs font-semibold px-2 py-1 rounded-md",
+              tone === "warning"
+                ? "bg-[#f45d48]/10 text-[#f45d48] hover:bg-[#f45d48]/20"
+                : "bg-primary/10 text-primary hover:bg-primary/20"
+            )}
+          >
+            Add
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 && (
+        <p className="text-[15px] italic text-muted-foreground text-center py-4">
           {emptyHint}
         </p>
       )}
-      <ul className="space-y-1">
+
+      <ul className="space-y-2">
         {items.map((it) => (
           <li
             key={it.id}
             className={cn(
               "group flex items-start gap-3 rounded-md px-2 py-2 transition-colors",
-              onPrimary ? "hover:bg-primary-foreground/10" : "hover:bg-secondary/70",
+              onPrimary ? "hover:bg-primary-foreground/10" : "hover:bg-white/60",
             )}
           >
             <Marker kind={marker} tone={tone} variant={variant} />
@@ -77,7 +109,7 @@ export function InlineList({
                   if (e.key === "Escape") setEditingId(null);
                 }}
                 className={cn(
-                  "flex-1 bg-transparent outline-none text-sm",
+                  "flex-1 bg-transparent outline-none text-[15px]",
                   onPrimary && "text-primary-foreground placeholder:text-primary-foreground/50",
                 )}
               />
@@ -88,29 +120,14 @@ export function InlineList({
                   setEditText(it.text);
                 }}
                 className={cn(
-                  "flex-1 text-left text-sm leading-relaxed",
+                  "flex-1 text-left text-[15px] leading-relaxed",
                   onPrimary && "text-primary-foreground",
                 )}
               >
                 {it.text}
               </button>
             )}
-            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => {
-                  setEditingId(it.id);
-                  setEditText(it.text);
-                }}
-                className={cn(
-                  "p-1",
-                  onPrimary
-                    ? "text-primary-foreground/70 hover:text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                aria-label="Edit"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex">
               <button
                 onClick={() => onRemove(it.id)}
                 className={cn(
@@ -121,52 +138,12 @@ export function InlineList({
                 )}
                 aria-label="Remove"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
           </li>
         ))}
       </ul>
-      <div
-        className={cn(
-          "flex items-center gap-2 mt-1 px-2 py-1.5 rounded-md border-2 border-dashed",
-          onPrimary
-            ? "border-primary-foreground/30 focus-within:border-primary-foreground/60"
-            : "border-border focus-within:border-primary/40",
-        )}
-      >
-        <Plus
-          className={cn(
-            "h-3.5 w-3.5",
-            onPrimary ? "text-primary-foreground/70" : "text-muted-foreground",
-          )}
-        />
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder={placeholder}
-          className={cn(
-            "flex-1 bg-transparent text-sm outline-none py-1",
-            onPrimary
-              ? "text-primary-foreground placeholder:text-primary-foreground/50"
-              : "placeholder:text-muted-foreground",
-          )}
-        />
-        {draft && (
-          <button
-            onClick={add}
-            className={cn(
-              "text-xs font-semibold",
-              onPrimary
-                ? "text-primary-foreground underline underline-offset-2"
-                : "link-action",
-            )}
-          >
-            Add
-          </button>
-        )}
-      </div>
     </div>
   );
 }
@@ -181,19 +158,12 @@ function Marker({
   variant?: Variant;
 }) {
   const onPrimary = variant === "onPrimary";
-  if (kind === "check")
-    return (
-      <span
-        className={cn(
-          "mt-0.5 h-4 w-4 shrink-0 rounded-sm grid place-items-center",
-          onPrimary
-            ? "bg-primary-foreground/15 border border-primary-foreground/40 text-primary-foreground"
-            : "bg-primary-soft border border-primary/40 text-primary",
-        )}
-      >
-        <Check className="h-3 w-3" strokeWidth={3} />
-      </span>
-    );
+  if (kind === "check") {
+    return <BookmarkCheck className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-primary")} strokeWidth={2} />;
+  }
+  if (kind === "warn") {
+    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-[#f45d48]")} strokeWidth={2} />;
+  }
   return (
     <span
       className={cn(

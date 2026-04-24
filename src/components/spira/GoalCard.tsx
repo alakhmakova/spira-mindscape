@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Trash2, Trophy } from "lucide-react";
+import { X, Trophy } from "lucide-react";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
 import { goalProgress } from "@/lib/spira/progress";
@@ -18,51 +18,50 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const selected = goal.options.find((o) => o.selected);
 
   return (
-    <div className="surface-card p-6 hover:shadow-[var(--shadow-raised)] transition-shadow relative">
-      {/* Header: trophy icon + delete button */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="h-12 w-12 rounded-md bg-primary-soft text-primary grid place-items-center mb-4">
-            <Trophy className="h-7 w-7" strokeWidth={1.75} />
-          </div>
-          <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="block">
-            <h3 className="font-display text-2xl leading-snug text-balance line-clamp-2 hover:text-primary transition-colors">
-              {goal.title}
-            </h3>
-          </Link>
+    <div className="bg-card text-card-foreground border border-border/60 rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full">
+      {/* Icon & Actions Header */}
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="h-10 w-10 grid place-items-center text-amber-500">
+          <Trophy className="h-8 w-8" strokeWidth={1.5} />
         </div>
         <button
           onClick={() => setConfirm(true)}
-          className="shrink-0 p-2 -m-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary"
+          className="relative z-10 shrink-0 p-2 -m-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-secondary/50 transition-colors"
           aria-label="Delete goal"
         >
-          <Trash2 className="h-4 w-4" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
-      {selected && (
-        <p className="text-sm text-muted-foreground mt-3 line-clamp-2 leading-relaxed">
-          Strategy: <span className="text-foreground/80">{selected.text}</span>
-        </p>
-      )}
+      {/* Title & Description */}
+      <div className="flex-1 min-w-0 mb-6">
+        <h3 className="font-semibold text-[17px] text-foreground leading-snug line-clamp-2">
+          <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="after:absolute after:inset-0">
+            {goal.title}
+          </Link>
+        </h3>
+      </div>
 
-      <div className="mt-5 space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Progress</span>
-          <span className="num font-semibold text-foreground tabular-nums">
-            {Math.round(progress * 100)}%
-          </span>
+      {/* Spira specific data (Progress, Deadline, Confidence) */}
+      <div className="mt-auto space-y-6 relative z-10">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span className="text-muted-foreground">Progress</span>
+            <span className="tabular-nums">{Math.round(progress * 100)}%</span>
+          </div>
+          <ProgressBar value={progress} />
         </div>
-        <ProgressBar value={progress} />
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <DeadlinePopover
+            iso={goal.deadline}
+            onChange={(next) => updateGoal(goal.id, { deadline: next })}
+          />
+          <ConfidencePill value={goal.confidence} />
+        </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
-        <DeadlinePopover
-          iso={goal.deadline}
-          onChange={(next) => updateGoal(goal.id, { deadline: next })}
-        />
-        <ConfidencePill value={goal.confidence} />
-      </div>
+
 
       <ConfirmDialog
         open={confirm}

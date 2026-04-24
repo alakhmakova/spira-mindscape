@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Trophy } from "lucide-react";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfidenceStepper } from "./Confidence";
 import { useSpira } from "@/lib/spira/store";
 import type { Confidence } from "@/lib/spira/types";
+import { DeadlinePopover } from "./DeadlinePopover";
 
 function FormBody({ onDone }: { onDone: () => void }) {
   const addGoal = useSpira((s) => s.addGoal);
@@ -32,7 +33,9 @@ function FormBody({ onDone }: { onDone: () => void }) {
     <>
       {/* Header — sticky */}
       <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg text-foreground">Add a new goal</h2>
+        <h2 className="font-sans font-bold text-lg text-foreground flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-amber-500" /> Add a new goal
+        </h2>
         <button
           onClick={onDone}
           className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
@@ -43,7 +46,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
       </div>
 
       {/* Body */}
-      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1">
+      <div id="new-goal-scroll-container" className="px-7 pt-6 pb-[400px] space-y-6 overflow-y-auto flex-1">
         <Field label="Title" required>
           <Input
             value={title}
@@ -66,43 +69,35 @@ function FormBody({ onDone }: { onDone: () => void }) {
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Deadline">
-            <Input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
+        <Field
+          label="Confidence"
+          required
+          hintRight={<span className="num font-semibold text-foreground">{confidence}/10</span>}
+        >
+          <div className="pt-1">
+            <ConfidenceStepper
+              value={confidence}
+              onChange={(v) => setConfidence(v as Confidence)}
             />
-          </Field>
-          <Field
-            label="Confidence"
-            hintRight={<span className="num font-semibold text-foreground">{confidence}/10</span>}
-          >
-            <div className="pt-1">
-              <ConfidenceStepper
-                value={confidence}
-                onChange={(v) => setConfidence(v as Confidence)}
-              />
-            </div>
-          </Field>
-        </div>
+          </div>
+        </Field>
+
+        <Field label="Deadline">
+          <DeadlinePopover
+            iso={deadline}
+            onChange={(next) => setDeadline(next ?? "")}
+            variant="input"
+          />
+        </Field>
       </div>
 
       {/* Footer — sticky */}
       <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
         <button
           onClick={onDone}
-          className="link-action h-11 px-4 text-sm font-semibold"
+          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
         >
           Cancel
-        </button>
-        <button
-          onClick={() => submit(false)}
-          disabled={!title.trim()}
-          className="h-11 px-5 rounded-md border-2 border-primary text-primary font-semibold text-sm hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Save as draft
         </button>
         <button
           onClick={() => submit(true)}

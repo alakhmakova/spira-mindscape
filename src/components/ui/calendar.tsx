@@ -76,13 +76,13 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal",
+          "text-muted-foreground/40 flex-1 select-none rounded-md text-[0.8rem] font-normal text-center",
           defaultClassNames.weekday,
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
-        week_number_header: cn("w-(--cell-size) select-none", defaultClassNames.week_number_header),
+        week_number_header: cn("w-8 shrink-0 select-none", defaultClassNames.week_number_header),
         week_number: cn(
-          "text-muted-foreground select-none text-[0.8rem]",
+          "w-8 shrink-0 text-muted-foreground select-none text-[0.8rem]",
           defaultClassNames.week_number,
         ),
         day: cn(
@@ -122,11 +122,16 @@ function Calendar({
         DayButton: CalendarDayButton,
         WeekNumber: ({ children, ...props }) => {
           return (
-            <td {...props}>
-              <div className="flex size-(--cell-size) items-center justify-center text-center">
-                {children}
-              </div>
+            <td {...props} className={cn(props.className, "flex items-center justify-center pr-1")}>
+              <span className="text-[11px] font-medium text-muted-foreground/40">{children}</span>
             </td>
+          );
+        },
+        WeekNumberHeader: ({ ...props }) => {
+          return (
+            <th {...props} className={cn(props.className, "flex items-center justify-center pr-1")}>
+              <span className="text-[11px] font-medium text-muted-foreground/40">W</span>
+            </th>
           );
         },
         ...components,

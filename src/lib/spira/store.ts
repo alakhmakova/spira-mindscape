@@ -194,7 +194,7 @@ export const useSpira = create<State>()(
                   ...g,
                   reality: {
                     ...g.reality,
-                    [kind]: [...g.reality[kind], { id: uid(), text }],
+                    [kind]: [{ id: uid(), text }, ...g.reality[kind]],
                   },
                 }
               : g,

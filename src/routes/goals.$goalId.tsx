@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpRight,
   ChevronDown,
   ChevronUp,
   History,
@@ -23,7 +24,7 @@ import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
 import type { Confidence } from "@/lib/spira/types";
-import { differenceInCalendarDays, format, formatDistanceToNow, isPast } from "date-fns";
+import { differenceInCalendarDays, format, formatDistanceToNow, formatDistanceToNowStrict, isPast } from "date-fns";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
@@ -110,16 +111,19 @@ function GoalWorkspace() {
         </button>
       </div>
 
-      {/* Title */}
-      <header className="space-y-2">
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
-          Goal
-        </div>
+      {/* Title and Description */}
+      <header>
         <AutoTextarea
           value={goal.title}
           onChange={(v) => updateGoal(goal.id, { title: v })}
-          className="font-display text-3xl sm:text-5xl leading-tight"
+          className="font-semibold text-2xl text-foreground w-full"
           placeholder="Untitled goal"
+        />
+        <AutoTextarea
+          value={goal.description}
+          onChange={(v) => updateGoal(goal.id, { description: v })}
+          placeholder="Specific, measurable, achievable, relevant, time-bound."
+          className="text-muted-foreground mt-1.5 text-sm sm:text-[15px] w-full"
         />
       </header>
 
@@ -133,26 +137,26 @@ function GoalWorkspace() {
         />
         <DeadlineKpi
           iso={goal.deadline}
+          createdAt={goal.createdAt}
           onChange={(next) => updateGoal(goal.id, { deadline: next })}
         />
       </div>
 
-      <Section title="Description" hint="SMART description">
-        <AutoTextarea
-          value={goal.description}
-          onChange={(v) => updateGoal(goal.id, { description: v })}
-          placeholder="Specific, measurable, achievable, relevant, time-bound."
-          className="text-base leading-relaxed"
-        />
-      </Section>
 
       <Section
         title="Reality"
-        hint="Where you are now"
-        count={goal.reality.actions.length + goal.reality.obstacles.length}
+        hint="Where are you now?"
+        action={
+          <button
+            onClick={() => openAi({ goalId })}
+            className="link-action text-sm font-medium inline-flex items-center gap-1"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Coach
+          </button>
+        }
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-lg overflow-hidden border hairline">
-          <div className="p-5 sm:p-6 bg-surface md:border-r hairline">
+          <div className="p-5 sm:p-6 bg-[#e5f4f3] md:border-r hairline">
             <h3 className="font-display text-lg mb-3">Actions taken</h3>
             <InlineList
               items={goal.reality.actions}
@@ -164,8 +168,8 @@ function GoalWorkspace() {
               marker="check"
             />
           </div>
-          <div className="p-5 sm:p-6 bg-primary text-primary-foreground">
-            <h3 className="font-display text-lg mb-3 text-primary-foreground">Obstacles</h3>
+          <div className="p-5 sm:p-6 bg-[#fff2df]">
+            <h3 className="font-display text-lg mb-3">Obstacles</h3>
             <InlineList
               items={goal.reality.obstacles}
               emptyHint="What's standing in the way?"
@@ -173,9 +177,8 @@ function GoalWorkspace() {
               onAdd={(t) => addReality(goal.id, "obstacles", t)}
               onUpdate={(id, t) => updateReality(goal.id, "obstacles", id, t)}
               onRemove={(id) => removeReality(goal.id, "obstacles", id)}
-              marker="dot"
+              marker="warn"
               tone="warning"
-              variant="onPrimary"
             />
           </div>
         </div>
@@ -280,27 +283,24 @@ function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
       footer={
         <button
           onClick={onJump}
-          className="link-action text-sm font-semibold inline-flex items-center gap-1"
+          className={cn(
+            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-semibold",
+            "bg-primary-soft text-primary border border-primary/30 hover:bg-primary-soft/80 transition-colors",
+          )}
         >
-          Jump to targets →
+          Jump to targets <ArrowUpRight className="h-4 w-4" />
         </button>
       }
     >
-      <div className="flex items-center gap-5 w-full">
+      <div className="flex items-center justify-start w-full">
         <CircularProgress value={value} />
-        <div className="flex-1">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-            Complete
-          </div>
-          <div className="num tabular-nums text-3xl font-bold mt-0.5">{pct}%</div>
-        </div>
       </div>
     </KpiCard>
   );
 }
 
-function CircularProgress({ value, size = 96 }: { value: number; size?: number }) {
-  const stroke = 10;
+function CircularProgress({ value, size = 72 }: { value: number; size?: number }) {
+  const stroke = 8;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(1, value));
@@ -329,7 +329,7 @@ function CircularProgress({ value, size = 96 }: { value: number; size?: number }
         />
       </svg>
       <div className="absolute inset-0 grid place-items-center">
-        <span className="num tabular-nums text-lg font-bold">{Math.round(pct * 100)}%</span>
+        <span className="num tabular-nums text-base font-bold">{Math.round(pct * 100)}%</span>
       </div>
     </div>
   );
@@ -344,10 +344,12 @@ function ConfidenceKpi({
   onChange: (v: number) => void;
   onOpenHistory: () => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+
   return (
     <KpiCard
       label="Confidence"
-      hint="Tap arrows to change · 1–10"
+      hint="Current confidence level"
       footer={
         <button
           onClick={onOpenHistory}
@@ -361,29 +363,35 @@ function ConfidenceKpi({
         </button>
       }
     >
-      <div className="flex items-center justify-between gap-3 w-full">
-        <div className="flex items-baseline gap-1.5 num tabular-nums">
+      <div className="flex flex-col gap-3 w-full mt-2">
+        <button 
+          onClick={() => setIsEditing(!isEditing)}
+          className="flex items-baseline gap-1.5 num tabular-nums justify-start text-left hover:opacity-80 transition-opacity focus:outline-none"
+        >
           <span className="text-5xl font-bold tracking-tight text-foreground">{value}</span>
           <span className="text-2xl text-muted-foreground font-medium">/10</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <button
-            onClick={() => onChange(Math.min(10, value + 1))}
-            disabled={value >= 10}
-            className="h-7 w-7 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-30"
-            aria-label="Increase confidence"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => onChange(Math.max(1, value - 1))}
-            disabled={value <= 1}
-            className="h-7 w-7 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-30"
-            aria-label="Decrease confidence"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-        </div>
+        </button>
+        {isEditing && (
+          <div className="flex justify-between w-full mt-1 gap-1">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+              <button
+                key={n}
+                onClick={() => {
+                  onChange(n);
+                  setIsEditing(false);
+                }}
+                className={cn(
+                  "flex-1 h-8 rounded-sm border text-xs font-semibold transition-colors",
+                  value === n
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "bg-surface border-border hover:border-primary/50 text-foreground"
+                )}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </KpiCard>
   );
@@ -391,32 +399,62 @@ function ConfidenceKpi({
 
 function DeadlineKpi({
   iso,
+  createdAt,
   onChange,
 }: {
   iso?: string;
+  createdAt: string;
   onChange: (next: string | undefined) => void;
 }) {
   const date = iso ? new Date(iso) : undefined;
   const days = date ? differenceInCalendarDays(date, new Date()) : null;
   const overdue = !!date && isPast(date) && (days ?? 0) < 0;
+  
+  let distanceValue = "";
+  let distanceUnit = "";
+  if (!date) {
+    const createdDate = new Date(createdAt);
+    const distanceStr = formatDistanceToNowStrict(createdDate);
+    const [val, ...unitParts] = distanceStr.split(" ");
+    distanceValue = val;
+    distanceUnit = unitParts.join(" ");
+  }
+
   return (
     <KpiCard
-      label="Deadline"
-      hint="Click to change or remove"
-      footer={<DeadlinePopover iso={iso} onChange={onChange} size="md" />}
+      label={date ? "Deadline" : "Created"}
+      hint={date ? "Click to change or remove" : "Click to set a deadline"}
+      footer={
+        <DeadlinePopover 
+          iso={iso} 
+          onChange={onChange} 
+          variant="button" 
+          placeholder="Set deadline" 
+          hideDaysLeft 
+          disableScroll
+          className="w-full"
+        />
+      }
     >
       <div className="num tabular-nums w-full">
         {date ? (
           <div className="flex items-baseline gap-1.5">
-            <span className="text-5xl font-bold tracking-tight text-foreground">
+            <span className={cn("text-5xl font-bold tracking-tight", overdue ? "text-destructive" : "text-foreground")}>
               {Math.abs(days ?? 0)}
             </span>
-            <span className="text-sm text-muted-foreground font-medium">
+            <span className={cn("text-sm font-medium", overdue ? "text-destructive" : "text-muted-foreground")}>
               {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
             </span>
           </div>
         ) : (
-          <div className="text-2xl font-semibold text-muted-foreground">No deadline</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-5xl font-bold tracking-tight text-foreground">
+              {distanceValue}
+            </span>
+            <span className="text-sm text-muted-foreground font-medium">
+              {distanceUnit} ago
+            </span>
+          </div>
         )}
       </div>
     </KpiCard>

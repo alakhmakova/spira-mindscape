@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { AutoTextarea } from "@/components/spira/Inline";
 
 const typeMeta = {
   note: { icon: FileText, label: "Note" },
@@ -84,18 +85,21 @@ export function ResourcesList({ goal }: { goal: Goal }) {
         })}
       </ul>
 
-      <ResourcePreview resource={preview} onClose={() => setPreview(null)} />
+      <ResourcePreview goalId={goal.id} resource={preview} onClose={() => setPreview(null)} />
     </>
   );
 }
 
 function ResourcePreview({
+  goalId,
   resource,
   onClose,
 }: {
+  goalId: string;
   resource: Resource | null;
   onClose: () => void;
 }) {
+  const updateResource = useSpira((s) => s.updateResource);
   const isMobile = useIsMobile();
   const open = !!resource;
 
@@ -105,7 +109,16 @@ function ResourcePreview({
   const Body = resource && (
     <>
       <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-display text-2xl truncate">{title}</h2>
+        {resource.type === "note" ? (
+          <AutoTextarea
+            value={resource.title}
+            onChange={(v) => updateResource(goalId, resource.id, { title: v })}
+            className="font-display text-2xl w-full pr-4"
+            placeholder="Note title"
+          />
+        ) : (
+          <h2 className="font-display text-2xl truncate">{title}</h2>
+        )}
         <button
           onClick={onClose}
           className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
@@ -116,9 +129,12 @@ function ResourcePreview({
       </div>
       <div className="px-7 py-6 overflow-y-auto flex-1 space-y-3">
         {resource.type === "note" && (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-            {resource.body || <em className="text-muted-foreground">Empty note</em>}
-          </div>
+          <AutoTextarea
+            value={resource.body || ""}
+            onChange={(v) => updateResource(goalId, resource.id, { body: v })}
+            className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90 w-full"
+            placeholder="Write your note here..."
+          />
         )}
         {resource.type === "link" && (
           <a

@@ -11,7 +11,7 @@ export function ConfidencePill({
     value <= 3
       ? "bg-destructive/10 text-destructive border-destructive/30"
       : value <= 6
-        ? "bg-warning/15 text-[oklch(0.45_0.12_60)] border-warning/40"
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-500 border-amber-500/40"
         : "bg-primary-soft text-primary border-primary/30";
   return (
     <span
@@ -22,11 +22,12 @@ export function ConfidencePill({
       )}
       title={`Confidence ${value}/10`}
     >
-      <span className="opacity-70 font-normal uppercase tracking-wider text-[10px]">
+      <span className="uppercase tracking-wider text-[10px]">
         Confidence
       </span>
-      <span>{value}</span>
-      <span className="opacity-50 font-normal">/10</span>
+      <span>
+        {value}/10
+      </span>
     </span>
   );
 }
