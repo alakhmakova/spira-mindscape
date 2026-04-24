@@ -28,7 +28,7 @@ const typeMeta = {
 
 export function ResourcesList({ goal }: { goal: Goal }) {
   const removeResource = useSpira((s) => s.removeResource);
-  const [preview, setPreview] = useState<Resource | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   if (goal.resources.length === 0) {
     return (
@@ -49,7 +49,7 @@ export function ResourcesList({ goal }: { goal: Goal }) {
               className="surface-card p-4 flex items-start gap-3 group hover:border-primary/40 hover:shadow-[var(--shadow-soft)] transition-all cursor-pointer"
               onClick={() => {
                 if (r.type === "link") window.open(r.url, "_blank");
-                else setPreview(r);
+                else setPreviewId(r.id);
               }}
             >
               <div className="h-9 w-9 rounded-md bg-primary-soft border border-primary/20 grid place-items-center shrink-0 text-primary">
@@ -85,21 +85,26 @@ export function ResourcesList({ goal }: { goal: Goal }) {
         })}
       </ul>
 
-      <ResourcePreview goalId={goal.id} resource={preview} onClose={() => setPreview(null)} />
+      <ResourcePreview goalId={goal.id} resourceId={previewId} onClose={() => setPreviewId(null)} />
     </>
   );
 }
 
 function ResourcePreview({
   goalId,
-  resource,
+  resourceId,
   onClose,
 }: {
   goalId: string;
-  resource: Resource | null;
+  resourceId: string | null;
   onClose: () => void;
 }) {
   const updateResource = useSpira((s) => s.updateResource);
+  const resource = useSpira((s) =>
+    resourceId
+      ? s.goals.find((g) => g.id === goalId)?.resources.find((r) => r.id === resourceId) ?? null
+      : null,
+  );
   const isMobile = useIsMobile();
   const open = !!resource;
 
