@@ -30,11 +30,7 @@ function GoalsOverview() {
   const [view, setView] = useState<"cards" | "table">("cards");
   const [open, setOpen] = useState(false);
 
-  const hour = new Date().getHours();
-  let greeting = "Good evening";
-  if (hour < 12) greeting = "Good morning";
-  else if (hour < 18) greeting = "Good afternoon";
-  else if (hour >= 22) greeting = "Good night";
+  const greeting = "Your goals";
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -79,9 +75,7 @@ function GoalsOverview() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-semibold text-2xl text-foreground">
-            {greeting}, Spira User!
-          </h1>
+          <h1 className="font-semibold text-2xl text-foreground">{greeting}</h1>
           <p className="text-muted-foreground mt-1.5 text-sm sm:text-[15px]">
             {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion. Pick one to dive
             into, or shape a new one.
