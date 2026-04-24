@@ -70,17 +70,28 @@ export function RichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, value]);
 
+  const isMobile = useIsMobile();
+
   if (!editor) return null;
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-3">
+        <EditorContent editor={editor} />
+        <Toolbar editor={editor} variant="mobile" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} variant="desktop" />
       <EditorContent editor={editor} />
     </div>
   );
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, variant = "desktop" }: { editor: Editor; variant?: "desktop" | "mobile" }) {
   const Btn = ({
     onClick,
     active,
