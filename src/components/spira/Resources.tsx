@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FileText,
   LinkIcon,
@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
+import { RichTextEditor } from "@/components/spira/RichTextEditor";
 
 const typeMeta = {
   note: { icon: FileText, label: "Note" },
@@ -76,7 +77,8 @@ export function ResourcesList({ goal }: { goal: Goal }) {
                   e.stopPropagation();
                   removeResource(goal.id, r.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
+                className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
+                aria-label="Remove resource"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -124,20 +126,21 @@ function ResourcePreview({
         ) : (
           <h2 className="font-display text-2xl truncate">{title}</h2>
         )}
-        <button
-          onClick={onClose}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {!(isMobile && resource.type === "note") && (
+          <button
+            onClick={onClose}
+            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <div className="px-7 py-6 overflow-y-auto flex-1 space-y-3">
         {resource.type === "note" && (
-          <AutoTextarea
+          <RichTextEditor
             value={resource.body || ""}
-            onChange={(v) => updateResource(goalId, resource.id, { body: v })}
-            className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90 w-full"
+            onChange={(html) => updateResource(goalId, resource.id, { body: html })}
             placeholder="Write your note here..."
           />
         )}
@@ -199,12 +202,91 @@ function ResourcePreview({
     );
   }
   return (
+    <ResizableSheet open={open} onClose={onClose}>
+      {Body}
+    </ResizableSheet>
+  );
+}
+
+const MIN_PANEL_WIDTH = 420;
+const RESIZE_KEY = "spira:resource-panel-width";
+
+function ResizableSheet({
+  open,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 720;
+    const stored = Number(window.localStorage.getItem(RESIZE_KEY));
+    if (stored && stored >= MIN_PANEL_WIDTH) return stored;
+    return Math.min(720, window.innerWidth - 80);
+  });
+  const draggingRef = useRef(false);
+  const handleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onResize = () => {
+      setWidth((w) => Math.min(w, window.innerWidth));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const startDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    handleRef.current?.setAttribute("data-dragging", "true");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current) return;
+      const next = Math.max(
+        MIN_PANEL_WIDTH,
+        Math.min(window.innerWidth, window.innerWidth - ev.clientX),
+      );
+      setWidth(next);
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      handleRef.current?.removeAttribute("data-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.localStorage.setItem(RESIZE_KEY, String(width));
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Persist width whenever it changes (after release)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RESIZE_KEY, String(width));
+  }, [width]);
+
+  return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-2xl p-0 flex flex-col bg-surface border-l hairline"
+        className="p-0 flex flex-col bg-surface border-l hairline !max-w-none"
+        style={{ width: `${width}px` }}
       >
-        {Body}
+        <div
+          ref={handleRef}
+          onPointerDown={startDrag}
+          className="resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+        />
+        {children}
       </SheetContent>
     </Sheet>
   );
