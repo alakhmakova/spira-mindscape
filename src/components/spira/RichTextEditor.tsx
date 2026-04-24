@@ -6,6 +6,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Highlight from "@tiptap/extension-highlight";
 import { useEffect } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Heading1,
   Heading2,
@@ -69,17 +70,28 @@ export function RichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, value]);
 
+  const isMobile = useIsMobile();
+
   if (!editor) return null;
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-3">
+        <EditorContent editor={editor} />
+        <Toolbar editor={editor} variant="mobile" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} variant="desktop" />
       <EditorContent editor={editor} />
     </div>
   );
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, variant = "desktop" }: { editor: Editor; variant?: "desktop" | "mobile" }) {
   const Btn = ({
     onClick,
     active,
@@ -100,7 +112,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       aria-label={label}
       title={label}
       className={cn(
-        "h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:hover:bg-transparent",
+        "h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-40 disabled:hover:bg-transparent",
         active && "bg-primary-soft text-primary hover:bg-primary-soft",
       )}
     >
@@ -108,7 +120,7 @@ function Toolbar({ editor }: { editor: Editor }) {
     </button>
   );
 
-  const Sep = () => <span className="mx-1 h-6 w-px bg-border" />;
+  const Sep = () => <span className="mx-1 h-6 w-px shrink-0 bg-border" />;
 
   const setLink = () => {
     const prev = editor.getAttributes("link").href as string | undefined;
@@ -122,7 +134,16 @@ function Toolbar({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-0.5 rounded-md border hairline bg-surface/95 backdrop-blur px-1 py-1">
+    <div
+      onMouseDown={(e) => e.preventDefault()}
+      className={cn(
+        "z-20 flex items-center gap-0.5 rounded-md border hairline bg-surface/95 backdrop-blur px-1 py-1",
+        variant === "desktop" && "sticky top-0 -mx-1 flex-wrap",
+        variant === "mobile" &&
+          "sticky bottom-0 -mx-7 px-2 py-1.5 rounded-none border-x-0 border-b-0 flex-nowrap overflow-x-auto hide-scrollbar",
+      )}
+      style={variant === "mobile" ? { WebkitOverflowScrolling: "touch" } : undefined}
+    >
       <Btn label="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
         <Heading1 className="h-4 w-4" />
       </Btn>
