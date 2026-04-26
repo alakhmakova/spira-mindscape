@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useAi } from "@/components/ai/ai-store";
 import { useSpira } from "@/lib/spira/store";
+import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { useShellFilters } from "./shell-store";
 import {
   DropdownMenu,
@@ -133,10 +134,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-72 space-y-2 p-2">
                     <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
-                    <div className="grid grid-cols-2 gap-2 px-2">
-                      <input type="date" value={deadlineFrom} onChange={(e) => setDeadlineFrom(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline from" />
-                      <input type="date" value={deadlineTo} onChange={(e) => setDeadlineTo(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline to" />
-                    </div>
+                    <DeadlineRangeControls
+                      deadlineFrom={deadlineFrom}
+                      deadlineTo={deadlineTo}
+                      setDeadlineFrom={setDeadlineFrom}
+                      setDeadlineTo={setDeadlineTo}
+                    />
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
                     <div className="grid grid-cols-5 gap-1 px-2">
@@ -230,10 +233,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-72 space-y-2 p-2">
                 <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
-                <div className="grid grid-cols-2 gap-2 px-2">
-                  <input type="date" value={deadlineFrom} onChange={(e) => setDeadlineFrom(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline from" />
-                  <input type="date" value={deadlineTo} onChange={(e) => setDeadlineTo(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline to" />
-                </div>
+                <DeadlineRangeControls
+                  deadlineFrom={deadlineFrom}
+                  deadlineTo={deadlineTo}
+                  setDeadlineFrom={setDeadlineFrom}
+                  setDeadlineTo={setDeadlineTo}
+                />
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
                 <div className="grid grid-cols-5 gap-1 px-2">
@@ -277,6 +282,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="flex-1">{children}</main>
+    </div>
+  );
+}
+
+function DeadlineRangeControls({
+  deadlineFrom,
+  deadlineTo,
+  setDeadlineFrom,
+  setDeadlineTo,
+}: {
+  deadlineFrom: string;
+  deadlineTo: string;
+  setDeadlineFrom: (value: string) => void;
+  setDeadlineTo: (value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 px-2" onClick={(e) => e.stopPropagation()}>
+      <DeadlinePopover
+        iso={deadlineFrom || undefined}
+        onChange={(next) => setDeadlineFrom(next ?? "")}
+        variant="button"
+        placeholder="From"
+        hideDaysLeft
+        disableScroll
+        className="h-9 justify-start px-2 text-xs"
+      />
+      <DeadlinePopover
+        iso={deadlineTo || undefined}
+        onChange={(next) => setDeadlineTo(next ?? "")}
+        variant="button"
+        placeholder="To"
+        hideDaysLeft
+        disableScroll
+        className="h-9 justify-start px-2 text-xs"
+      />
     </div>
   );
 }
