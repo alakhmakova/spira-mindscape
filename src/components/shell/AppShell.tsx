@@ -285,3 +285,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+function DeadlineRangeControls({
+  deadlineFrom,
+  deadlineTo,
+  setDeadlineFrom,
+  setDeadlineTo,
+}: {
+  deadlineFrom: string;
+  deadlineTo: string;
+  setDeadlineFrom: (value: string) => void;
+  setDeadlineTo: (value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 px-2" onClick={(e) => e.stopPropagation()}>
+      <DeadlinePopover
+        iso={deadlineFrom || undefined}
+        onChange={(next) => setDeadlineFrom(next ?? "")}
+        variant="button"
+        placeholder="From"
+        hideDaysLeft
+        disableScroll
+        className="h-9 justify-start px-2 text-xs"
+      />
+      <DeadlinePopover
+        iso={deadlineTo || undefined}
+        onChange={(next) => setDeadlineTo(next ?? "")}
+        variant="button"
+        placeholder="To"
+        hideDaysLeft
+        disableScroll
+        className="h-9 justify-start px-2 text-xs"
+      />
+    </div>
+  );
+}
