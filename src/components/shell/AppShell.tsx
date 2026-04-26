@@ -32,14 +32,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setQuery,
     sort,
     setSort,
-    filterDeadline,
-    setFilterDeadline,
-    filterConfidence,
-    setFilterConfidence,
+    sortDirection,
+    setSortDirection,
+    resetSort,
+    deadlineFrom,
+    setDeadlineFrom,
+    deadlineTo,
+    setDeadlineTo,
+    confidence,
+    setConfidence,
+    status,
+    setStatus,
+    resetFilters,
   } = useShellFilters();
 
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
+  const filtersActive = Boolean(deadlineFrom || deadlineTo || confidence || status !== "all");
+  const sortActive = sort !== "recent" || sortDirection !== "desc";
 
   const goals = useSpira((s) => s.goals);
   const searchResults = query.trim() === "" ? [] : goals.filter(g => g.title.toLowerCase().includes(query.toLowerCase().trim())).slice(0, 5);
@@ -110,49 +120,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Filter */}
             {!isWorkspace && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  className={cn(
-                    "hidden lg:inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
-                    (filterDeadline !== "all" || filterConfidence !== "all") &&
-                      "border-primary/40 text-primary bg-primary-soft",
-                  )}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  Filters
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Deadline</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={filterDeadline}
-                    onValueChange={(v) => setFilterDeadline(v as any)}
+              <div className="hidden lg:flex items-center gap-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(
+                      "inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
+                      filtersActive && "border-primary/40 text-primary bg-primary-soft",
+                    )}
                   >
-                    <DropdownMenuRadioItem value="all">Any deadline</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="overdue">Overdue</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="week">Due within 7 days</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="month">Due within 30 days</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Confidence</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={filterConfidence}
-                    onValueChange={(v) => setFilterConfidence(v as any)}
-                  >
-                    <DropdownMenuRadioItem value="all">Any confidence</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="low">Low (1–3)</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="med">Medium (4–6)</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="high">High (7–10)</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    {filtersActive ? "Filters on" : "Filters"}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72 space-y-2 p-2">
+                    <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
+                    <div className="grid grid-cols-2 gap-2 px-2">
+                      <input type="date" value={deadlineFrom} onChange={(e) => setDeadlineFrom(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline from" />
+                      <input type="date" value={deadlineTo} onChange={(e) => setDeadlineTo(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline to" />
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
+                    <div className="grid grid-cols-5 gap-1 px-2">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <button key={n} onClick={() => setConfidence(confidence === String(n) ? "" : String(n))} className={cn("h-8 rounded-md border hairline text-xs font-semibold", confidence === String(n) ? "bg-primary text-primary-foreground" : "bg-surface text-foreground")}>{n}</button>
+                      ))}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup value={status} onValueChange={(v) => setStatus(v as any)}>
+                      <DropdownMenuRadioItem value="all">All goals</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="achieved">Only achieved</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="not-achieved">Only not achieved</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {filtersActive && <button onClick={resetFilters} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset filters"><X className="h-3.5 w-3.5" /></button>}
+              </div>
             )}
 
             {/* Sort */}
             {!isWorkspace && (
+              <div className="hidden lg:flex items-center gap-1">
               <DropdownMenu>
-                <DropdownMenuTrigger className="hidden lg:inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80">
+                <DropdownMenuTrigger className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
                   <ArrowDownUp className="h-3.5 w-3.5" />
-                  Sort
+                  {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuRadioGroup
@@ -165,8 +175,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="title">Title A→Z</DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
+                    <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
+              </div>
             )}
 
             {/* Calendar Icon Button (Global) */}
@@ -206,37 +223,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Mobile secondary row: filters + sort */}
         {!isWorkspace && (
           <div className="sm:hidden border-t hairline px-4 h-11 flex items-center gap-2 overflow-x-auto">
+            {filtersActive && <button onClick={resetFilters} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset filters"><X className="h-3 w-3" /></button>}
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80">
-                <SlidersHorizontal className="h-3 w-3" /> Filter
+              <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", filtersActive && "border-primary/40 text-primary bg-primary-soft")}>
+                <SlidersHorizontal className="h-3 w-3" /> {filtersActive ? "Filters on" : "Filter"}
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuLabel>Deadline</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={filterDeadline}
-                  onValueChange={(v) => setFilterDeadline(v as any)}
-                >
-                  <DropdownMenuRadioItem value="all">Any</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="overdue">Overdue</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="week">7 days</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="month">30 days</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
+              <DropdownMenuContent align="start" className="w-72 space-y-2 p-2">
+                <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
+                <div className="grid grid-cols-2 gap-2 px-2">
+                  <input type="date" value={deadlineFrom} onChange={(e) => setDeadlineFrom(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline from" />
+                  <input type="date" value={deadlineTo} onChange={(e) => setDeadlineTo(e.target.value)} className="h-9 rounded-md border hairline bg-surface px-2 text-xs outline-none" aria-label="Deadline to" />
+                </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Confidence</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={filterConfidence}
-                  onValueChange={(v) => setFilterConfidence(v as any)}
-                >
-                  <DropdownMenuRadioItem value="all">Any</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="low">Low</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="med">Medium</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="high">High</DropdownMenuRadioItem>
+                <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
+                <div className="grid grid-cols-5 gap-1 px-2">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                    <button key={n} onClick={() => setConfidence(confidence === String(n) ? "" : String(n))} className={cn("h-8 rounded-md border hairline text-xs font-semibold", confidence === String(n) ? "bg-primary text-primary-foreground" : "bg-surface text-foreground")}>{n}</button>
+                  ))}
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={status} onValueChange={(v) => setStatus(v as any)}>
+                  <DropdownMenuRadioItem value="all">All goals</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="achieved">Only achieved</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="not-achieved">Only not achieved</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            {sortActive && <button onClick={resetSort} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset sort"><X className="h-3 w-3" /></button>}
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80">
-                <ArrowDownUp className="h-3 w-3" /> Sort
+              <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
+                <ArrowDownUp className="h-3 w-3" /> {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuRadioGroup
@@ -248,6 +264,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
+                  <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
