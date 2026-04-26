@@ -86,17 +86,10 @@ function GoalsOverview() {
             <ViewBtn active={view === "cards"} onClick={() => setView("cards")} icon={LayoutGrid}>
               Cards
             </ViewBtn>
-            <ViewBtn active={view === "table"} onClick={() => setView("table")} icon={List}>
-              Table
+          <ViewBtn active={view === "table"} onClick={() => setView("table")} icon={List}>
+              Timeline
             </ViewBtn>
           </div>
-          <button
-            onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 px-4 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            New goal
-          </button>
         </div>
       </header>
 
@@ -127,6 +120,14 @@ function GoalsOverview() {
       ) : (
         <GoalsTable goals={filtered} />
       )}
+
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-raised transition-transform hover:scale-105 hover:bg-primary/90 sm:bottom-7 sm:right-7"
+        aria-label="New goal"
+      >
+        <Plus className="h-7 w-7" />
+      </button>
 
       <NewGoalSheet open={open} onOpenChange={setOpen} />
       </div>

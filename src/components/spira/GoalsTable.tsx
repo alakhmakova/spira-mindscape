@@ -1,13 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, CircleDot, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
+import { Check, CheckCircle2, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
 import { differenceInCalendarDays, format, isPast } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
 import { goalProgress, targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib/utils";
 
-type TimelineFilter = "goals" | "goals-tasks" | "all";
+type TimelineFilter = "goals" | "goals-targets" | "all";
 
 type TimelineItem =
   | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number }
@@ -40,11 +40,11 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
           <FilterBtn active={filter === "goals"} onClick={() => setFilter("goals")}>
             Goals
           </FilterBtn>
-          <FilterBtn active={filter === "goals-tasks"} onClick={() => setFilter("goals-tasks")}>
-            Goals + tasks
+          <FilterBtn active={filter === "goals-targets"} onClick={() => setFilter("goals-targets")}>
+            Goals and Targets
           </FilterBtn>
           <FilterBtn active={filter === "all"} onClick={() => setFilter("all")}>
-            All
+            Goals, Targets, Tasks
           </FilterBtn>
         </div>
       </div>
@@ -85,7 +85,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
     }
 
     for (const target of goal.targets) {
-      if (filter === "all" && target.deadline) {
+      if (filter !== "goals" && target.deadline) {
         items.push({
           id: `target-${target.id}`,
           kind: "target",
@@ -97,7 +97,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
         });
       }
 
-      if (target.type === "checklist" && filter !== "goals") {
+      if (target.type === "checklist" && filter === "all") {
         for (const task of target.items) {
           if (!task.deadline) continue;
           items.push({
@@ -129,6 +129,7 @@ function TimelineRow({
   const meta = getItemMeta(item);
   const days = differenceInCalendarDays(new Date(item.deadline), new Date());
   const overdue = isPast(new Date(item.deadline)) && days < 0;
+  const achieved = isAchieved(item);
 
   return (
     <li className="relative grid grid-cols-[28px_1fr] gap-3 sm:grid-cols-[34px_1fr] sm:gap-4">
@@ -136,20 +137,20 @@ function TimelineRow({
         <span
           className={cn(
             "absolute left-[13px] top-8 h-full border-l sm:left-4",
-            item.kind === "goal" ? "border-primary" : "border-dashed border-border-strong",
+            achieved ? "border-success" : item.kind === "goal" ? "border-primary" : "border-dashed border-border-strong",
           )}
         />
       )}
       <div className="relative z-10 pt-1">
-        <span className={cn("grid h-7 w-7 place-items-center rounded-full border-2 bg-surface sm:h-8 sm:w-8", meta.dot)}>
-          <meta.icon className="h-3.5 w-3.5" />
+        <span className={cn("grid h-7 w-7 place-items-center rounded-full border-2 bg-surface sm:h-8 sm:w-8", achieved ? "border-success bg-success text-primary-foreground" : meta.dot)}>
+          {achieved ? <Check className="h-3.5 w-3.5" /> : <meta.icon className="h-3.5 w-3.5" />}
         </span>
       </div>
       <button
         onClick={onOpen}
         className={cn(
           "mb-7 w-full rounded-lg border p-4 text-left transition-colors hover:bg-secondary/70 sm:p-5",
-          meta.card,
+          achieved ? "border-success/50 bg-success/10" : meta.card,
         )}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -158,6 +159,11 @@ function TimelineRow({
               <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", meta.badge)}>
                 {meta.label}
               </span>
+              {achieved && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
+                  <CheckCircle2 className="h-3 w-3" /> Achieved
+                </span>
+              )}
               <span className={cn("text-xs font-medium", overdue ? "text-destructive" : "text-muted-foreground")}>
                 {overdue ? `${Math.abs(days)}d overdue` : days === 0 ? "Today" : `${days}d left`}
               </span>
@@ -197,6 +203,11 @@ function FilterBtn({ active, onClick, children }: { active: boolean; onClick: ()
       {children}
     </button>
   );
+}
+
+function isAchieved(item: TimelineItem): boolean {
+  if (item.kind === "task") return item.done;
+  return item.progress >= 1;
 }
 
 function getItemMeta(item: TimelineItem) {
