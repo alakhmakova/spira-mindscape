@@ -1,106 +1,70 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
-import { format } from "date-fns";
-import type { Goal } from "@/lib/spira/types";
-import { goalProgress } from "@/lib/spira/progress";
+import { Check, CircleDot, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
+import { differenceInCalendarDays, format, isPast } from "date-fns";
+import type { Goal, Target } from "@/lib/spira/types";
+import { goalProgress, targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
-import { DeadlinePopover } from "./DeadlinePopover";
-import { useSpira } from "@/lib/spira/store";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { cn } from "@/lib/utils";
+
+type TimelineFilter = "goals" | "goals-tasks" | "all";
+
+type TimelineItem =
+  | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number }
+  | { id: string; kind: "target"; goal: Goal; target: Target; title: string; deadline: string; progress: number }
+  | {
+      id: string;
+      kind: "task";
+      goal: Goal;
+      target: Extract<Target, { type: "checklist" }>;
+      title: string;
+      deadline: string;
+      done: boolean;
+    };
 
 export function GoalsTable({ goals }: { goals: Goal[] }) {
   const nav = useNavigate();
-  const deleteGoal = useSpira((s) => s.deleteGoal);
-  const updateGoal = useSpira((s) => s.updateGoal);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const target = goals.find((g) => g.id === confirmId);
+  const [filter, setFilter] = useState<TimelineFilter>("all");
+  const items = buildTimelineItems(goals, filter);
 
   return (
-    <div className="surface-card overflow-hidden">
-      {/* Header row */}
-      <div className="hidden md:grid grid-cols-[1.6fr_200px_160px_160px_44px] gap-6 px-6 py-3.5 border-b hairline text-[13px] font-semibold text-foreground/70">
-        <div>Title</div>
-        <div>Deadline</div>
-        <div>Confidence</div>
-        <div>Progress</div>
-        <div className="text-right">Actions</div>
+    <div className="surface-card px-4 py-5 sm:px-7 sm:py-7">
+      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Timeline</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Goals, targets and tasks with deadlines, ordered by the nearest date.
+          </p>
+        </div>
+        <div className="inline-flex w-fit rounded-md border hairline bg-secondary p-0.5">
+          <FilterBtn active={filter === "goals"} onClick={() => setFilter("goals")}>
+            Goals
+          </FilterBtn>
+          <FilterBtn active={filter === "goals-tasks"} onClick={() => setFilter("goals-tasks")}>
+            Goals + tasks
+          </FilterBtn>
+          <FilterBtn active={filter === "all"} onClick={() => setFilter("all")}>
+            All
+          </FilterBtn>
+        </div>
       </div>
 
-      <ul>
-        {goals.map((g, idx) => {
-          const p = goalProgress(g);
-          const isLast = idx === goals.length - 1;
-          return (
-            <li
-              key={g.id}
-              onClick={() => nav({ to: "/goals/$goalId", params: { goalId: g.id } })}
-              className={cn(
-                "cursor-pointer hover:bg-secondary/60 transition-colors",
-                !isLast && "border-b hairline",
-              )}
-            >
-              <div className="grid md:grid-cols-[1.6fr_200px_160px_160px_44px] gap-3 md:gap-6 px-6 py-5 items-center">
-                <div className="min-w-0">
-                  <a className="link-action font-medium text-[15px] block truncate">
-                    {g.title}
-                  </a>
-                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {g.targets.length} {g.targets.length === 1 ? "target" : "targets"} ·{" "}
-                    {g.options.length} {g.options.length === 1 ? "option" : "options"}
-                  </div>
-                </div>
-                <div onClick={(e) => e.stopPropagation()} className="text-sm text-foreground/80">
-                  {g.deadline ? (
-                    <DeadlinePopoverDateOnly
-                      iso={g.deadline}
-                      onChange={(next) => updateGoal(g.id, { deadline: next })}
-                    />
-                  ) : (
-                    <DeadlinePopover
-                      iso={undefined}
-                      onChange={(next) => updateGoal(g.id, { deadline: next })}
-                    />
-                  )}
-                </div>
-                <ConfidenceCell value={g.confidence} />
-                <div className="flex items-center gap-2.5">
-                  <ProgressBar value={p} className="flex-1" />
-                  <span className="num text-xs font-semibold tabular-nums w-9 text-right">
-                    {Math.round(p * 100)}%
-                  </span>
-                </div>
-                <div className="md:flex md:justify-end">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmId(g.id);
-                    }}
-                    className="p-2 -m-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-background"
-                    aria-label="Delete goal"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-
-      <ConfirmDialog
-        open={!!confirmId}
-        onOpenChange={(o) => !o && setConfirmId(null)}
-        title="Delete this goal?"
-        description={`Are you sure you want to permanently delete "${target?.title}"? You can't undo this.`}
-        confirmLabel="Yes, delete"
-        cancelLabel="No, go back"
-        onConfirm={() => {
-          if (confirmId) deleteGoal(confirmId);
-          setConfirmId(null);
-        }}
-      />
+      {items.length === 0 ? (
+        <div className="rounded-lg border hairline bg-secondary/50 px-5 py-8 text-center text-sm text-muted-foreground">
+          No deadlines match this filter.
+        </div>
+      ) : (
+        <ol className="relative ml-3 space-y-0 sm:ml-4">
+          {items.map((item, idx) => (
+            <TimelineRow
+              key={item.id}
+              item={item}
+              isLast={idx === items.length - 1}
+              onOpen={() => nav({ to: "/goals/$goalId", params: { goalId: item.goal.id } })}
+            />
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
