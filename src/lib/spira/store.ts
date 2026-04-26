@@ -10,43 +10,47 @@ import type {
 } from "./types";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+let seedCounter = 0;
+const seedUid = () => `seed-${++seedCounter}`;
+const seedDate = (days: number) =>
+  new Date(Date.UTC(2026, 0, 1 + days, 12, 0, 0)).toISOString();
 
 const seed: Goal[] = [
   {
-    id: uid(),
+    id: seedUid(),
     title: "Land a senior product role at a thoughtful company",
     description:
       "Move into a senior PM position where I shape product strategy and work with a team I respect. Salary band at or above current, remote-friendly, mission-aligned.",
     confidence: 6,
-    deadline: new Date(Date.now() + 1000 * 60 * 60 * 24 * 75).toISOString(),
-    createdAt: new Date().toISOString(),
+    deadline: seedDate(75),
+    createdAt: seedDate(0),
     reality: {
       actions: [
-        { id: uid(), text: "Updated CV and portfolio site" },
-        { id: uid(), text: "Reached out to 8 people in network" },
+        { id: seedUid(), text: "Updated CV and portfolio site" },
+        { id: seedUid(), text: "Reached out to 8 people in network" },
       ],
       obstacles: [
-        { id: uid(), text: "Limited public writing / track record" },
-        { id: uid(), text: "Time pressure from current role" },
+        { id: seedUid(), text: "Limited public writing / track record" },
+        { id: seedUid(), text: "Time pressure from current role" },
       ],
     },
     options: [
-      { id: uid(), text: "Focused outbound to 30 target companies", selected: true },
-      { id: uid(), text: "Lean on network referrals only", selected: false },
-      { id: uid(), text: "Build in public for 60 days, then apply", selected: false },
+      { id: seedUid(), text: "Focused outbound to 30 target companies", selected: true },
+      { id: seedUid(), text: "Lean on network referrals only", selected: false },
+      { id: seedUid(), text: "Build in public for 60 days, then apply", selected: false },
     ],
     resources: [
       {
-        id: uid(),
+        id: seedUid(),
         type: "note",
         title: "Interview prep notes",
         body: "STAR stories: ambiguous problem, leading without authority, shipped under constraint.",
       },
-      { id: uid(), type: "link", title: "Target companies sheet", url: "https://example.com" },
+      { id: seedUid(), type: "link", title: "Target companies sheet", url: "https://example.com" },
     ],
     targets: [
       {
-        id: uid(),
+        id: seedUid(),
         type: "numeric",
         title: "Outbound applications",
         current: 12,
@@ -54,64 +58,64 @@ const seed: Goal[] = [
         unit: "apps",
       },
       {
-        id: uid(),
+        id: seedUid(),
         type: "checklist",
         title: "Portfolio refresh",
         items: [
-          { id: uid(), text: "Rewrite case study A", done: true },
-          { id: uid(), text: "Rewrite case study B", done: true },
-          { id: uid(), text: "Add new case study C", done: false },
-          { id: uid(), text: "Polish hero section", done: false },
+          { id: seedUid(), text: "Rewrite case study A", done: true },
+          { id: seedUid(), text: "Rewrite case study B", done: true },
+          { id: seedUid(), text: "Add new case study C", done: false },
+          { id: seedUid(), text: "Polish hero section", done: false },
         ],
       },
-      { id: uid(), type: "binary", title: "Pass first onsite", done: false },
+      { id: seedUid(), type: "binary", title: "Pass first onsite", done: false },
     ],
   },
   {
-    id: uid(),
+    id: seedUid(),
     title: "Run a half-marathon under 1h45",
     description:
       "Build aerobic base, run 4x/week, follow a 12-week plan. Race day in spring.",
     confidence: 8,
-    deadline: new Date(Date.now() + 1000 * 60 * 60 * 24 * 110).toISOString(),
-    createdAt: new Date().toISOString(),
+    deadline: seedDate(110),
+    createdAt: seedDate(0),
     reality: {
-      actions: [{ id: uid(), text: "Completed week 1 of plan" }],
-      obstacles: [{ id: uid(), text: "Old knee niggle on long runs" }],
+      actions: [{ id: seedUid(), text: "Completed week 1 of plan" }],
+      obstacles: [{ id: seedUid(), text: "Old knee niggle on long runs" }],
     },
     options: [
-      { id: uid(), text: "Hanson method", selected: true },
-      { id: uid(), text: "Pfitzinger 12/47", selected: false },
+      { id: seedUid(), text: "Hanson method", selected: true },
+      { id: seedUid(), text: "Pfitzinger 12/47", selected: false },
     ],
     resources: [],
     targets: [
-      { id: uid(), type: "numeric", title: "Weekly km", current: 28, total: 50, unit: "km" },
-      { id: uid(), type: "binary", title: "Tune-up 10k race", done: false },
+      { id: seedUid(), type: "numeric", title: "Weekly km", current: 28, total: 50, unit: "km" },
+      { id: seedUid(), type: "binary", title: "Tune-up 10k race", done: false },
     ],
   },
   {
-    id: uid(),
+    id: seedUid(),
     title: "Ship Spira v1 to first 50 users",
     description: "Closed beta with engaged early users; iterate weekly.",
     confidence: 4,
-    deadline: new Date(Date.now() + 1000 * 60 * 60 * 24 * 45).toISOString(),
-    createdAt: new Date().toISOString(),
-    reality: { actions: [], obstacles: [{ id: uid(), text: "Solo, limited dev time" }] },
+    deadline: seedDate(45),
+    createdAt: seedDate(0),
+    reality: { actions: [], obstacles: [{ id: seedUid(), text: "Solo, limited dev time" }] },
     options: [
-      { id: uid(), text: "Public waitlist + invites", selected: true },
-      { id: uid(), text: "Direct outreach to 50 people", selected: false },
+      { id: seedUid(), text: "Public waitlist + invites", selected: true },
+      { id: seedUid(), text: "Direct outreach to 50 people", selected: false },
     ],
     resources: [],
     targets: [
-      { id: uid(), type: "numeric", title: "Active users", current: 6, total: 50, unit: "users" },
+      { id: seedUid(), type: "numeric", title: "Active users", current: 6, total: 50, unit: "users" },
       {
-        id: uid(),
+        id: seedUid(),
         type: "checklist",
         title: "Launch checklist",
         items: [
-          { id: uid(), text: "Onboarding flow", done: false },
-          { id: uid(), text: "Privacy page", done: false },
-          { id: uid(), text: "Feedback loop", done: true },
+          { id: seedUid(), text: "Onboarding flow", done: false },
+          { id: seedUid(), text: "Privacy page", done: false },
+          { id: seedUid(), text: "Feedback loop", done: true },
         ],
       },
     ],
