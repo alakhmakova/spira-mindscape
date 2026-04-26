@@ -1,13 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, CircleDot, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
+import { Check, CheckCircle2, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
 import { differenceInCalendarDays, format, isPast } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
 import { goalProgress, targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib/utils";
 
-type TimelineFilter = "goals" | "goals-tasks" | "all";
+type TimelineFilter = "goals" | "goals-targets" | "all";
 
 type TimelineItem =
   | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number }
@@ -40,11 +40,11 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
           <FilterBtn active={filter === "goals"} onClick={() => setFilter("goals")}>
             Goals
           </FilterBtn>
-          <FilterBtn active={filter === "goals-tasks"} onClick={() => setFilter("goals-tasks")}>
-            Goals + tasks
+          <FilterBtn active={filter === "goals-targets"} onClick={() => setFilter("goals-targets")}>
+            Goals and Targets
           </FilterBtn>
           <FilterBtn active={filter === "all"} onClick={() => setFilter("all")}>
-            All
+            Goals, Targets, Tasks
           </FilterBtn>
         </div>
       </div>
@@ -85,7 +85,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
     }
 
     for (const target of goal.targets) {
-      if (filter === "all" && target.deadline) {
+      if (filter !== "goals" && target.deadline) {
         items.push({
           id: `target-${target.id}`,
           kind: "target",
@@ -97,7 +97,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
         });
       }
 
-      if (target.type === "checklist" && filter !== "goals") {
+      if (target.type === "checklist" && filter === "all") {
         for (const task of target.items) {
           if (!task.deadline) continue;
           items.push({
