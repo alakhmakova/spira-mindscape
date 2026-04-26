@@ -6,27 +6,43 @@ export type SortKey =
   | "progress"
   | "confidence"
   | "title";
-export type DeadlineFilter = "all" | "overdue" | "week" | "month";
-export type ConfidenceFilter = "all" | "low" | "med" | "high";
+export type SortDirection = "asc" | "desc";
+export type GoalStatusFilter = "all" | "achieved" | "not-achieved";
 
 type State = {
   query: string;
   sort: SortKey;
-  filterDeadline: DeadlineFilter;
-  filterConfidence: ConfidenceFilter;
+  sortDirection: SortDirection;
+  deadlineFrom: string;
+  deadlineTo: string;
+  confidence: string;
+  status: GoalStatusFilter;
   setQuery: (q: string) => void;
   setSort: (s: SortKey) => void;
-  setFilterDeadline: (f: DeadlineFilter) => void;
-  setFilterConfidence: (f: ConfidenceFilter) => void;
+  setSortDirection: (d: SortDirection) => void;
+  resetSort: () => void;
+  setDeadlineFrom: (value: string) => void;
+  setDeadlineTo: (value: string) => void;
+  setConfidence: (value: string) => void;
+  setStatus: (value: GoalStatusFilter) => void;
+  resetFilters: () => void;
 };
 
 export const useShellFilters = create<State>((set) => ({
   query: "",
   sort: "recent",
-  filterDeadline: "all",
-  filterConfidence: "all",
+  sortDirection: "desc",
+  deadlineFrom: "",
+  deadlineTo: "",
+  confidence: "",
+  status: "all",
   setQuery: (query) => set({ query }),
   setSort: (sort) => set({ sort }),
-  setFilterDeadline: (filterDeadline) => set({ filterDeadline }),
-  setFilterConfidence: (filterConfidence) => set({ filterConfidence }),
+  setSortDirection: (sortDirection) => set({ sortDirection }),
+  resetSort: () => set({ sort: "recent", sortDirection: "desc" }),
+  setDeadlineFrom: (deadlineFrom) => set({ deadlineFrom }),
+  setDeadlineTo: (deadlineTo) => set({ deadlineTo }),
+  setConfidence: (confidence) => set({ confidence }),
+  setStatus: (status) => set({ status }),
+  resetFilters: () => set({ deadlineFrom: "", deadlineTo: "", confidence: "", status: "all" }),
 }));
