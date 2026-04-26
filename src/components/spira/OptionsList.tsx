@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Plus, X, GripVertical } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal } from "@/lib/spira/types";
@@ -10,6 +10,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const touchDragIdx = useRef<number | null>(null);
 
   const add = () => {
     const t = draft.trim();
@@ -29,12 +30,25 @@ export function OptionsList({ goal }: { goal: Goal }) {
         {goal.options.map((opt, idx) => (
           <li
             key={opt.id}
-            draggable
+            data-option-index={idx}
             onDragStart={() => setDragIdx(idx)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => {
               if (dragIdx !== null && dragIdx !== idx) reorderOptions(goal.id, dragIdx, idx);
               setDragIdx(null);
+            }}
+            onTouchMove={(e) => {
+              if (touchDragIdx.current === null) return;
+              const touch = e.touches[0];
+              const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-option-index]");
+              const nextIdx = target ? Number((target as HTMLElement).dataset.optionIndex) : NaN;
+              if (!Number.isNaN(nextIdx) && nextIdx !== touchDragIdx.current) {
+                reorderOptions(goal.id, touchDragIdx.current, nextIdx);
+                touchDragIdx.current = nextIdx;
+              }
+            }}
+            onTouchEnd={() => {
+              touchDragIdx.current = null;
             }}
             className={cn(
               "group flex items-center gap-3 rounded-md border-2 px-3 py-3 transition-colors",
@@ -43,7 +57,17 @@ export function OptionsList({ goal }: { goal: Goal }) {
                 : "bg-surface border-border hover:border-border-strong",
             )}
           >
-            <GripVertical className="h-4 w-4 text-muted-foreground/50 cursor-grab shrink-0" />
+            <button
+              draggable
+              onDragStart={() => setDragIdx(idx)}
+              onTouchStart={() => {
+                touchDragIdx.current = idx;
+              }}
+              className="-ml-1 grid h-8 w-7 place-items-center touch-none text-muted-foreground/70 cursor-grab shrink-0"
+              aria-label="Drag option"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
             {/* Radio */}
             <button
               onClick={() => selectOption(goal.id, opt.id)}
@@ -90,7 +114,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
             )}
             <button
               onClick={() => removeOption(goal.id, opt.id)}
-              className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
               aria-label="Remove"
             >
               <X className="h-3.5 w-3.5" />
