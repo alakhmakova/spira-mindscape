@@ -7,7 +7,6 @@ import { GoalCard } from "@/components/spira/GoalCard";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
 import { useShellFilters } from "@/components/shell/shell-store";
-import { differenceInCalendarDays, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +25,7 @@ export const Route = createFileRoute("/")({
 
 function GoalsOverview() {
   const goals = useSpira((s) => s.goals);
-  const { query, sort, filterDeadline, filterConfidence } = useShellFilters();
+  const { query, sort, sortDirection, deadlineFrom, deadlineTo, confidence, status } = useShellFilters();
   const [view, setView] = useState<"cards" | "table">("cards");
   const [open, setOpen] = useState(false);
 
@@ -35,40 +34,40 @@ function GoalsOverview() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     let arr = goals.filter((g) => g.title.toLowerCase().includes(q));
-    if (filterDeadline !== "all") {
+    if (deadlineFrom || deadlineTo) {
       arr = arr.filter((g) => {
         if (!g.deadline) return false;
-        const d = new Date(g.deadline);
-        const days = differenceInCalendarDays(d, new Date());
-        if (filterDeadline === "overdue") return isPast(d) && days < 0;
-        if (filterDeadline === "week") return days >= 0 && days <= 7;
-        if (filterDeadline === "month") return days >= 0 && days <= 30;
-        return true;
+        return (!deadlineFrom || g.deadline >= deadlineFrom) && (!deadlineTo || g.deadline <= deadlineTo);
       });
     }
-    if (filterConfidence !== "all") {
-      arr = arr.filter((g) => {
-        if (filterConfidence === "low") return g.confidence <= 3;
-        if (filterConfidence === "med") return g.confidence >= 4 && g.confidence <= 6;
-        return g.confidence >= 7;
-      });
+    if (confidence) {
+      arr = arr.filter((g) => g.confidence === Number(confidence));
+    }
+    if (status !== "all") {
+      arr = arr.filter((g) => (status === "achieved" ? goalProgress(g) >= 1 : goalProgress(g) < 1));
     }
     const sorted = [...arr].sort((a, b) => {
+      let result = 0;
       switch (sort) {
         case "deadline":
-          return (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999");
+          result = (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999");
+          break;
         case "progress":
-          return goalProgress(b) - goalProgress(a);
+          result = goalProgress(a) - goalProgress(b);
+          break;
         case "confidence":
-          return b.confidence - a.confidence;
+          result = a.confidence - b.confidence;
+          break;
         case "title":
-          return a.title.localeCompare(b.title);
+          result = a.title.localeCompare(b.title);
+          break;
         default:
-          return b.createdAt.localeCompare(a.createdAt);
+          result = a.createdAt.localeCompare(b.createdAt);
       }
+      return sortDirection === "asc" ? result : -result;
     });
     return sorted;
-  }, [goals, query, sort, filterDeadline, filterConfidence]);
+  }, [goals, query, sort, sortDirection, deadlineFrom, deadlineTo, confidence, status]);
 
   return (
     <div className="min-h-screen bg-[#f4f5f5]/80">
