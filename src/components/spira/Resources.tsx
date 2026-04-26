@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   LinkIcon,
   Paperclip,
-  User as UserIcon,
+  Mail,
   Trash2,
   ExternalLink,
   Download,
+  Copy,
+  Check,
+  ArrowUpRight,
+  Pencil,
+  ZoomIn,
   X,
 } from "lucide-react";
 import type { Goal, Resource } from "@/lib/spira/types";
@@ -24,8 +29,120 @@ const typeMeta = {
   note: { icon: FileText, label: "Note" },
   link: { icon: LinkIcon, label: "Link" },
   file: { icon: Paperclip, label: "File" },
-  contact: { icon: UserIcon, label: "Contact" },
+  contact: { icon: Mail, label: "Email" },
 } as const;
+
+/* ── helpers: copy & download ─────────────────────── */
+
+function stripHtml(html: string): string {
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return div.textContent || div.innerText || "";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+async function copyPlainText(text: string) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (err) {
+      console.warn("clipboard.writeText failed", err);
+    }
+  }
+  // Legacy fallback for HTTP / insecure contexts
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    document.execCommand("copy");
+  } catch (err) {
+    console.error("Fallback copy failed", err);
+  }
+  document.body.removeChild(textArea);
+}
+
+async function copyImageToClipboard(dataUrl: string, title?: string) {
+  if (navigator.clipboard && navigator.clipboard.write) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "image/png": toPngBlob(dataUrl),
+        }),
+      ]);
+      return;
+    } catch {}
+  }
+  
+  if (navigator.share && navigator.canShare) {
+    try {
+      const blob = dataUrlToBlob(dataUrl);
+      const file = new File([blob], "image.png", { type: blob.type });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    } catch {}
+  }
+
+  // Ultimate fallback if clipboard and share fail (e.g. insecure HTTP)
+  alert("Copying or sharing images on this browser requires a secure HTTPS connection.");
+}
+
+function toPngBlob(dataUrl: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0);
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(",");
+  const mime = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+function downloadDataUrl(dataUrl: string, filename: string) {
+  const blob = dataUrlToBlob(dataUrl);
+  downloadBlob(blob, filename);
+}
+
+function useCopied() {
+  const [copied, setCopied] = useState(false);
+  const run = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error("Copy/download action failed:", err);
+    }
+  };
+  return { copied, run } as const;
+}
 
 export function ResourcesList({ goal }: { goal: Goal }) {
   const removeResource = useSpira((s) => s.removeResource);
@@ -42,55 +159,400 @@ export function ResourcesList({ goal }: { goal: Goal }) {
   return (
     <>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {goal.resources.map((r) => {
-          const Icon = typeMeta[r.type].icon;
-          return (
-            <li
-              key={r.id}
-              className="surface-card p-4 flex items-start gap-3 group hover:border-primary/40 hover:shadow-[var(--shadow-soft)] transition-all cursor-pointer"
-              onClick={() => {
-                if (r.type === "link") window.open(r.url, "_blank");
-                else setPreviewId(r.id);
-              }}
-            >
-              <div className="h-9 w-9 rounded-md bg-primary-soft border border-primary/20 grid place-items-center shrink-0 text-primary">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                  {typeMeta[r.type].label}
-                </div>
-                <div className="text-sm font-semibold truncate text-foreground">
-                  {r.type === "contact" ? r.name : r.title}
-                </div>
-                {r.type === "link" && (
-                  <div className="text-xs text-muted-foreground truncate">{r.url}</div>
-                )}
-                {r.type === "contact" && (r.email || r.phone) && (
-                  <div className="text-xs text-muted-foreground truncate">
-                    {r.email ?? r.phone}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeResource(goal.id, r.id);
-                }}
-                className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
-                aria-label="Remove resource"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          );
-        })}
+        {goal.resources.map((r) => (
+          <ResourceCard
+            key={r.id}
+            resource={r}
+            onOpen={() => {
+              if (r.type === "link") window.open(r.url, "_blank");
+              else setPreviewId(r.id);
+            }}
+            onRemove={() => removeResource(goal.id, r.id)}
+          />
+        ))}
       </ul>
 
       <ResourcePreview goalId={goal.id} resourceId={previewId} onClose={() => setPreviewId(null)} />
     </>
   );
 }
+
+/* ── Card with inline actions ─────────────────────── */
+
+function ResourceCard({
+  resource: r,
+  onOpen,
+  onRemove,
+}: {
+  resource: Resource;
+  onOpen: () => void;
+  onRemove: () => void;
+}) {
+  const Icon = typeMeta[r.type].icon;
+  const { copied, run } = useCopied();
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (r.type === "note") {
+      run(() => copyPlainText(stripHtml(r.body)));
+    } else if (r.type === "link") {
+      run(() => copyPlainText(r.url));
+    } else if (r.type === "file" && r.mime.startsWith("image/")) {
+      run(() => copyImageToClipboard(r.dataUrl));
+    } else if (r.type === "contact" && r.email) {
+      run(() => copyPlainText(r.email!));
+    }
+  };
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (r.type === "note") {
+      const text = stripHtml(r.body);
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      downloadBlob(blob, `${r.title || "note"}.txt`);
+    } else if (r.type === "file") {
+      downloadDataUrl(r.dataUrl, r.title);
+    }
+  };
+
+  const canCopy = r.type === "note" || r.type === "link" || (r.type === "file" && r.mime.startsWith("image/")) || (r.type === "contact" && !!r.email);
+  const canDownload = r.type === "note" || r.type === "file";
+
+  return (
+    <li
+      className="surface-card p-4 flex items-start gap-3 group hover:border-primary/40 hover:shadow-[var(--shadow-soft)] transition-all cursor-pointer"
+      onClick={onOpen}
+    >
+      <div className="h-9 w-9 rounded-md bg-primary-soft border border-primary/20 grid place-items-center shrink-0 text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+          {typeMeta[r.type].label}
+        </div>
+        <div className="text-sm font-semibold truncate text-foreground">
+          {r.type === "contact" ? (r.name || r.email) : r.title}
+        </div>
+        {r.type === "link" && (
+          <div className="text-xs text-muted-foreground truncate">{r.url}</div>
+        )}
+        {r.type === "contact" && r.email && r.name && (
+          <div className="text-xs text-muted-foreground truncate">
+            {r.email}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0">
+        {canCopy && (
+          <button
+            onClick={handleCopy}
+            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-secondary transition-colors"
+            aria-label="Copy"
+            title={copied ? "Copied!" : "Copy"}
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        )}
+        {canDownload && (
+          <button
+            onClick={handleDownload}
+            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-secondary transition-colors"
+            aria-label="Download"
+            title="Download"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
+          aria-label="Remove resource"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function CopyField({ label, value, actionIcon, onAction, actionTitle }: { label: string; value: string; actionIcon?: React.ReactNode; onAction?: () => void; actionTitle?: string }) {
+  const { copied, run } = useCopied();
+  return (
+    <div>
+      <label className="text-sm font-semibold block mb-1.5">{label}</label>
+      <div className="flex items-center gap-2 group">
+        <div className="flex-1 min-w-0 text-sm font-medium break-words">{value}</div>
+        {actionIcon && onAction && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction();
+            }}
+            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary transition-colors shrink-0"
+            title={actionTitle}
+          >
+            {actionIcon}
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            run(() => copyPlainText(value));
+          }}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary transition-colors shrink-0"
+          title={`Copy ${label.toLowerCase()}`}
+        >
+          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Preview body (shared by sheet + drawer) ──────── */
+
+function PreviewBody({
+  resource,
+  goalId,
+  updateResource,
+  title,
+  isMobile,
+  onClose,
+}: {
+  resource: Resource;
+  goalId: string;
+  updateResource: (goalId: string, resourceId: string, patch: Partial<Resource>) => void;
+  title: string;
+  isMobile: boolean;
+  onClose: () => void;
+}) {
+  const { copied, run } = useCopied();
+  const [isEditingContact, setIsEditingContact] = useState(false);
+
+  if (isEditingContact) {
+    return <Form goalId={goalId} initialResource={resource} onDone={() => setIsEditingContact(false)} />;
+  }
+
+  const isImage = resource.type === "file" && resource.mime.startsWith("image/");
+  const isContact = resource.type === "contact";
+  const canCopy =
+    resource.type === "note" ||
+    resource.type === "link" ||
+    isImage;
+  const canDownload = resource.type === "note" || resource.type === "file";
+  const copyLabel = isImage && isMobile ? "Share" : resource.type === "note" ? "Copy as plain text" : resource.type === "link" ? "Copy URL" : "Copy image";
+
+  const handleCopy = () => {
+    if (resource.type === "note") {
+      run(() => copyPlainText(stripHtml(resource.body)));
+    } else if (resource.type === "link") {
+      run(() => copyPlainText(resource.url));
+    } else if (resource.type === "file" && resource.mime.startsWith("image/")) {
+      run(() => copyImageToClipboard(resource.dataUrl, resource.title));
+    }
+  };
+
+  const handleDownload = () => {
+    if (resource.type === "note") {
+      const text = stripHtml(resource.body);
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      downloadBlob(blob, `${resource.title || "note"}.txt`);
+    } else if (resource.type === "file") {
+      downloadDataUrl(resource.dataUrl, resource.title);
+    }
+  };
+
+  return (
+    <>
+      <div className="px-7 py-5 flex items-center justify-between sticky top-0 z-10 bg-primary text-white">
+        <div className="flex-1 min-w-0 pr-2">
+          {resource.type === "note" ? (
+            <AutoTextarea
+              value={resource.title}
+              onChange={(v) => updateResource(goalId, resource.id, { title: v })}
+              className="font-display text-2xl w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/50"
+              placeholder="Note title"
+            />
+          ) : (
+            <h2 className="font-sans font-bold text-lg truncate pr-4 !text-white" style={{ color: "white" }}>{title}</h2>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {canCopy && (
+            <button
+              onClick={handleCopy}
+              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+              aria-label="Copy"
+              title={copied ? "Copied!" : copyLabel}
+            >
+              {copied ? <Check className="h-4 w-4 text-green-300" /> : <Copy className="h-4 w-4" />}
+            </button>
+          )}
+          {canDownload && (
+            <button
+              onClick={handleDownload}
+              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+              aria-label="Download"
+              title="Download"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
+          {resource.type === "contact" && (
+            <button
+              onClick={() => setIsEditingContact(true)}
+              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+              aria-label="Edit"
+              title="Edit email"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+          <div className="w-px h-4 bg-white/30 mx-1" />
+          <button
+            onClick={onClose}
+            className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+            aria-label="Close preview"
+            title="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className={cn(
+        "px-7 py-6 overflow-y-auto flex-1 min-h-0",
+        resource.type === "file" && resource.mime === "application/pdf"
+          ? "flex flex-col gap-3 overflow-hidden"
+          : "flex flex-col",
+      )}>
+        {resource.type === "note" && (
+          <div className="flex-1 min-h-0 relative -mx-7">
+            <RichTextEditor
+              value={resource.body || ""}
+              onChange={(html) => updateResource(goalId, resource.id, { body: html })}
+              placeholder="Write your note here..."
+            />
+          </div>
+        )}
+        {resource.type === "link" && (
+          <a
+            href={resource.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 link-action text-sm font-semibold"
+          >
+            <ExternalLink className="h-4 w-4" />
+            {resource.url}
+          </a>
+        )}
+        {resource.type === "file" && (
+          <>
+            {resource.mime.startsWith("image/") && (
+              <ZoomableImage src={resource.dataUrl} alt={resource.title} />
+            )}
+            {resource.mime === "application/pdf" && (
+              <PdfViewer dataUrl={resource.dataUrl} title={resource.title} />
+            )}
+          </>
+        )}
+        {resource.type === "contact" && (
+          <div className="space-y-6">
+            {resource.name && <CopyField label="Name" value={resource.name} />}
+            {resource.email && (
+              <CopyField
+                label="Email"
+                value={resource.email}
+                actionIcon={<ArrowUpRight className="h-4 w-4" />}
+                actionTitle="Send email"
+                onAction={() => window.open(`mailto:${resource.email}`)}
+              />
+            )}
+            {resource.role && <CopyField label="Role" value={resource.role} />}
+            {resource.phone && <CopyField label="Phone" value={resource.phone} />}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ── PDF viewer (blob URL for iframe) ────────────── */
+
+function PdfViewer({ dataUrl, title }: { dataUrl: string; title: string }) {
+  const blobUrl = useMemo(() => {
+    try {
+      const byteString = atob(dataUrl.split(",")[1]);
+      const mimeString = dataUrl.split(",")[0].split(":")[1].split(";")[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      const blob = new Blob([ab], { type: mimeString });
+      return URL.createObjectURL(blob);
+    } catch {
+      return dataUrl;
+    }
+  }, [dataUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl !== dataUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl, dataUrl]);
+
+  return (
+    <div className="relative flex-1 min-h-0">
+      <iframe
+        src={blobUrl}
+        className="absolute inset-0 w-full h-full rounded-md border hairline bg-secondary"
+        title={title}
+      />
+    </div>
+  );
+}
+
+/* ── Zoomable image (tap to fullscreen on mobile) ── */
+
+function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+  const [zoomed, setZoomed] = useState(false);
+
+  return (
+    <>
+      <div className="relative cursor-zoom-in group" onClick={() => setZoomed(true)}>
+        <img src={src} alt={alt} className="w-full rounded-md border hairline" />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-md flex items-center justify-center">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white rounded-full p-2">
+            <ZoomIn className="h-5 w-5" />
+          </div>
+        </div>
+      </div>
+      {zoomed && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setZoomed(false)}
+        >
+          <button
+            onClick={() => setZoomed(false)}
+            className="absolute top-4 right-4 z-10 h-10 w-10 grid place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={src}
+            alt={alt}
+            className="max-w-full max-h-full object-contain touch-pinch-zoom"
+            style={{ touchAction: "pinch-zoom" }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── Preview panel ──────────────────────────────────── */
 
 function ResourcePreview({
   goalId,
@@ -114,85 +576,33 @@ function ResourcePreview({
     resource?.type === "contact" ? resource.name : (resource as any)?.title;
 
   const Body = resource && (
-    <>
-      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        {resource.type === "note" ? (
-          <AutoTextarea
-            value={resource.title}
-            onChange={(v) => updateResource(goalId, resource.id, { title: v })}
-            className="font-display text-2xl w-full pr-4"
-            placeholder="Note title"
-          />
-        ) : (
-          <h2 className="font-display text-2xl truncate">{title}</h2>
-        )}
-        {!(isMobile && resource.type === "note") && (
-          <button
-            onClick={onClose}
-            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-      <div className="px-7 py-6 overflow-y-auto flex-1 space-y-3">
-        {resource.type === "note" && (
-          <RichTextEditor
-            value={resource.body || ""}
-            onChange={(html) => updateResource(goalId, resource.id, { body: html })}
-            placeholder="Write your note here..."
-          />
-        )}
-        {resource.type === "link" && (
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 link-action text-sm font-semibold"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {resource.url}
-          </a>
-        )}
-        {resource.type === "file" && (
-          <div className="space-y-3">
-            {resource.mime.startsWith("image/") && (
-              <img
-                src={resource.dataUrl}
-                alt={resource.title}
-                className="w-full rounded-md border hairline"
-              />
-            )}
-            {resource.mime === "application/pdf" && (
-              <iframe
-                src={resource.dataUrl}
-                className="w-full h-[60vh] rounded-md border hairline bg-secondary"
-                title={resource.title}
-              />
-            )}
-            <a
-              href={resource.dataUrl}
-              download={resource.title}
-              className="inline-flex items-center gap-2 link-action text-sm font-semibold"
-            >
-              <Download className="h-4 w-4" /> Download
-            </a>
-          </div>
-        )}
-        {resource.type === "contact" && (
-          <div className="surface-card p-5 space-y-1.5">
-            <div className="font-display text-2xl">{resource.name}</div>
-            {resource.role && <div className="text-sm text-muted-foreground">{resource.role}</div>}
-            {resource.email && <div className="text-sm">{resource.email}</div>}
-            {resource.phone && <div className="text-sm num">{resource.phone}</div>}
-          </div>
-        )}
-      </div>
-    </>
+    <PreviewBody
+      resource={resource}
+      goalId={goalId}
+      updateResource={updateResource}
+      title={title}
+      isMobile={isMobile}
+      onClose={onClose}
+    />
   );
 
   if (isMobile) {
+    if (resource?.type === "note") {
+      return (
+        <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+          <DrawerContent className="mt-0 h-[100svh] max-h-[100svh] rounded-none border-0 px-0 flex flex-col bg-surface">
+          <MobileNoteBody
+            title={resource.title}
+            body={resource.body || ""}
+            onTitleChange={(v) => updateResource(goalId, resource.id, { title: v })}
+            onBodyChange={(html) => updateResource(goalId, resource.id, { body: html })}
+            onClose={onClose}
+          />
+          </DrawerContent>
+        </Drawer>
+      );
+    }
+
     return (
       <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
         <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
@@ -205,6 +615,86 @@ function ResourcePreview({
     <ResizableSheet open={open} onClose={onClose}>
       {Body}
     </ResizableSheet>
+  );
+}
+
+function MobileNoteBody({
+  title,
+  body,
+  onTitleChange,
+  onBodyChange,
+  onClose,
+}: {
+  title: string;
+  body: string;
+  onTitleChange: (value: string) => void;
+  onBodyChange: (html: string) => void;
+  onClose: () => void;
+}) {
+  const { copied, run } = useCopied();
+
+  const handleCopy = () => {
+    run(() => copyPlainText(stripHtml(body)));
+  };
+
+  const handleDownload = () => {
+    const text = stripHtml(body);
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    downloadBlob(blob, `${title || "note"}.txt`);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b hairline bg-surface px-5 py-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Note
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+              aria-label="Copy as plain text"
+              title={copied ? "Copied!" : "Copy as plain text"}
+            >
+              {copied ? <Check className="h-4.5 w-4.5 text-green-600" /> : <Copy className="h-4.5 w-4.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+              aria-label="Download as .txt"
+              title="Download as .txt"
+            >
+              <Download className="h-4.5 w-4.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              aria-label="Close note"
+              title="Close note"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        <AutoTextarea
+          value={title}
+          onChange={onTitleChange}
+          className="font-display text-2xl w-full"
+          placeholder="Note title"
+        />
+      </div>
+      <div className="min-h-0 flex flex-1 flex-col px-5 pt-5">
+        <RichTextEditor
+          value={body}
+          onChange={onBodyChange}
+          placeholder="Write your note here..."
+        />
+      </div>
+    </div>
   );
 }
 
@@ -227,6 +717,7 @@ function ResizableSheet({
     return Math.min(720, window.innerWidth - 80);
   });
   const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
   const handleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -240,6 +731,7 @@ function ResizableSheet({
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
     draggingRef.current = true;
+    setIsDragging(true);
     handleRef.current?.setAttribute("data-dragging", "true");
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
@@ -254,6 +746,7 @@ function ResizableSheet({
     };
     const onUp = () => {
       draggingRef.current = false;
+      setIsDragging(false);
       handleRef.current?.removeAttribute("data-dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -275,7 +768,10 @@ function ResizableSheet({
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="right"
-        className="p-0 flex flex-col bg-surface border-l hairline !max-w-none"
+        className={cn(
+          "p-0 flex flex-col bg-surface border-l hairline !max-w-none",
+          isDragging && "[&_iframe]:pointer-events-none",
+        )}
         style={{ width: `${width}px` }}
       >
         <div
@@ -302,12 +798,12 @@ export function NewResourceSheet({
   onOpenChange: (o: boolean) => void;
 }) {
   const isMobile = useIsMobile();
-  const Body = <Form goalId={goalId} onDone={() => onOpenChange(false)} />;
+  const handleDone = () => onOpenChange(false);
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
-          {Body}
+        <DrawerContent className="px-0 pb-safe max-h-[92vh] flex flex-col bg-surface">
+          {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>
     );
@@ -317,26 +813,27 @@ export function NewResourceSheet({
         side="right"
         className="w-full sm:max-w-lg p-0 flex flex-col bg-surface border-l hairline"
       >
-        {Body}
+        {open && <Form goalId={goalId} onDone={handleDone} />}
       </SheetContent>
     </Sheet>
   );
 }
 
-function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
+function Form({ goalId, initialResource, onDone }: { goalId: string; initialResource?: Resource; onDone: () => void }) {
   const addResource = useSpira((s) => s.addResource);
-  const [type, setType] = useState<Resource["type"]>("note");
-
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [url, setUrl] = useState("");
+  const updateResource = useSpira((s) => s.updateResource);
+  const [type, setType] = useState<Resource["type"]>(initialResource?.type || "note");
+  const submittedRef = useRef(false);
+  const [title, setTitle] = useState(initialResource && initialResource.type !== "contact" ? initialResource.title : "");
+  const [body, setBody] = useState(initialResource?.type === "note" ? initialResource.body : "");
+  const [url, setUrl] = useState(initialResource?.type === "link" ? initialResource.url : "");
   const [fileData, setFileData] = useState<{ name: string; mime: string; dataUrl: string } | null>(
-    null,
+    initialResource?.type === "file" ? { name: initialResource.title, mime: initialResource.mime, dataUrl: initialResource.dataUrl } : null,
   );
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(initialResource?.type === "contact" ? (initialResource.name || "") : "");
+  const [role, setRole] = useState(initialResource?.type === "contact" ? (initialResource.role || "") : "");
+  const [email, setEmail] = useState(initialResource?.type === "contact" ? (initialResource.email || "") : "");
+  const [phone, setPhone] = useState(initialResource?.type === "contact" ? (initialResource.phone || "") : "");
 
   const onFile = (f: File) => {
     const reader = new FileReader();
@@ -346,182 +843,105 @@ function Form({ goalId, onDone }: { goalId: string; onDone: () => void }) {
   };
 
   const submit = () => {
+    if (submittedRef.current) return;
+    let payload: Partial<Resource> | null = null;
     if (type === "note") {
       if (!title.trim()) return;
-      addResource(goalId, { type: "note", title: title.trim(), body } as Omit<Resource, "id">);
+      payload = { type: "note", title: title.trim(), body };
     } else if (type === "link") {
       if (!url.trim()) return;
-      addResource(goalId, {
-        type: "link",
-        title: title.trim() || url,
-        url: url.trim(),
-      } as Omit<Resource, "id">);
+      payload = { type: "link", title: title.trim() || url, url: url.trim() };
     } else if (type === "file") {
       if (!fileData) return;
-      addResource(goalId, {
-        type: "file",
-        title: title.trim() || fileData.name,
-        mime: fileData.mime,
-        dataUrl: fileData.dataUrl,
-      } as Omit<Resource, "id">);
+      payload = { type: "file", title: title.trim() || fileData.name, mime: fileData.mime, dataUrl: fileData.dataUrl };
     } else {
-      if (!name.trim()) return;
-      addResource(goalId, {
-        type: "contact",
-        name: name.trim(),
-        role,
-        email,
-        phone,
-      } as Omit<Resource, "id">);
+      if (!email.trim()) return;
+      payload = { type: "contact", name: name.trim(), role, email: email.trim(), phone };
     }
+    submittedRef.current = true;
     onDone();
+    if (initialResource) {
+      setTimeout(() => updateResource(goalId, initialResource.id, payload!), 50);
+    } else {
+      setTimeout(() => addResource(goalId, payload as Omit<Resource, "id">), 50);
+    }
   };
+
+  const isMobile = useIsMobile();
 
   return (
     <>
-      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg">Add a resource</h2>
-        <button
-          onClick={onDone}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-          aria-label="Close"
-        >
+      <div className={cn("px-7 py-5 flex items-center justify-between sticky top-0 z-10", !isMobile && "border-b hairline bg-surface")}>
+        <h2 className="font-sans font-bold text-lg">{initialResource ? "Edit resource" : "Add a resource"}</h2>
+        <button onClick={onDone} className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary" aria-label="Close">
           <X className="h-4 w-4" />
         </button>
       </div>
-
-      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1">
-        <div>
-          <label className="text-sm font-semibold block mb-2">
-            Type <span className="text-destructive">*</span>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(["note", "link", "file", "contact"] as const).map((t) => {
-              const Icon = typeMeta[t].icon;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setType(t)}
-                  className={cn(
-                    "flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left",
-                    type === t
-                      ? "bg-primary-soft border-primary text-primary"
-                      : "bg-surface border-border hover:border-border-strong",
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {typeMeta[t].label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {type !== "contact" && (
+      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1 min-h-0">
+        {!initialResource && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">
-              Title {type !== "file" && <span className="text-destructive">*</span>}
-            </label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-              autoFocus
-            />
+            <label className="text-sm font-semibold block mb-2">Type <span className="text-destructive">*</span></label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["note", "link", "file", "contact"] as const).map((t) => {
+                const Icon = typeMeta[t].icon;
+                return (
+                  <button key={t} onClick={() => setType(t)} className={cn("flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left", type === t ? "bg-primary-soft border-primary text-primary" : "bg-surface border-border hover:border-border-strong")}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {typeMeta[t].label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
-
+        {type !== "contact" && (
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Title {type !== "file" && <span className="text-destructive">*</span>}</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 bg-surface border-2 border-border focus-visible:border-primary" autoFocus />
+          </div>
+        )}
         {type === "note" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Note</label>
-            <Textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="bg-surface border-2 border-border focus-visible:border-primary min-h-32"
-            />
+            <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="bg-surface border-2 border-border focus-visible:border-primary min-h-32" />
           </div>
         )}
         {type === "link" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">
-              URL <span className="text-destructive">*</span>
-            </label>
-            <Input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://"
-              className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-            />
+            <label className="text-sm font-semibold block mb-1.5">URL <span className="text-destructive">*</span></label>
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
           </div>
         )}
         {type === "file" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">File</label>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-              className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-soft file:text-primary hover:file:bg-primary-soft/80"
-            />
-            {fileData && (
-              <p className="text-xs text-muted-foreground mt-2 truncate">
-                {fileData.name} · {fileData.mime || "unknown"}
-              </p>
-            )}
+            <input type="file" accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-soft file:text-primary hover:file:bg-primary-soft/80" />
           </div>
         )}
         {type === "contact" && (
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-semibold block mb-1.5">
-                Name <span className="text-destructive">*</span>
-              </label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-              />
+              <label className="text-sm font-semibold block mb-1.5">Name</label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Email <span className="text-destructive">*</span></label>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@example.com" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" autoFocus />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Role</label>
-              <Input
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-              />
+              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-semibold block mb-1.5">Email</label>
-                <Input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold block mb-1.5">Phone</label>
-                <Input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
-                />
-              </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Phone</label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
             </div>
           </div>
         )}
       </div>
-
-      <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
-        <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90"
-        >
-          Add resource
-        </button>
+      <div className={cn("px-7 py-4 flex items-center justify-end gap-3", !isMobile && "border-t hairline bg-surface")}>
+        <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">Cancel</button>
+        <button onClick={submit} className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90">{initialResource ? "Save changes" : "Add resource"}</button>
       </div>
     </>
   );

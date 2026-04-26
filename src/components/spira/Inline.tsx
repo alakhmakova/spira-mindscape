@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type TextareaHTMLAttributes } from "react";
 import { Plus, X, Check, Pencil, BookmarkCheck, BookmarkX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -183,12 +183,13 @@ export function AutoTextarea({
   onChange,
   placeholder,
   className,
+  ...props
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
-}) {
+} & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange">) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -203,6 +204,7 @@ export function AutoTextarea({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={1}
+      {...props}
       className={cn(
         "w-full resize-none bg-transparent outline-none text-base leading-relaxed placeholder:text-muted-foreground/70",
         className,
