@@ -128,26 +128,28 @@ function NumericBody({
   return (
     <div className="mt-4 space-y-2">
       {/* Inline-editable current / total / unit — centered above the bar */}
-      <div className="flex items-center justify-center gap-1 num font-semibold tabular-nums text-sm">
-        <InlineNumber
-          value={target.current}
+      <div className="flex items-center justify-center gap-1 num font-semibold tabular-nums text-sm text-foreground">
+        <InlineEditable
+          value={String(target.current)}
+          numeric
           min={0}
-          onChange={(v) => onUpdate({ current: v } as Partial<Target>)}
+          onChange={(v) => onUpdate({ current: parseInt(v, 10) } as Partial<Target>)}
           ariaLabel="Current value"
         />
-        <span className="text-muted-foreground font-normal">/</span>
-        <InlineNumber
-          value={target.total}
+        <span>/</span>
+        <InlineEditable
+          value={String(target.total)}
+          numeric
           min={0}
-          onChange={(v) => onUpdate({ total: v } as Partial<Target>)}
+          onChange={(v) => onUpdate({ total: parseInt(v, 10) } as Partial<Target>)}
           ariaLabel="Total value"
-          tone="muted"
         />
-        <InlineText
+        <InlineEditable
           value={target.unit ?? ""}
           placeholder="unit"
           onChange={(v) => onUpdate({ unit: v || undefined } as Partial<Target>)}
           ariaLabel="Unit"
+          className="ml-0.5"
         />
       </div>
       {/* Single progress bar with ± controls; percentage sits inline before the + */}
@@ -175,73 +177,72 @@ function NumericBody({
   );
 }
 
-function InlineNumber({
-  value,
-  onChange,
-  min,
-  ariaLabel,
-  tone = "default",
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  ariaLabel: string;
-  tone?: "default" | "muted";
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const [w, setW] = useState(`${String(value).length || 1}ch`);
-  useEffect(() => {
-    setW(`${Math.max(1, String(value).length)}ch`);
-  }, [value]);
-  return (
-    <input
-      ref={ref}
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      value={value}
-      aria-label={ariaLabel}
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => {
-        const raw = e.target.value.replace(/[^0-9]/g, "");
-        const n = raw === "" ? 0 : parseInt(raw, 10);
-        if (typeof min === "number" && n < min) return;
-        onChange(n);
-      }}
-      style={{ width: w }}
-      className={cn(
-        "bg-transparent outline-none rounded-sm px-0.5 num tabular-nums text-center cursor-text border-b border-dashed border-border-strong/60 hover:border-primary hover:bg-primary-soft/40 focus:bg-primary-soft focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors",
-        tone === "muted" && "text-muted-foreground font-normal",
-      )}
-    />
-  );
-}
-
-function InlineText({
+function InlineEditable({
   value,
   onChange,
   placeholder,
   ariaLabel,
+  numeric,
+  min,
+  className,
 }: {
   value: string;
   onChange: (v: string) => void;
-  placeholder: string;
+  placeholder?: string;
   ariaLabel: string;
+  numeric?: boolean;
+  min?: number;
+  className?: string;
 }) {
-  const [w, setW] = useState("4ch");
+  const ref = useRef<HTMLSpanElement>(null);
+
+  // Sync from props if not focused to handle external updates safely
   useEffect(() => {
-    setW(`${Math.max(value.length || placeholder.length, 3)}ch`);
-  }, [value, placeholder]);
+    if (ref.current && document.activeElement !== ref.current) {
+      ref.current.textContent = value;
+    }
+  }, [value]);
+
+  const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
+    let text = e.currentTarget.textContent || "";
+    if (numeric) {
+      text = text.replace(/[^0-9]/g, "");
+      if (text === "") text = "0";
+      const n = parseInt(text, 10);
+      text = String(typeof min === "number" ? Math.max(min, n) : n);
+    }
+    
+    if (e.currentTarget.textContent !== text) {
+      e.currentTarget.textContent = text;
+    }
+    
+    // Only trigger onChange if value actually changed
+    if (text !== value) {
+      onChange(text);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur();
+    }
+  };
+
   return (
-    <input
-      type="text"
-      value={value}
-      placeholder={placeholder}
+    <span
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
       aria-label={ariaLabel}
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ width: w }}
-      className="ml-1 bg-transparent outline-none rounded-sm px-0.5 text-muted-foreground font-normal cursor-text border-b border-dashed border-border-strong/60 placeholder:text-muted-foreground/50 hover:border-primary hover:bg-primary-soft/40 focus:bg-primary-soft focus:text-foreground focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      data-placeholder={placeholder}
+      className={cn(
+        "outline-none cursor-text px-1 rounded-md focus:ring-2 focus:ring-primary/15 transition-shadow min-w-[1ch] inline-block empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
+        className
+      )}
     />
   );
 }

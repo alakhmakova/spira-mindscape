@@ -97,12 +97,6 @@ function GoalWorkspace() {
       {/* Top bar — no back link, only actions */}
       <div className="flex items-center justify-end gap-2">
         <button
-          onClick={() => openAi({ goalId })}
-          className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
-        >
-          <Sparkles className="h-3.5 w-3.5" /> Coach this goal
-        </button>
-        <button
           onClick={() => setConfirmDelete(true)}
           className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
           aria-label="Delete goal"
