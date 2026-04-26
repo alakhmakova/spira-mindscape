@@ -612,9 +612,17 @@ function ResourcePreview({
     );
   }
   return (
-    <ResizableSheet open={open} onClose={onClose}>
-      {Body}
-    </ResizableSheet>
+    resource?.type === "contact" ? (
+      <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
+          {Body}
+        </SheetContent>
+      </Sheet>
+    ) : (
+      <ResizableSheet open={open} onClose={onClose}>
+        {Body}
+      </ResizableSheet>
+    )
   );
 }
 
@@ -701,7 +709,7 @@ function MobileNoteBody({
 const MIN_PANEL_WIDTH = 420;
 const RESIZE_KEY = "spira:resource-panel-width";
 
-function ResizableSheet({
+export function ResizableSheet({
   open,
   onClose,
   children,

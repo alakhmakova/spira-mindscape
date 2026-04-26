@@ -10,7 +10,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Target as TargetIcon, Flag } from "lucide-react";
+import { ChevronLeft, ChevronRight, Target as TargetIcon, Flag, CheckSquare } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ type DayEvent = {
   goalId: string;
   goalTitle: string;
   label: string;
-  kind: "goal" | "target";
+  kind: "goal" | "target" | "task";
 };
 
 export function CalendarMonth() {
@@ -40,6 +40,13 @@ export function CalendarMonth() {
       for (const t of g.targets) {
         const d = (t as any).deadline as string | undefined;
         push(d, { goalId: g.id, goalTitle: g.title, label: t.title, kind: "target" });
+        if (t.type === "checklist") {
+          for (const item of t.items) {
+            if (item.deadline) {
+              push(item.deadline, { goalId: g.id, goalTitle: g.title, label: item.text, kind: "task" });
+            }
+          }
+        }
       }
     }
     return map;
@@ -61,7 +68,7 @@ export function CalendarMonth() {
             {format(cursor, "MMMM yyyy")}
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">
-            ISO weeks · Goal and target deadlines
+            ISO weeks · Goal, target and task deadlines
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -147,8 +154,10 @@ export function CalendarMonth() {
                     >
                       {ev.kind === "goal" ? (
                         <Flag className="h-2.5 w-2.5 shrink-0" />
-                      ) : (
+                      ) : ev.kind === "target" ? (
                         <TargetIcon className="h-2.5 w-2.5 shrink-0" />
+                      ) : (
+                        <CheckSquare className="h-2.5 w-2.5 shrink-0" />
                       )}
                       <span className="truncate">{ev.label}</span>
                     </Link>

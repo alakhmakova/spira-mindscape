@@ -24,16 +24,18 @@ export function DeadlinePopover({
   hideDaysLeft = false,
   className,
   disableScroll = false,
+  side = "bottom",
 }: {
   iso?: string;
   onChange: (next: string | undefined) => void;
   size?: "sm" | "md";
   align?: "start" | "center" | "end";
-  variant?: "pill" | "input" | "button" | "text";
+  variant?: "pill" | "input" | "button" | "text" | "icon";
   placeholder?: string;
   hideDaysLeft?: boolean;
   className?: string;
   disableScroll?: boolean;
+  side?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
@@ -111,6 +113,17 @@ export function DeadlinePopover({
         >
           {date ? format(date, "MMM d, yyyy") : (placeholder || "Set deadline")}
         </PopoverTrigger>
+      ) : variant === "icon" ? (
+        <PopoverTrigger
+          className={cn(
+            "h-7 w-7 grid place-items-center rounded-md transition-colors",
+            date ? "text-primary" : "text-muted-foreground hover:text-primary hover:bg-secondary",
+            className
+          )}
+          title={date ? format(date, "MMM d, yyyy") : "Set deadline"}
+        >
+          <CalendarIcon className="h-3.5 w-3.5" />
+        </PopoverTrigger>
       ) : (
         <PopoverTrigger
           className={cn(
@@ -142,8 +155,8 @@ export function DeadlinePopover({
       )}
       <PopoverContent 
         align={align} 
-        side="top" 
-        avoidCollisions={false} 
+        side={side} 
+        avoidCollisions={true} 
         className="w-auto p-0 bg-surface border hairline shadow-lg overflow-hidden"
         onCloseAutoFocus={(e) => {
           if (variant === "input" && !disableScroll) {
@@ -159,7 +172,7 @@ export function DeadlinePopover({
       >
         <div className="flex items-center justify-between px-3 py-2 bg-primary text-primary-foreground">
           <span className="text-sm font-semibold">
-            Pick a date
+            {date ? format(date, "MMMM d, yyyy") : "Set deadline"}
           </span>
           <button
             onClick={() => setOpen(false)}

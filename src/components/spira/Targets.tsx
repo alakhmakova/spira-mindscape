@@ -7,6 +7,7 @@ import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ResizableSheet } from "@/components/spira/Resources";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -119,6 +120,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                   <DeadlinePopover
                     iso={t.deadline}
                     variant="text"
+                    side="top"
                     onChange={(next) => updateTarget(goal.id, t.id, { deadline: next })}
                   />
                 </TableCell>
@@ -220,29 +222,13 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
       </Sheet>
 
       {/* Checklist Tasks Sheet */}
-      <Sheet open={!!editingTasksFor} onOpenChange={(open) => !open && setEditingTasksFor(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
-          {editingTasksFor && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-6 py-4 border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0">
-                <h3 className="font-bold">Tasks</h3>
-                <button
-                  onClick={() => setEditingTasksFor(null)}
-                  className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex-1 p-6 overflow-y-auto">
-                <ChecklistEditor
-                  items={goal.targets.find(t => t.id === editingTasksFor)?.type === "checklist" ? (goal.targets.find(t => t.id === editingTasksFor) as Extract<Target, {type: "checklist"}>).items : []}
-                  onChange={(items) => updateTarget(goal.id, editingTasksFor, { items })}
-                />
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+      <TasksResizableSheet
+        open={!!editingTasksFor}
+        onClose={() => setEditingTasksFor(null)}
+        items={editingTasksFor ? (goal.targets.find(t => t.id === editingTasksFor)?.type === "checklist" ? (goal.targets.find(t => t.id === editingTasksFor) as Extract<Target, {type: "checklist"}>).items : []) : []}
+        title={editingTasksFor ? (goal.targets.find(t => t.id === editingTasksFor)?.title ?? "Tasks") : "Tasks"}
+        onChange={(items) => editingTasksFor && updateTarget(goal.id, editingTasksFor, { items })}
+      />
     </div>
   );
 }
@@ -459,22 +445,121 @@ function InlineEditable({
   );
 }
 
+const TASKS_MIN_WIDTH = 420;
+const TASKS_RESIZE_KEY = "spira:tasks-panel-width";
+const TASKS_DEFAULT_WIDTH = 600;
+
+function TasksResizableSheet({
+  open,
+  onClose,
+  items,
+  title,
+  onChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: { id: string; text: string; done: boolean; deadline?: string }[];
+  title: string;
+  onChange: (items: { id: string; text: string; done: boolean; deadline?: string }[]) => void;
+}) {
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return TASKS_DEFAULT_WIDTH;
+    const stored = Number(window.localStorage.getItem(TASKS_RESIZE_KEY));
+    return stored >= TASKS_MIN_WIDTH ? stored : TASKS_DEFAULT_WIDTH;
+  });
+  const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const handleRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const compact = isMobile;
+
+  useEffect(() => {
+    const onResize = () => setWidth((w) => Math.min(w, window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(TASKS_RESIZE_KEY, String(width));
+  }, [width]);
+
+  const startDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    setIsDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current) return;
+      const next = Math.max(TASKS_MIN_WIDTH, Math.min(window.innerWidth, window.innerWidth - ev.clientX));
+      setWidth(next);
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent
+        side="right"
+        className={cn("p-0 flex flex-col bg-surface border-l hairline !max-w-none", isDragging && "[&_iframe]:pointer-events-none")}
+        style={{ width: `${width}px` }}
+      >
+        <div
+          ref={handleRef}
+          onPointerDown={startDrag}
+          className="resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className={cn("border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0", compact ? "px-3 py-3" : "px-6 py-4")}>
+            <h3 className={cn("font-bold truncate flex-1 min-w-0 pr-2", compact && "text-sm")}>{title}</h3>
+            <button
+              onClick={onClose}
+              className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className={cn("flex-1 overflow-y-auto", compact ? "p-2" : "p-6")}>
+            <ChecklistEditor items={items} onChange={onChange} compact={compact} />
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function ChecklistEditor({
   items,
   onChange,
+  compact = false,
 }: {
-  items: { id: string; text: string; done: boolean }[];
-  onChange: (items: { id: string; text: string; done: boolean }[]) => void;
+  items: { id: string; text: string; done: boolean; deadline?: string }[];
+  onChange: (items: { id: string; text: string; done: boolean; deadline?: string }[]) => void;
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const uid = () => Math.random().toString(36).slice(2, 9);
   return (
-    <div className="mt-4 space-y-1.5">
+    <div className={cn("space-y-1", !compact && "mt-4")}>
       {items.map((it) => (
         <div
           key={it.id}
           className={cn(
-            "flex items-center gap-3 px-2 py-1.5 rounded-md transition-colors",
+            "flex items-center gap-2 rounded-md transition-colors group/task",
+            compact ? "px-1 py-1" : "px-2 py-1.5",
             it.done ? "bg-primary-soft/40" : "hover:bg-secondary/60",
           )}
         >
@@ -489,16 +574,33 @@ function ChecklistEditor({
           >
             {it.done && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
           </button>
-          <input
-            value={it.text}
-            onChange={(e) =>
-              onChange(items.map((i) => (i.id === it.id ? { ...i, text: e.target.value } : i)))
-            }
+          <span
             className={cn(
-              "flex-1 bg-transparent outline-none text-sm",
+              "flex-1 text-sm truncate",
               it.done && "line-through text-muted-foreground",
             )}
-          />
+          >
+            {it.text}
+          </span>
+          {compact ? (
+            <DeadlinePopover
+              iso={it.deadline}
+              variant="icon"
+              onChange={(next) =>
+                onChange(items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)))
+              }
+            />
+          ) : (
+            <DeadlinePopover
+              iso={it.deadline}
+              variant="text"
+              placeholder="Set deadline"
+              onChange={(next) =>
+                onChange(items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)))
+              }
+              className="text-xs tabular-nums text-muted-foreground"
+            />
+          )}
           <button
             onClick={() => onChange(items.filter((i) => i.id !== it.id))}
             className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
@@ -508,7 +610,7 @@ function ChecklistEditor({
           </button>
         </div>
       ))}
-      <div className="flex items-center gap-3 px-2 py-1.5">
+      <div className={cn("flex items-center gap-2", compact ? "px-1 py-1" : "px-2 py-1.5")}>
         <span className="h-4 w-4 rounded-sm border-2 border-dashed border-border-strong shrink-0" />
         <input
           value={draft}
