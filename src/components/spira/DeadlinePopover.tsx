@@ -29,7 +29,7 @@ export function DeadlinePopover({
   onChange: (next: string | undefined) => void;
   size?: "sm" | "md";
   align?: "start" | "center" | "end";
-  variant?: "pill" | "input" | "button";
+  variant?: "pill" | "input" | "button" | "text";
   placeholder?: string;
   hideDaysLeft?: boolean;
   className?: string;
@@ -101,6 +101,16 @@ export function DeadlinePopover({
           <CalendarIcon className="h-3.5 w-3.5" />
           {date ? format(date, "MMM d, yyyy") : (placeholder || "Set deadline")}
         </PopoverTrigger>
+      ) : variant === "text" ? (
+        <PopoverTrigger
+          className={cn(
+            "text-sm hover:text-primary transition-colors text-left",
+            !date && "text-muted-foreground",
+            className
+          )}
+        >
+          {date ? format(date, "MMM d, yyyy") : (placeholder || "Set deadline")}
+        </PopoverTrigger>
       ) : (
         <PopoverTrigger
           className={cn(
@@ -132,7 +142,7 @@ export function DeadlinePopover({
       )}
       <PopoverContent 
         align={align} 
-        side="bottom" 
+        side="top" 
         avoidCollisions={false} 
         className="w-auto p-0 bg-surface border hairline shadow-lg overflow-hidden"
         onCloseAutoFocus={(e) => {

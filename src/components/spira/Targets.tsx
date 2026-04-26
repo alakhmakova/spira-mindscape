@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, Minus, Plus, Trash2, X } from "lucide-react";
+import { Check, Minus, Plus, Trash2, X, ChevronsUpDown, ChevronDown } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { targetProgress } from "@/lib/spira/progress";
@@ -10,6 +10,10 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export function TargetsList({ goal }: { goal: Goal }) {
   const { updateTarget, removeTarget } = useSpira();
@@ -17,11 +21,11 @@ export function TargetsList({ goal }: { goal: Goal }) {
   return (
     <div className="space-y-3">
       {goal.targets.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">
+        <p className="text-sm text-muted-foreground italic px-1">
           Targets are how you execute. Add a numeric, binary, or checklist target.
         </p>
       )}
-      <ul className="space-y-3">
+      <ul className="space-y-3 md:hidden">
         {goal.targets.map((t) => (
           <TargetRow
             key={t.id}
@@ -31,6 +35,214 @@ export function TargetsList({ goal }: { goal: Goal }) {
           />
         ))}
       </ul>
+      {goal.targets.length > 0 && <DesktopTargetsTable goal={goal} />}
+    </div>
+  );
+}
+
+function DesktopTargetsTable({ goal }: { goal: Goal }) {
+  const { updateTarget, removeTarget } = useSpira();
+  const [sortField, setSortField] = useState<"title" | "deadline" | "progress">("deadline");
+  const [sortDesc, setSortDesc] = useState(false);
+  const [editingTasksFor, setEditingTasksFor] = useState<string | null>(null);
+  const [editingNumericFor, setEditingNumericFor] = useState<string | null>(null);
+
+  const toggleSort = (field: "title" | "deadline" | "progress") => {
+    if (sortField === field) setSortDesc(!sortDesc);
+    else {
+      setSortField(field);
+      setSortDesc(false);
+    }
+  };
+
+  const sortedTargets = [...goal.targets].sort((a, b) => {
+    let cmp = 0;
+    if (sortField === "title") {
+      cmp = a.title.localeCompare(b.title);
+    } else if (sortField === "deadline") {
+      const ad = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+      const bd = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+      cmp = ad - bd;
+    } else if (sortField === "progress") {
+      cmp = targetProgress(a) - targetProgress(b);
+    }
+    return sortDesc ? -cmp : cmp;
+  });
+
+  const SortIcon = ({ field }: { field: string }) => {
+    const active = sortField === field;
+    return (
+      <span className={cn("inline-flex flex-col items-center justify-center gap-[3px] ml-1.5", !active && "opacity-30 group-hover:opacity-60 transition-opacity")}>
+        <svg width="8" height="5" viewBox="0 0 8 5" className={cn(active && !sortDesc ? "opacity-100" : "opacity-50")}>
+          <path d="M4 0L8 5H0L4 0Z" fill="currentColor" />
+        </svg>
+        <svg width="8" height="5" viewBox="0 0 8 5" className={cn(active && sortDesc ? "opacity-100" : "opacity-50")}>
+          <path d="M4 5L0 0H8L4 5Z" fill="currentColor" />
+        </svg>
+      </span>
+    );
+  };
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader className="bg-muted">
+          <TableRow className="border-0 border-b">
+            <TableHead className="cursor-pointer hover:text-foreground w-[45%] pl-6" onClick={() => toggleSort("title")}>
+              <div className="flex items-center">Target Name <SortIcon field="title" /></div>
+            </TableHead>
+            <TableHead className="cursor-pointer hover:text-foreground w-[15%]" onClick={() => toggleSort("deadline")}>
+              <div className="flex items-center">Deadline <SortIcon field="deadline" /></div>
+            </TableHead>
+            <TableHead className="w-[15%]">Status</TableHead>
+            <TableHead className="cursor-pointer hover:text-foreground w-[15%]" onClick={() => toggleSort("progress")}>
+              <div className="flex items-center">Progress <SortIcon field="progress" /></div>
+            </TableHead>
+            <TableHead className="w-[10%] text-right pr-6">Delete</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sortedTargets.map((t) => {
+            const progress = targetProgress(t);
+            return (
+              <TableRow key={t.id} className="group/row">
+                <TableCell className="pl-6">
+                  <input
+                    value={t.title}
+                    onChange={(e) => updateTarget(goal.id, t.id, { title: e.target.value })}
+                    maxLength={60}
+                    className="w-full bg-transparent outline-none border-none ring-0 focus:ring-0 focus:outline-none font-medium text-sm text-foreground placeholder:text-muted-foreground/50 truncate cursor-default focus:cursor-text"
+                    placeholder="Untitled target"
+                  />
+                </TableCell>
+                <TableCell>
+                  <DeadlinePopover
+                    iso={t.deadline}
+                    variant="text"
+                    onChange={(next) => updateTarget(goal.id, t.id, { deadline: next })}
+                  />
+                </TableCell>
+                <TableCell>
+                  {t.type === "binary" && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-2 group h-8">
+                          <div className={cn("h-2 w-2 rounded-full shrink-0", t.done ? "bg-emerald-600" : "bg-muted-foreground/40")}></div>
+                          <span className="text-sm text-foreground group-hover:text-primary transition-colors">
+                            {t.done ? "Done" : "Not done"}
+                          </span>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[120px]">
+                        <DropdownMenuItem onClick={() => updateTarget(goal.id, t.id, { done: false })} className="text-sm">
+                          Not done
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => updateTarget(goal.id, t.id, { done: true })} className="text-sm">
+                          Done
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {t.type === "numeric" && (
+                    <button
+                      onClick={() => setEditingNumericFor(t.id)}
+                      className="flex items-center gap-2 group h-8"
+                    >
+                      <div className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></div>
+                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">Update</span>
+                    </button>
+                  )}
+                  {t.type === "checklist" && (
+                    <button
+                      onClick={() => setEditingTasksFor(t.id)}
+                      className="flex items-center gap-2 group h-8"
+                    >
+                      <div className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></div>
+                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">Tasks</span>
+                    </button>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <ProgressBar value={progress} className="w-full max-w-[80px]" />
+                    <span className="text-xs font-semibold num tabular-nums text-foreground/80 min-w-[3ch] text-right">
+                      {Math.round(progress * 100)}%
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right pr-6">
+                  <button
+                    onClick={() => removeTarget(goal.id, t.id)}
+                    className="text-black opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
+                    title="Delete target"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      
+      {/* Numeric Updates Sheet */}
+      <Sheet open={!!editingNumericFor} onOpenChange={(open) => !open && setEditingNumericFor(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
+          {editingNumericFor && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-6 py-4 border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0">
+                <h3 className="font-bold">Update Progress</h3>
+                <button
+                  onClick={() => setEditingNumericFor(null)}
+                  className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 p-6 overflow-y-auto">
+                {(() => {
+                  const target = goal.targets.find(t => t.id === editingNumericFor);
+                  if (!target || target.type !== "numeric") return null;
+                  return (
+                    <div className="pt-2">
+                      <NumericBody
+                        target={target}
+                        onUpdate={(patch) => updateTarget(goal.id, target.id, patch)}
+                        progress={targetProgress(target)}
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Checklist Tasks Sheet */}
+      <Sheet open={!!editingTasksFor} onOpenChange={(open) => !open && setEditingTasksFor(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
+          {editingTasksFor && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-6 py-4 border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0">
+                <h3 className="font-bold">Tasks</h3>
+                <button
+                  onClick={() => setEditingTasksFor(null)}
+                  className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 p-6 overflow-y-auto">
+                <ChecklistEditor
+                  items={goal.targets.find(t => t.id === editingTasksFor)?.type === "checklist" ? (goal.targets.find(t => t.id === editingTasksFor) as Extract<Target, {type: "checklist"}>).items : []}
+                  onChange={(items) => updateTarget(goal.id, editingTasksFor, { items })}
+                />
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -200,7 +200,7 @@ function GoalWorkspace() {
 
       <div id="targets-section">
         <Section
-          title="Targets"
+          title="Will do"
           hint="How you execute"
           count={goal.targets.length}
           action={
