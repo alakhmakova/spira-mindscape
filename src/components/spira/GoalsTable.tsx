@@ -205,6 +205,11 @@ function FilterBtn({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
+function isAchieved(item: TimelineItem): boolean {
+  if (item.kind === "task") return item.done;
+  return item.progress >= 1;
+}
+
 function getItemMeta(item: TimelineItem) {
   if (item.kind === "goal") {
     return {
