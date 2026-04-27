@@ -70,6 +70,17 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
     return sortDesc ? -cmp : cmp;
   });
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace("#", "");
+    if (!hash.startsWith("task-")) return;
+    const taskId = hash.replace("task-", "");
+    const target = goal.targets.find((t) => t.type === "checklist" && t.items.some((item) => item.id === taskId));
+    if (!target) return;
+    setEditingTasksFor(target.id);
+    window.setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+  }, [goal.targets]);
+
   const SortIcon = ({ field }: { field: string }) => {
     const active = sortField === field;
     return (
