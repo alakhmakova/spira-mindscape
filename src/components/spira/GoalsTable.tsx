@@ -138,10 +138,12 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
 function TimelineRow({
   item,
   isLast,
+  onDeadlineChange,
   onOpen,
 }: {
   item: TimelineItem;
   isLast: boolean;
+  onDeadlineChange: (next?: string) => void;
   onOpen: () => void;
 }) {
   const meta = getItemMeta(item);
@@ -167,8 +169,8 @@ function TimelineRow({
       <button
         onClick={onOpen}
         className={cn(
-          "mb-7 w-full rounded-lg border p-4 text-left transition-colors hover:bg-secondary/70 sm:p-5",
-          achieved ? "border-success/50 bg-success/10" : meta.card,
+          "mb-7 w-full py-1 text-left transition-colors hover:text-primary",
+          achieved && "text-success",
         )}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -187,7 +189,15 @@ function TimelineRow({
               </span>
             </div>
             <h3 className="text-[17px] font-semibold leading-snug text-foreground">{item.title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{item.kind === "goal" ? `${item.goal.targets.length} targets` : item.goal.title}</p>
+            <div onClick={(e) => e.stopPropagation()} className="mt-1 inline-flex">
+              <DeadlinePopover
+                iso={item.deadline}
+                onChange={onDeadlineChange}
+                variant="text"
+                hideDaysLeft
+                className="text-sm text-muted-foreground"
+              />
+            </div>
           </div>
           <time className="shrink-0 text-sm font-semibold text-foreground">{format(new Date(item.deadline), "MMM d")}</time>
         </div>
@@ -209,17 +219,12 @@ function TimelineRow({
   );
 }
 
-function FilterBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function KindCheckbox({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "h-9 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors",
-        active ? "border hairline bg-surface text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
+    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">
+      <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 accent-primary" />
+      {label}
+    </label>
   );
 }
 
