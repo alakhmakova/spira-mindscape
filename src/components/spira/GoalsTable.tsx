@@ -178,27 +178,17 @@ function TimelineRow({
               </span>
             </div>
             <h3 className="text-[17px] font-semibold leading-snug text-foreground">{item.title}</h3>
-            <div onClick={(e) => e.stopPropagation()} className="mt-1 inline-flex">
-              <DeadlinePopover
-                iso={item.deadline}
-                onChange={onDeadlineChange}
-                variant="text"
-                hideDaysLeft
-                className="text-sm text-muted-foreground"
-              />
+            <div onClick={(e) => e.stopPropagation()} className="mt-1 flex items-center gap-3">
+              <DeadlinePopover iso={item.deadline} onChange={onDeadlineChange} variant="text" hideDaysLeft className="text-sm text-muted-foreground" />
+              {item.kind === "target" && <span className="text-sm font-semibold text-foreground tabular-nums">{Math.round(item.progress * 100)}%</span>}
             </div>
           </div>
-          {item.kind === "target" && (
-            <span className="shrink-0 text-sm font-semibold text-brand-orange tabular-nums">{Math.round(item.progress * 100)}%</span>
-          )}
         </div>
         {item.kind === "goal" ? (
           <div className="mt-4 flex items-center gap-3">
             <ProgressBar value={item.progress} className="h-1.5 flex-1" tone="primary" />
             <span className="num w-10 text-right text-xs font-semibold tabular-nums">{Math.round(item.progress * 100)}%</span>
           </div>
-        ) : item.kind === "target" ? (
-          <div className="mt-3 text-sm font-semibold text-brand-orange tabular-nums">{Math.round(item.progress * 100)}% complete</div>
         ) : (
           null
         )}
@@ -211,7 +201,7 @@ function TimelineRow({
               : "hairline-strong text-foreground hover:border-primary hover:text-primary",
           )}
         >
-          {achieved ? "Achieved" : "Let&apos;s do it"}
+          {achieved ? "Achieved" : "Let's do it"}
         </button>
       </div>
     </li>
