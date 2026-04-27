@@ -106,7 +106,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
           {sortedTargets.map((t) => {
             const progress = targetProgress(t);
             return (
-              <TableRow key={t.id} className="group/row">
+              <TableRow key={t.id} id={`target-${t.id}`} className="group/row scroll-mt-24">
                 <TableCell className="pl-6">
                   <input
                     value={t.title}
@@ -245,7 +245,7 @@ function TargetRow({
   const progress = targetProgress(target);
 
   return (
-    <li className="surface-card p-4 sm:p-5">
+    <li id={`target-${target.id}`} className="surface-card scroll-mt-24 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0 space-y-2">
           {/* Top row: deadline (replaces type label) */}
@@ -556,9 +556,10 @@ function ChecklistEditor({
     <div className={cn("space-y-1", !compact && "mt-4")}>
       {items.map((it) => (
         <div
+          id={`task-${it.id}`}
           key={it.id}
           className={cn(
-            "flex items-center gap-2 rounded-md transition-colors group/task",
+            "flex scroll-mt-24 items-center gap-2 rounded-md transition-colors group/task",
             compact ? "px-1 py-1" : "px-2 py-1.5",
             it.done ? "bg-primary-soft/40" : "hover:bg-secondary/60",
           )}
