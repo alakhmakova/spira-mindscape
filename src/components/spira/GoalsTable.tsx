@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, CheckCircle2, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
-import { differenceInCalendarDays, format, isPast } from "date-fns";
+import { Check, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
+import { differenceInCalendarDays, isPast } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
 import { goalProgress, targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
