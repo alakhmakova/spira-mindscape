@@ -173,11 +173,6 @@ function TimelineRow({
               <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", meta.badge)}>
                 {meta.label}
               </span>
-              {achieved && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
-                  <CheckCircle2 className="h-3 w-3" /> Achieved
-                </span>
-              )}
               <span className={cn("text-xs font-medium", overdue ? "text-destructive" : "text-muted-foreground")}>
                 {overdue ? `${Math.abs(days)}d overdue` : days === 0 ? "Today" : `${days}d left`}
               </span>
@@ -193,26 +188,30 @@ function TimelineRow({
               />
             </div>
           </div>
-          <time className="shrink-0 text-sm font-semibold text-foreground">{format(new Date(item.deadline), "MMM d")}</time>
+          {item.kind === "target" && (
+            <span className="shrink-0 text-sm font-semibold text-brand-orange tabular-nums">{Math.round(item.progress * 100)}%</span>
+          )}
         </div>
-        {item.kind !== "task" ? (
+        {item.kind === "goal" ? (
           <div className="mt-4 flex items-center gap-3">
-            <ProgressBar value={item.progress} className="h-1.5 flex-1" tone={item.kind === "target" ? "muted" : "primary"} />
+            <ProgressBar value={item.progress} className="h-1.5 flex-1" tone="primary" />
             <span className="num w-10 text-right text-xs font-semibold tabular-nums">{Math.round(item.progress * 100)}%</span>
           </div>
+        ) : item.kind === "target" ? (
+          <div className="mt-3 text-sm font-semibold text-brand-orange tabular-nums">{Math.round(item.progress * 100)}% complete</div>
         ) : (
-          <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <span className={cn("grid h-5 w-5 place-items-center rounded-full border", item.done && "border-success bg-success text-primary-foreground")}>
-              {item.done && <Check className="h-3.5 w-3.5" />}
-            </span>
-            <span>{item.target.title}</span>
-          </div>
+          null
         )}
         <button
           onClick={onOpen}
-          className="mt-3 inline-flex h-9 items-center rounded-md border hairline-strong px-4 text-sm font-semibold text-foreground transition-colors hover:border-primary hover:text-primary"
+          className={cn(
+            "mt-3 inline-flex h-9 items-center rounded-md border px-4 text-sm font-semibold transition-colors",
+            achieved
+              ? "border-success bg-success text-primary-foreground hover:bg-success/90"
+              : "hairline-strong text-foreground hover:border-primary hover:text-primary",
+          )}
         >
-          Let&apos;s do it
+          {achieved ? "Achieved" : "Let&apos;s do it"}
         </button>
       </div>
     </li>
