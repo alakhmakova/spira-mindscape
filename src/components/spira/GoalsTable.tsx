@@ -71,7 +71,7 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
               key={item.id}
               item={item}
               isLast={idx === items.length - 1}
-              onDeadlineChange={(next) => updateItemDeadline(item, next)}
+              onDeadlineChange={(next?: string) => updateItemDeadline(item, next)}
               onOpen={() =>
                 nav({
                   to: "/goals/$goalId",
@@ -166,13 +166,7 @@ function TimelineRow({
           {achieved ? <Check className="h-3.5 w-3.5" /> : <meta.icon className="h-3.5 w-3.5" />}
         </span>
       </div>
-      <button
-        onClick={onOpen}
-        className={cn(
-          "mb-7 w-full py-1 text-left transition-colors hover:text-primary",
-          achieved && "text-success",
-        )}
-      >
+      <div className={cn("mb-7 w-full py-1 text-left", achieved && "text-success")}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -214,7 +208,13 @@ function TimelineRow({
             <span>{item.target.title}</span>
           </div>
         )}
-      </button>
+        <button
+          onClick={onOpen}
+          className="mt-3 inline-flex h-9 items-center rounded-md border hairline-strong px-4 text-sm font-semibold text-foreground transition-colors hover:border-primary hover:text-primary"
+        >
+          Let&apos;s do it
+        </button>
+      </div>
     </li>
   );
 }
