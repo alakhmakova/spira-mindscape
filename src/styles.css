@@ -32,6 +32,8 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-soft: var(--brand-orange-soft);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -96,6 +98,8 @@
   --primary-foreground: oklch(0.99 0 0);
   /* Tinted surface used by selected option / checkbox row */
   --primary-soft: oklch(0.96 0.022 190);
+  --brand-orange: oklch(0.67 0.22 36);
+  --brand-orange-soft: oklch(0.95 0.055 50);
 
   --secondary: oklch(0.95 0.006 90);
   --secondary-foreground: oklch(0.22 0.02 200);
