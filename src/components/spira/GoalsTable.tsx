@@ -5,9 +5,11 @@ import { differenceInCalendarDays, format, isPast } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
 import { goalProgress, targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
+import { DeadlinePopover } from "./DeadlinePopover";
+import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
 
-type TimelineFilter = "goals" | "goals-targets" | "all";
+type TimelineKind = "goal" | "target" | "task";
 
 type TimelineItem =
   | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number }
@@ -24,8 +26,23 @@ type TimelineItem =
 
 export function GoalsTable({ goals }: { goals: Goal[] }) {
   const nav = useNavigate();
-  const [filter, setFilter] = useState<TimelineFilter>("all");
-  const items = buildTimelineItems(goals, filter);
+  const { updateGoal, updateTarget } = useSpira();
+  const [visibleKinds, setVisibleKinds] = useState<Record<TimelineKind, boolean>>({ goal: true, target: true, task: true });
+  const items = buildTimelineItems(goals, visibleKinds);
+
+  const toggleKind = (kind: TimelineKind) => {
+    setVisibleKinds((current) => ({ ...current, [kind]: !current[kind] }));
+  };
+
+  const updateItemDeadline = (item: TimelineItem, next?: string) => {
+    if (item.kind === "goal") updateGoal(item.goal.id, { deadline: next });
+    if (item.kind === "target") updateTarget(item.goal.id, item.target.id, { deadline: next });
+    if (item.kind === "task") {
+      updateTarget(item.goal.id, item.target.id, {
+        items: item.target.items.map((task) => (task.id === item.id.replace("task-", "") ? { ...task, deadline: next } : task)),
+      });
+    }
+  };
 
   return (
     <div className="surface-card px-4 py-5 sm:px-7 sm:py-7">
@@ -36,16 +53,10 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
             Goals, targets and tasks with deadlines, ordered by the nearest date.
           </p>
         </div>
-        <div className="inline-flex w-fit rounded-md border hairline bg-secondary p-0.5">
-          <FilterBtn active={filter === "goals"} onClick={() => setFilter("goals")}>
-            Goals
-          </FilterBtn>
-          <FilterBtn active={filter === "goals-targets"} onClick={() => setFilter("goals-targets")}>
-            Goals and Targets
-          </FilterBtn>
-          <FilterBtn active={filter === "all"} onClick={() => setFilter("all")}>
-            Goals, Targets, Tasks
-          </FilterBtn>
+        <div className="flex w-fit flex-wrap items-center gap-3 rounded-md border hairline bg-secondary px-3 py-2">
+          <KindCheckbox checked={visibleKinds.goal} onChange={() => toggleKind("goal")} label="Goals" />
+          <KindCheckbox checked={visibleKinds.target} onChange={() => toggleKind("target")} label="Targets" />
+          <KindCheckbox checked={visibleKinds.task} onChange={() => toggleKind("task")} label="Tasks" />
         </div>
       </div>
 
@@ -60,7 +71,14 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
               key={item.id}
               item={item}
               isLast={idx === items.length - 1}
-              onOpen={() => nav({ to: "/goals/$goalId", params: { goalId: item.goal.id } })}
+              onDeadlineChange={(next) => updateItemDeadline(item, next)}
+              onOpen={() =>
+                nav({
+                  to: "/goals/$goalId",
+                  params: { goalId: item.goal.id },
+                  hash: item.kind === "goal" ? "goal-top" : item.kind === "target" ? `target-${item.target.id}` : `task-${item.id.replace("task-", "")}`,
+                })
+              }
             />
           ))}
         </ol>
@@ -69,11 +87,11 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
   );
 }
 
-function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem[] {
+function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, boolean>): TimelineItem[] {
   const items: TimelineItem[] = [];
 
   for (const goal of goals) {
-    if (goal.deadline) {
+    if (visibleKinds.goal && goal.deadline) {
       items.push({
         id: `goal-${goal.id}`,
         kind: "goal",
@@ -85,7 +103,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
     }
 
     for (const target of goal.targets) {
-      if (filter !== "goals" && target.deadline) {
+      if (visibleKinds.target && target.deadline) {
         items.push({
           id: `target-${target.id}`,
           kind: "target",
@@ -97,7 +115,7 @@ function buildTimelineItems(goals: Goal[], filter: TimelineFilter): TimelineItem
         });
       }
 
-      if (target.type === "checklist" && filter === "all") {
+      if (target.type === "checklist" && visibleKinds.task) {
         for (const task of target.items) {
           if (!task.deadline) continue;
           items.push({
