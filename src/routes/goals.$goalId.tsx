@@ -93,7 +93,7 @@ function GoalWorkspace() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
+    <div id="goal-top" className="mx-auto max-w-7xl scroll-mt-24 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
       {/* Top bar — no back link, only actions */}
       <div className="flex items-center justify-end gap-2">
         <button
