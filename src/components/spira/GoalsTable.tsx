@@ -166,7 +166,7 @@ function TimelineRow({
           {achieved ? <Check className="h-3.5 w-3.5" /> : <meta.icon className="h-3.5 w-3.5" />}
         </span>
       </div>
-      <div className={cn("mb-7 w-full py-1 text-left", achieved && "text-success")}>
+      <div className="mb-7 w-full py-1 text-left">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -198,7 +198,7 @@ function TimelineRow({
             "mt-3 inline-flex h-9 items-center rounded-md border px-4 text-sm font-semibold transition-colors",
             achieved
               ? "border-success bg-success text-primary-foreground hover:bg-success/90"
-              : "hairline-strong text-foreground hover:border-primary hover:text-primary",
+              : "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
           )}
         >
           {achieved ? "Achieved" : "Let's do it"}
@@ -236,9 +236,9 @@ function getItemMeta(item: TimelineItem) {
     return {
       icon: TargetIcon,
       label: "Target",
-      dot: "border-warning text-warning",
-      badge: "bg-warning/20 text-foreground",
-      card: "border-warning/40 bg-surface",
+      dot: "border-brand-orange text-brand-orange",
+      badge: "bg-brand-orange-soft text-foreground",
+      card: "border-brand-orange/40 bg-surface",
     };
   }
   return {
