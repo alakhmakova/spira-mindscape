@@ -113,20 +113,20 @@
   --input: oklch(0.899 0 0);
   --ring: oklch(0.51 0.092 194 / 0.4);
 
-  --chart-1: oklch(0.45 0.07 195);
-  --chart-2: oklch(0.6 0.1 220);
-  --chart-3: oklch(0.7 0.14 65);
-  --chart-4: oklch(0.6 0.15 320);
-  --chart-5: oklch(0.58 0.21 27);
+  --chart-1: oklch(0.51 0.092 194);
+  --chart-2: oklch(0.735 0.123 76);
+  --chart-3: oklch(0.52 0.13 143);
+  --chart-4: oklch(0.61 0.205 27);
+  --chart-5: oklch(0.51 0 0);
 
-  --sidebar: oklch(0.985 0.005 90);
-  --sidebar-foreground: oklch(0.22 0.02 200);
-  --sidebar-primary: oklch(0.45 0.07 195);
+  --sidebar: oklch(0.982 0 0);
+  --sidebar-foreground: oklch(0.321 0 0);
+  --sidebar-primary: oklch(0.51 0.092 194);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.955 0.008 195);
-  --sidebar-accent-foreground: oklch(0.22 0.02 200);
-  --sidebar-border: oklch(0.9 0.008 200);
-  --sidebar-ring: oklch(0.45 0.07 195 / 0.4);
+  --sidebar-accent: oklch(0.95 0.032 180);
+  --sidebar-accent-foreground: oklch(0.321 0 0);
+  --sidebar-border: oklch(0.899 0 0);
+  --sidebar-ring: oklch(0.51 0.092 194 / 0.4);
 }
 
 
@@ -146,7 +146,7 @@
   }
 
   ::selection {
-    background-color: oklch(0.45 0.07 195 / 0.18);
+    background-color: oklch(0.51 0.092 194 / 0.18);
     color: var(--color-foreground);
   }
 
@@ -155,14 +155,14 @@
   h3 {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.02em;
-    color: oklch(0.16 0.02 200);
+    letter-spacing: 0;
+    color: var(--color-foreground);
   }
 
   .font-display {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
   }
 
   .font-mono {
