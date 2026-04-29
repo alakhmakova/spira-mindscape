@@ -2,7 +2,13 @@ import type { Goal, Target } from "./types";
 
 export function targetProgress(t: Target): number {
   if (t.type === "binary") return t.done ? 1 : 0;
-  if (t.type === "numeric") return t.total > 0 ? Math.min(1, t.current / t.total) : 0;
+  if (t.type === "numeric") {
+    const start = t.start ?? (t.current > t.total ? t.current : 0);
+    const distance = Math.abs(t.total - start);
+    if (distance === 0) return t.current === t.total ? 1 : 0;
+    const completed = t.total >= start ? t.current - start : start - t.current;
+    return Math.max(0, Math.min(1, completed / distance));
+  }
   if (t.items.length === 0) return 0;
   return t.items.filter((i) => i.done).length / t.items.length;
 }

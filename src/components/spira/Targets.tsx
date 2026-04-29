@@ -334,6 +334,17 @@ function NumericBody({
   onUpdate: (patch: Partial<Target>) => void;
   progress: number;
 }) {
+  const preserveStart = () =>
+    target.start === undefined && target.current > target.total ? { start: target.current } : {};
+
+  const updateCurrent = (next: number) => {
+    onUpdate({ ...preserveStart(), current: next } as Partial<Target>);
+  };
+
+  const updateTotal = (next: number) => {
+    onUpdate({ ...(target.start === undefined && target.current > next ? { start: target.current } : {}), total: next } as Partial<Target>);
+  };
+
   return (
     <div className="mt-4 space-y-2">
       {/* Inline-editable current / total / unit — centered above the bar */}
@@ -342,7 +353,7 @@ function NumericBody({
           value={String(target.current)}
           numeric
           min={0}
-          onChange={(v) => onUpdate({ current: parseInt(v, 10) } as Partial<Target>)}
+          onChange={(v) => updateCurrent(parseInt(v, 10))}
           ariaLabel="Current value"
         />
         <span>/</span>
@@ -350,7 +361,7 @@ function NumericBody({
           value={String(target.total)}
           numeric
           min={0}
-          onChange={(v) => onUpdate({ total: parseInt(v, 10) } as Partial<Target>)}
+          onChange={(v) => updateTotal(parseInt(v, 10))}
           ariaLabel="Total value"
         />
         <InlineEditable
@@ -364,7 +375,7 @@ function NumericBody({
       {/* Single progress bar with ± controls; percentage sits inline before the + */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => onUpdate({ current: Math.max(0, target.current - 1) } as Partial<Target>)}
+          onClick={() => updateCurrent(Math.max(0, target.current - 1))}
           className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           aria-label="Decrement"
         >
@@ -375,7 +386,7 @@ function NumericBody({
           {Math.round(progress * 100)}%
         </span>
         <button
-          onClick={() => onUpdate({ current: target.current + 1 } as Partial<Target>)}
+          onClick={() => updateCurrent(target.current + 1)}
           className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           aria-label="Increment"
         >
