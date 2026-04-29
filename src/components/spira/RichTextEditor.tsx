@@ -417,7 +417,6 @@ function LinkDialog({
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
             placeholder="Link text"
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
           />
         </div>
 
@@ -429,7 +428,6 @@ function LinkDialog({
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             placeholder="https://"
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
             autoFocus
           />
         </div>

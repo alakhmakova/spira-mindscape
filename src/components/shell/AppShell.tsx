@@ -87,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search goals…"
-                className="w-full h-9 pl-9 pr-8 rounded-md bg-surface border hairline text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-shadow"
+                className="w-full h-9 pl-9 pr-8 rounded-md bg-surface border border-input text-sm outline-none placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring transition-colors"
               />
               {query && (
                 <button
