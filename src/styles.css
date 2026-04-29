@@ -5,10 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Spira — Warm Light Workspace Design System
- * Inspired by editorial / "thoughtful tool" aesthetics:
- * warm off-white surfaces, deep teal accent, serif display headings,
- * generous spacing, hairline borders, no busy chrome.
+ * Spira — Friendly professional workspace design system:
+ * Gusto-inspired teal actions, warm white surfaces, charcoal text,
+ * generous spacing, clear grouping, and empathetic status colors.
  */
 
 @theme inline {
@@ -64,74 +63,70 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* Display now uses the same Inter family — no serif. */
+    "Nunito", ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --font-display:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    "Nunito", ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --shadow-soft: 0 1px 2px 0 oklch(0.2 0.02 200 / 0.04);
+  --shadow-soft: 0 1px 2px 0 oklch(0.2 0 0 / 0.04);
   --shadow-raised:
-    0 1px 2px 0 oklch(0.2 0.02 200 / 0.04),
-    0 8px 28px -12px oklch(0.2 0.02 200 / 0.12);
+    0 1px 2px 0 oklch(0.2 0 0 / 0.04),
+    0 8px 28px -12px oklch(0.2 0 0 / 0.12);
 }
 
-/* Warm light — single source of truth. */
+/* Friendly Gusto-aligned light palette — single source of truth. */
 :root {
   --radius: 0.5rem;
 
-  /* Soft warm off-white page */
-  --background: oklch(0.985 0.005 90);
-  --foreground: oklch(0.18 0.02 200);
+  --background: oklch(0.982 0 0);
+  --foreground: oklch(0.321 0 0);
 
-  --surface: oklch(1 0 0);
+  --surface: oklch(0.982 0 0);
   --surface-raised: oklch(1 0 0);
-  --surface-sunken: oklch(0.965 0.006 90);
+  --surface-sunken: oklch(0.94 0 0);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 200);
+  --card: oklch(0.982 0 0);
+  --card-foreground: oklch(0.321 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 200);
+  --popover-foreground: oklch(0.321 0 0);
 
-  /* Deep teal — calm, premium, editorial */
-  --primary: oklch(0.45 0.07 195);
+  --primary: oklch(0.51 0.092 194);
   --primary-foreground: oklch(0.99 0 0);
-  /* Tinted surface used by selected option / checkbox row */
-  --primary-soft: oklch(0.96 0.022 190);
-  --brand-orange: oklch(0.67 0.22 36);
-  --brand-orange-soft: oklch(0.95 0.055 50);
+  --primary-soft: oklch(0.95 0.032 180);
+  --brand-orange: oklch(0.735 0.123 76);
+  --brand-orange-soft: oklch(0.94 0.045 80);
 
-  --secondary: oklch(0.95 0.006 90);
-  --secondary-foreground: oklch(0.22 0.02 200);
-  --muted: oklch(0.95 0.006 90);
-  --muted-foreground: oklch(0.45 0.015 220);
-  --accent: oklch(0.955 0.008 195);
-  --accent-foreground: oklch(0.22 0.02 200);
+  --secondary: oklch(0.94 0 0);
+  --secondary-foreground: oklch(0.321 0 0);
+  --muted: oklch(0.94 0 0);
+  --muted-foreground: oklch(0.51 0 0);
+  --accent: oklch(0.95 0.032 180);
+  --accent-foreground: oklch(0.321 0 0);
 
-  --destructive: oklch(0.58 0.21 27);
+  --destructive: oklch(0.61 0.205 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.55 0.1 165);
-  --warning: oklch(0.7 0.14 65);
+  --success: oklch(0.52 0.13 143);
+  --warning: oklch(0.735 0.123 76);
 
-  --border: oklch(0.9 0.008 200);
-  --border-strong: oklch(0.78 0.012 200);
-  --input: oklch(0.9 0.008 200);
-  --ring: oklch(0.45 0.07 195 / 0.4);
+  --border: oklch(0.899 0 0);
+  --border-strong: oklch(0.72 0 0);
+  --input: oklch(0.899 0 0);
+  --ring: oklch(0.51 0.092 194 / 0.4);
 
-  --chart-1: oklch(0.45 0.07 195);
-  --chart-2: oklch(0.6 0.1 220);
-  --chart-3: oklch(0.7 0.14 65);
-  --chart-4: oklch(0.6 0.15 320);
-  --chart-5: oklch(0.58 0.21 27);
+  --chart-1: oklch(0.51 0.092 194);
+  --chart-2: oklch(0.735 0.123 76);
+  --chart-3: oklch(0.52 0.13 143);
+  --chart-4: oklch(0.61 0.205 27);
+  --chart-5: oklch(0.51 0 0);
 
-  --sidebar: oklch(0.985 0.005 90);
-  --sidebar-foreground: oklch(0.22 0.02 200);
-  --sidebar-primary: oklch(0.45 0.07 195);
+  --sidebar: oklch(0.982 0 0);
+  --sidebar-foreground: oklch(0.321 0 0);
+  --sidebar-primary: oklch(0.51 0.092 194);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.955 0.008 195);
-  --sidebar-accent-foreground: oklch(0.22 0.02 200);
-  --sidebar-border: oklch(0.9 0.008 200);
-  --sidebar-ring: oklch(0.45 0.07 195 / 0.4);
+  --sidebar-accent: oklch(0.95 0.032 180);
+  --sidebar-accent-foreground: oklch(0.321 0 0);
+  --sidebar-border: oklch(0.899 0 0);
+  --sidebar-ring: oklch(0.51 0.092 194 / 0.4);
 }
 
 
@@ -151,7 +146,7 @@
   }
 
   ::selection {
-    background-color: oklch(0.45 0.07 195 / 0.18);
+    background-color: oklch(0.51 0.092 194 / 0.18);
     color: var(--color-foreground);
   }
 
@@ -160,14 +155,14 @@
   h3 {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.02em;
-    color: oklch(0.16 0.02 200);
+    letter-spacing: 0;
+    color: var(--color-foreground);
   }
 
   .font-display {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
   }
 
   .font-mono {
@@ -233,13 +228,13 @@
   .tiptap-content :where(h1) {
     font-size: 1.625rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
     margin: 1.25rem 0 0.5rem;
   }
   .tiptap-content :where(h2) {
     font-size: 1.3rem;
     font-weight: 700;
-    letter-spacing: -0.015em;
+    letter-spacing: 0;
     margin: 1rem 0 0.4rem;
   }
   .tiptap-content :where(h3) {

@@ -44,14 +44,14 @@ export function InlineList({
         className={cn(
           "flex items-center gap-2 mt-1 px-3 py-2 rounded-lg border-2 border-dashed bg-white/50 shadow-sm transition-colors",
           tone === "warning"
-            ? "border-[#f45d48]/30 focus-within:border-[#f45d48]/60 focus-within:bg-white"
+            ? "border-destructive/30 focus-within:border-destructive/60 focus-within:bg-white"
             : "border-primary/30 focus-within:border-primary/60 focus-within:bg-white",
         )}
       >
         <Plus
           className={cn(
             "h-4 w-4",
-            tone === "warning" ? "text-[#f45d48]/70" : "text-primary/70",
+            tone === "warning" ? "text-destructive/70" : "text-primary/70",
           )}
         />
         <input
@@ -67,7 +67,7 @@ export function InlineList({
             className={cn(
               "text-xs font-semibold px-2 py-1 rounded-md",
               tone === "warning"
-                ? "bg-[#f45d48]/10 text-[#f45d48] hover:bg-[#f45d48]/20"
+                ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
                 : "bg-primary/10 text-primary hover:bg-primary/20"
             )}
           >
@@ -162,7 +162,7 @@ function Marker({
     return <BookmarkCheck className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-primary")} strokeWidth={2} />;
   }
   if (kind === "warn") {
-    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-[#f45d48]")} strokeWidth={2} />;
+    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-destructive")} strokeWidth={2} />;
   }
   return (
     <span
