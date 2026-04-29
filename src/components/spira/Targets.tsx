@@ -140,7 +140,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className="flex items-center gap-2 group h-8">
-                          <div className={cn("h-2 w-2 rounded-full shrink-0", t.done ? "bg-emerald-600" : "bg-muted-foreground/40")}></div>
+                          <div className={cn("h-2 w-2 rounded-full shrink-0", t.done ? "bg-success" : "bg-muted-foreground/40")}></div>
                           <span className="text-sm text-foreground group-hover:text-primary transition-colors">
                             {t.done ? "Done" : "Not done"}
                           </span>
@@ -161,7 +161,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                       onClick={() => setEditingNumericFor(t.id)}
                       className="flex items-center gap-2 group h-8"
                     >
-                      <div className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></div>
+                       <div className="h-2 w-2 rounded-full bg-brand-orange shrink-0"></div>
                       <span className="text-sm text-foreground group-hover:text-primary transition-colors">Update</span>
                     </button>
                   )}
@@ -170,7 +170,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                       onClick={() => setEditingTasksFor(t.id)}
                       className="flex items-center gap-2 group h-8"
                     >
-                      <div className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></div>
+                       <div className="h-2 w-2 rounded-full bg-brand-orange shrink-0"></div>
                       <span className="text-sm text-foreground group-hover:text-primary transition-colors">Tasks</span>
                     </button>
                   )}
