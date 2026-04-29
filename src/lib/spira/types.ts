@@ -12,6 +12,7 @@ export type Target =
       id: string;
       type: "numeric";
       title: string;
+      start?: number;
       current: number;
       total: number;
       unit?: string;
