@@ -176,7 +176,7 @@ function Conversation() {
       </div>
 
       <div className="border-t hairline p-3 sm:p-4">
-        <div className="flex items-end gap-2 surface-sunken rounded-xl px-3 py-2">
+        <div className="flex items-end gap-2 rounded-md border border-input bg-surface px-3.5 py-2 transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -190,7 +190,7 @@ function Conversation() {
               mode === "coaching" ? "Answer the question…" : "Ask, plan, or request an action…"
             }
             rows={1}
-            className="flex-1 bg-transparent resize-none outline-none text-sm py-1.5 max-h-32"
+            className="flex-1 bg-transparent resize-none outline-none text-base placeholder:text-muted-foreground/75 max-h-32"
           />
           <button
             onClick={send}

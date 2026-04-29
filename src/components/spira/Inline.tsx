@@ -42,10 +42,10 @@ export function InlineList({
     <div className="space-y-4">
       <div
         className={cn(
-          "flex items-center gap-2 mt-1 px-3 py-2 rounded-lg border-2 border-dashed bg-white/50 shadow-sm transition-colors",
+          "flex min-h-11 items-center gap-2 mt-1 rounded-md border border-input bg-surface px-3.5 py-2 text-base transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring",
           tone === "warning"
-            ? "border-destructive/30 focus-within:border-destructive/60 focus-within:bg-white"
-            : "border-primary/30 focus-within:border-primary/60 focus-within:bg-white",
+            ? "focus-within:border-destructive focus-within:ring-destructive/20"
+            : "",
         )}
       >
         <Plus
@@ -59,7 +59,7 @@ export function InlineList({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder={placeholder}
-          className="flex-1 bg-transparent text-[15px] outline-none py-1 placeholder:text-muted-foreground"
+          className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/75"
         />
         {draft && (
           <button
@@ -109,7 +109,7 @@ export function InlineList({
                   if (e.key === "Escape") setEditingId(null);
                 }}
                 className={cn(
-                  "flex-1 bg-transparent outline-none text-[15px]",
+                  "flex-1 rounded-md border border-input bg-surface px-3.5 py-2 text-base outline-none placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring",
                   onPrimary && "text-primary-foreground placeholder:text-primary-foreground/50",
                 )}
               />
