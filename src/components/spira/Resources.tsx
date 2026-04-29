@@ -905,44 +905,44 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
         {type !== "contact" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Title {type !== "file" && <span className="text-destructive">*</span>}</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 bg-surface border-2 border-border focus-visible:border-primary" autoFocus />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
           </div>
         )}
         {type === "note" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Note</label>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="bg-surface border-2 border-border focus-visible:border-primary min-h-32" />
+            <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
           </div>
         )}
         {type === "link" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">URL <span className="text-destructive">*</span></label>
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
           </div>
         )}
         {type === "file" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">File</label>
-            <input type="file" accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-soft file:text-primary hover:file:bg-primary-soft/80" />
+            <input type="file" accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} className="block w-full rounded-md border border-input bg-surface px-3.5 py-2 text-base text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary-soft/80 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring" />
           </div>
         )}
         {type === "contact" && (
           <div className="space-y-4">
             <div>
               <label className="text-sm font-semibold block mb-1.5">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Email <span className="text-destructive">*</span></label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@example.com" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" autoFocus />
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@example.com" autoFocus />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Role</label>
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
+              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Optional" />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Phone</label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" className="h-11 bg-surface border-2 border-border focus-visible:border-primary" />
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
             </div>
           </div>
         )}
