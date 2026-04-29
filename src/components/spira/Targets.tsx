@@ -464,7 +464,7 @@ function InlineEditable({
       onKeyDown={handleKeyDown}
       data-placeholder={placeholder}
       className={cn(
-        "outline-none cursor-text px-1 rounded-md focus:ring-2 focus:ring-primary/15 transition-shadow min-w-[1ch] inline-block empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
+        "outline-none cursor-text px-1 rounded-md focus:ring-[3px] focus:ring-ring transition-shadow min-w-[1ch] inline-block empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75",
         className
       )}
     />
@@ -637,7 +637,7 @@ function ChecklistEditor({
           </button>
         </div>
       ))}
-      <div className={cn("flex items-center gap-2", compact ? "px-1 py-1" : "px-2 py-1.5")}>
+      <div className={cn("flex min-h-11 items-center gap-2 rounded-md border border-input bg-surface px-3.5 py-2 transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring", compact ? "mt-1" : "mt-3")}>
         <span className="h-4 w-4 rounded-sm border-2 border-dashed border-border-strong shrink-0" />
         <input
           value={draft}
@@ -649,7 +649,7 @@ function ChecklistEditor({
             }
           }}
           placeholder="Add subtask…"
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground py-0.5"
+          className="flex-1 bg-transparent outline-none text-base placeholder:text-muted-foreground/75"
         />
       </div>
     </div>
@@ -783,7 +783,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Outbound applications"
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
             autoFocus
           />
         </div>
@@ -795,7 +794,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
                 type="number"
                 value={total}
                 onChange={(e) => setTotal(Number(e.target.value) || 0)}
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
               />
             </div>
             <div>
@@ -804,7 +802,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="apps, km…"
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
               />
             </div>
           </div>
@@ -817,7 +814,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
             type="date"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
           />
         </div>
       </div>

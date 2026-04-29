@@ -122,14 +122,14 @@ export function OptionsList({ goal }: { goal: Goal }) {
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md border-2 border-dashed border-border focus-within:border-primary/40">
+      <div className="flex min-h-11 items-center gap-2 rounded-md border border-input bg-surface px-3.5 py-2 transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring">
         <Plus className="h-4 w-4 text-muted-foreground" />
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a strategy…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground py-1"
+          className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/75"
         />
         {draft && (
           <button

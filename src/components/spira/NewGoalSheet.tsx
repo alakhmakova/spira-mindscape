@@ -52,7 +52,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Launch Spira to first 50 users"
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary text-base"
+            className="text-base"
             autoFocus
           />
         </Field>
@@ -65,7 +65,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What does success look like?"
-            className="bg-surface border-2 border-border focus-visible:border-primary min-h-28"
+            className="min-h-28"
           />
         </Field>
 

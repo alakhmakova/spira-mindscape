@@ -75,7 +75,7 @@ export function DeadlinePopover({
         <div ref={inputRef} className={cn("relative w-full scroll-mt-6", className)}>
           <PopoverTrigger
             className={cn(
-              "w-full flex items-center h-11 bg-surface border-2 border-border focus:outline-none focus-visible:border-primary rounded-md px-3 text-base text-left transition-colors",
+              "w-full flex items-center h-11 bg-surface border border-input focus:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring rounded-md px-3.5 text-base text-left transition-colors",
               !date && "text-muted-foreground"
             )}
           >
