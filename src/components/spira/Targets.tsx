@@ -186,7 +186,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                 <TableCell className="text-right pr-6">
                   <button
                     onClick={() => removeTarget(goal.id, t.id)}
-                    className="text-black opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
+                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
                     title="Delete target"
                   >
                     <Trash2 className="h-4 w-4" />
