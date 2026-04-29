@@ -783,7 +783,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Outbound applications"
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
             autoFocus
           />
         </div>
@@ -795,7 +794,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
                 type="number"
                 value={total}
                 onChange={(e) => setTotal(Number(e.target.value) || 0)}
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
               />
             </div>
             <div>
@@ -804,7 +802,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="apps, km…"
-                className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
               />
             </div>
           </div>
@@ -817,7 +814,6 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
             type="date"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
-            className="h-11 bg-surface border-2 border-border focus-visible:border-primary"
           />
         </div>
       </div>
