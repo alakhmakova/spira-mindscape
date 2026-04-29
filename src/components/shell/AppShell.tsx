@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="w-full px-4 sm:px-6 h-16 flex items-center gap-3 sm:gap-5">
           {/* Brand */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <span className="text-2xl tracking-tight text-[#ff4800]" style={{ fontFamily: "'Nunito', sans-serif", fontWeight: 800 }}>
+            <span className="text-2xl font-extrabold tracking-normal text-brand-orange">
               Spira
             </span>
           </Link>
