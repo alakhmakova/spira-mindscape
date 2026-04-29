@@ -334,11 +334,15 @@ function NumericBody({
   onUpdate: (patch: Partial<Target>) => void;
   progress: number;
 }) {
-  const preserveStart = () =>
-    target.start === undefined && target.current > target.total ? { start: target.current } : {};
-
   const updateCurrent = (next: number) => {
-    onUpdate({ ...preserveStart(), current: next } as Partial<Target>);
+    const inferredStart =
+      target.start === undefined && next > target.total
+        ? target.current === 0
+          ? next
+          : 0
+        : target.start;
+
+    onUpdate({ ...(inferredStart !== undefined ? { start: inferredStart } : {}), current: next } as Partial<Target>);
   };
 
   const updateTotal = (next: number) => {
@@ -701,6 +705,7 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
       addTarget(goalId, {
         ...base,
         type: "numeric",
+        start: 0,
         current: 0,
         total,
         unit: unit || undefined,
