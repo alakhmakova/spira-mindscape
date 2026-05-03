@@ -69,9 +69,9 @@ function GoalsOverview() {
   }, [goals, query, sort, sortDirection, deadlineFrom, deadlineTo, confidence, status]);
 
   return (
-    <div className="min-h-screen bg-[#f4f5f5]/80">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="relative min-h-screen bg-[#f4f5f5]/80">
+      <div className="spira-overview-inner mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 space-y-8">
+      <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           {viewMode === "cards" ? (
             <>
@@ -128,7 +128,7 @@ function GoalsOverview() {
           )}
         </div>
       ) : viewMode === "cards" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+        <div className="spira-goals-grid grid gap-4 sm:gap-5">
           {filtered.map((g) => (
             <GoalCard key={g.id} goal={g} />
           ))}
@@ -139,7 +139,7 @@ function GoalsOverview() {
 
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-raised transition-transform hover:scale-105 hover:bg-primary/90 sm:bottom-7 sm:right-7"
+        className="absolute bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-raised transition-transform hover:scale-105 hover:bg-primary/90 sm:bottom-7 sm:right-7"
         aria-label="New goal"
       >
         <Plus className="h-7 w-7" />

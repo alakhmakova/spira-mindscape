@@ -93,7 +93,7 @@ export function CalendarMonth() {
         </div>
       </div>
 
-      <div className="surface-card overflow-hidden">
+      <div className="spira-calendar-grid surface-card overflow-hidden">
         <div className="grid grid-cols-[44px_repeat(7,1fr)] border-b hairline bg-secondary/40">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold py-2.5 text-center">
             Wk

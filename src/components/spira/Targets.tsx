@@ -51,7 +51,7 @@ export function TargetsList({ goal }: { goal: Goal }) {
           Targets are how you execute. Add a numeric, binary, or checklist target.
         </p>
       )}
-      <ul className="space-y-3 md:hidden">
+      <ul className="spira-target-mobile-list space-y-3">
         {goal.targets.map((t) => (
           <TargetRow
             key={t.id}
@@ -130,7 +130,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
   };
 
   return (
-    <div className="hidden md:block">
+    <div className="spira-target-desktop-table">
       <Table>
         <TableHeader className="bg-muted">
           <TableRow className="border-0 border-b">

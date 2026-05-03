@@ -345,6 +345,96 @@
     background: var(--color-primary);
     height: 80px;
   }
+  .ai-panel-resize-handle::after {
+    background: color-mix(in oklab, white 45%, transparent);
+  }
+  .ai-panel-left-resize-handle {
+    left: auto;
+    right: -4px;
+  }
+  .ai-panel-left-resize-handle::after {
+    left: 1px;
+  }
+  .ai-panel-resize-handle:hover::after,
+  .ai-panel-resize-handle[data-dragging="true"]::after {
+    background: white;
+  }
+
+  /* Main content responds to its own available width when docked panels resize. */
+  .spira-main {
+    container: spira-main / inline-size;
+  }
+  .spira-goals-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 410px), 1fr));
+  }
+  .spira-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .spira-reality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .spira-reality-primary {
+    border-right-width: 1px;
+  }
+  .spira-target-mobile-list {
+    display: none;
+  }
+  .spira-target-desktop-table {
+    display: block;
+  }
+  .spira-calendar-grid {
+    overflow-x: auto;
+  }
+
+  @container spira-main (max-width: 760px) {
+    .spira-shell-header-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.75rem;
+    }
+    .spira-overview-inner,
+    .spira-goal-workspace,
+    .spira-calendar-page {
+      padding-left: 1rem;
+      padding-right: 1rem;
+      padding-top: 1.5rem;
+    }
+    .spira-overview-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .spira-kpi-grid,
+    .spira-reality-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .spira-reality-primary {
+      border-right-width: 0;
+      border-bottom-width: 1px;
+    }
+    .spira-target-mobile-list {
+      display: block;
+    }
+    .spira-target-desktop-table {
+      display: none;
+    }
+    .spira-calendar-grid > * {
+      min-width: 680px;
+    }
+  }
+
+  @container spira-main (max-width: 520px) {
+    .spira-shell-header-row {
+      min-height: 4rem;
+      height: auto;
+      padding-top: 0.75rem;
+      padding-bottom: 0.75rem;
+    }
+    .spira-overview-inner,
+    .spira-goal-workspace,
+    .spira-calendar-page {
+      padding-top: 1.25rem;
+    }
+  }
 }
 
 @layer utilities {

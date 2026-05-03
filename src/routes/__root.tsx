@@ -2,7 +2,6 @@ import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/r
 
 import appCss from "../styles.css?url";
 import { AppShell } from "@/components/shell/AppShell";
-import { AiPanel } from "@/components/ai/AiPanel";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -79,7 +78,6 @@ function RootComponent() {
   return (
     <AppShell>
       <Outlet />
-      <AiPanel />
       <Toaster />
     </AppShell>
   );

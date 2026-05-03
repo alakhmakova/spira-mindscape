@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Sparkles, Check, Pencil, X, Compass, Wand2 } from "lucide-react";
+import { ArrowUp, Sparkles, Check, Pencil, X, Compass, Wand2 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
@@ -16,21 +15,78 @@ const GROW_STEPS = [
   { key: "W", title: "Will", q: "What's the next concrete target you'll commit to this week?" },
 ] as const;
 
+const MIN_PANEL_WIDTH = 360;
+const MAIN_CONTENT_MIN_WIDTH = 800;
+const RESIZE_KEY = "spira:ai-coach-panel-width";
+
+function maxPanelWidth() {
+  if (typeof window === "undefined") return 520;
+  return Math.max(MIN_PANEL_WIDTH, window.innerWidth - MAIN_CONTENT_MIN_WIDTH);
+}
+
+function clampPanelWidth(width: number) {
+  return Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth(), width));
+}
+
 export function AiPanel() {
   const isOpen = useAi((s) => s.isOpen);
   const close = useAi((s) => s.close);
   const isMobile = useIsMobile();
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 440;
+    const stored = Number(window.localStorage.getItem(RESIZE_KEY));
+    return clampPanelWidth(stored || 440);
+  });
+  const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const handleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onResize = () => setWidth((current) => clampPanelWidth(current));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RESIZE_KEY, String(width));
+  }, [width]);
+
+  const startDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    setIsDragging(true);
+    handleRef.current?.setAttribute("data-dragging", "true");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current) return;
+      setWidth(clampPanelWidth(ev.clientX));
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      setIsDragging(false);
+      handleRef.current?.removeAttribute("data-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const Body = <Conversation />;
 
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="h-[88vh] flex flex-col px-0 bg-surface">
-          <DrawerHeader className="px-5 pb-3 border-b hairline">
-            <DrawerTitle className="font-display text-2xl flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Spira Assistant
+        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#006d67] text-white">
+          <DrawerHeader className="px-5 pb-3 border-b border-white/15">
+            <DrawerTitle className="flex items-baseline gap-2 text-white">
+              <span className="text-[32px] font-extrabold leading-none">spira</span>
+              <span className="text-[20px] font-normal leading-none">ai coach</span>
             </DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 flex flex-col">{Body}</div>
@@ -39,21 +95,41 @@ export function AiPanel() {
     );
   }
 
+  if (!isOpen) return null;
+
   return (
-    <Sheet open={isOpen} onOpenChange={(o) => !o && close()}>
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-md md:max-w-lg p-0 flex flex-col bg-surface border-l hairline"
-      >
-        <SheetHeader className="px-5 py-4 border-b hairline">
-          <SheetTitle className="font-display text-2xl flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            Spira Assistant
-          </SheetTitle>
-        </SheetHeader>
-        <div className="flex-1 min-h-0 flex flex-col">{Body}</div>
-      </SheetContent>
-    </Sheet>
+    <aside
+      className={cn(
+        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#006d67] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        isDragging && "[&_iframe]:pointer-events-none",
+      )}
+      style={{ width: `${width}px` }}
+      aria-label="spira ai coach"
+    >
+      <div
+        ref={handleRef}
+        onPointerDown={startDrag}
+        className="resize-handle ai-panel-left-resize-handle ai-panel-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize spira ai coach panel"
+      />
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/15 px-5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="text-[32px] font-extrabold leading-none text-white">spira</span>
+          <span className="truncate pt-1 text-[20px] font-normal leading-none text-white">ai coach</span>
+        </div>
+        <button
+          onClick={close}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+          aria-label="Close spira ai coach"
+          title="Close"
+        >
+          <X className="h-4.5 w-4.5" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 flex flex-col">{Body}</div>
+    </aside>
   );
 }
 
@@ -137,9 +213,9 @@ function Conversation() {
   return (
     <>
       {/* Context + mode bar */}
-      <div className="px-4 sm:px-5 py-2.5 border-b hairline flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground">Context:</span>
-        <span className="truncate font-medium">
+      <div className="px-4 sm:px-5 py-2.5 border-b border-white/15 flex items-center gap-2 text-xs text-white/75">
+        <span>Context:</span>
+        <span className="truncate font-medium text-white">
           {goal ? goal.title : "Global — all goals"}
         </span>
         <span className="ml-auto flex items-center gap-1 shrink-0">
@@ -161,10 +237,10 @@ function Conversation() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4">
         {chat.length === 0 && (
           <div className="text-center pt-8 space-y-2">
-            <div className="inline-flex h-12 w-12 rounded-full bg-primary-soft border border-primary/30 items-center justify-center text-primary">
+            <div className="inline-flex h-12 w-12 rounded-full bg-white/10 border border-white/20 items-center justify-center text-white">
               <Sparkles className="h-5 w-5" />
             </div>
-            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+            <p className="text-sm text-white/75 max-w-xs mx-auto">
               Ask anything. I can help define goals, plan, or coach you through GROW. I'll propose
               actions — you approve them.
             </p>
@@ -175,8 +251,8 @@ function Conversation() {
         ))}
       </div>
 
-      <div className="border-t hairline p-3 sm:p-4">
-        <div className="flex items-end gap-2 rounded-md border border-input bg-surface px-3.5 py-2 transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring">
+      <div className="border-t border-white/15 p-3 sm:p-4">
+        <div className="flex items-end gap-2 rounded-md border border-white/35 bg-white px-3.5 py-2 shadow-sm transition-colors focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -190,14 +266,14 @@ function Conversation() {
               mode === "coaching" ? "Answer the question…" : "Ask, plan, or request an action…"
             }
             rows={1}
-            className="flex-1 bg-transparent resize-none outline-none text-base placeholder:text-muted-foreground/75 max-h-32"
+            className="flex-1 bg-transparent resize-none outline-none text-base text-[#083f3a] placeholder:text-[#083f3a]/50 max-h-32"
           />
           <button
             onClick={send}
             disabled={!input.trim()}
-            className="h-8 w-8 grid place-items-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40 transition-opacity"
+            className="h-8 w-8 grid place-items-center rounded-lg bg-[#006d67] text-white disabled:opacity-40 transition-opacity hover:bg-[#005b56]"
           >
-            <Send className="h-4 w-4" />
+            <ArrowUp className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -222,8 +298,8 @@ function ModeChip({
       className={cn(
         "inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] transition-colors",
         active
-          ? "bg-primary/15 border-primary/40 text-primary"
-          : "bg-surface border-border text-muted-foreground hover:text-foreground",
+          ? "bg-white border-white text-[#006d67]"
+          : "bg-transparent border-white/25 text-white/75 hover:bg-white/10 hover:text-white",
       )}
     >
       {icon}
@@ -244,7 +320,7 @@ function MessageBubble({
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary-soft border border-primary/30 px-3.5 py-2 text-sm leading-relaxed text-foreground">
+        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-white border border-white px-3.5 py-2 text-sm leading-relaxed text-[#083f3a]">
           {msg.content}
         </div>
       </div>
@@ -252,7 +328,7 @@ function MessageBubble({
   }
   return (
     <div className="space-y-2">
-      <div className="max-w-[90%] text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+      <div className="max-w-[90%] text-sm leading-relaxed text-white/90 whitespace-pre-wrap">
         {renderMarkdownLite(msg.content)}
       </div>
       {msg.action && <ActionCard action={msg.action} onApprove={() => onApprove(msg)} onReject={() => onReject(msg.id)} />}
@@ -264,7 +340,7 @@ function renderMarkdownLite(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((p, i) =>
     p.startsWith("**") && p.endsWith("**") ? (
-      <strong key={i} className="font-display text-foreground">
+      <strong key={i} className="font-display text-white">
         {p.slice(2, -2)}
       </strong>
     ) : (
@@ -284,14 +360,14 @@ function ActionCard({
 }) {
   const settled = action.status !== "pending";
   return (
-    <div className="surface-raised p-3.5 max-w-full">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-primary">
+    <div className="max-w-full rounded-md border border-white/30 bg-white p-3.5 text-[#083f3a] shadow-sm">
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-[#006d67]">
         <Sparkles className="h-3 w-3" /> Proposed action
       </div>
       <div className="mt-1.5 font-display text-base">{action.title}</div>
-      <p className="mt-1 text-sm text-muted-foreground">{action.description}</p>
-      <details className="mt-2 text-xs text-muted-foreground">
-        <summary className="cursor-pointer hover:text-foreground">Why this</summary>
+      <p className="mt-1 text-sm text-[#083f3a]/65">{action.description}</p>
+      <details className="mt-2 text-xs text-[#083f3a]/65">
+        <summary className="cursor-pointer hover:text-[#083f3a]">Why this</summary>
         <p className="mt-1 leading-relaxed">{action.reasoning}</p>
       </details>
       {settled ? (
@@ -299,7 +375,7 @@ function ActionCard({
           className={cn(
             "mt-3 inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md",
             action.status === "approved"
-              ? "bg-primary/15 text-primary"
+              ? "bg-[#006d67]/10 text-[#006d67]"
               : "bg-muted text-muted-foreground",
           )}
         >
@@ -317,7 +393,7 @@ function ActionCard({
         <div className="mt-3 flex items-center gap-2">
           <button
             onClick={onApprove}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#006d67] text-white text-xs font-medium hover:bg-[#005b56]"
           >
             <Check className="h-3.5 w-3.5" /> Approve
           </button>

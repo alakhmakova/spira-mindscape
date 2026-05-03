@@ -97,7 +97,7 @@ function GoalWorkspace() {
   return (
     <>
       <GoalNav />
-      <div id="goal-top" className="mx-auto max-w-7xl scroll-mt-32 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
+      <div id="goal-top" className="spira-goal-workspace mx-auto max-w-7xl scroll-mt-32 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
       {/* Top bar: back link + delete */}
       <div className="flex items-center justify-between">
         <Link
@@ -133,7 +133,7 @@ function GoalWorkspace() {
       </header>
 
       {/* Three KPI cards: Progress · Confidence · Deadline */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="spira-kpi-grid grid gap-4">
         <ProgressKpi value={progress} onJump={jumpToTargets} />
         <ConfidenceKpi
           value={goal.confidence}
@@ -161,8 +161,8 @@ function GoalWorkspace() {
               </button>
           }
         >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-lg overflow-hidden border hairline">
-          <div className="p-5 sm:p-6 bg-[#e5f4f3] md:border-r hairline">
+        <div className="spira-reality-grid grid gap-0 rounded-lg overflow-hidden border hairline">
+          <div className="spira-reality-primary p-5 sm:p-6 bg-[#e5f4f3] hairline">
             <h3 className="font-display text-lg mb-3">Actions taken</h3>
             <InlineList
               items={goal.reality.actions}

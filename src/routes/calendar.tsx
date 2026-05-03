@@ -17,7 +17,7 @@ export const Route = createFileRoute("/calendar")({
 
 function CalendarPage() {
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
+    <div className="spira-calendar-page mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
       <CalendarMonth />
     </div>
   );
