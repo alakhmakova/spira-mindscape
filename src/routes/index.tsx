@@ -75,7 +75,7 @@ function GoalsOverview() {
         <div>
           {viewMode === "cards" ? (
             <>
-              <h1 className="font-semibold text-2xl text-foreground">{greeting}</h1>
+              <h1 className="font-heading text-3xl sm:text-4xl text-foreground leading-tight">{greeting}</h1>
               <p className="text-muted-foreground mt-1.5 text-sm sm:text-[15px]">
                 {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion. Pick one to dive
                 into, or shape a new one.
@@ -83,7 +83,7 @@ function GoalsOverview() {
             </>
           ) : (
             <>
-              <h2 className="text-2xl font-bold text-foreground">Timeline</h2>
+              <h2 className="font-heading text-3xl sm:text-4xl text-foreground leading-tight">Timeline</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Goals, targets and tasks with deadlines, ordered by the nearest date.
               </p>

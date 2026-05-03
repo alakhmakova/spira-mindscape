@@ -203,8 +203,16 @@ export function AutoTextarea({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
+    
+    const updateHeight = () => {
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    };
+    
+    updateHeight();
+    
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
   }, [value]);
   return (
     <textarea
@@ -215,7 +223,7 @@ export function AutoTextarea({
       rows={1}
       {...props}
       className={cn(
-        "w-full resize-none bg-transparent outline-none text-base leading-relaxed placeholder:text-muted-foreground/70",
+        "w-full resize-none overflow-hidden bg-transparent outline-none text-base leading-relaxed placeholder:text-muted-foreground/70",
         className,
       )}
     />

@@ -121,7 +121,7 @@ function GoalWorkspace() {
         <AutoTextarea
           value={goal.title}
           onChange={(v) => updateGoal(goal.id, { title: v })}
-          className="font-semibold text-2xl text-foreground w-full"
+          className="font-heading text-3xl sm:text-4xl text-foreground w-full leading-tight"
           placeholder="Untitled goal"
         />
         <AutoTextarea
