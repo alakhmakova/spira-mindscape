@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Sparkles, Check, Pencil, X, Compass, Wand2 } from "lucide-react";
+import { ArrowUp, Sparkles, Check, Pencil, X, Compass, Wand2, Sprout } from "lucide-react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAi } from "./ai-store";
@@ -219,7 +219,7 @@ function Conversation() {
   return (
     <>
       {/* Context + mode bar */}
-      <div className="px-4 sm:px-5 py-2.5 border-b border-white/15 flex items-center gap-2 text-xs text-white/75">
+      <div className="hidden">
         <span>Context:</span>
         <span className="truncate font-medium text-white">
           {goal ? goal.title : "Global — all goals"}
@@ -244,7 +244,7 @@ function Conversation() {
         {chat.length === 0 && (
           <div className="text-center pt-8 space-y-2">
             <div className="inline-flex h-12 w-12 rounded-full bg-white/10 border border-white/20 items-center justify-center text-white">
-              <Sparkles className="h-5 w-5" />
+              <Sprout className="h-5 w-5" />
             </div>
             <p className="text-sm text-white/75 max-w-xs mx-auto">
               Ask anything. I can help define goals, plan, or coach you through GROW. I'll propose
