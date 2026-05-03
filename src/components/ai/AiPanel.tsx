@@ -31,6 +31,7 @@ function clampPanelWidth(width: number) {
 export function AiPanel() {
   const isOpen = useAi((s) => s.isOpen);
   const close = useAi((s) => s.close);
+  const setWide = useAi((s) => s.setWide);
   const isMobile = useIsMobile();
   const [width, setWidth] = useState<number>(() => {
     if (typeof window === "undefined") return 440;
@@ -51,6 +52,11 @@ export function AiPanel() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(RESIZE_KEY, String(width));
   }, [width]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setWide(isOpen && !isMobile && width >= window.innerWidth / 2);
+  }, [isMobile, isOpen, setWide, width]);
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();

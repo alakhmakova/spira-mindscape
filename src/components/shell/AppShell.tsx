@@ -7,6 +7,8 @@ import {
   ChevronDown,
   X,
   Calendar,
+  Home,
+  Menu,
 } from "lucide-react";
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -30,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const openAi = useAi((s) => s.open);
   const isAiOpen = useAi((s) => s.isOpen);
+  const isAiWide = useAi((s) => s.isWide);
   const {
     query,
     setQuery,
@@ -51,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
+  const showWorkspaceMenu = isWorkspace && isAiOpen && isAiWide;
   const filtersActive = Boolean(deadlineFrom || deadlineTo || confidence || status !== "all");
   const sortActive = sort !== "recent" || sortDirection !== "desc";
 
@@ -242,16 +246,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               )}
 
-              {/* User */}
-              <div className={cn("flex items-center gap-2", isWorkspace ? "" : "pl-2 md:border-l md:pl-3 md:hairline")}>
-                <div className={cn("h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold", isWorkspace ? "bg-white/10 border-white/20 text-white" : "bg-primary-soft border-primary/30 text-primary")}>
-                  SU
+              {/* User / workspace menu */}
+              {showWorkspaceMenu ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="grid h-9 w-9 place-items-center text-white/90 transition-colors hover:text-white"
+                    aria-label="Open workspace menu"
+                    title="Menu"
+                  >
+                    <Menu className="h-4.5 w-4.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem asChild>
+                      <Link to="/">
+                        <Home className="h-4 w-4" />
+                        All goals
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/calendar">
+                        <Calendar className="h-4 w-4" />
+                        Calendar
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      Spira User
+                    </DropdownMenuLabel>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <div className={cn("flex items-center gap-2", isWorkspace ? "" : "pl-2 md:border-l md:pl-3 md:hairline")}>
+                  <div className={cn("h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold", isWorkspace ? "bg-white/10 border-white/20 text-white" : "bg-primary-soft border-primary/30 text-primary")}>
+                    SU
+                  </div>
+                  <div className="hidden md:block leading-tight text-right">
+                    <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
+                  </div>
+                  <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
                 </div>
-                <div className="hidden md:block leading-tight text-right">
-                  <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
-                </div>
-                <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
-              </div>
+              )}
             </div>
           </div>
 

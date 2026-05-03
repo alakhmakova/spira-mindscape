@@ -177,6 +177,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                     variant="text"
                     side="top"
                     hideChevron
+                    hideDaysLeft
                     onChange={(next) => updateTarget(goal.id, t.id, { deadline: next })}
                   />
                 </TableCell>
