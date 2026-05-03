@@ -18,6 +18,31 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 
 export function TargetsList({ goal }: { goal: Goal }) {
   const { updateTarget, removeTarget } = useSpira();
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+      if (hash.startsWith("#target-")) {
+        const id = hash.replace("#target-", "");
+        window.setTimeout(() => {
+          let el = document.getElementById(`target-desktop-${id}`);
+          if (!el || el.offsetParent === null) {
+            el = document.getElementById(`target-mobile-${id}`);
+          }
+          if (el) {
+            const yOffset = -112;
+            const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
+            window.scrollTo({ top: y, behavior: "smooth" });
+          }
+        }, 10);
+      }
+    };
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, [goal.targets]);
 
   return (
     <div className="space-y-3">
@@ -48,6 +73,8 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
   const [editingTasksFor, setEditingTasksFor] = useState<string | null>(null);
   const [editingNumericFor, setEditingNumericFor] = useState<string | null>(null);
 
+
+
   const toggleSort = (field: "title" | "deadline" | "progress") => {
     if (sortField === field) setSortDesc(!sortDesc);
     else {
@@ -72,13 +99,20 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const hash = window.location.hash.replace("#", "");
-    if (!hash.startsWith("task-")) return;
-    const taskId = hash.replace("task-", "");
-    const target = goal.targets.find((t) => t.type === "checklist" && t.items.some((item) => item.id === taskId));
-    if (!target) return;
-    setEditingTasksFor(target.id);
-    window.setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+      if (hash.startsWith("#task-")) {
+        const taskId = hash.replace("#task-", "");
+        const target = goal.targets.find((t) => t.type === "checklist" && t.items.some((item) => item.id === taskId));
+        if (!target) return;
+        setEditingTasksFor(target.id);
+        window.setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+      }
+    };
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
   }, [goal.targets]);
 
   const SortIcon = ({ field }: { field: string }) => {
@@ -117,7 +151,17 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
           {sortedTargets.map((t) => {
             const progress = targetProgress(t);
             return (
-              <TableRow key={t.id} id={`target-${t.id}`} className="group/row scroll-mt-24">
+              <TableRow 
+                key={t.id} 
+                id={`target-desktop-${t.id}`} 
+                className="group/row scroll-mt-24 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={(e) => {
+                  const targetEl = e.target as HTMLElement;
+                  if (targetEl.tagName === 'INPUT' || targetEl.closest('button')) return;
+                  if (t.type === "numeric") setEditingNumericFor(t.id);
+                  if (t.type === "checklist") setEditingTasksFor(t.id);
+                }}
+              >
                 <TableCell className="pl-6">
                   <input
                     value={t.title}
@@ -132,6 +176,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                     iso={t.deadline}
                     variant="text"
                     side="top"
+                    hideChevron
                     onChange={(next) => updateTarget(goal.id, t.id, { deadline: next })}
                   />
                 </TableCell>
@@ -161,8 +206,8 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                       onClick={() => setEditingNumericFor(t.id)}
                       className="flex items-center gap-2 group h-8"
                     >
-                       <div className="h-2 w-2 rounded-full bg-brand-orange shrink-0"></div>
-                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">Update</span>
+                       <div className={cn("h-2 w-2 rounded-full shrink-0", progress >= 1 ? "bg-success" : "bg-[#ea580c]")}></div>
+                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">{progress >= 1 ? "Complete" : "Update"}</span>
                     </button>
                   )}
                   {t.type === "checklist" && (
@@ -170,8 +215,8 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                       onClick={() => setEditingTasksFor(t.id)}
                       className="flex items-center gap-2 group h-8"
                     >
-                       <div className="h-2 w-2 rounded-full bg-brand-orange shrink-0"></div>
-                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">Tasks</span>
+                       <div className={cn("h-2 w-2 rounded-full shrink-0", progress >= 1 ? "bg-success" : "bg-[#ea580c]")}></div>
+                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">{progress >= 1 ? "Complete" : "Tasks"}</span>
                     </button>
                   )}
                 </TableCell>
@@ -203,7 +248,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
         <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
           {editingNumericFor && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-6 py-4 border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0">
+              <div className="px-6 pt-5 pb-2 flex items-center justify-between bg-surface z-10 sticky top-0">
                 <h3 className="font-bold">Update Progress</h3>
                 <button
                   onClick={() => setEditingNumericFor(null)}
@@ -212,7 +257,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex-1 p-6 overflow-y-auto">
+              <div className="flex-1 px-6 pb-6 pt-0 overflow-y-auto">
                 {(() => {
                   const target = goal.targets.find(t => t.id === editingNumericFor);
                   if (!target || target.type !== "numeric") return null;
@@ -226,6 +271,10 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                     </div>
                   );
                 })()}
+              </div>
+              <div className="p-4 border-t hairline flex items-center justify-end gap-2 bg-surface">
+                 <button onClick={() => setEditingNumericFor(null)} className="px-4 h-9 rounded-md text-sm font-medium border border-border-strong hover:bg-secondary transition-colors">Cancel</button>
+                 <button onClick={() => setEditingNumericFor(null)} className="px-4 h-9 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Save</button>
               </div>
             </div>
           )}
@@ -256,7 +305,7 @@ function TargetRow({
   const progress = targetProgress(target);
 
   return (
-    <li id={`target-${target.id}`} className="surface-card scroll-mt-24 p-4 sm:p-5">
+    <li id={`target-mobile-${target.id}`} className="surface-card scroll-mt-24 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0 space-y-2">
           {/* Top row: deadline (replaces type label) */}
@@ -375,6 +424,17 @@ function NumericBody({
           ariaLabel="Unit"
           className="ml-0.5"
         />
+        <div className="text-muted-foreground font-normal text-xs ml-2 flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+          <span>(from</span>
+          <InlineEditable
+            value={String(target.start ?? 0)}
+            numeric
+            min={0}
+            onChange={(v) => onUpdate({ start: parseInt(v, 10) } as Partial<Target>)}
+            ariaLabel="Start value"
+          />
+          <span>)</span>
+        </div>
       </div>
       {/* Single progress bar with ± controls; percentage sits inline before the + */}
       <div className="flex items-center gap-3">
@@ -464,7 +524,7 @@ function InlineEditable({
       onKeyDown={handleKeyDown}
       data-placeholder={placeholder}
       className={cn(
-        "outline-none cursor-text px-1 rounded-md focus:ring-[3px] focus:ring-ring transition-shadow min-w-[1ch] inline-block empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75",
+        "outline-none cursor-text transition-shadow min-w-[1ch] inline-block empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75",
         className
       )}
     />
@@ -549,7 +609,7 @@ function TasksResizableSheet({
           aria-label="Resize panel"
         />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className={cn("border-b hairline flex items-center justify-between bg-surface z-10 sticky top-0", compact ? "px-3 py-3" : "px-6 py-4")}>
+          <div className={cn("flex items-center justify-between bg-surface z-10 sticky top-0", compact ? "px-3 pt-3 pb-1" : "px-6 pt-5 pb-2")}>
             <h3 className={cn("font-bold truncate flex-1 min-w-0 pr-2", compact && "text-sm")}>{title}</h3>
             <button
               onClick={onClose}
@@ -558,7 +618,7 @@ function TasksResizableSheet({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className={cn("flex-1 overflow-y-auto", compact ? "p-2" : "p-6")}>
+          <div className={cn("flex-1 overflow-y-auto", compact ? "px-2 pb-2 pt-0" : "px-6 pb-6 pt-0")}>
             <ChecklistEditor items={items} onChange={onChange} compact={compact} />
           </div>
         </div>
@@ -585,9 +645,9 @@ function ChecklistEditor({
           id={`task-${it.id}`}
           key={it.id}
           className={cn(
-            "flex scroll-mt-24 items-center gap-2 rounded-md transition-colors group/task",
-            compact ? "px-1 py-1" : "px-2 py-1.5",
-            it.done ? "bg-primary-soft/40" : "hover:bg-secondary/60",
+            "flex scroll-mt-24 items-stretch overflow-hidden rounded-md border transition-colors group/task",
+            compact ? "min-h-[40px]" : "min-h-[44px]",
+            it.done ? "border-primary" : "border-border hover:border-primary/50",
           )}
         >
           <button
@@ -595,20 +655,31 @@ function ChecklistEditor({
               onChange(items.map((i) => (i.id === it.id ? { ...i, done: !i.done } : i)))
             }
             className={cn(
-              "h-4 w-4 rounded-sm border-2 grid place-items-center shrink-0 transition-colors",
-              it.done ? "bg-primary border-primary" : "border-border-strong hover:border-primary",
+              "shrink-0 flex items-center justify-center border-r transition-colors",
+              compact ? "w-10" : "w-12",
+              it.done ? "bg-primary-soft border-primary" : "bg-surface border-border hover:bg-secondary/50",
             )}
           >
-            {it.done && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
+            <div className={cn(
+              "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+              it.done ? "bg-primary border-primary" : "border-border-strong",
+            )}>
+              {it.done && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
+            </div>
           </button>
-          <span
-            className={cn(
-              "flex-1 text-sm truncate",
-              it.done && "line-through text-muted-foreground",
-            )}
-          >
-            {it.text}
-          </span>
+          
+          <div className={cn(
+            "flex-1 flex items-center gap-2 relative bg-surface",
+            compact ? "px-2 py-1" : "px-3 py-1.5"
+          )}>
+            <span
+              className={cn(
+                "flex-1 text-sm truncate",
+                it.done && "line-through text-muted-foreground",
+              )}
+            >
+              {it.text}
+            </span>
           {compact ? (
             <DeadlinePopover
               iso={it.deadline}
@@ -622,6 +693,7 @@ function ChecklistEditor({
               iso={it.deadline}
               variant="text"
               placeholder="Set deadline"
+              hideChevron
               onChange={(next) =>
                 onChange(items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)))
               }
@@ -635,22 +707,36 @@ function ChecklistEditor({
           >
             <X className="h-3.5 w-3.5" />
           </button>
+          </div>
         </div>
       ))}
-      <div className={cn("flex min-h-11 items-center gap-2 rounded-md border border-input bg-surface px-3.5 py-2 transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring", compact ? "mt-1" : "mt-3")}>
-        <span className="h-4 w-4 rounded-sm border-2 border-dashed border-border-strong shrink-0" />
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && draft.trim()) {
-              onChange([...items, { id: uid(), text: draft.trim(), done: false }]);
-              setDraft("");
-            }
-          }}
-          placeholder="Add subtask…"
-          className="flex-1 bg-transparent outline-none text-base placeholder:text-muted-foreground/75"
-        />
+      <div className={cn(
+        "flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary",
+        compact ? "mt-2 min-h-[40px]" : "mt-4 min-h-[44px]"
+      )}>
+        <div className={cn(
+          "shrink-0 flex items-center justify-center border-r border-border bg-secondary/30",
+          compact ? "w-10" : "w-12"
+        )}>
+          <span className="h-4 w-4 rounded-sm border-2 border-dashed border-border-strong/70" />
+        </div>
+        <div className={cn(
+          "flex-1 flex items-center relative",
+          compact ? "px-2" : "px-3"
+        )}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && draft.trim()) {
+                onChange([...items, { id: uid(), text: draft.trim(), done: false }]);
+                setDraft("");
+              }
+            }}
+            placeholder="Add subtask…"
+            className="flex-1 bg-transparent outline-none text-base min-h-[40px] placeholder:text-muted-foreground/75"
+          />
+        </div>
       </div>
     </div>
   );
@@ -691,6 +777,7 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
   const addTarget = useSpira((s) => s.addTarget);
   const [type, setType] = useState<"numeric" | "binary" | "checklist">("numeric");
   const [title, setTitle] = useState("");
+  const [start, setStart] = useState(0);
   const [total, setTotal] = useState(10);
   const [unit, setUnit] = useState("");
   const [deadline, setDeadline] = useState("");
@@ -705,8 +792,8 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
       addTarget(goalId, {
         ...base,
         type: "numeric",
-        start: 0,
-        current: 0,
+        start,
+        current: start,
         total,
         unit: unit || undefined,
       } as any);
@@ -720,8 +807,8 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
 
   return (
     <>
-      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg">Add a target</h2>
+      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
+        <h2 className="font-sans font-bold text-lg">New target</h2>
         <button
           onClick={onDone}
           className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
@@ -731,7 +818,7 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
         </button>
       </div>
 
-      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1">
+      <div className="px-7 pt-2 pb-6 space-y-6 overflow-y-auto flex-1">
         <div>
           <label className="text-sm font-semibold block mb-2">
             Type <span className="text-destructive">*</span>
@@ -752,24 +839,31 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
                 key={opt.v}
                 onClick={() => setType(opt.v)}
                 className={cn(
-                  "w-full text-left px-4 py-3 rounded-md border-2 transition-colors flex items-start gap-3",
+                  "w-full text-left flex items-stretch overflow-hidden rounded-md border transition-colors group",
                   type === opt.v
-                    ? "bg-primary-soft border-primary"
-                    : "bg-surface border-border hover:border-border-strong",
+                    ? "border-primary bg-surface"
+                    : "border-border bg-surface hover:border-primary/50",
                 )}
               >
-                <span
+                <div
                   className={cn(
-                    "mt-0.5 h-5 w-5 rounded-full border-2 grid place-items-center shrink-0",
-                    type === opt.v ? "border-primary" : "border-border-strong",
+                    "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
+                    type === opt.v ? "bg-primary-soft border-primary" : "bg-surface border-border group-hover:bg-secondary/50",
                   )}
                 >
-                  {type === opt.v && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
-                </span>
-                <span>
+                  <span
+                    className={cn(
+                      "h-5 w-5 rounded-full border-2 grid place-items-center transition-colors",
+                      type === opt.v ? "border-primary" : "border-border-strong",
+                    )}
+                  >
+                    {type === opt.v && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
+                  </span>
+                </div>
+                <div className="flex-1 px-4 py-3">
                   <span className="block font-semibold text-sm text-foreground">{opt.t}</span>
                   <span className="block text-xs text-muted-foreground mt-0.5">{opt.d}</span>
-                </span>
+                </div>
               </button>
             ))}
           </div>
@@ -787,9 +881,17 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
           />
         </div>
         {type === "numeric" && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Total</label>
+              <label className="text-sm font-semibold block mb-1.5 text-muted-foreground">Start</label>
+              <Input
+                type="number"
+                value={start}
+                onChange={(e) => setStart(Number(e.target.value) || 0)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Target</label>
               <Input
                 type="number"
                 value={total}
@@ -797,11 +899,11 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
               />
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Unit</label>
+              <label className="text-sm font-semibold block mb-1.5 text-muted-foreground">Unit</label>
               <Input
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                placeholder="apps, km…"
+                placeholder="apps…"
               />
             </div>
           </div>
@@ -810,15 +912,16 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
           <label className="text-sm font-semibold block mb-1.5">
             Deadline <span className="text-muted-foreground font-normal">(optional)</span>
           </label>
-          <Input
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
+          <DeadlinePopover
+            iso={deadline}
+            onChange={(next) => setDeadline(next ?? "")}
+            variant="input"
+            className="w-full justify-start text-left font-normal"
           />
         </div>
       </div>
 
-      <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
+      <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
         <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
           Cancel
         </button>

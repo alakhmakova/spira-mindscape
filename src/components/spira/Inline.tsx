@@ -42,38 +42,47 @@ export function InlineList({
     <div className="space-y-4">
       <div
         className={cn(
-          "flex min-h-11 items-center gap-2 mt-1 rounded-md border border-input bg-surface px-3.5 py-2 text-base transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring",
+          "flex items-stretch overflow-hidden rounded-md border transition-colors focus-within:border-primary",
           tone === "warning"
-            ? "focus-within:border-destructive focus-within:ring-destructive/20"
-            : "",
+            ? "border-destructive/30 focus-within:border-destructive bg-surface"
+            : "border-border bg-surface"
         )}
       >
-        <Plus
+        <div
           className={cn(
-            "h-4 w-4",
-            tone === "warning" ? "text-destructive/70" : "text-primary/70",
+            "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
+            tone === "warning" ? "border-destructive/20 bg-destructive/5" : "border-border bg-secondary/30"
           )}
-        />
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder={placeholder}
-          className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/75"
-        />
-        {draft && (
-          <button
-            onClick={add}
+        >
+          <Plus
             className={cn(
-              "text-xs font-semibold px-2 py-1 rounded-md",
-              tone === "warning"
-                ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                : "bg-primary/10 text-primary hover:bg-primary/20"
+              "h-4 w-4",
+              tone === "warning" ? "text-destructive/70" : "text-primary/70",
             )}
-          >
-            Add
-          </button>
-        )}
+          />
+        </div>
+        <div className="flex-1 flex items-center px-4 py-1 relative">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder={placeholder}
+            className="flex-1 bg-transparent text-base outline-none min-h-[40px] placeholder:text-muted-foreground/75"
+          />
+          {draft && (
+            <button
+              onClick={add}
+              className={cn(
+                "ml-2 text-sm font-semibold rounded-md px-2 py-1",
+                tone === "warning"
+                  ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                  : "bg-primary/10 text-primary hover:bg-primary/20"
+              )}
+            >
+              Add
+            </button>
+          )}
+        </div>
       </div>
 
       {items.length === 0 && (
@@ -162,7 +171,7 @@ function Marker({
     return <BookmarkCheck className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-primary")} strokeWidth={2} />;
   }
   if (kind === "warn") {
-    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-destructive")} strokeWidth={2} />;
+    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-[#ea580c]")} strokeWidth={2} />;
   }
   return (
     <span

@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Calendar as CalendarIcon, Trash2, X } from "lucide-react";
+import { Calendar as CalendarIcon, Trash2, X, ChevronRight } from "lucide-react";
 import { format, isPast, differenceInCalendarDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -25,17 +25,21 @@ export function DeadlinePopover({
   className,
   disableScroll = false,
   side = "bottom",
+  hideChevron = false,
+  renderTrigger,
 }: {
   iso?: string;
   onChange: (next: string | undefined) => void;
   size?: "sm" | "md";
   align?: "start" | "center" | "end";
   variant?: "pill" | "input" | "button" | "text" | "icon";
-  placeholder?: string;
+  placeholder?: React.ReactNode;
   hideDaysLeft?: boolean;
   className?: string;
   disableScroll?: boolean;
   side?: "top" | "bottom";
+  hideChevron?: boolean;
+  renderTrigger?: () => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
@@ -111,7 +115,30 @@ export function DeadlinePopover({
             className
           )}
         >
-          {date ? format(date, "MMM d, yyyy") : (placeholder || "Set deadline")}
+          {date ? (
+            <div className="flex items-center gap-1.5">
+              <span>{format(date, "MMM d, yyyy")}</span>
+              {!hideDaysLeft && (
+                <span className="opacity-60 font-normal">
+                  ·{" "}
+                  {overdue
+                    ? `${Math.abs(days)}d overdue`
+                    : days === 0
+                      ? "today"
+                      : `${days}d left`}
+                </span>
+              )}
+              {!hideChevron && <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+            </div>
+          ) : (
+            <span>{placeholder || "Set deadline"}</span>
+          )}
+        </PopoverTrigger>
+      ) : renderTrigger ? (
+        <PopoverTrigger asChild>
+          <button type="button" className={cn("text-left", className)}>
+            {renderTrigger()}
+          </button>
         </PopoverTrigger>
       ) : variant === "icon" ? (
         <PopoverTrigger

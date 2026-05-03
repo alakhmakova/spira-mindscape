@@ -31,7 +31,7 @@ export function Section({
               !open && "-rotate-90",
             )}
           />
-          <h2 className="font-display text-xl sm:text-2xl">{title}</h2>
+          <h2 className="font-heading text-2xl">{title}</h2>
           {typeof count === "number" && count > 0 && (
             <span className="num text-xs font-semibold text-primary bg-primary-soft border border-primary/20 px-2 py-0.5 rounded-full">
               {count}

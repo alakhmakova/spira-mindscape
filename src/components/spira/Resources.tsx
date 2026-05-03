@@ -13,6 +13,8 @@ import {
   Pencil,
   ZoomIn,
   X,
+  ChevronRight,
+  ChevronLeft,
 } from "lucide-react";
 import type { Goal, Resource } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
@@ -158,7 +160,7 @@ export function ResourcesList({ goal }: { goal: Goal }) {
 
   return (
     <>
-      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="flex flex-wrap gap-2">
         {goal.resources.map((r) => (
           <ResourceCard
             key={r.id}
@@ -170,7 +172,7 @@ export function ResourcesList({ goal }: { goal: Goal }) {
             onRemove={() => removeResource(goal.id, r.id)}
           />
         ))}
-      </ul>
+      </div>
 
       <ResourcePreview goalId={goal.id} resourceId={previewId} onClose={() => setPreviewId(null)} />
     </>
@@ -188,6 +190,7 @@ function ResourceCard({
   onOpen: () => void;
   onRemove: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const Icon = typeMeta[r.type].icon;
   const { copied, run } = useCopied();
 
@@ -219,59 +222,83 @@ function ResourceCard({
   const canDownload = r.type === "note" || r.type === "file";
 
   return (
-    <li
-      className="surface-card p-4 flex items-start gap-3 group hover:border-primary/40 hover:shadow-[var(--shadow-soft)] transition-all cursor-pointer"
-      onClick={onOpen}
+    <div
+      className={cn(
+        "inline-flex items-center h-10 rounded-full border border-border bg-white transition-all shadow-sm overflow-hidden",
+        expanded ? "pr-2" : ""
+      )}
     >
-      <div className="h-9 w-9 rounded-md bg-primary-soft border border-primary/20 grid place-items-center shrink-0 text-primary">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-          {typeMeta[r.type].label}
-        </div>
-        <div className="text-sm font-semibold truncate text-foreground">
+      <button
+        onClick={onOpen}
+        className="flex items-center gap-2 px-3.5 h-full hover:bg-secondary/30 transition-colors"
+      >
+        <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
+        <span className="text-sm font-semibold text-foreground whitespace-nowrap">
           {r.type === "contact" ? (r.name || r.email) : r.title}
-        </div>
-        {r.type === "link" && (
-          <div className="text-xs text-muted-foreground truncate">{r.url}</div>
-        )}
-        {r.type === "contact" && r.email && r.name && (
-          <div className="text-xs text-muted-foreground truncate">
-            {r.email}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        {canCopy && (
-          <button
-            onClick={handleCopy}
-            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-secondary transition-colors"
-            aria-label="Copy"
-            title={copied ? "Copied!" : "Copy"}
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-        )}
-        {canDownload && (
-          <button
-            onClick={handleDownload}
-            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-secondary transition-colors"
-            aria-label="Download"
-            title="Download"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </button>
-        )}
+        </span>
+      </button>
+
+      <div className="w-px h-full bg-border" />
+
+      {!expanded ? (
         <button
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
-          aria-label="Remove resource"
+          onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+          className="px-2.5 h-full flex items-center justify-center hover:bg-secondary/30 text-muted-foreground transition-colors"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <ChevronRight className="h-3.5 w-3.5 opacity-60" />
         </button>
-      </div>
-    </li>
+      ) : (
+        <div className="flex items-center pl-1 gap-1 h-full">
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+            className="px-2 h-full flex items-center justify-center hover:bg-secondary/30 text-muted-foreground transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 opacity-60" />
+          </button>
+          
+          <div className="w-px h-4 bg-border mx-0.5" />
+
+          {r.type === "contact" ? (
+             <button
+               onClick={(e) => { e.stopPropagation(); onOpen(); }}
+               className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+               title="Edit contact"
+             >
+               <Pencil className="h-3.5 w-3.5" />
+             </button>
+          ) : (
+            <>
+              {canCopy && (
+                <button
+                  onClick={handleCopy}
+                  className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+                  title={copied ? "Copied!" : "Copy"}
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              )}
+              {canDownload && (
+                <button
+                  onClick={handleDownload}
+                  className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+                  title="Download"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </>
+          )}
+          
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-destructive-soft hover:text-destructive transition-colors"
+            title="Remove"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

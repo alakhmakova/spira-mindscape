@@ -62,8 +62,8 @@ const seed: Goal[] = [
         type: "checklist",
         title: "Portfolio refresh",
         items: [
-          { id: seedUid(), text: "Rewrite case study A", done: true },
-          { id: seedUid(), text: "Rewrite case study B", done: true },
+          { id: seedUid(), text: "Rewrite case study A", done: true, achievedAt: seedDate(5) },
+          { id: seedUid(), text: "Rewrite case study B", done: true, achievedAt: seedDate(10) },
           { id: seedUid(), text: "Add new case study C", done: false },
           { id: seedUid(), text: "Polish hero section", done: false },
         ],
@@ -115,7 +115,7 @@ const seed: Goal[] = [
         items: [
           { id: seedUid(), text: "Onboarding flow", done: false },
           { id: seedUid(), text: "Privacy page", done: false },
-          { id: seedUid(), text: "Feedback loop", done: true },
+          { id: seedUid(), text: "Feedback loop", done: true, achievedAt: seedDate(12) },
         ],
       },
     ],
@@ -183,7 +183,15 @@ export const useSpira = create<State>()(
       },
       updateGoal: (id, patch) =>
         set((s) => ({
-          goals: s.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+          goals: s.goals.map((g) => {
+            if (g.id !== id) return g;
+            const updated = { ...g, ...patch };
+            // If goal just reached 100% or is explicitly achieved
+            if (patch.achievedAt === undefined && !g.achievedAt) {
+               // Logic to detect 100% progress could go here, but let's stick to manual/patch for now
+            }
+            return updated;
+          }),
         })),
       deleteGoal: (id) => set((s) => ({ goals: s.goals.filter((g) => g.id !== id) })),
       setConfidence: (id, c) =>
@@ -292,9 +300,27 @@ export const useSpira = create<State>()(
             g.id === id
               ? {
                   ...g,
-                  targets: g.targets.map((t) =>
-                    t.id === targetId ? ({ ...t, ...patch } as Target) : t,
-                  ),
+                  targets: g.targets.map((t) => {
+                    if (t.id !== targetId) return t;
+                    const next = { ...t, ...patch } as Target;
+                    
+                    // Auto-set achievedAt if status changed to done/100%
+                    if (next.type === "binary" && t.type === "binary" && next.done && !t.done) {
+                       next.achievedAt = new Date().toISOString();
+                    } else if (next.type === "numeric" && t.type === "numeric" && next.current >= next.total && t.current < t.total) {
+                       next.achievedAt = new Date().toISOString();
+                    } else if (next.type === "checklist" && t.type === "checklist" && (patch as any).items) {
+                       next.items = next.items.map(item => {
+                          const prev = t.items.find((pi) => pi.id === item.id);
+                          if (item.done && (!prev || !prev.done)) {
+                             return { ...item, achievedAt: new Date().toISOString() };
+                          }
+                          return item;
+                       });
+                    }
+                    
+                    return next;
+                  }),
                 }
               : g,
           ),

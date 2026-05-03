@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   History,
   Plus,
@@ -93,9 +95,18 @@ function GoalWorkspace() {
   };
 
   return (
-    <div id="goal-top" className="mx-auto max-w-7xl scroll-mt-24 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
-      {/* Top bar — no back link, only actions */}
-      <div className="flex items-center justify-end gap-2">
+    <>
+      <GoalNav />
+      <div id="goal-top" className="mx-auto max-w-7xl scroll-mt-32 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6">
+      {/* Top bar: back link + delete */}
+      <div className="flex items-center justify-between">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline transition-colors font-medium"
+        >
+          <ChevronLeft className="h-4 w-4 shrink-0" />
+          Back to All goals
+        </Link>
         <button
           onClick={() => setConfirmDelete(true)}
           className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
@@ -137,18 +148,19 @@ function GoalWorkspace() {
       </div>
 
 
-      <Section
-        title="Reality"
-        hint="Where are you now?"
-        action={
-          <button
-            onClick={() => openAi({ goalId })}
-            className="link-action text-sm font-medium inline-flex items-center gap-1"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Coach
-          </button>
-        }
-      >
+      <div id="reality-section" className="scroll-mt-32">
+        <Section
+          title="Reality"
+          hint="Where are you now?"
+          action={
+              <button
+                onClick={() => openAi({ goalId })}
+                className="text-primary hover:text-primary/80 text-sm font-semibold inline-flex items-center gap-1 transition-colors"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Coach
+              </button>
+          }
+        >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-lg overflow-hidden border hairline">
           <div className="p-5 sm:p-6 bg-[#e5f4f3] md:border-r hairline">
             <h3 className="font-display text-lg mb-3">Actions taken</h3>
@@ -177,7 +189,9 @@ function GoalWorkspace() {
           </div>
         </div>
       </Section>
+      </div>
 
+      <div id="resources-section" className="scroll-mt-32">
       <Section
         title="Resources"
         hint="Notes, links, files, contacts"
@@ -193,12 +207,15 @@ function GoalWorkspace() {
       >
         <ResourcesList goal={goal} />
       </Section>
+      </div>
 
-      <Section title="Options" hint="Strategies — pick one to commit" count={goal.options.length}>
-        <OptionsList goal={goal} />
-      </Section>
+      <div id="options-section" className="scroll-mt-32">
+        <Section title="Options" hint="Strategies — pick one to commit" count={goal.options.length}>
+          <OptionsList goal={goal} />
+        </Section>
+      </div>
 
-      <div id="targets-section">
+      <div id="targets-section" className="scroll-mt-32">
         <Section
           title="Will do"
           hint="How you execute"
@@ -206,9 +223,9 @@ function GoalWorkspace() {
           action={
             <button
               onClick={() => setNewTarget(true)}
-              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
+              className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-semibold hover:bg-[#ea580c]/90"
             >
-              <Plus className="h-3.5 w-3.5" /> Add target
+              Add target
             </button>
           }
         >
@@ -239,6 +256,7 @@ function GoalWorkspace() {
         }}
       />
     </div>
+    </>
   );
 }
 
@@ -249,21 +267,27 @@ function KpiCard({
   children,
   hint,
   footer,
+  headerAction,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
-  /** Always-visible footer element (link/button) below the hint */
   footer?: React.ReactNode;
+  headerAction?: React.ReactNode;
 }) {
   return (
-    <div className="surface-card p-5 sm:p-6 flex flex-col gap-4 min-h-[180px]">
-      <h3 className="font-display text-lg">{label}</h3>
-      <div className="flex-1 flex items-center">{children}</div>
-      <div className="space-y-2">
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-        {footer}
+    <div className={cn("p-5 sm:p-6 flex flex-col min-h-[140px] rounded-lg border transition-colors duration-200 cursor-default relative", 
+      "bg-white border-border/80 hover:bg-[#f4fbfc] hover:border-[#4fa8a3]/50"
+    )}>
+      <div className="flex justify-between items-start mb-3">
+        <h3 className="font-bold text-[15px] text-foreground/90">{label}</h3>
+        {headerAction}
       </div>
+      <div className="flex-1 flex flex-col justify-center">
+        {children}
+        {hint && <div className="text-[13px] text-muted-foreground mt-1">{hint}</div>}
+      </div>
+      <div className="mt-4">{footer}</div>
     </div>
   );
 }
@@ -277,17 +301,17 @@ function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
       footer={
         <button
           onClick={onJump}
-          className={cn(
-            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-semibold",
-            "bg-primary-soft text-primary border border-primary/30 hover:bg-primary-soft/80 transition-colors",
-          )}
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
         >
-          Jump to targets <ArrowUpRight className="h-4 w-4" />
+          Jump to targets <ChevronRight className="h-3.5 w-3.5" />
         </button>
       }
     >
-      <div className="flex items-center justify-start w-full">
-        <CircularProgress value={value} />
+      <div className="flex items-baseline gap-1.5 leading-none w-full">
+        <span className="num tabular-nums text-5xl font-bold tracking-tight text-foreground/90">
+          {pct}
+        </span>
+        <span className="text-base text-muted-foreground/60 font-medium">% completed</span>
       </div>
     </KpiCard>
   );
@@ -347,23 +371,30 @@ function ConfidenceKpi({
       footer={
         <button
           onClick={onOpenHistory}
-          className={cn(
-            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-semibold",
-            "bg-primary-soft text-primary border border-primary/30 hover:bg-primary-soft/80 transition-colors",
-          )}
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
         >
-          <History className="h-3.5 w-3.5" />
-          Confidence history
+          Confidence history <ChevronRight className="h-3.5 w-3.5" />
         </button>
       }
+      headerAction={
+        isEditing && (
+          <button 
+            onClick={() => setIsEditing(false)} 
+            className="h-6 w-6 -mt-1 -mr-1 grid place-items-center rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            title="Cancel editing"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )
+      }
     >
-      <div className="flex flex-col gap-3 w-full mt-2">
+      <div className="flex flex-col w-full">
         <button 
           onClick={() => setIsEditing(!isEditing)}
           className="flex items-baseline gap-1.5 num tabular-nums justify-start text-left hover:opacity-80 transition-opacity focus:outline-none"
         >
-          <span className="text-5xl font-bold tracking-tight text-foreground">{value}</span>
-          <span className="text-2xl text-muted-foreground font-medium">/10</span>
+          <span className="text-5xl font-bold tracking-tight text-foreground/90 leading-none">{value}</span>
+          <span className="text-base text-muted-foreground/60 font-medium">/ 10</span>
         </button>
         {isEditing && (
           <div className="flex justify-between w-full mt-1 gap-1">
@@ -422,30 +453,30 @@ function DeadlineKpi({
         <DeadlinePopover 
           iso={iso} 
           onChange={onChange} 
-          variant="button" 
-          placeholder="Set deadline" 
+          variant="text" 
+          placeholder={<>Set deadline <ChevronRight className="h-3.5 w-3.5" /></>}
           hideDaysLeft 
           disableScroll
-          className="w-full"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 outline-none"
         />
       }
     >
       <div className="num tabular-nums w-full">
         {date ? (
-          <div className="flex items-baseline gap-1.5">
-            <span className={cn("text-5xl font-bold tracking-tight", overdue ? "text-destructive" : "text-foreground")}>
+          <div className="flex items-baseline gap-1.5 leading-none">
+            <span className={cn("text-5xl font-bold tracking-tight", overdue ? "text-destructive" : "text-foreground/90")}>
               {Math.abs(days ?? 0)}
             </span>
-            <span className={cn("text-sm font-medium", overdue ? "text-destructive" : "text-muted-foreground")}>
+            <span className={cn("text-base font-medium", overdue ? "text-destructive" : "text-muted-foreground/60")}>
               {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
             </span>
           </div>
         ) : (
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-5xl font-bold tracking-tight text-foreground">
+          <div className="flex items-baseline gap-1.5 leading-none">
+            <span className="text-5xl font-bold tracking-tight text-foreground/90">
               {distanceValue}
             </span>
-            <span className="text-sm text-muted-foreground font-medium">
+            <span className="text-base text-muted-foreground/60 font-medium">
               {distanceUnit} ago
             </span>
           </div>
@@ -534,5 +565,104 @@ function ConfidenceHistorySheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function GoalNav() {
+  const [scroll, setScroll] = useState(0);
+  const [active, setActive] = useState("Goal");
+  const isManualRef = useRef(false);
+  const timeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const winScroll = window.scrollY;
+      const height = document.documentElement.scrollHeight - window.innerHeight;
+      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
+      setScroll(scrolled);
+
+      // If we clicked a link, don't let scroll position override the highlight
+      if (isManualRef.current) return;
+
+      const sections = [
+        { id: "goal-top", label: "Goal" },
+        { id: "reality-section", label: "Reality" },
+        { id: "resources-section", label: "Resources" },
+        { id: "options-section", label: "Options" },
+        { id: "targets-section", label: "Will do" },
+      ];
+
+      if (winScroll + window.innerHeight >= document.documentElement.scrollHeight - 20) {
+        setActive(sections[sections.length - 1].label);
+        return;
+      }
+
+      const threshold = 120;
+      const current = [...sections].reverse().find((s) => {
+        const el = document.getElementById(s.id);
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.top <= threshold;
+      });
+
+      if (current) setActive(current.label);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const items = [
+    { label: "Goal", id: "goal-top" },
+    { label: "Reality", id: "reality-section" },
+    { label: "Resources", id: "resources-section" },
+    { label: "Options", id: "options-section" },
+    { label: "Will do", id: "targets-section" },
+  ];
+
+  const scrollTo = (id: string, label: string) => {
+    // Set active state immediately
+    setActive(label);
+    isManualRef.current = true;
+    
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      isManualRef.current = false;
+    }, 1000);
+
+    const el = document.getElementById(id);
+    if (el) {
+      const yOffset = -112;
+      const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
+      window.scrollTo({ top: y, behavior: "smooth" });
+    }
+  };
+
+  return (
+    <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-8 h-12">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => scrollTo(item.id, item.label)}
+              className={cn(
+                "text-[13px] font-medium transition-colors",
+                active === item.label ? "text-[#ea580c]" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="h-[5px] w-full bg-[#dcfce7] overflow-hidden">
+        <div
+          className="h-full bg-[#ea580c] transition-all duration-100 ease-out"
+          style={{ width: `${scroll}%` }}
+        />
+      </div>
+    </div>
   );
 }

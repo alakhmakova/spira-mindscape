@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { LayoutGrid, List, Plus } from "lucide-react";
+import { LayoutGrid, List, Plus, Calendar } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import { goalProgress } from "@/lib/spira/progress";
 import { GoalCard } from "@/components/spira/GoalCard";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Your goals — Spira" },
+      { title: "All goals — Spira" },
       {
         name: "description",
         content:
@@ -25,11 +25,10 @@ export const Route = createFileRoute("/")({
 
 function GoalsOverview() {
   const goals = useSpira((s) => s.goals);
-  const { query, sort, sortDirection, deadlineFrom, deadlineTo, confidence, status } = useShellFilters();
-  const [view, setView] = useState<"cards" | "table">("cards");
+  const { query, sort, sortDirection, deadlineFrom, deadlineTo, confidence, status, viewMode, setViewMode } = useShellFilters();
   const [open, setOpen] = useState(false);
 
-  const greeting = "Your goals";
+  const greeting = "All goals";
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -74,20 +73,38 @@ function GoalsOverview() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-semibold text-2xl text-foreground">{greeting}</h1>
-          <p className="text-muted-foreground mt-1.5 text-sm sm:text-[15px]">
-            {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion. Pick one to dive
-            into, or shape a new one.
-          </p>
+          {viewMode === "cards" ? (
+            <>
+              <h1 className="font-semibold text-2xl text-foreground">{greeting}</h1>
+              <p className="text-muted-foreground mt-1.5 text-sm sm:text-[15px]">
+                {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion. Pick one to dive
+                into, or shape a new one.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold text-foreground">Timeline</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Goals, targets and tasks with deadlines, ordered by the nearest date.
+              </p>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <div className="inline-flex p-0.5 bg-secondary rounded-md border hairline">
-            <ViewBtn active={view === "cards"} onClick={() => setView("cards")} icon={LayoutGrid}>
+            <ViewBtn active={viewMode === "cards"} onClick={() => setViewMode("cards")} icon={LayoutGrid}>
               Cards
             </ViewBtn>
-          <ViewBtn active={view === "table"} onClick={() => setView("table")} icon={List}>
+            <ViewBtn active={viewMode === "table"} onClick={() => setViewMode("table")} icon={List}>
               Timeline
             </ViewBtn>
+            <Link
+              to="/calendar"
+              className="px-3 h-9 rounded-md text-xs flex items-center gap-1.5 transition-colors font-medium text-muted-foreground hover:text-foreground"
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              Calendar
+            </Link>
           </div>
         </div>
       </header>
@@ -110,7 +127,7 @@ function GoalsOverview() {
             </button>
           )}
         </div>
-      ) : view === "cards" ? (
+      ) : viewMode === "cards" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
           {filtered.map((g) => (
             <GoalCard key={g.id} goal={g} />

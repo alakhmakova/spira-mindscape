@@ -1,5 +1,11 @@
 import { cn } from "@/lib/utils";
 
+function getConfidenceColor(value: number) {
+  if (value <= 4) return "#EF7B6C";
+  if (value <= 7) return "#F8D068";
+  return "#7ECEC4";
+}
+
 export function ConfidencePill({
   value,
   className,
@@ -7,30 +13,23 @@ export function ConfidencePill({
   value: number;
   className?: string;
 }) {
-  const tone =
-    value <= 3
-      ? "bg-destructive/10 text-destructive border-destructive/30"
-      : value <= 6
-        ? "bg-amber-500/15 text-amber-700 dark:text-amber-500 border-amber-500/40"
-        : "bg-primary-soft text-primary border-primary/30";
+  const color = getConfidenceColor(value);
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold num",
-        tone,
-        className,
-      )}
+      className={cn("inline-flex items-center gap-1.5 text-xs font-semibold text-foreground", className)}
       title={`Confidence ${value}/10`}
     >
-      <span className="uppercase tracking-wider text-[10px]">
-        Confidence
-      </span>
-      <span>
-        {value}/10
-      </span>
+      <span
+        className="inline-block w-2 h-2 rounded-full shrink-0"
+        style={{ backgroundColor: color }}
+      />
+      <span className="text-muted-foreground">Confidence</span>
+      <span className="num font-bold">{value}/10</span>
     </span>
   );
 }
+
+export { getConfidenceColor };
 
 export function ConfidenceStepper({
   value,

@@ -17,6 +17,7 @@ type State = {
   deadlineTo: string;
   confidence: string;
   status: GoalStatusFilter;
+  viewMode: "cards" | "table";
   setQuery: (q: string) => void;
   setSort: (s: SortKey) => void;
   setSortDirection: (d: SortDirection) => void;
@@ -26,6 +27,7 @@ type State = {
   setConfidence: (value: string) => void;
   setStatus: (value: GoalStatusFilter) => void;
   resetFilters: () => void;
+  setViewMode: (v: "cards" | "table") => void;
 };
 
 export const useShellFilters = create<State>((set) => ({
@@ -36,6 +38,7 @@ export const useShellFilters = create<State>((set) => ({
   deadlineTo: "",
   confidence: "",
   status: "all",
+  viewMode: "cards",
   setQuery: (query) => set({ query }),
   setSort: (sort) => set({ sort }),
   setSortDirection: (sortDirection) => set({ sortDirection }),
@@ -45,4 +48,5 @@ export const useShellFilters = create<State>((set) => ({
   setConfidence: (confidence) => set({ confidence }),
   setStatus: (status) => set({ status }),
   resetFilters: () => set({ deadlineFrom: "", deadlineTo: "", confidence: "", status: "all" }),
+  setViewMode: (viewMode) => set({ viewMode }),
 }));

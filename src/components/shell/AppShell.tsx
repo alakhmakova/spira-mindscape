@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useParams } from "@tanstack/react-router";
 import {
   Search,
   SlidersHorizontal,
@@ -58,41 +58,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top bar */}
-      <header className="sticky top-0 z-30 bg-background/85 backdrop-blur border-b hairline">
-        <div className="w-full px-4 sm:px-6 h-16 flex items-center gap-3 sm:gap-5">
+      <header
+        className={cn(
+          "sticky top-0 z-30 transition-colors duration-200",
+          isWorkspace
+            ? "bg-primary border-b border-primary/20"
+            : "bg-background/85 backdrop-blur border-b hairline"
+        )}
+      >
+        <div className={cn("w-full px-4 sm:px-6 h-16 items-center", isWorkspace ? "grid grid-cols-[1fr_minmax(auto,600px)_1fr]" : "flex gap-3 sm:gap-5")}>
           {/* Brand */}
-          <Link to="/" className="flex items-center gap-2 shrink-0">
-            <span className="text-2xl font-extrabold tracking-normal text-brand-orange">
-              Spira
-            </span>
-          </Link>
+          <div className={cn("flex items-center", isWorkspace ? "justify-start gap-4" : "gap-2")}>
+            {isWorkspace ? (
+              <>
+                <Link to="/" className="text-[32px] font-extrabold tracking-normal text-white hover:text-white/90 transition-colors leading-none">
+                  spira
+                </Link>
+                <button
+                  onClick={() => openAi()}
+                  className="text-white hover:text-white/90 text-[20px] font-normal transition-colors leading-none pt-1"
+                >
+                  ai coach
+                </button>
+              </>
+            ) : (
+              <>
+                <Link to="/" className="text-[32px] font-extrabold tracking-normal text-[#ea580c] hover:text-[#ea580c]/90 transition-colors leading-none">
+                  spira
+                </Link>
+                <button
+                  onClick={() => openAi()}
+                  className="text-primary hover:text-primary/90 text-[20px] font-normal transition-colors leading-none pt-1"
+                >
+                  ai coach
+                </button>
+              </>
+            )}
+          </div>
 
-          {/* AI quick action */}
-          <button
-            onClick={() => openAi()}
-            className="hidden sm:inline-flex items-center h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
-          >
-            Spira AI
-          </button>
+          {/* Spacer (only for non-workspace) */}
+          {!isWorkspace && <div className="flex-1" />}
 
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Right side items */}
-          <div className="flex items-center gap-3 sm:gap-4 justify-end">
-            {/* Search */}
-            <div className="relative w-32 sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          {/* Search (Centered for workspace, inline for non-workspace) */}
+          <div className={cn("flex", isWorkspace ? "justify-center w-full" : "w-32 sm:w-64 shrink-0")}>
+            <div className="relative w-full max-w-2xl">
+              <Search className={cn("pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4", isWorkspace ? "text-muted-foreground" : "text-muted-foreground")} />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search goals…"
-                className="w-full h-9 pl-9 pr-8 rounded-md bg-surface border border-input text-sm outline-none placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring transition-colors"
+                placeholder={isWorkspace ? "Search for answers..." : "Search goals…"}
+                className={cn(
+                  "w-full h-10 pl-9 pr-8 rounded-md text-sm outline-none transition-colors",
+                  isWorkspace
+                    ? "bg-white border-transparent text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 shadow-sm"
+                    : "bg-surface border border-input placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring"
+                )}
               />
               {query && (
                 <button
                   onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 grid place-items-center text-muted-foreground hover:text-foreground rounded-full hover:bg-secondary transition-colors"
+                  className={cn("absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 grid place-items-center rounded-full transition-colors", "text-muted-foreground hover:text-foreground hover:bg-secondary")}
                   aria-label="Clear search"
                 >
                   <X className="h-3 w-3" />
@@ -118,7 +143,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
+          </div>
 
+          {/* Right side items */}
+          <div className="flex items-center gap-3 sm:gap-4 justify-end">
             {/* Filter */}
             {!isWorkspace && (
               <div className="hidden lg:flex items-center gap-1">
@@ -162,63 +190,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* Sort */}
             {!isWorkspace && (
               <div className="hidden lg:flex items-center gap-1">
-              <DropdownMenu>
-                <DropdownMenuTrigger className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
-                  <ArrowDownUp className="h-3.5 w-3.5" />
-                  {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuRadioGroup
-                    value={sort}
-                    onValueChange={(v) => setSort(v as any)}
-                  >
-                    <DropdownMenuRadioItem value="recent">Most recent</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="deadline">Deadline soonest</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="title">Title A→Z</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
-                    <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
+                <DropdownMenu>
+                  <DropdownMenuTrigger className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
+                    <ArrowDownUp className="h-3.5 w-3.5" />
+                    {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuRadioGroup
+                      value={sort}
+                      onValueChange={(v) => setSort(v as any)}
+                    >
+                      <DropdownMenuRadioItem value="recent">Most recent</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="deadline">Deadline soonest</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="title">Title A→Z</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
+                      <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
               </div>
             )}
 
-            {/* Calendar Icon Button (Global) */}
-            <Link
-              to="/calendar"
-              className={cn(
-                "inline-flex items-center justify-center h-9 w-9 shrink-0 rounded-md border hairline-strong hover:bg-accent text-foreground/80",
-                isCalendar && "bg-primary-soft border-primary/40 text-primary"
-              )}
-              title="Calendar"
-            >
-              <Calendar className="h-4 w-4" />
-            </Link>
+
 
             {/* Mobile AI Icon Button (Global) */}
-            <button
-              onClick={() => openAi()}
-              className="sm:hidden inline-flex items-center justify-center h-9 w-9 shrink-0 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-              title="Spira AI"
-            >
-              <Sparkles className="h-4 w-4" />
-            </button>
+            {!isWorkspace && (
+              <button
+                onClick={() => openAi()}
+                className="sm:hidden inline-flex items-center justify-center h-9 w-9 shrink-0 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                title="Spira AI"
+              >
+                <Sparkles className="h-4 w-4" />
+              </button>
+            )}
 
             {/* User */}
-            <div className="flex items-center gap-2 pl-2 md:border-l md:hairline md:pl-3">
-              <div className="h-8 w-8 rounded-full bg-primary-soft border border-primary/30 grid place-items-center text-primary text-xs font-semibold">
+            <div className={cn("flex items-center gap-2", isWorkspace ? "" : "pl-2 md:border-l md:pl-3 md:hairline")}>
+              <div className={cn("h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold", isWorkspace ? "bg-white/10 border-white/20 text-white" : "bg-primary-soft border-primary/30 text-primary")}>
                 SU
               </div>
               <div className="hidden md:block leading-tight text-right">
-                <div className="text-xs font-semibold text-foreground">Spira User</div>
+                <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
               </div>
-              <ChevronDown className="hidden md:inline h-3.5 w-3.5 text-muted-foreground" />
+              <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
             </div>
           </div>
         </div>
@@ -318,5 +338,17 @@ function DeadlineRangeControls({
         className="h-9 justify-start px-2 text-xs"
       />
     </div>
+  );
+}
+
+function WorkspaceBreadcrumbTitle() {
+  const params = useParams({ strict: false }) as { goalId?: string };
+  const goalId = params.goalId;
+  const goal = useSpira((s) => s.goals.find((g) => g.id === goalId));
+  if (!goal) return <span className="text-white/50 truncate max-w-[180px] sm:max-w-xs">&hellip;</span>;
+  return (
+    <span className="text-white/90 font-medium truncate max-w-[180px] sm:max-w-xs">
+      {goal.title || "Untitled goal"}
+    </span>
   );
 }

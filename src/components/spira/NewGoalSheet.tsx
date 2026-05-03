@@ -32,9 +32,9 @@ function FormBody({ onDone }: { onDone: () => void }) {
   return (
     <>
       {/* Header — sticky */}
-      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg text-foreground flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-amber-500" /> Add a new goal
+      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
+        <h2 className="font-sans font-bold text-lg text-foreground">
+          New goal
         </h2>
         <button
           onClick={onDone}
@@ -46,7 +46,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
       </div>
 
       {/* Body */}
-      <div id="new-goal-scroll-container" className="px-7 pt-6 pb-[400px] space-y-6 overflow-y-auto flex-1">
+      <div id="new-goal-scroll-container" className="px-7 pt-2 pb-[400px] space-y-6 overflow-y-auto flex-1">
         <Field label="Title" required>
           <Input
             value={title}
@@ -92,17 +92,14 @@ function FormBody({ onDone }: { onDone: () => void }) {
       </div>
 
       {/* Footer — sticky */}
-      <div className="px-7 py-4 border-t hairline flex items-center justify-end gap-3 bg-surface">
-        <button
-          onClick={onDone}
-          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
-        >
+      <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
+        <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
           Cancel
         </button>
         <button
           onClick={() => submit(true)}
           disabled={!title.trim()}
-          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
         >
           Create goal
         </button>

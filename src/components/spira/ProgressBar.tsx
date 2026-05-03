@@ -19,8 +19,10 @@ export function ProgressBar({
     >
       <div
         className={cn(
-          "absolute inset-y-0 left-0 rounded-full transition-all",
-          tone === "primary" ? "bg-primary" : "bg-muted-foreground/60",
+          "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+          tone === "primary"
+            ? (pct >= 100 ? "bg-primary" : "bg-[#ea580c]")
+            : "bg-muted-foreground/60",
         )}
         style={{ width: `${pct}%` }}
       />

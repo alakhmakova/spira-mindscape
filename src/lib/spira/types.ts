@@ -5,6 +5,7 @@ export type ChecklistItem = {
   text: string;
   done: boolean;
   deadline?: string;
+  achievedAt?: string;
 };
 
 export type Target =
@@ -18,6 +19,7 @@ export type Target =
       unit?: string;
       deadline?: string;
       weight?: number;
+      achievedAt?: string;
     }
   | {
       id: string;
@@ -26,6 +28,7 @@ export type Target =
       done: boolean;
       deadline?: string;
       weight?: number;
+      achievedAt?: string;
     }
   | {
       id: string;
@@ -34,6 +37,7 @@ export type Target =
       items: ChecklistItem[];
       deadline?: string;
       weight?: number;
+      achievedAt?: string;
     };
 
 export type Resource =
@@ -62,6 +66,7 @@ export type Goal = {
   confidence: Confidence;
   deadline?: string;
   createdAt: string;
+  achievedAt?: string;
   reality: {
     actions: { id: string; text: string }[];
     obstacles: { id: string; text: string }[];
