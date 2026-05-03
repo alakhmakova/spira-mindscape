@@ -642,7 +642,7 @@ function GoalNav() {
   return (
     <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-8 h-12">
+        <div className="flex items-center justify-center gap-8 h-12">
           {items.map((item) => (
             <button
               key={item.id}
