@@ -56,9 +56,23 @@ export function GoalCard({ goal }: { goal: Goal }) {
 
   return (
     <div className="bg-card text-card-foreground border border-border/60 rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full cursor-pointer group">
-      {/* Confidence & Actions Header */}
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <ConfidencePill value={goal.confidence} className="relative z-10" />
+      {/* Confidence, Progress & Actions Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <ConfidencePill value={goal.confidence} className="relative z-10 shrink-0" />
+          
+          <span className="w-px h-3.5 bg-border shrink-0" />
+          
+          <div className="flex items-center gap-2 flex-1 min-w-0 max-w-32">
+            <div className="flex-1">
+              <ProgressBar value={progress} />
+            </div>
+            <span className="text-xs font-bold text-foreground num shrink-0">
+              {Math.round(progress * 100)}%
+            </span>
+          </div>
+        </div>
+
         <button
           onClick={() => setConfirm(true)}
           className="relative z-10 shrink-0 p-2 -m-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-secondary/50 transition-colors flex items-center justify-center"
@@ -69,24 +83,16 @@ export function GoalCard({ goal }: { goal: Goal }) {
       </div>
 
       {/* Title */}
-      <div className="flex-1 min-w-0 mb-4">
-        <h3 className="font-bold text-xl text-foreground leading-tight line-clamp-2 mb-3">
+      <div className="flex-1 flex flex-col justify-center min-w-0 py-5">
+        <h3 className="font-semibold text-lg text-foreground/90 leading-snug line-clamp-2">
           <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="after:absolute after:inset-0">
             {goal.title}
           </Link>
         </h3>
       </div>
 
-      {/* Progress */}
-      <div className="mt-auto space-y-4 relative z-10">
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between text-xs font-bold text-muted-foreground/80">
-            <span>Progress</span>
-            <span className="tabular-nums">{Math.round(progress * 100)}%</span>
-          </div>
-          <ProgressBar value={progress} />
-        </div>
-
+      {/* Footer */}
+      <div className="mt-auto relative z-10">
         {/* Footer bar */}
         <div className="flex items-center justify-between gap-3 rounded-md pr-3 pl-4 h-10 border border-border/80 relative overflow-hidden bg-transparent">
           {/* Colored stripe on the left */}
