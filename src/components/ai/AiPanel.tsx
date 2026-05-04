@@ -89,7 +89,7 @@ export function AiPanel() {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
         <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#006d67] text-white">
-          <DrawerHeader className="px-5 pb-3 border-b border-white/15">
+          <DrawerHeader className="px-5 pb-3">
             <DrawerTitle className="flex items-baseline gap-2 text-white">
               <span className="text-[32px] font-extrabold leading-none">spira</span>
               <span className="text-[20px] font-normal leading-none">ai coach</span>
@@ -120,7 +120,7 @@ export function AiPanel() {
         aria-orientation="vertical"
         aria-label="Resize spira ai coach panel"
       />
-      <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/15 px-5">
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 px-5">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="text-[32px] font-extrabold leading-none text-white">spira</span>
           <span className="truncate pt-1 text-[20px] font-normal leading-none text-white">ai coach</span>
@@ -257,7 +257,7 @@ function Conversation() {
         ))}
       </div>
 
-      <div className="border-t border-white/15 p-3 sm:p-4">
+      <div className="p-3 sm:p-4">
         <div className="flex items-end gap-2 rounded-md border border-white/35 bg-white px-3.5 py-2 shadow-sm transition-colors focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
           <textarea
             value={input}

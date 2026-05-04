@@ -31,8 +31,31 @@ const typeMeta = {
   note: { icon: FileText, label: "Note" },
   link: { icon: LinkIcon, label: "Link" },
   file: { icon: Paperclip, label: "File" },
-  contact: { icon: Mail, label: "Email" },
+  email: { icon: Mail, label: "Email" },
 } as const;
+
+function titleFromUrl(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function nameFromEmail(email: string) {
+  const local = email.split("@")[0]?.trim();
+  if (!local) return "Email";
+  return local
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function resourceDisplayName(resource: Resource) {
+  if (resource.type === "note") return resource.title.trim() || "Untitled note";
+  if (resource.type === "link") return resource.title.trim() || titleFromUrl(resource.url);
+  if (resource.type === "file") return resource.title.trim() || "Untitled file";
+  return resource.name?.trim() || (resource.email ? nameFromEmail(resource.email) : "Email");
+}
 
 /* ── helpers: copy & download ─────────────────────── */
 
@@ -153,7 +176,7 @@ export function ResourcesList({ goal }: { goal: Goal }) {
   if (goal.resources.length === 0) {
     return (
       <p className="text-sm text-muted-foreground italic">
-        Capture notes, links, files, and contacts that support this goal.
+        Capture notes, links, files, and emails that support this goal.
       </p>
     );
   }
@@ -202,7 +225,7 @@ function ResourceCard({
       run(() => copyPlainText(r.url));
     } else if (r.type === "file" && r.mime.startsWith("image/")) {
       run(() => copyImageToClipboard(r.dataUrl));
-    } else if (r.type === "contact" && r.email) {
+    } else if (r.type === "email" && r.email) {
       run(() => copyPlainText(r.email!));
     }
   };
@@ -218,7 +241,7 @@ function ResourceCard({
     }
   };
 
-  const canCopy = r.type === "note" || r.type === "link" || (r.type === "file" && r.mime.startsWith("image/")) || (r.type === "contact" && !!r.email);
+  const canCopy = r.type === "note" || r.type === "link" || (r.type === "file" && r.mime.startsWith("image/")) || (r.type === "email" && !!r.email);
   const canDownload = r.type === "note" || r.type === "file";
 
   return (
@@ -234,7 +257,7 @@ function ResourceCard({
       >
         <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
         <span className="text-sm font-semibold text-foreground whitespace-nowrap">
-          {r.type === "contact" ? (r.name || r.email) : r.title}
+          {resourceDisplayName(r)}
         </span>
       </button>
 
@@ -258,11 +281,11 @@ function ResourceCard({
           
           <div className="w-px h-4 bg-border mx-0.5" />
 
-          {r.type === "contact" ? (
+          {r.type === "email" ? (
              <button
                onClick={(e) => { e.stopPropagation(); onOpen(); }}
                className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
-               title="Edit contact"
+               title="Edit email"
              >
                <Pencil className="h-3.5 w-3.5" />
              </button>
@@ -305,10 +328,10 @@ function ResourceCard({
 function CopyField({ label, value, actionIcon, onAction, actionTitle }: { label: string; value: string; actionIcon?: React.ReactNode; onAction?: () => void; actionTitle?: string }) {
   const { copied, run } = useCopied();
   return (
-    <div>
-      <label className="text-sm font-semibold block mb-1.5">{label}</label>
-      <div className="flex items-center gap-2 group">
-        <div className="flex-1 min-w-0 text-sm font-medium break-words">{value}</div>
+    <div className="rounded-md border border-border bg-surface px-4 py-3">
+      <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</label>
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="flex-1 min-w-0 break-words text-sm font-semibold text-foreground">{value}</div>
         {actionIcon && onAction && (
           <button
             onClick={(e) => {
@@ -354,14 +377,13 @@ function PreviewBody({
   onClose: () => void;
 }) {
   const { copied, run } = useCopied();
-  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
 
-  if (isEditingContact) {
-    return <Form goalId={goalId} initialResource={resource} onDone={() => setIsEditingContact(false)} />;
+  if (isEditingEmail) {
+    return <Form goalId={goalId} initialResource={resource} onDone={() => setIsEditingEmail(false)} />;
   }
 
   const isImage = resource.type === "file" && resource.mime.startsWith("image/");
-  const isContact = resource.type === "contact";
   const canCopy =
     resource.type === "note" ||
     resource.type === "link" ||
@@ -425,9 +447,9 @@ function PreviewBody({
               <Download className="h-4 w-4" />
             </button>
           )}
-          {resource.type === "contact" && (
+          {resource.type === "email" && (
             <button
-              onClick={() => setIsEditingContact(true)}
+              onClick={() => setIsEditingEmail(true)}
               className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
               aria-label="Edit"
               title="Edit email"
@@ -453,7 +475,7 @@ function PreviewBody({
           : "flex flex-col",
       )}>
         {resource.type === "note" && (
-          <div className="flex-1 min-h-0 relative -mx-7">
+          <div className="flex-1 min-h-0 relative">
             <RichTextEditor
               value={resource.body || ""}
               onChange={(html) => updateResource(goalId, resource.id, { body: html })}
@@ -482,9 +504,9 @@ function PreviewBody({
             )}
           </>
         )}
-        {resource.type === "contact" && (
+        {resource.type === "email" && (
           <div className="space-y-6">
-            {resource.name && <CopyField label="Name" value={resource.name} />}
+            <CopyField label="Name" value={resourceDisplayName(resource)} />
             {resource.email && (
               <CopyField
                 label="Email"
@@ -600,7 +622,7 @@ function ResourcePreview({
   const open = !!resource;
 
   const title =
-    resource?.type === "contact" ? resource.name : (resource as any)?.title;
+    resource ? resourceDisplayName(resource) : "";
 
   const Body = resource && (
     <PreviewBody
@@ -639,7 +661,7 @@ function ResourcePreview({
     );
   }
   return (
-    resource?.type === "contact" ? (
+    resource?.type === "email" ? (
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
         <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
           {Body}
@@ -680,7 +702,7 @@ function MobileNoteBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b hairline bg-surface px-5 py-4">
+      <div className="shrink-0 bg-surface px-5 pt-5 pb-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Note
@@ -722,7 +744,7 @@ function MobileNoteBody({
           placeholder="Note title"
         />
       </div>
-      <div className="min-h-0 flex flex-1 flex-col px-5 pt-5">
+      <div className="min-h-0 flex flex-1 flex-col px-5 pt-2">
         <RichTextEditor
           value={body}
           onChange={onBodyChange}
@@ -859,16 +881,17 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
   const updateResource = useSpira((s) => s.updateResource);
   const [type, setType] = useState<Resource["type"]>(initialResource?.type || "note");
   const submittedRef = useRef(false);
-  const [title, setTitle] = useState(initialResource && initialResource.type !== "contact" ? initialResource.title : "");
+  const [title, setTitle] = useState(initialResource && initialResource.type !== "email" ? initialResource.title : "");
   const [body, setBody] = useState(initialResource?.type === "note" ? initialResource.body : "");
   const [url, setUrl] = useState(initialResource?.type === "link" ? initialResource.url : "");
   const [fileData, setFileData] = useState<{ name: string; mime: string; dataUrl: string } | null>(
     initialResource?.type === "file" ? { name: initialResource.title, mime: initialResource.mime, dataUrl: initialResource.dataUrl } : null,
   );
-  const [name, setName] = useState(initialResource?.type === "contact" ? (initialResource.name || "") : "");
-  const [role, setRole] = useState(initialResource?.type === "contact" ? (initialResource.role || "") : "");
-  const [email, setEmail] = useState(initialResource?.type === "contact" ? (initialResource.email || "") : "");
-  const [phone, setPhone] = useState(initialResource?.type === "contact" ? (initialResource.phone || "") : "");
+  const [name, setName] = useState(initialResource?.type === "email" ? (initialResource.name || "") : "");
+  const [role, setRole] = useState(initialResource?.type === "email" ? (initialResource.role || "") : "");
+  const [email, setEmail] = useState(initialResource?.type === "email" ? (initialResource.email || "") : "");
+  const [phone, setPhone] = useState(initialResource?.type === "email" ? (initialResource.phone || "") : "");
+  const fileInputId = `resource-file-${goalId}-${initialResource?.id ?? "new"}`;
 
   const onFile = (f: File) => {
     const reader = new FileReader();
@@ -881,17 +904,18 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
     if (submittedRef.current) return;
     let payload: Partial<Resource> | null = null;
     if (type === "note") {
-      if (!title.trim()) return;
-      payload = { type: "note", title: title.trim(), body };
+      payload = { type: "note", title: title.trim() || "Untitled note", body };
     } else if (type === "link") {
       if (!url.trim()) return;
-      payload = { type: "link", title: title.trim() || url, url: url.trim() };
+      const cleanUrl = url.trim();
+      payload = { type: "link", title: title.trim() || titleFromUrl(cleanUrl), url: cleanUrl };
     } else if (type === "file") {
       if (!fileData) return;
       payload = { type: "file", title: title.trim() || fileData.name, mime: fileData.mime, dataUrl: fileData.dataUrl };
     } else {
       if (!email.trim()) return;
-      payload = { type: "contact", name: name.trim(), role, email: email.trim(), phone };
+      const cleanEmail = email.trim();
+      payload = { type: "email", name: name.trim() || nameFromEmail(cleanEmail), role, email: cleanEmail, phone };
     }
     submittedRef.current = true;
     onDone();
@@ -906,18 +930,18 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
 
   return (
     <>
-      <div className={cn("px-7 py-5 flex items-center justify-between sticky top-0 z-10", !isMobile && "border-b hairline bg-surface")}>
+      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 z-10 bg-surface">
         <h2 className="font-sans font-bold text-lg">{initialResource ? "Edit resource" : "Add a resource"}</h2>
         <button onClick={onDone} className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary" aria-label="Close">
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="px-7 py-6 space-y-6 overflow-y-auto flex-1 min-h-0">
+      <div className="px-7 pt-2 pb-6 space-y-6 overflow-y-auto flex-1 min-h-0">
         {!initialResource && (
           <div>
             <label className="text-sm font-semibold block mb-2">Type <span className="text-destructive">*</span></label>
             <div className="grid grid-cols-2 gap-2">
-              {(["note", "link", "file", "contact"] as const).map((t) => {
+              {(["note", "link", "file", "email"] as const).map((t) => {
                 const Icon = typeMeta[t].icon;
                 return (
                   <button key={t} onClick={() => setType(t)} className={cn("flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left", type === t ? "bg-primary-soft border-primary text-primary" : "bg-surface border-border hover:border-border-strong")}>
@@ -929,7 +953,7 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
             </div>
           </div>
         )}
-        {type !== "contact" && (
+        {type !== "email" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Title {type !== "file" && <span className="text-destructive">*</span>}</label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
@@ -950,10 +974,27 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
         {type === "file" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">File</label>
-            <input type="file" accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} className="block w-full rounded-md border border-input bg-surface px-3.5 py-2 text-base text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary-soft/80 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring" />
+            <input
+              id={fileInputId}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+              className="sr-only"
+            />
+            <label
+              htmlFor={fileInputId}
+              className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-md border border-input bg-surface px-3.5 py-2 text-base text-foreground transition-colors hover:border-primary hover:bg-secondary/30 focus-within:border-primary"
+            >
+              <span className="min-w-0 break-words text-sm font-medium text-foreground">
+                {fileData?.name || "Choose an image or PDF"}
+              </span>
+              <span className="shrink-0 rounded-md bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary">
+                Browse
+              </span>
+            </label>
           </div>
         )}
-        {type === "contact" && (
+        {type === "email" && (
           <div className="space-y-4">
             <div>
               <label className="text-sm font-semibold block mb-1.5">Name</label>
@@ -974,7 +1015,7 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
           </div>
         )}
       </div>
-      <div className={cn("px-7 py-4 flex items-center justify-end gap-3", !isMobile && "border-t hairline bg-surface")}>
+      <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
         <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">Cancel</button>
         <button onClick={submit} className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90">{initialResource ? "Save changes" : "Add resource"}</button>
       </div>

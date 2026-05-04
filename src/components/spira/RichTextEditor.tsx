@@ -395,7 +395,7 @@ function LinkDialog({
 }) {
   const body = (
     <>
-      <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
         <div>
           <h2 className="font-sans text-lg font-bold">Add a link</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -405,7 +405,7 @@ function LinkDialog({
       </div>
 
       <form
-        className="px-7 py-6 space-y-5 overflow-y-auto flex-1"
+        className="px-7 pt-2 pb-6 space-y-5 overflow-y-auto flex-1"
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit();
@@ -432,7 +432,7 @@ function LinkDialog({
           />
         </div>
 
-        <div className="px-0 pt-3 border-t hairline flex items-center justify-between gap-3 bg-surface">
+        <div className="px-0 pt-3 flex items-center justify-between gap-3 bg-surface">
           <button
             type="button"
             onClick={canRemove ? onRemove : () => onOpenChange(false)}

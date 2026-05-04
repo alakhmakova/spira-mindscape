@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Trophy } from "lucide-react";
+import { X } from "lucide-react";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -93,7 +93,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
 
       {/* Footer — sticky */}
       <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
-        <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
+        <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">
           Cancel
         </button>
         <button

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type TextareaHTMLAttributes } from "react";
-import { Plus, X, Check, Pencil, BookmarkCheck, BookmarkX } from "lucide-react";
+import { Plus, X, BookmarkCheck, BookmarkX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = { id: string; text: string };
@@ -27,8 +27,6 @@ export function InlineList({
   variant?: Variant;
 }) {
   const [draft, setDraft] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
   const onPrimary = variant === "onPrimary";
 
   const add = () => {
@@ -101,41 +99,15 @@ export function InlineList({
             )}
           >
             <Marker kind={marker} tone={tone} variant={variant} />
-            {editingId === it.id ? (
-              <input
-                autoFocus
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={() => {
-                  if (editText.trim()) onUpdate(it.id, editText.trim());
-                  setEditingId(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    if (editText.trim()) onUpdate(it.id, editText.trim());
-                    setEditingId(null);
-                  }
-                  if (e.key === "Escape") setEditingId(null);
-                }}
-                className={cn(
-                  "flex-1 rounded-md border border-input bg-surface px-3.5 py-2 text-base outline-none placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring",
-                  onPrimary && "text-primary-foreground placeholder:text-primary-foreground/50",
-                )}
-              />
-            ) : (
-              <button
-                onClick={() => {
-                  setEditingId(it.id);
-                  setEditText(it.text);
-                }}
-                className={cn(
-                  "flex-1 text-left text-[15px] leading-relaxed",
-                  onPrimary && "text-primary-foreground",
-                )}
-              >
-                {it.text}
-              </button>
-            )}
+            <InlineText
+              value={it.text}
+              onChange={(next) => next.trim() && onUpdate(it.id, next.trim())}
+              className={cn(
+                "flex-1 text-left text-[15px] leading-relaxed",
+                onPrimary && "text-primary-foreground",
+              )}
+              ariaLabel="Edit item"
+            />
             <div className="flex">
               <button
                 onClick={() => onRemove(it.id)}
@@ -154,6 +126,72 @@ export function InlineList({
         ))}
       </ul>
     </div>
+  );
+}
+
+export function InlineText({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (ref.current && document.activeElement !== ref.current) {
+      ref.current.textContent = value;
+    }
+  }, [value]);
+
+  const commit = (el: HTMLSpanElement) => {
+    const next = (el.textContent || "").trim();
+    if (!next) {
+      el.textContent = value;
+      return;
+    }
+    if (next !== value) onChange(next);
+  };
+
+  return (
+    <span
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      data-placeholder={placeholder}
+      onFocus={(e) => {
+        const range = document.createRange();
+        range.selectNodeContents(e.currentTarget);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }}
+      onBlur={(e) => commit(e.currentTarget)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          e.currentTarget.textContent = value;
+          e.currentTarget.blur();
+        }
+      }}
+      className={cn(
+        "min-w-[1ch] cursor-text whitespace-pre-wrap break-words outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75",
+        className,
+      )}
+    />
   );
 }
 

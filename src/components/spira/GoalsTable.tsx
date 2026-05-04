@@ -8,6 +8,7 @@ import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type TimelineKind = "goal" | "target" | "task";
 
@@ -15,20 +16,20 @@ type TimelineItem =
   | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number; achievedAt?: string }
   | { id: string; kind: "target"; goal: Goal; target: Target; title: string; deadline: string; progress: number; achievedAt?: string }
   | {
-      id: string;
-      kind: "task";
-      goal: Goal;
-      target: Extract<Target, { type: "checklist" }>;
-      title: string;
-      deadline: string;
-      done: boolean;
-      achievedAt?: string;
-    };
+    id: string;
+    kind: "task";
+    goal: Goal;
+    target: Extract<Target, { type: "checklist" }>;
+    title: string;
+    deadline: string;
+    done: boolean;
+    achievedAt?: string;
+  };
 
 function GoalIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978"/><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978"/><path d="M18 9h1.5a1 1 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"/><path d="M6 9H4.5a1 1 0 0 1 0-5H6"/>
+      <path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978" /><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978" /><path d="M18 9h1.5a1 1 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" /><path d="M6 9H4.5a1 1 0 0 1 0-5H6" />
     </svg>
   );
 }
@@ -36,7 +37,7 @@ function GoalIcon(props: React.SVGProps<SVGSVGElement>) {
 function TargetIconSvg(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M17 3h4v4"/><path d="M18.575 11.082a13 13 0 0 1 1.048 9.027 1.17 1.17 0 0 1-1.914.597L14 17"/><path d="M7 10 3.29 6.29a1.17 1.17 0 0 1 .6-1.91 13 13 0 0 1 9.03 1.05"/><path d="M7 14a1.7 1.7 0 0 0-1.207.5l-2.646 2.646A.5.5 0 0 0 3.5 18H5a1 1 0 0 1 1 1v1.5a.5.5 0 0 0 .854.354L9.5 18.207A1.7 1.7 0 0 0 10 17v-2a1 1 0 0 0-1-1z"/><path d="M9.707 14.293 21 3"/>
+      <path d="M17 3h4v4" /><path d="M18.575 11.082a13 13 0 0 1 1.048 9.027 1.17 1.17 0 0 1-1.914.597L14 17" /><path d="M7 10 3.29 6.29a1.17 1.17 0 0 1 .6-1.91 13 13 0 0 1 9.03 1.05" /><path d="M7 14a1.7 1.7 0 0 0-1.207.5l-2.646 2.646A.5.5 0 0 0 3.5 18H5a1 1 0 0 1 1 1v1.5a.5.5 0 0 0 .854.354L9.5 18.207A1.7 1.7 0 0 0 10 17v-2a1 1 0 0 0-1-1z" /><path d="M9.707 14.293 21 3" />
     </svg>
   );
 }
@@ -44,7 +45,7 @@ function TargetIconSvg(props: React.SVGProps<SVGSVGElement>) {
 function TaskIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>
+      <path d="M21.801 10A10 10 0 1 1 17 3.335" /><path d="m9 11 3 3L22 4" />
     </svg>
   );
 }
@@ -76,11 +77,11 @@ function PartyPopperIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function GoalsTable({ goals }: { goals: Goal[] }) {
+export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filteredGoalIds?: Set<string> }) {
   const nav = useNavigate();
   const { updateGoal, updateTarget } = useSpira();
   const [visibleKinds, setVisibleKinds] = useState<Record<TimelineKind, boolean>>({ goal: true, target: true, task: true });
-  const items = buildTimelineItems(goals, visibleKinds);
+  const items = buildTimelineItems(goals, visibleKinds, filteredGoalIds);
 
   const toggleKind = (kind: TimelineKind) => {
     setVisibleKinds((current) => ({ ...current, [kind]: !current[kind] }));
@@ -97,13 +98,11 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
   };
 
   return (
-    <div className="relative space-y-0">
-      <div className="absolute right-0 top-0 z-20">
-        <div className="flex w-fit flex-wrap items-center gap-4 rounded-md border hairline bg-secondary/20 px-3 py-1.5 backdrop-blur-sm">
-          <KindCheckbox checked={visibleKinds.goal} onChange={() => toggleKind("goal")} label="Goals" />
-          <KindCheckbox checked={visibleKinds.target} onChange={() => toggleKind("target")} label="Targets" />
-          <KindCheckbox checked={visibleKinds.task} onChange={() => toggleKind("task")} label="Tasks" />
-        </div>
+    <div className="space-y-7">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <KindCheckbox checked={visibleKinds.goal} onChange={() => toggleKind("goal")} label="Goals" />
+        <KindCheckbox checked={visibleKinds.target} onChange={() => toggleKind("target")} label="Targets" />
+        <KindCheckbox checked={visibleKinds.task} onChange={() => toggleKind("task")} label="Tasks" />
       </div>
 
       {items.length === 0 ? (
@@ -133,13 +132,16 @@ export function GoalsTable({ goals }: { goals: Goal[] }) {
   );
 }
 
-function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, boolean>): TimelineItem[] {
+function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, boolean>, filteredGoalIds?: Set<string>): TimelineItem[] {
   const items: TimelineItem[] = [];
+  // When filters are active (filteredGoalIds is provided), only include items whose goal passed the filter
+  const hasGoalFilter = filteredGoalIds !== undefined;
 
   for (const goal of goals) {
+    const goalPassesFilter = !hasGoalFilter || filteredGoalIds!.has(goal.id);
     let goalAchievedAt = goal.achievedAt;
     const gProgress = goalProgress(goal);
-    
+
     // Auto-compute goal achieved date from targets if missing
     if (gProgress >= 1 && !goalAchievedAt) {
       const dates = goal.targets.map(t => t.achievedAt).filter(Boolean) as string[];
@@ -149,7 +151,7 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
       }
     }
 
-    if (visibleKinds.goal && goal.deadline) {
+    if (visibleKinds.goal && goal.deadline && goalPassesFilter) {
       items.push({
         id: `goal-${goal.id}`,
         kind: "goal",
@@ -174,7 +176,7 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
         }
       }
 
-      if (visibleKinds.target && target.deadline) {
+      if (visibleKinds.target && target.deadline && goalPassesFilter) {
         items.push({
           id: `target-${target.id}`,
           kind: "target",
@@ -187,7 +189,7 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
         });
       }
 
-      if (target.type === "checklist" && visibleKinds.task) {
+      if (target.type === "checklist" && visibleKinds.task && goalPassesFilter) {
         for (const task of target.items) {
           if (!task.deadline) continue;
           items.push({
@@ -253,11 +255,13 @@ function TimelineRow({
       </div>
 
       <div className="flex-1 pb-8">
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex items-start">
           <button onClick={onOpen} className="text-left transition-opacity hover:opacity-80 focus-visible:opacity-80 focus-visible:outline-none">
-            <h3 className="text-base font-bold leading-tight text-foreground">{item.title}</h3>
+            <h3 className="text-base font-bold leading-tight text-foreground">
+              {item.title}
+              <meta.icon className="inline-block ml-2.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70 align-[-2px]" />
+            </h3>
           </button>
-          <meta.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
         </div>
 
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px]">
@@ -330,9 +334,25 @@ function TimelineRow({
 
 function KindCheckbox({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2.5 text-xs font-bold text-foreground hover:opacity-80 transition-opacity">
-      <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 rounded accent-primary border-border-strong" />
-      {label}
+    <label
+      className={cn(
+        "flex min-h-12 cursor-pointer overflow-hidden rounded-[3px] border bg-surface text-sm font-bold text-foreground shadow-soft transition-colors hover:border-primary/70",
+        checked ? "border-primary/70" : "border-border-strong",
+      )}
+    >
+      <span
+        className={cn(
+          "flex w-10 shrink-0 items-center justify-center border-r transition-colors",
+          checked ? "border-primary/70 bg-primary-soft" : "border-border bg-surface",
+        )}
+      >
+        <Checkbox
+          checked={checked}
+          onCheckedChange={onChange}
+          className="h-4 w-4 rounded-[2px] border-primary/70 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+        />
+      </span>
+      <span className="flex flex-1 items-center px-4">{label}</span>
     </label>
   );
 }

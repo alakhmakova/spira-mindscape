@@ -3,12 +3,11 @@ import { Check, Plus, X, GripVertical } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal } from "@/lib/spira/types";
 import { cn } from "@/lib/utils";
+import { InlineText } from "./Inline";
 
 export function OptionsList({ goal }: { goal: Goal }) {
   const { addOption, updateOption, selectOption, removeOption, reorderOptions } = useSpira();
   const [draft, setDraft] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const touchDragIdx = useRef<number | null>(null);
 
@@ -84,45 +83,22 @@ export function OptionsList({ goal }: { goal: Goal }) {
                 onTouchStart={() => {
                   touchDragIdx.current = idx;
                 }}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-3 grid h-8 w-6 place-items-center touch-none text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+                className="mr-2 grid h-8 w-6 shrink-0 place-items-center touch-none text-muted-foreground hover:text-foreground cursor-grab transition-colors"
                 aria-label="Drag option"
               >
                 <GripVertical className="h-4 w-4" />
               </button>
 
-              {editingId === opt.id ? (
-                <input
-                  autoFocus
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onBlur={() => {
-                    if (editText.trim()) updateOption(goal.id, opt.id, { text: editText.trim() });
-                    setEditingId(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      if (editText.trim()) updateOption(goal.id, opt.id, { text: editText.trim() });
-                      setEditingId(null);
-                    }
-                    if (e.key === "Escape") setEditingId(null);
-                  }}
-                  className="flex-1 bg-transparent outline-none text-base font-medium"
-                />
-              ) : (
-                <button
-                  onClick={() => {
-                    setEditingId(opt.id);
-                    setEditText(opt.text);
-                  }}
-                  className="flex-1 text-left text-base font-medium leading-relaxed"
-                >
-                  {opt.text}
-                </button>
-              )}
+              <InlineText
+                value={opt.text}
+                onChange={(text) => updateOption(goal.id, opt.id, { text })}
+                className="flex-1 text-base font-medium leading-relaxed"
+                ariaLabel="Edit strategy"
+              />
               
               <button
                 onClick={() => removeOption(goal.id, opt.id)}
-                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive opacity-0 group-hover:opacity-100 transition-all"
+                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
                 aria-label="Remove"
               >
                 <X className="h-4 w-4" />
@@ -148,7 +124,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
           {draft && (
             <button
               onClick={add}
-              className="ml-2 text-sm link-action font-semibold"
+              className="ml-2 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20"
             >
               Add
             </button>
