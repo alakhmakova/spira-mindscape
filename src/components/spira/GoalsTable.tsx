@@ -336,20 +336,27 @@ function KindCheckbox({ checked, onChange, label }: { checked: boolean; onChange
   return (
     <label
       className={cn(
-        "flex min-h-12 cursor-pointer overflow-hidden rounded-[3px] border bg-surface text-sm font-bold text-foreground shadow-soft transition-colors hover:border-primary/70",
-        checked ? "border-primary/70" : "border-border-strong",
+        "flex min-h-[44px] cursor-pointer overflow-hidden rounded-md border bg-surface text-sm font-semibold text-foreground transition-colors group/kind",
+        checked ? "border-primary" : "border-border hover:border-primary/50",
       )}
     >
       <span
         className={cn(
-          "flex w-10 shrink-0 items-center justify-center border-r transition-colors",
-          checked ? "border-primary/70 bg-primary-soft" : "border-border bg-surface",
+          "flex w-12 shrink-0 items-center justify-center border-r transition-colors",
+          checked ? "bg-primary-soft border-primary" : "bg-surface border-border group-hover:bg-secondary/50",
         )}
       >
-        <Checkbox
+        <div className={cn(
+          "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+          checked ? "bg-primary border-primary" : "border-border-strong",
+        )}>
+          {checked && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
+        </div>
+        <input
+          type="checkbox"
           checked={checked}
-          onCheckedChange={onChange}
-          className="h-4 w-4 rounded-[2px] border-primary/70 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+          onChange={onChange}
+          className="sr-only"
         />
       </span>
       <span className="flex flex-1 items-center px-4">{label}</span>
