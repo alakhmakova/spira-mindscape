@@ -15,6 +15,24 @@ const seedUid = () => `seed-${++seedCounter}`;
 const seedDate = (days: number) =>
   new Date(Date.UTC(2026, 0, 1 + days, 12, 0, 0)).toISOString();
 
+function migratePersistedState(persisted: unknown) {
+  if (!persisted || typeof persisted !== "object") return persisted;
+  const state = persisted as { goals?: Goal[] };
+  if (!Array.isArray(state.goals)) return persisted;
+
+  return {
+    ...state,
+    goals: state.goals.map((goal) => ({
+      ...goal,
+      resources: goal.resources.map((resource) =>
+        (resource as { type?: string }).type === "contact"
+          ? ({ ...resource, type: "email" } as Resource)
+          : resource,
+      ),
+    })),
+  };
+}
+
 const seed: Goal[] = [
   {
     id: seedUid(),
@@ -373,6 +391,6 @@ export const useSpira = create<State>()(
         })),
       clearChat: () => set({ chat: [] }),
     }),
-    { name: "spira-store-v1" },
+    { name: "spira-store-v1", version: 2, migrate: migratePersistedState },
   ),
 );

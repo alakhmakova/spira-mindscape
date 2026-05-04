@@ -18,7 +18,6 @@ export type Target =
       total: number;
       unit?: string;
       deadline?: string;
-      weight?: number;
       achievedAt?: string;
     }
   | {
@@ -27,7 +26,6 @@ export type Target =
       title: string;
       done: boolean;
       deadline?: string;
-      weight?: number;
       achievedAt?: string;
     }
   | {
@@ -36,7 +34,6 @@ export type Target =
       title: string;
       items: ChecklistItem[];
       deadline?: string;
-      weight?: number;
       achievedAt?: string;
     };
 
@@ -46,7 +43,7 @@ export type Resource =
   | { id: string; type: "file"; title: string; mime: string; dataUrl: string }
   | {
       id: string;
-      type: "contact";
+      type: "email";
       name: string;
       role?: string;
       email?: string;

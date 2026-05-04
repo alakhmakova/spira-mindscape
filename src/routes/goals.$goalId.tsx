@@ -194,7 +194,7 @@ function GoalWorkspace() {
       <div id="resources-section" className="scroll-mt-32">
       <Section
         title="Resources"
-        hint="Notes, links, files, contacts"
+        hint="Notes, links, files, emails"
         count={goal.resources.length}
         action={
           <button
@@ -505,7 +505,7 @@ function ConfidenceHistorySheet({
         side="right"
         className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline"
       >
-        <div className="px-7 py-5 border-b hairline flex items-center justify-between sticky top-0 bg-surface z-10">
+        <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
           <div>
             <h2 className="font-sans font-bold text-lg">Confidence history</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -520,7 +520,7 @@ function ConfidenceHistorySheet({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-7 py-6 space-y-3">
+        <div className="flex-1 overflow-y-auto px-7 pt-2 pb-6 space-y-3">
           {history.length === 0 && (
             <p className="text-sm text-muted-foreground italic">No changes yet.</p>
           )}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, Minus, Plus, Trash2, X, ChevronsUpDown, ChevronDown } from "lucide-react";
+import { Check, Minus, Plus, Trash2, X } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { targetProgress } from "@/lib/spira/progress";
@@ -12,12 +12,13 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { InlineText } from "@/components/spira/Inline";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 
 export function TargetsList({ goal }: { goal: Goal }) {
   const { updateTarget, removeTarget } = useSpira();
+  const [confirmTarget, setConfirmTarget] = useState<Target | null>(null);
   
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -57,11 +58,21 @@ export function TargetsList({ goal }: { goal: Goal }) {
             key={t.id}
             target={t}
             onUpdate={(patch) => updateTarget(goal.id, t.id, patch)}
-            onRemove={() => removeTarget(goal.id, t.id)}
+            onRemove={() => setConfirmTarget(t)}
           />
         ))}
       </ul>
       {goal.targets.length > 0 && <DesktopTargetsTable goal={goal} />}
+      <TargetDeleteConfirm
+        target={confirmTarget}
+        open={!!confirmTarget}
+        onOpenChange={(open) => !open && setConfirmTarget(null)}
+        onConfirm={() => {
+          if (!confirmTarget) return;
+          removeTarget(goal.id, confirmTarget.id);
+          setConfirmTarget(null);
+        }}
+      />
     </div>
   );
 }
@@ -72,6 +83,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
   const [sortDesc, setSortDesc] = useState(false);
   const [editingTasksFor, setEditingTasksFor] = useState<string | null>(null);
   const [editingNumericFor, setEditingNumericFor] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<Target | null>(null);
 
 
 
@@ -163,12 +175,12 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                 }}
               >
                 <TableCell className="pl-6">
-                  <input
+                  <InlineText
                     value={t.title}
-                    onChange={(e) => updateTarget(goal.id, t.id, { title: e.target.value })}
-                    maxLength={60}
-                    className="w-full bg-transparent outline-none border-none ring-0 focus:ring-0 focus:outline-none font-medium text-sm text-foreground placeholder:text-muted-foreground/50 truncate cursor-default focus:cursor-text"
+                    onChange={(title) => updateTarget(goal.id, t.id, { title })}
                     placeholder="Untitled target"
+                    ariaLabel="Edit target title"
+                    className="block w-full font-medium text-sm text-foreground"
                   />
                 </TableCell>
                 <TableCell>
@@ -231,7 +243,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                 </TableCell>
                 <TableCell className="text-right pr-6">
                   <button
-                    onClick={() => removeTarget(goal.id, t.id)}
+                    onClick={() => setConfirmTarget(t)}
                     className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
                     title="Delete target"
                   >
@@ -243,6 +255,16 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
           })}
         </TableBody>
       </Table>
+      <TargetDeleteConfirm
+        target={confirmTarget}
+        open={!!confirmTarget}
+        onOpenChange={(open) => !open && setConfirmTarget(null)}
+        onConfirm={() => {
+          if (!confirmTarget) return;
+          removeTarget(goal.id, confirmTarget.id);
+          setConfirmTarget(null);
+        }}
+      />
       
       {/* Numeric Updates Sheet */}
       <Sheet open={!!editingNumericFor} onOpenChange={(open) => !open && setEditingNumericFor(null)}>
@@ -273,9 +295,9 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                   );
                 })()}
               </div>
-              <div className="p-4 border-t hairline flex items-center justify-end gap-2 bg-surface">
-                 <button onClick={() => setEditingNumericFor(null)} className="px-4 h-9 rounded-md text-sm font-medium border border-border-strong hover:bg-secondary transition-colors">Cancel</button>
-                 <button onClick={() => setEditingNumericFor(null)} className="px-4 h-9 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Save</button>
+              <div className="p-4 flex items-center justify-end gap-2 bg-surface">
+                 <button onClick={() => setEditingNumericFor(null)} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">Cancel</button>
+                 <button onClick={() => setEditingNumericFor(null)} className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">Save</button>
               </div>
             </div>
           )}
@@ -291,6 +313,30 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
         onChange={(items) => editingTasksFor && updateTarget(goal.id, editingTasksFor, { items })}
       />
     </div>
+  );
+}
+
+function TargetDeleteConfirm({
+  target,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  target: Target | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Delete this target?"
+      description={`Are you sure you want to permanently delete "${target?.title ?? "this target"}"? Progress and checklist tasks inside it will be removed. You can't undo this.`}
+      confirmLabel="Yes, delete"
+      cancelLabel="No, go back"
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -314,10 +360,11 @@ function TargetRow({
             iso={target.deadline}
             onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
           />
-          <input
+          <InlineText
             value={target.title}
-            onChange={(e) => onUpdate({ title: e.target.value } as Partial<Target>)}
-            className="w-full bg-transparent outline-none text-base font-semibold text-foreground"
+            onChange={(title) => onUpdate({ title } as Partial<Target>)}
+            ariaLabel="Edit target title"
+            className="block w-full text-base font-semibold text-foreground"
           />
         </div>
         <button
@@ -673,14 +720,17 @@ function ChecklistEditor({
             "flex-1 flex items-center gap-2 relative bg-surface",
             compact ? "px-2 py-1" : "px-3 py-1.5"
           )}>
-            <span
+            <InlineText
+              value={it.text}
+              onChange={(text) =>
+                onChange(items.map((i) => (i.id === it.id ? { ...i, text } : i)))
+              }
+              ariaLabel="Edit subtask"
               className={cn(
-                "flex-1 text-sm truncate",
+                "flex-1 text-sm",
                 it.done && "line-through text-muted-foreground",
               )}
-            >
-              {it.text}
-            </span>
+            />
           {compact ? (
             <DeadlinePopover
               iso={it.deadline}
@@ -923,7 +973,7 @@ function NewTargetForm({ goalId, onDone }: { goalId: string; onDone: () => void 
       </div>
 
       <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
-        <button onClick={onDone} className="link-action h-11 px-4 text-sm font-semibold">
+        <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">
           Cancel
         </button>
         <button

@@ -3,7 +3,6 @@ import {
   Search,
   SlidersHorizontal,
   ArrowDownUp,
-  Sparkles,
   ChevronDown,
   X,
   Calendar,
@@ -24,7 +23,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -50,13 +48,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     status,
     setStatus,
     resetFilters,
+    viewMode,
   } = useShellFilters();
 
+  const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
   const showWorkspaceMenu = isWorkspace && isAiOpen && isAiWide;
   const filtersActive = Boolean(deadlineFrom || deadlineTo || confidence || status !== "all");
   const sortActive = sort !== "recent" || sortDirection !== "desc";
+  // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)
+  const showFilterControls = !isWorkspace && !isCalendar;
+  const showSortControls = !isWorkspace && !isCalendar && viewMode === "cards";
 
   const goals = useSpira((s) => s.goals);
   const searchResults = query.trim() === "" ? [] : goals.filter(g => g.title.toLowerCase().includes(query.toLowerCase().trim())).slice(0, 5);
@@ -74,7 +77,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               : "bg-background/85 backdrop-blur border-b hairline"
           )}
         >
-          <div className={cn("spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center", isWorkspace ? "grid grid-cols-[1fr_minmax(auto,600px)_1fr]" : "flex gap-3 sm:gap-5")}>
+          <div className={cn(
+            "spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center", 
+            isWorkspace ? "grid grid-cols-[1fr_minmax(0,600px)_1fr] gap-3" : "flex gap-3 sm:gap-5",
+            (isDashboard && !isWorkspace) && "bg-primary text-white sm:bg-transparent sm:text-foreground"
+          )}>
             {/* Brand */}
             <div className={cn("flex items-center", isWorkspace ? "justify-start gap-4" : "gap-2")}>
               {isWorkspace ? (
@@ -87,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {!isAiOpen && (
                     <button
                       onClick={() => openAi()}
-                      className="text-white hover:text-white/90 text-[20px] font-normal transition-colors leading-none pt-1"
+                      className="whitespace-nowrap text-white hover:text-white/90 text-[20px] font-normal transition-colors leading-none pt-1"
                     >
                       ai coach
                     </button>
@@ -96,14 +103,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : (
                 <>
                   {!isAiOpen && (
-                    <Link to="/" className="text-[32px] font-extrabold tracking-normal text-[#ea580c] hover:text-[#ea580c]/90 transition-colors leading-none">
+                    <Link 
+                      to="/" 
+                      className={cn(
+                        "text-[32px] font-extrabold tracking-normal transition-colors leading-none",
+                        isDashboard 
+                          ? "text-white hover:text-white/90 sm:text-[#ea580c] sm:hover:text-[#ea580c]/90" 
+                          : "text-[#ea580c] hover:text-[#ea580c]/90"
+                      )}
+                    >
                       spira
                     </Link>
                   )}
                   {!isAiOpen && (
                     <button
                       onClick={() => openAi()}
-                      className="text-primary hover:text-primary/90 text-[20px] font-normal transition-colors leading-none pt-1"
+                      className={cn(
+                        "whitespace-nowrap text-[20px] font-normal transition-colors leading-none pt-1",
+                        isDashboard 
+                          ? "text-white hover:text-white/90 sm:text-primary sm:hover:text-primary/90" 
+                          : "text-primary hover:text-primary/90"
+                      )}
                     >
                       ai coach
                     </button>
@@ -116,13 +136,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!isWorkspace && <div className="flex-1" />}
 
             {/* Search (Centered for workspace, inline for non-workspace) */}
-            <div className={cn("flex", isWorkspace ? "justify-center w-full" : "w-32 sm:w-64 shrink-0")}>
-              <div className="relative w-full max-w-2xl">
+            <div className={cn(isWorkspace ? "flex w-full min-w-0" : "hidden sm:flex w-32 sm:w-64 shrink-0")}>
+              <div className={cn("relative w-full", !isWorkspace && "max-w-2xl")}>
                 <Search className={cn("pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4", isWorkspace ? "text-muted-foreground" : "text-muted-foreground")} />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={isWorkspace ? "Search for answers..." : "Search goals…"}
+                  placeholder="Search goals"
                   className={cn(
                     "w-full h-10 pl-9 pr-8 rounded-md text-sm outline-none transition-colors",
                     isWorkspace
@@ -162,9 +182,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Right side items */}
-            <div className="flex items-center gap-3 sm:gap-4 justify-end">
+            <div className="flex shrink-0 items-center gap-3 sm:gap-4 justify-end">
               {/* Filter */}
-              {!isWorkspace && (
+              {showFilterControls && (
                 <div className="hidden lg:flex items-center gap-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger
@@ -204,7 +224,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
 
               {/* Sort */}
-              {!isWorkspace && (
+              {showSortControls && (
                 <div className="hidden lg:flex items-center gap-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
@@ -232,20 +252,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
                 </div>
               )}
-
-
-
-              {/* Mobile AI Icon Button (Global) */}
-              {!isWorkspace && (
-                <button
-                  onClick={() => openAi()}
-                  className="sm:hidden inline-flex items-center justify-center h-9 w-9 shrink-0 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-                  title="Spira AI"
-                >
-                  <Sparkles className="h-4 w-4" />
-                </button>
-              )}
-
               {/* User / workspace menu */}
               {showWorkspaceMenu ? (
                 <DropdownMenu>
@@ -289,9 +295,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Mobile secondary row: filters + sort */}
+          {/* Mobile secondary row: search + filters + sort — only on non-workspace pages */}
           {!isWorkspace && (
-            <div className="sm:hidden border-t hairline px-4 h-11 flex items-center gap-2 overflow-x-auto">
+            <div className="sm:hidden border-t hairline px-4 py-2 flex min-h-11 items-center gap-2 bg-background">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search goals..."
+                  className="h-8 w-full rounded-md border border-input bg-surface pl-8 pr-7 text-xs outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring"
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery("")}
+                    className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
               {filtersActive && <button onClick={resetFilters} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset filters"><X className="h-3 w-3" /></button>}
               <DropdownMenu>
                 <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", filtersActive && "border-primary/40 text-primary bg-primary-soft")}>
@@ -320,29 +344,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {sortActive && <button onClick={resetSort} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset sort"><X className="h-3 w-3" /></button>}
-              <DropdownMenu>
-                <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
-                  <ArrowDownUp className="h-3 w-3" /> {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuRadioGroup
-                    value={sort}
-                    onValueChange={(v) => setSort(v as any)}
-                  >
-                    <DropdownMenuRadioItem value="recent">Recent</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="deadline">Deadline</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
-                    <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {showSortControls && sortActive && <button onClick={resetSort} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset sort"><X className="h-3 w-3" /></button>}
+              {showSortControls && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
+                    <ArrowDownUp className="h-3 w-3" /> {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuRadioGroup
+                      value={sort}
+                      onValueChange={(v) => setSort(v as any)}
+                    >
+                      <DropdownMenuRadioItem value="recent">Recent</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="deadline">Deadline</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
+                      <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           )}
         </header>
