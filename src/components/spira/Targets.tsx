@@ -421,6 +421,8 @@ function TargetRow({
           <ChecklistEditor
             items={target.items}
             onChange={(items) => onUpdate({ items } as Partial<Target>)}
+            compact
+            hideCountdown
           />
           <div className="mt-4 flex items-center gap-3">
             <ProgressBar value={progress} className="flex-1" />
@@ -679,7 +681,7 @@ function TasksResizableSheet({
             </button>
           </div>
           <div className={cn("flex-1 overflow-y-auto", compact ? "px-2 pb-2 pt-0" : "px-6 pb-6 pt-0")}>
-            <ChecklistEditor items={items} onChange={onChange} compact={compact} />
+            <ChecklistEditor items={items} onChange={onChange} compact={compact} hideCountdown={compact} />
           </div>
         </div>
       </SheetContent>
@@ -691,10 +693,12 @@ function ChecklistEditor({
   items,
   onChange,
   compact = false,
+  hideCountdown = false,
 }: {
   items: { id: string; text: string; done: boolean; deadline?: string }[];
   onChange: (items: { id: string; text: string; done: boolean; deadline?: string }[]) => void;
   compact?: boolean;
+  hideCountdown?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -727,9 +731,9 @@ function ChecklistEditor({
               {it.done && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
             </div>
           </button>
-          
+
           <div className={cn(
-            "flex-1 flex items-center gap-2 relative bg-surface",
+            "flex-1 flex items-center min-w-0 gap-1 relative bg-surface",
             compact ? "px-2 py-1" : "px-3 py-1.5"
           )}>
             <InlineText
@@ -739,37 +743,25 @@ function ChecklistEditor({
               }
               ariaLabel="Edit subtask"
               className={cn(
-                "flex-1 text-sm",
+                "flex-1 text-sm truncate",
                 it.done && "line-through text-muted-foreground",
               )}
             />
-          {compact ? (
             <DeadlinePopover
               iso={it.deadline}
               variant="icon"
+              hideDaysLeft={hideCountdown}
               onChange={(next) =>
                 onChange(items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)))
               }
             />
-          ) : (
-            <DeadlinePopover
-              iso={it.deadline}
-              variant="text"
-              placeholder="Set deadline"
-              hideChevron
-              onChange={(next) =>
-                onChange(items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)))
-              }
-              className="text-xs tabular-nums text-muted-foreground"
-            />
-          )}
-          <button
-            onClick={() => onChange(items.filter((i) => i.id !== it.id))}
-            className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary"
-            aria-label="Remove subtask"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            <button
+              onClick={() => onChange(items.filter((i) => i.id !== it.id))}
+              className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0"
+              aria-label="Remove subtask"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       ))}
