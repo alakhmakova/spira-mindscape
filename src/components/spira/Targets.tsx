@@ -384,23 +384,35 @@ function TargetRow({
         <button
           onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
           className={cn(
-            "mt-4 w-full flex items-center gap-3 px-4 h-12 rounded-md border-2 text-sm font-semibold transition-colors text-left",
-            target.done
-              ? "bg-primary-soft border-primary text-primary"
-              : "bg-surface border-border-strong hover:border-primary",
+            "mt-4 flex items-stretch overflow-hidden rounded-md border transition-colors min-h-[44px] w-full",
+            target.done ? "border-primary" : "border-border hover:border-primary/50",
           )}
         >
-          <span
+          <div
             className={cn(
-              "h-5 w-5 rounded-sm border-2 grid place-items-center shrink-0 transition-colors",
-              target.done ? "bg-primary border-primary" : "border-border-strong",
+              "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
+              target.done ? "bg-primary-soft border-primary" : "bg-surface border-border hover:bg-secondary/50",
             )}
           >
-            {target.done && (
-              <Check className="h-3.5 w-3.5 text-primary-foreground" strokeWidth={3} />
-            )}
-          </span>
-          <span className="flex-1">{target.done ? "Done" : "Mark done"}</span>
+            <div
+              className={cn(
+                "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+                target.done ? "bg-primary border-primary" : "border-border-strong",
+              )}
+            >
+              {target.done && (
+                <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />
+              )}
+            </div>
+          </div>
+          <div className="flex-1 flex items-center px-3 bg-surface">
+            <span className={cn(
+              "text-sm",
+              target.done ? "line-through text-muted-foreground" : "text-foreground font-medium",
+            )}>
+              {target.done ? "Done" : "Mark done"}
+            </span>
+          </div>
         </button>
       )}
 
