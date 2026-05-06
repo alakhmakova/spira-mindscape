@@ -1,13 +1,10 @@
-import { Link, useRouterState, useParams } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Search,
   SlidersHorizontal,
   ArrowDownUp,
   ChevronDown,
   X,
-  Calendar,
-  Home,
-  Menu,
 } from "lucide-react";
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -17,7 +14,6 @@ import { useShellFilters } from "./shell-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -54,7 +50,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
-  const showWorkspaceMenu = isWorkspace && isAiOpen && isAiWide;
   const filtersActive = Boolean(deadlineFrom || deadlineTo || confidence || status !== "all");
   const sortActive = sort !== "recent" || sortDirection !== "desc";
   // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)
@@ -79,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div className={cn(
             "spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center", 
-            isWorkspace ? "grid grid-cols-[1fr_minmax(0,600px)_1fr] gap-3" : "flex gap-3 sm:gap-5",
+            isWorkspace ? cn("grid gap-3", isAiOpen ? "grid-cols-[1fr_minmax(0,320px)_1fr]" : "grid-cols-[1fr_minmax(0,600px)_1fr]") : "flex gap-3 sm:gap-5",
             (isDashboard && !isWorkspace) && "bg-primary text-white sm:bg-transparent sm:text-foreground"
           )}>
             {/* Brand */}
@@ -252,46 +247,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
                 </div>
               )}
-              {/* User / workspace menu */}
-              {showWorkspaceMenu ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className="grid h-9 w-9 place-items-center text-white/90 transition-colors hover:text-white"
-                    aria-label="Open workspace menu"
-                    title="Menu"
-                  >
-                    <Menu className="h-4.5 w-4.5" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuItem asChild>
-                      <Link to="/">
-                        <Home className="h-4 w-4" />
-                        All goals
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/calendar">
-                        <Calendar className="h-4 w-4" />
-                        Calendar
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Spira User
-                    </DropdownMenuLabel>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <div className={cn("flex items-center gap-2", isWorkspace ? "" : "pl-2 md:border-l md:pl-3 md:hairline")}>
-                  <div className={cn("h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold", isWorkspace ? "bg-white/10 border-white/20 text-white" : "bg-primary-soft border-primary/30 text-primary")}>
-                    SU
-                  </div>
-                  <div className="hidden md:block leading-tight text-right">
-                    <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
-                  </div>
-                  <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
+              {/* User */}
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold bg-primary-soft border-primary/30 text-primary">
+                  SU
                 </div>
-              )}
+                <div className="hidden md:block leading-tight text-right">
+                  <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
+                </div>
+                <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
+              </div>
             </div>
           </div>
 
