@@ -5,9 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Spira — Friendly professional workspace design system:
- * Gusto-inspired teal actions, warm white surfaces, charcoal text,
- * generous spacing, clear grouping, and empathetic status colors.
+ * Spira workspace design system:
+ * calm teal actions, warm white surfaces, charcoal text,
+ * generous spacing, clear grouping, and clear status colors.
  */
 
 @theme inline {
@@ -76,7 +76,7 @@
     0 8px 28px -12px oklch(0.2 0 0 / 0.12);
 }
 
-/* Friendly Gusto-aligned light palette — single source of truth. */
+/* Spira light palette. */
 :root {
   --radius: 0.5rem;
 

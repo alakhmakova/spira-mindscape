@@ -51,9 +51,13 @@ function nameFromEmail(email: string) {
 
 function resourceDisplayName(resource: Resource) {
   if (resource.type === "note") return resource.title.trim() || "Untitled note";
-  if (resource.type === "link") return resource.title.trim() || titleFromUrl(resource.url);
+  if (resource.type === "link")
+    return resource.title.trim() || titleFromUrl(resource.url);
   if (resource.type === "file") return resource.title.trim() || "Untitled file";
-  return resource.name?.trim() || (resource.email ? nameFromEmail(resource.email) : "Email");
+  return (
+    resource.name?.trim() ||
+    (resource.email ? nameFromEmail(resource.email) : "Email")
+  );
 }
 
 /* ── helpers: copy & download ─────────────────────── */
@@ -71,7 +75,10 @@ function downloadBlob(blob: Blob, filename: string) {
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
 }
 
 async function copyPlainText(text: string) {
@@ -107,9 +114,11 @@ async function copyImageToClipboard(dataUrl: string, title?: string) {
         }),
       ]);
       return;
-    } catch {}
+    } catch {
+      // Clipboard may be unavailable on some browsers or insecure origins.
+    }
   }
-  
+
   if (navigator.share && navigator.canShare) {
     try {
       const blob = dataUrlToBlob(dataUrl);
@@ -118,11 +127,15 @@ async function copyImageToClipboard(dataUrl: string, title?: string) {
         await navigator.share({ files: [file] });
         return;
       }
-    } catch {}
+    } catch {
+      // Share may be unavailable on some browsers or insecure origins.
+    }
   }
 
   // Ultimate fallback if clipboard and share fail (e.g. insecure HTTP)
-  alert("Copying or sharing images on this browser requires a secure HTTPS connection.");
+  alert(
+    "Copying or sharing images on this browser requires a secure HTTPS connection.",
+  );
 }
 
 function toPngBlob(dataUrl: string): Promise<Blob> {
@@ -133,7 +146,10 @@ function toPngBlob(dataUrl: string): Promise<Blob> {
       canvas.width = img.width;
       canvas.height = img.height;
       canvas.getContext("2d")!.drawImage(img, 0, 0);
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/png",
+      );
     };
     img.onerror = reject;
     img.src = dataUrl;
@@ -196,7 +212,11 @@ export function ResourcesList({ goal }: { goal: Goal }) {
         ))}
       </div>
 
-      <ResourcePreview goalId={goal.id} resourceId={previewId} onClose={() => setPreviewId(null)} />
+      <ResourcePreview
+        goalId={goal.id}
+        resourceId={previewId}
+        onClose={() => setPreviewId(null)}
+      />
     </>
   );
 }
@@ -240,14 +260,41 @@ function ResourceCard({
     }
   };
 
-  const canCopy = r.type === "note" || r.type === "link" || (r.type === "file" && r.mime.startsWith("image/")) || (r.type === "email" && !!r.email);
+  const canCopy =
+    r.type === "note" ||
+    r.type === "link" ||
+    (r.type === "file" && r.mime.startsWith("image/")) ||
+    (r.type === "email" && !!r.email);
   const canDownload = r.type === "note" || r.type === "file";
 
-  const typeColors: Record<string, { bg: string; text: string; border: string; icon: string }> = {
-    note: { bg: "bg-[#f0f9ff]", text: "text-[#0c69a3]", border: "border-[#bae2fd]", icon: "text-[#0c69a3]" },
-    link: { bg: "bg-[#f0fdf4]", text: "text-[#15803d]", border: "border-[#b7e4c7]", icon: "text-[#15803d]" },
-    file: { bg: "bg-[#fef3c7]", text: "text-[#92400e]", border: "border-[#fde68a]", icon: "text-[#92400e]" },
-    email: { bg: "bg-[#faf5ff]", text: "text-[#7c3aed]", border: "border-[#e9d5ff]", icon: "text-[#7c3aed]" },
+  const typeColors: Record<
+    string,
+    { bg: string; text: string; border: string; icon: string }
+  > = {
+    note: {
+      bg: "bg-[#f0f9ff]",
+      text: "text-[#0c69a3]",
+      border: "border-[#bae2fd]",
+      icon: "text-[#0c69a3]",
+    },
+    link: {
+      bg: "bg-[#f0fdf4]",
+      text: "text-[#15803d]",
+      border: "border-[#b7e4c7]",
+      icon: "text-[#15803d]",
+    },
+    file: {
+      bg: "bg-[#fef3c7]",
+      text: "text-[#92400e]",
+      border: "border-[#fde68a]",
+      icon: "text-[#92400e]",
+    },
+    email: {
+      bg: "bg-[#faf5ff]",
+      text: "text-[#7c3aed]",
+      border: "border-[#e9d5ff]",
+      icon: "text-[#7c3aed]",
+    },
   };
 
   const colors = typeColors[r.type] || typeColors.note;
@@ -258,14 +305,19 @@ function ResourceCard({
         "group inline-flex items-center rounded-lg border bg-white transition-all duration-200 overflow-hidden",
         expanded
           ? "border-border/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)]"
-          : "border-border/40 hover:border-border/60 hover:shadow-[0_1px_6px_-1px_rgba(0,0,0,0.04)]"
+          : "border-border/40 hover:border-border/60 hover:shadow-[0_1px_6px_-1px_rgba(0,0,0,0.04)]",
       )}
     >
       <button
         onClick={onOpen}
         className="flex items-center gap-1.5 pl-2 pr-1 py-1.5 h-9 transition-colors hover:bg-secondary/20"
       >
-        <div className={cn("grid h-5 w-5 place-items-center rounded-md shrink-0", colors.bg)}>
+        <div
+          className={cn(
+            "grid h-5 w-5 place-items-center rounded-md shrink-0",
+            colors.bg,
+          )}
+        >
           <Icon className={cn("h-3 w-3", colors.icon)} />
         </div>
         <span className="text-sm font-medium text-foreground whitespace-nowrap max-w-[140px] truncate">
@@ -275,7 +327,10 @@ function ResourceCard({
 
       {!expanded ? (
         <button
-          onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(true);
+          }}
           className="flex h-full items-center justify-center px-1.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground hover:bg-secondary/30"
         >
           <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
@@ -283,7 +338,10 @@ function ResourceCard({
       ) : (
         <div className="flex items-center gap-0.5 pr-1 pl-0.5">
           <button
-            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(false);
+            }}
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-secondary/50"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
@@ -292,13 +350,16 @@ function ResourceCard({
           <div className="w-px h-3.5 bg-border/60" />
 
           {r.type === "email" ? (
-             <button
-               onClick={(e) => { e.stopPropagation(); onOpen(); }}
-               className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
-               title="Edit email"
-             >
-               <Pencil className="h-3 w-3" />
-             </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
+              className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
+              title="Edit email"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
           ) : (
             <>
               {canCopy && (
@@ -307,7 +368,11 @@ function ResourceCard({
                   className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
                   title={copied ? "Copied!" : "Copy"}
                 >
-                  {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                  {copied ? (
+                    <Check className="h-3 w-3 text-green-600" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
                 </button>
               )}
               {canDownload && (
@@ -323,7 +388,10 @@ function ResourceCard({
           )}
 
           <button
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
             className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-destructive-soft hover:text-destructive transition-colors"
             title="Remove"
           >
@@ -335,13 +403,29 @@ function ResourceCard({
   );
 }
 
-function CopyField({ label, value, actionIcon, onAction, actionTitle }: { label: string; value: string; actionIcon?: React.ReactNode; onAction?: () => void; actionTitle?: string }) {
+function CopyField({
+  label,
+  value,
+  actionIcon,
+  onAction,
+  actionTitle,
+}: {
+  label: string;
+  value: string;
+  actionIcon?: React.ReactNode;
+  onAction?: () => void;
+  actionTitle?: string;
+}) {
   const { copied, run } = useCopied();
   return (
     <div className="rounded-md border border-border bg-surface px-4 py-3">
-      <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</label>
+      <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </label>
       <div className="mt-1.5 flex items-center gap-2">
-        <div className="flex-1 min-w-0 break-words text-sm font-semibold text-foreground">{value}</div>
+        <div className="flex-1 min-w-0 break-words text-sm font-semibold text-foreground">
+          {value}
+        </div>
         {actionIcon && onAction && (
           <button
             onClick={(e) => {
@@ -362,7 +446,11 @@ function CopyField({ label, value, actionIcon, onAction, actionTitle }: { label:
           className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-primary transition-colors shrink-0"
           title={`Copy ${label.toLowerCase()}`}
         >
-          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+          {copied ? (
+            <Check className="h-4 w-4 text-green-600" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
         </button>
       </div>
     </div>
@@ -381,7 +469,11 @@ function PreviewBody({
 }: {
   resource: Resource;
   goalId: string;
-  updateResource: (goalId: string, resourceId: string, patch: Partial<Resource>) => void;
+  updateResource: (
+    goalId: string,
+    resourceId: string,
+    patch: Partial<Resource>,
+  ) => void;
   title: string;
   isMobile: boolean;
   onClose: () => void;
@@ -390,16 +482,28 @@ function PreviewBody({
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
   if (isEditingEmail) {
-    return <Form goalId={goalId} initialResource={resource} onDone={() => setIsEditingEmail(false)} />;
+    return (
+      <Form
+        goalId={goalId}
+        initialResource={resource}
+        onDone={() => setIsEditingEmail(false)}
+      />
+    );
   }
 
-  const isImage = resource.type === "file" && resource.mime.startsWith("image/");
+  const isImage =
+    resource.type === "file" && resource.mime.startsWith("image/");
   const canCopy =
-    resource.type === "note" ||
-    resource.type === "link" ||
-    isImage;
+    resource.type === "note" || resource.type === "link" || isImage;
   const canDownload = resource.type === "note" || resource.type === "file";
-  const copyLabel = isImage && isMobile ? "Share" : resource.type === "note" ? "Copy as plain text" : resource.type === "link" ? "Copy URL" : "Copy image";
+  const copyLabel =
+    isImage && isMobile
+      ? "Share"
+      : resource.type === "note"
+        ? "Copy as plain text"
+        : resource.type === "link"
+          ? "Copy URL"
+          : "Copy image";
 
   const handleCopy = () => {
     if (resource.type === "note") {
@@ -428,12 +532,19 @@ function PreviewBody({
           {resource.type === "note" ? (
             <AutoTextarea
               value={resource.title}
-              onChange={(v) => updateResource(goalId, resource.id, { title: v })}
+              onChange={(v) =>
+                updateResource(goalId, resource.id, { title: v })
+              }
               className="font-display text-2xl w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/50"
               placeholder="Note title"
             />
           ) : (
-            <h2 className="font-sans font-bold text-lg truncate pr-4 !text-white" style={{ color: "white" }}>{title}</h2>
+            <h2
+              className="font-sans font-bold text-lg truncate pr-4 !text-white"
+              style={{ color: "white" }}
+            >
+              {title}
+            </h2>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -444,7 +555,11 @@ function PreviewBody({
               aria-label="Copy"
               title={copied ? "Copied!" : copyLabel}
             >
-              {copied ? <Check className="h-4 w-4 text-green-300" /> : <Copy className="h-4 w-4" />}
+              {copied ? (
+                <Check className="h-4 w-4 text-green-300" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
             </button>
           )}
           {canDownload && (
@@ -478,17 +593,21 @@ function PreviewBody({
           </button>
         </div>
       </div>
-      <div className={cn(
-        "px-7 py-6 overflow-y-auto flex-1 min-h-0",
-        resource.type === "file" && resource.mime === "application/pdf"
-          ? "flex flex-col gap-3 overflow-hidden"
-          : "flex flex-col",
-      )}>
+      <div
+        className={cn(
+          "px-7 py-6 overflow-y-auto flex-1 min-h-0",
+          resource.type === "file" && resource.mime === "application/pdf"
+            ? "flex flex-col gap-3 overflow-hidden"
+            : "flex flex-col",
+        )}
+      >
         {resource.type === "note" && (
           <div className="flex-1 min-h-0 relative">
             <RichTextEditor
               value={resource.body || ""}
-              onChange={(html) => updateResource(goalId, resource.id, { body: html })}
+              onChange={(html) =>
+                updateResource(goalId, resource.id, { body: html })
+              }
               placeholder="Write your note here..."
             />
           </div>
@@ -527,7 +646,9 @@ function PreviewBody({
               />
             )}
             {resource.role && <CopyField label="Role" value={resource.role} />}
-            {resource.phone && <CopyField label="Phone" value={resource.phone} />}
+            {resource.phone && (
+              <CopyField label="Phone" value={resource.phone} />
+            )}
           </div>
         )}
       </div>
@@ -578,8 +699,15 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
 
   return (
     <>
-      <div className="relative cursor-zoom-in group" onClick={() => setZoomed(true)}>
-        <img src={src} alt={alt} className="w-full rounded-md border hairline" />
+      <div
+        className="relative cursor-zoom-in group"
+        onClick={() => setZoomed(true)}
+      >
+        <img
+          src={src}
+          alt={alt}
+          className="w-full rounded-md border hairline"
+        />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-md flex items-center justify-center">
           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white rounded-full p-2">
             <ZoomIn className="h-5 w-5" />
@@ -625,14 +753,15 @@ function ResourcePreview({
   const updateResource = useSpira((s) => s.updateResource);
   const resource = useSpira((s) =>
     resourceId
-      ? s.goals.find((g) => g.id === goalId)?.resources.find((r) => r.id === resourceId) ?? null
+      ? (s.goals
+          .find((g) => g.id === goalId)
+          ?.resources.find((r) => r.id === resourceId) ?? null)
       : null,
   );
   const isMobile = useIsMobile();
   const open = !!resource;
 
-  const title =
-    resource ? resourceDisplayName(resource) : "";
+  const title = resource ? resourceDisplayName(resource) : "";
 
   const Body = resource && (
     <PreviewBody
@@ -650,13 +779,17 @@ function ResourcePreview({
       return (
         <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
           <DrawerContent className="mt-0 h-[100svh] max-h-[100svh] rounded-none border-0 px-0 flex flex-col bg-surface">
-          <MobileNoteBody
-            title={resource.title}
-            body={resource.body || ""}
-            onTitleChange={(v) => updateResource(goalId, resource.id, { title: v })}
-            onBodyChange={(html) => updateResource(goalId, resource.id, { body: html })}
-            onClose={onClose}
-          />
+            <MobileNoteBody
+              title={resource.title}
+              body={resource.body || ""}
+              onTitleChange={(v) =>
+                updateResource(goalId, resource.id, { title: v })
+              }
+              onBodyChange={(html) =>
+                updateResource(goalId, resource.id, { body: html })
+              }
+              onClose={onClose}
+            />
           </DrawerContent>
         </Drawer>
       );
@@ -670,18 +803,19 @@ function ResourcePreview({
       </Drawer>
     );
   }
-  return (
-    resource?.type === "email" ? (
-      <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline">
-          {Body}
-        </SheetContent>
-      </Sheet>
-    ) : (
-      <ResizableSheet open={open} onClose={onClose}>
+  return resource?.type === "email" ? (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline"
+      >
         {Body}
-      </ResizableSheet>
-    )
+      </SheetContent>
+    </Sheet>
+  ) : (
+    <ResizableSheet open={open} onClose={onClose}>
+      {Body}
+    </ResizableSheet>
   );
 }
 
@@ -725,7 +859,11 @@ function MobileNoteBody({
               aria-label="Copy as plain text"
               title={copied ? "Copied!" : "Copy as plain text"}
             >
-              {copied ? <Check className="h-4.5 w-4.5 text-green-600" /> : <Copy className="h-4.5 w-4.5" />}
+              {copied ? (
+                <Check className="h-4.5 w-4.5 text-green-600" />
+              ) : (
+                <Copy className="h-4.5 w-4.5" />
+              )}
             </button>
             <button
               type="button"
@@ -886,27 +1024,67 @@ export function NewResourceSheet({
   );
 }
 
-function Form({ goalId, initialResource, onDone }: { goalId: string; initialResource?: Resource; onDone: () => void }) {
+function Form({
+  goalId,
+  initialResource,
+  onDone,
+}: {
+  goalId: string;
+  initialResource?: Resource;
+  onDone: () => void;
+}) {
   const addResource = useSpira((s) => s.addResource);
   const updateResource = useSpira((s) => s.updateResource);
-  const [type, setType] = useState<Resource["type"]>(initialResource?.type || "note");
-  const submittedRef = useRef(false);
-  const [title, setTitle] = useState(initialResource && initialResource.type !== "email" ? initialResource.title : "");
-  const [body, setBody] = useState(initialResource?.type === "note" ? initialResource.body : "");
-  const [url, setUrl] = useState(initialResource?.type === "link" ? initialResource.url : "");
-  const [fileData, setFileData] = useState<{ name: string; mime: string; dataUrl: string } | null>(
-    initialResource?.type === "file" ? { name: initialResource.title, mime: initialResource.mime, dataUrl: initialResource.dataUrl } : null,
+  const [type, setType] = useState<Resource["type"]>(
+    initialResource?.type || "note",
   );
-  const [name, setName] = useState(initialResource?.type === "email" ? (initialResource.name || "") : "");
-  const [role, setRole] = useState(initialResource?.type === "email" ? (initialResource.role || "") : "");
-  const [email, setEmail] = useState(initialResource?.type === "email" ? (initialResource.email || "") : "");
-  const [phone, setPhone] = useState(initialResource?.type === "email" ? (initialResource.phone || "") : "");
+  const submittedRef = useRef(false);
+  const [title, setTitle] = useState(
+    initialResource && initialResource.type !== "email"
+      ? initialResource.title
+      : "",
+  );
+  const [body, setBody] = useState(
+    initialResource?.type === "note" ? initialResource.body : "",
+  );
+  const [url, setUrl] = useState(
+    initialResource?.type === "link" ? initialResource.url : "",
+  );
+  const [fileData, setFileData] = useState<{
+    name: string;
+    mime: string;
+    dataUrl: string;
+  } | null>(
+    initialResource?.type === "file"
+      ? {
+          name: initialResource.title,
+          mime: initialResource.mime,
+          dataUrl: initialResource.dataUrl,
+        }
+      : null,
+  );
+  const [name, setName] = useState(
+    initialResource?.type === "email" ? initialResource.name || "" : "",
+  );
+  const [role, setRole] = useState(
+    initialResource?.type === "email" ? initialResource.role || "" : "",
+  );
+  const [email, setEmail] = useState(
+    initialResource?.type === "email" ? initialResource.email || "" : "",
+  );
+  const [phone, setPhone] = useState(
+    initialResource?.type === "email" ? initialResource.phone || "" : "",
+  );
   const fileInputId = `resource-file-${goalId}-${initialResource?.id ?? "new"}`;
 
   const onFile = (f: File) => {
     const reader = new FileReader();
     reader.onload = () =>
-      setFileData({ name: f.name, mime: f.type, dataUrl: String(reader.result) });
+      setFileData({
+        name: f.name,
+        mime: f.type,
+        dataUrl: String(reader.result),
+      });
     reader.readAsDataURL(f);
   };
 
@@ -918,21 +1096,42 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
     } else if (type === "link") {
       if (!url.trim()) return;
       const cleanUrl = url.trim();
-      payload = { type: "link", title: title.trim() || titleFromUrl(cleanUrl), url: cleanUrl };
+      payload = {
+        type: "link",
+        title: title.trim() || titleFromUrl(cleanUrl),
+        url: cleanUrl,
+      };
     } else if (type === "file") {
       if (!fileData) return;
-      payload = { type: "file", title: title.trim() || fileData.name, mime: fileData.mime, dataUrl: fileData.dataUrl };
+      payload = {
+        type: "file",
+        title: title.trim() || fileData.name,
+        mime: fileData.mime,
+        dataUrl: fileData.dataUrl,
+      };
     } else {
       if (!email.trim()) return;
       const cleanEmail = email.trim();
-      payload = { type: "email", name: name.trim() || nameFromEmail(cleanEmail), role, email: cleanEmail, phone };
+      payload = {
+        type: "email",
+        name: name.trim() || nameFromEmail(cleanEmail),
+        role,
+        email: cleanEmail,
+        phone,
+      };
     }
     submittedRef.current = true;
     onDone();
     if (initialResource) {
-      setTimeout(() => updateResource(goalId, initialResource.id, payload!), 50);
+      setTimeout(
+        () => updateResource(goalId, initialResource.id, payload!),
+        50,
+      );
     } else {
-      setTimeout(() => addResource(goalId, payload as Omit<Resource, "id">), 50);
+      setTimeout(
+        () => addResource(goalId, payload as Omit<Resource, "id">),
+        50,
+      );
     }
   };
 
@@ -941,20 +1140,37 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
   return (
     <>
       <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 z-10 bg-surface">
-        <h2 className="font-sans font-bold text-lg">{initialResource ? "Edit resource" : "Add a resource"}</h2>
-        <button onClick={onDone} className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary" aria-label="Close">
+        <h2 className="font-sans font-bold text-lg">
+          {initialResource ? "Edit resource" : "Add a resource"}
+        </h2>
+        <button
+          onClick={onDone}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+          aria-label="Close"
+        >
           <X className="h-4 w-4" />
         </button>
       </div>
       <div className="px-7 pt-2 pb-6 space-y-6 overflow-y-auto flex-1 min-h-0">
         {!initialResource && (
           <div>
-            <label className="text-sm font-semibold block mb-2">Type <span className="text-destructive">*</span></label>
+            <label className="text-sm font-semibold block mb-2">
+              Type <span className="text-destructive">*</span>
+            </label>
             <div className="grid grid-cols-2 gap-2">
               {(["note", "link", "file", "email"] as const).map((t) => {
                 const Icon = typeMeta[t].icon;
                 return (
-                  <button key={t} onClick={() => setType(t)} className={cn("flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left", type === t ? "bg-primary-soft border-primary text-primary" : "bg-surface border-border hover:border-border-strong")}>
+                  <button
+                    key={t}
+                    onClick={() => setType(t)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left",
+                      type === t
+                        ? "bg-primary-soft border-primary text-primary"
+                        : "bg-surface border-border hover:border-border-strong",
+                    )}
+                  >
                     <Icon className="h-4 w-4 shrink-0" />
                     {typeMeta[t].label}
                   </button>
@@ -965,20 +1181,37 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
         )}
         {type !== "email" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">Title {type !== "file" && <span className="text-destructive">*</span>}</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+            <label className="text-sm font-semibold block mb-1.5">
+              Title{" "}
+              {type !== "file" && <span className="text-destructive">*</span>}
+            </label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
           </div>
         )}
         {type === "note" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Note</label>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-32" />
+            <Textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="min-h-32"
+            />
           </div>
         )}
         {type === "link" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">URL <span className="text-destructive">*</span></label>
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
+            <label className="text-sm font-semibold block mb-1.5">
+              URL <span className="text-destructive">*</span>
+            </label>
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://"
+            />
           </div>
         )}
         {type === "file" && (
@@ -1008,26 +1241,58 @@ function Form({ goalId, initialResource, onDone }: { goalId: string; initialReso
           <div className="space-y-4">
             <div>
               <label className="text-sm font-semibold block mb-1.5">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Optional"
+              />
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Email <span className="text-destructive">*</span></label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@example.com" autoFocus />
+              <label className="text-sm font-semibold block mb-1.5">
+                Email <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder="name@example.com"
+                autoFocus
+              />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Role</label>
-              <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Optional" />
+              <Input
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="Optional"
+              />
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Phone</label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
+              <label className="text-sm font-semibold block mb-1.5">
+                Phone
+              </label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Optional"
+              />
             </div>
           </div>
         )}
       </div>
       <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
-        <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">Cancel</button>
-        <button onClick={submit} className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90">{initialResource ? "Save changes" : "Add resource"}</button>
+        <button
+          onClick={onDone}
+          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={submit}
+          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90"
+        >
+          {initialResource ? "Save changes" : "Add resource"}
+        </button>
       </div>
     </>
   );

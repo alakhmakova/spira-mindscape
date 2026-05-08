@@ -17,9 +17,15 @@ function formatDeadlineInfo(iso: string | undefined) {
 
   const deadline = new Date(iso);
   const now = new Date();
-  const deadlineDay = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  const deadlineDay = new Date(
+    deadline.getFullYear(),
+    deadline.getMonth(),
+    deadline.getDate(),
+  );
   const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.round((deadlineDay.getTime() - todayDay.getTime()) / 86_400_000);
+  const diffDays = Math.round(
+    (deadlineDay.getTime() - todayDay.getTime()) / 86_400_000,
+  );
   const isOverdue = diffDays < 0;
 
   const dateStr = deadline.toLocaleDateString("en-US", {
@@ -59,10 +65,13 @@ export function GoalCard({ goal }: { goal: Goal }) {
       {/* Confidence, Progress & Actions Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <ConfidencePill value={goal.confidence} className="relative z-10 shrink-0" />
-          
+          <ConfidencePill
+            value={goal.confidence}
+            className="relative z-10 shrink-0"
+          />
+
           <span className="w-px h-3.5 bg-border shrink-0" />
-          
+
           <div className="flex items-center gap-2 flex-1 min-w-0 max-w-32">
             <div className="flex-1">
               <ProgressBar value={progress} />
@@ -85,7 +94,11 @@ export function GoalCard({ goal }: { goal: Goal }) {
       {/* Title */}
       <div className="flex-1 flex flex-col justify-center min-w-0 py-5">
         <h3 className="font-semibold text-lg text-foreground/90 leading-snug line-clamp-2">
-          <Link to="/goals/$goalId" params={{ goalId: goal.id }} className="after:absolute after:inset-0">
+          <Link
+            to="/goals/$goalId"
+            params={{ goalId: goal.id }}
+            className="after:absolute after:inset-0"
+          >
             {goal.title}
           </Link>
         </h3>
@@ -96,7 +109,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
         {/* Footer bar */}
         <div className="flex items-center justify-between gap-3 rounded-md pr-3 pl-4 h-10 border border-border/80 relative overflow-hidden bg-transparent">
           {/* Colored stripe on the left */}
-          <div 
+          <div
             className="absolute left-0 top-0 bottom-0 w-[3px]"
             style={{ backgroundColor: stripeColor }}
           />
@@ -110,7 +123,11 @@ export function GoalCard({ goal }: { goal: Goal }) {
                 <span className="text-[13px] font-medium flex items-center gap-2.5 min-w-0 transition-opacity hover:opacity-70 cursor-pointer">
                   <span
                     className="flex items-center gap-1.5"
-                    style={{ color: isOverdue ? OVERDUE_RED : "var(--muted-foreground)" }}
+                    style={{
+                      color: isOverdue
+                        ? OVERDUE_RED
+                        : "var(--muted-foreground)",
+                    }}
                   >
                     {isOverdue ? (
                       <AlertTriangle className="h-3.5 w-3.5 translate-y-[1px]" />
@@ -138,7 +155,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
             params={{ goalId: goal.id }}
             className="shrink-0 flex items-center gap-0.5 text-[13px] leading-[14px] font-semibold text-muted-foreground hover:text-foreground transition-colors group-start"
           >
-            <span className="underline decoration-1 underline-offset-[3px]">Start</span>
+            <span className="underline decoration-1 underline-offset-[3px]">
+              Start
+            </span>
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>

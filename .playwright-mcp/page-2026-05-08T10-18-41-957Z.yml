@@ -1,0 +1,89 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - link "spira" [ref=e8] [cursor=pointer]:
+          - /url: /
+        - button "ai coach" [ref=e9]
+      - generic [ref=e11]:
+        - img
+        - textbox "Search goals" [ref=e12]
+      - generic [ref=e14]:
+        - generic [ref=e15]: SU
+        - generic [ref=e17]: Spira User
+        - img [ref=e18]
+  - main [ref=e20]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - heading "All goals" [level=1] [ref=e25]
+          - paragraph [ref=e26]: 3 goals in motion. Pick one to dive into, or shape a new one.
+        - generic [ref=e28]:
+          - button "Cards" [pressed] [ref=e29]:
+            - img [ref=e30]
+            - text: Cards
+          - button "Timeline" [ref=e35]:
+            - img [ref=e36]
+            - text: Timeline
+          - link "Calendar" [ref=e37] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e38]
+            - text: Calendar
+      - generic [ref=e40]:
+        - generic [ref=e41] [cursor=pointer]:
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - generic "Confidence 10/10" [ref=e44]:
+                - generic [ref=e46]: Confidence
+                - generic [ref=e47]: 10/10
+              - generic [ref=e52]: 0%
+            - button "Delete goal" [ref=e53]:
+              - img [ref=e54]
+          - heading "Testing Backend" [level=3] [ref=e58]:
+            - link "Testing Backend" [ref=e59]:
+              - /url: /goals/3
+          - generic [ref=e61]:
+            - button "Set deadline" [ref=e63]
+            - link "Start" [ref=e64]:
+              - /url: /goals/3
+              - generic [ref=e65]: Start
+              - img [ref=e66]
+        - generic [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]:
+            - generic [ref=e70]:
+              - generic "Confidence 8/10" [ref=e71]:
+                - generic [ref=e73]: Confidence
+                - generic [ref=e74]: 8/10
+              - generic [ref=e79]: 0%
+            - button "Delete goal" [ref=e80]:
+              - img [ref=e81]
+          - heading "Learn GraphQL" [level=3] [ref=e85]:
+            - link "Learn GraphQL" [ref=e86]:
+              - /url: /goals/2
+          - generic [ref=e88]:
+            - button "Set deadline" [ref=e90]
+            - link "Start" [ref=e91]:
+              - /url: /goals/2
+              - generic [ref=e92]: Start
+              - img [ref=e93]
+        - generic [ref=e95] [cursor=pointer]:
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - generic "Confidence 7/10" [ref=e98]:
+                - generic [ref=e100]: Confidence
+                - generic [ref=e101]: 7/10
+              - generic [ref=e106]: 0%
+            - button "Delete goal" [ref=e107]:
+              - img [ref=e108]
+          - heading "Test Goal" [level=3] [ref=e112]:
+            - link "Test Goal" [ref=e113]:
+              - /url: /goals/1
+          - generic [ref=e115]:
+            - button "Set deadline" [ref=e117]
+            - link "Start" [ref=e118]:
+              - /url: /goals/1
+              - generic [ref=e119]: Start
+              - img [ref=e120]
+      - button "New goal" [ref=e122]:
+        - img [ref=e123]
+    - region "Notifications alt+T"

@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Sparkles, Check, Pencil, X, Compass, Wand2, Sprout } from "lucide-react";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import {
+  ArrowUp,
+  Sparkles,
+  Check,
+  Pencil,
+  X,
+  Compass,
+  Wand2,
+  Sprout,
+} from "lucide-react";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
@@ -9,10 +23,26 @@ import type { AiAction, ChatMessage } from "@/lib/spira/types";
 import { toast } from "sonner";
 
 const GROW_STEPS = [
-  { key: "G", title: "Goal", q: "What do you want to achieve, specifically? Describe the outcome." },
-  { key: "R", title: "Reality", q: "Where are you right now in relation to this goal? What have you tried?" },
-  { key: "O", title: "Options", q: "What strategies could move you forward? Brainstorm 3 paths." },
-  { key: "W", title: "Will", q: "What's the next concrete target you'll commit to this week?" },
+  {
+    key: "G",
+    title: "Goal",
+    q: "What do you want to achieve, specifically? Describe the outcome.",
+  },
+  {
+    key: "R",
+    title: "Reality",
+    q: "Where are you right now in relation to this goal? What have you tried?",
+  },
+  {
+    key: "O",
+    title: "Options",
+    q: "What strategies could move you forward? Brainstorm 3 paths.",
+  },
+  {
+    key: "W",
+    title: "Will",
+    q: "What's the next concrete target you'll commit to this week?",
+  },
 ] as const;
 
 const MIN_PANEL_WIDTH = 360;
@@ -91,8 +121,12 @@ export function AiPanel() {
         <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#006d67] text-white">
           <DrawerHeader className="px-5 pb-3">
             <DrawerTitle className="flex items-baseline gap-2 text-white">
-              <span className="text-[32px] font-extrabold leading-none">spira</span>
-              <span className="text-[20px] font-normal leading-none">ai coach</span>
+              <span className="text-[32px] font-extrabold leading-none">
+                spira
+              </span>
+              <span className="text-[20px] font-normal leading-none">
+                ai coach
+              </span>
             </DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 flex flex-col">{Body}</div>
@@ -122,8 +156,12 @@ export function AiPanel() {
       />
       <div className="flex h-16 shrink-0 items-center justify-between gap-3 px-5">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-[32px] font-extrabold leading-none text-white">spira</span>
-          <span className="truncate pt-1 text-[20px] font-normal leading-none text-white">ai coach</span>
+          <span className="text-[32px] font-extrabold leading-none text-white">
+            spira
+          </span>
+          <span className="truncate pt-1 text-[20px] font-normal leading-none text-white">
+            ai coach
+          </span>
         </div>
         <button
           onClick={close}
@@ -199,7 +237,7 @@ function Conversation() {
         title: msg.action.title.replace(/^Add a numeric target: /, ""),
         current: 0,
         total: 5,
-      } as any);
+      });
       toast.success("Target added");
     } else {
       toast("Open a goal first to attach this target.");
@@ -240,20 +278,28 @@ function Conversation() {
         </span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4"
+      >
         {chat.length === 0 && (
           <div className="text-center pt-8 space-y-2">
             <div className="inline-flex h-12 w-12 rounded-full bg-white/10 border border-white/20 items-center justify-center text-white">
               <Sprout className="h-5 w-5" />
             </div>
             <p className="text-sm text-white/75 max-w-xs mx-auto">
-              Ask anything. I can help define goals, plan, or coach you through GROW. I'll propose
-              actions — you approve them.
+              Ask anything. I can help define goals, plan, or coach you through
+              GROW. I'll propose actions — you approve them.
             </p>
           </div>
         )}
         {chat.map((m) => (
-          <MessageBubble key={m.id} msg={m} onApprove={onApprove} onReject={(id) => resolveAction(id, "rejected")} />
+          <MessageBubble
+            key={m.id}
+            msg={m}
+            onApprove={onApprove}
+            onReject={(id) => resolveAction(id, "rejected")}
+          />
         ))}
       </div>
 
@@ -269,7 +315,9 @@ function Conversation() {
               }
             }}
             placeholder={
-              mode === "coaching" ? "Answer the question…" : "Ask, plan, or request an action…"
+              mode === "coaching"
+                ? "Answer the question…"
+                : "Ask, plan, or request an action…"
             }
             rows={1}
             className="flex-1 bg-transparent resize-none outline-none text-base text-[#083f3a] placeholder:text-[#083f3a]/50 max-h-32"
@@ -337,7 +385,13 @@ function MessageBubble({
       <div className="max-w-[90%] text-sm leading-relaxed text-white/90 whitespace-pre-wrap">
         {renderMarkdownLite(msg.content)}
       </div>
-      {msg.action && <ActionCard action={msg.action} onApprove={() => onApprove(msg)} onReject={() => onReject(msg.id)} />}
+      {msg.action && (
+        <ActionCard
+          action={msg.action}
+          onApprove={() => onApprove(msg)}
+          onReject={() => onReject(msg.id)}
+        />
+      )}
     </div>
   );
 }
@@ -373,7 +427,9 @@ function ActionCard({
       <div className="mt-1.5 font-display text-base">{action.title}</div>
       <p className="mt-1 text-sm text-[#083f3a]/65">{action.description}</p>
       <details className="mt-2 text-xs text-[#083f3a]/65">
-        <summary className="cursor-pointer hover:text-[#083f3a]">Why this</summary>
+        <summary className="cursor-pointer hover:text-[#083f3a]">
+          Why this
+        </summary>
         <p className="mt-1 leading-relaxed">{action.reasoning}</p>
       </details>
       {settled ? (

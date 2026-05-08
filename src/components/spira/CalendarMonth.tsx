@@ -10,7 +10,13 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Target as TargetIcon, Flag, CheckSquare } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Target as TargetIcon,
+  Flag,
+  CheckSquare,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
@@ -36,14 +42,29 @@ export function CalendarMonth() {
       map.set(key, arr);
     };
     for (const g of goals) {
-      push(g.deadline, { goalId: g.id, goalTitle: g.title, label: g.title, kind: "goal" });
+      push(g.deadline, {
+        goalId: g.id,
+        goalTitle: g.title,
+        label: g.title,
+        kind: "goal",
+      });
       for (const t of g.targets) {
-        const d = (t as any).deadline as string | undefined;
-        push(d, { goalId: g.id, goalTitle: g.title, label: t.title, kind: "target" });
+        const d = t.deadline;
+        push(d, {
+          goalId: g.id,
+          goalTitle: g.title,
+          label: t.title,
+          kind: "target",
+        });
         if (t.type === "checklist") {
           for (const item of t.items) {
             if (item.deadline) {
-              push(item.deadline, { goalId: g.id, goalTitle: g.title, label: item.text, kind: "task" });
+              push(item.deadline, {
+                goalId: g.id,
+                goalTitle: g.title,
+                label: item.text,
+                kind: "task",
+              });
             }
           }
         }
@@ -57,7 +78,9 @@ export function CalendarMonth() {
 
   const weeks: Date[][] = [];
   for (let d = start; d <= end; d = new Date(d.getTime() + 7 * 86400000)) {
-    weeks.push(Array.from({ length: 7 }, (_, i) => new Date(d.getTime() + i * 86400000)));
+    weeks.push(
+      Array.from({ length: 7 }, (_, i) => new Date(d.getTime() + i * 86400000)),
+    );
   }
 
   return (

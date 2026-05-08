@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useEffect } from "react";
 import {
   Search,
   SlidersHorizontal,
@@ -10,7 +11,12 @@ import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { useSpira } from "@/lib/spira/store";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
-import { useShellFilters } from "./shell-store";
+import {
+  useShellFilters,
+  type GoalStatusFilter,
+  type SortDirection,
+  type SortKey,
+} from "./shell-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +33,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const openAi = useAi((s) => s.open);
   const isAiOpen = useAi((s) => s.isOpen);
   const isAiWide = useAi((s) => s.isWide);
+  const loadGoals = useSpira((s) => s.loadGoals);
+  const refreshGoals = useSpira((s) => s.refreshGoals);
+  const isLoadingGoals = useSpira((s) => s.isLoading);
+  const syncError = useSpira((s) => s.syncError);
   const {
     query,
     setQuery,
@@ -50,14 +60,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
-  const filtersActive = Boolean(deadlineFrom || deadlineTo || confidence || status !== "all");
+  const filtersActive = Boolean(
+    deadlineFrom || deadlineTo || confidence || status !== "all",
+  );
   const sortActive = sort !== "recent" || sortDirection !== "desc";
   // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)
   const showFilterControls = !isWorkspace && !isCalendar;
   const showSortControls = !isWorkspace && !isCalendar && viewMode === "cards";
 
   const goals = useSpira((s) => s.goals);
-  const searchResults = query.trim() === "" ? [] : goals.filter(g => g.title.toLowerCase().includes(query.toLowerCase().trim())).slice(0, 5);
+  const searchResults =
+    query.trim() === ""
+      ? []
+      : goals
+          .filter((g) =>
+            g.title.toLowerCase().includes(query.toLowerCase().trim()),
+          )
+          .slice(0, 5);
+
+  useEffect(() => {
+    void loadGoals();
+  }, [loadGoals]);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -69,20 +92,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             "sticky top-0 z-30 transition-colors duration-200",
             isWorkspace
               ? "bg-primary border-b border-primary/20"
-              : "bg-background/85 backdrop-blur border-b hairline"
+              : "bg-background/85 backdrop-blur border-b hairline",
           )}
         >
-          <div className={cn(
-            "spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center", 
-            isWorkspace ? cn("grid gap-3", isAiOpen ? "grid-cols-[1fr_minmax(0,320px)_1fr]" : "grid-cols-[1fr_minmax(0,600px)_1fr]") : "flex gap-3 sm:gap-5",
-            (isDashboard && !isWorkspace) && "bg-primary text-white sm:bg-transparent sm:text-foreground"
-          )}>
+          <div
+            className={cn(
+              "spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center",
+              isWorkspace
+                ? cn(
+                    "grid gap-3",
+                    isAiOpen
+                      ? "grid-cols-[1fr_minmax(0,320px)_1fr]"
+                      : "grid-cols-[1fr_minmax(0,600px)_1fr]",
+                  )
+                : "flex gap-3 sm:gap-5",
+              isDashboard &&
+                !isWorkspace &&
+                "bg-primary text-white sm:bg-transparent sm:text-foreground",
+            )}
+          >
             {/* Brand */}
-            <div className={cn("flex items-center", isWorkspace ? "justify-start gap-4" : "gap-2")}>
+            <div
+              className={cn(
+                "flex items-center",
+                isWorkspace ? "justify-start gap-4" : "gap-2",
+              )}
+            >
               {isWorkspace ? (
                 <>
                   {!isAiOpen && (
-                    <Link to="/" className="text-[32px] font-extrabold tracking-normal text-white hover:text-white/90 transition-colors leading-none">
+                    <Link
+                      to="/"
+                      className="text-[32px] font-extrabold tracking-normal text-white hover:text-white/90 transition-colors leading-none"
+                    >
                       spira
                     </Link>
                   )}
@@ -98,13 +140,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : (
                 <>
                   {!isAiOpen && (
-                    <Link 
-                      to="/" 
+                    <Link
+                      to="/"
                       className={cn(
                         "text-[32px] font-extrabold tracking-normal transition-colors leading-none",
-                        isDashboard 
-                          ? "text-white hover:text-white/90 sm:text-[#ea580c] sm:hover:text-[#ea580c]/90" 
-                          : "text-[#ea580c] hover:text-[#ea580c]/90"
+                        isDashboard
+                          ? "text-white hover:text-white/90 sm:text-[#ea580c] sm:hover:text-[#ea580c]/90"
+                          : "text-[#ea580c] hover:text-[#ea580c]/90",
                       )}
                     >
                       spira
@@ -115,9 +157,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       onClick={() => openAi()}
                       className={cn(
                         "whitespace-nowrap text-[20px] font-normal transition-colors leading-none pt-1",
-                        isDashboard 
-                          ? "text-white hover:text-white/90 sm:text-primary sm:hover:text-primary/90" 
-                          : "text-primary hover:text-primary/90"
+                        isDashboard
+                          ? "text-white hover:text-white/90 sm:text-primary sm:hover:text-primary/90"
+                          : "text-primary hover:text-primary/90",
                       )}
                     >
                       ai coach
@@ -131,24 +173,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!isWorkspace && <div className="flex-1" />}
 
             {/* Search (Centered for workspace, inline for non-workspace) */}
-            <div className={cn(isWorkspace ? "flex w-full min-w-0" : "hidden sm:flex w-32 sm:w-64 shrink-0")}>
-              <div className={cn("relative w-full", !isWorkspace && "max-w-2xl")}>
-                <Search className={cn("pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4", isWorkspace ? "text-muted-foreground" : "text-muted-foreground")} />
+            <div
+              className={cn(
+                isWorkspace
+                  ? "flex w-full min-w-0"
+                  : "hidden sm:flex w-32 sm:w-64 shrink-0",
+              )}
+            >
+              <div
+                className={cn("relative w-full", !isWorkspace && "max-w-2xl")}
+              >
+                <Search
+                  className={cn(
+                    "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4",
+                    isWorkspace
+                      ? "text-muted-foreground"
+                      : "text-muted-foreground",
+                  )}
+                />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search goals"
+                  aria-label="Search goals"
                   className={cn(
                     "w-full h-10 pl-9 pr-8 rounded-md text-sm outline-none transition-colors",
                     isWorkspace
                       ? "bg-white border-transparent text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 shadow-sm"
-                      : "bg-surface border border-input placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring"
+                      : "bg-surface border border-input placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring",
                   )}
                 />
                 {query && (
                   <button
                     onClick={() => setQuery("")}
-                    className={cn("absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 grid place-items-center rounded-full transition-colors", "text-muted-foreground hover:text-foreground hover:bg-secondary")}
+                    className={cn(
+                      "absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 grid place-items-center rounded-full transition-colors",
+                      "text-muted-foreground hover:text-foreground hover:bg-secondary",
+                    )}
                     aria-label="Clear search"
                   >
                     <X className="h-3 w-3" />
@@ -157,7 +218,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {isWorkspace && query.trim() !== "" && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-surface border hairline rounded-md shadow-lg overflow-hidden z-50">
                     {searchResults.length > 0 ? (
-                      searchResults.map(r => (
+                      searchResults.map((r) => (
                         <Link
                           key={r.id}
                           to="/goals/$goalId"
@@ -169,7 +230,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </Link>
                       ))
                     ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground italic">No goals found</div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground italic">
+                        No goals found
+                      </div>
                     )}
                   </div>
                 )}
@@ -185,13 +248,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuTrigger
                       className={cn(
                         "inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
-                        filtersActive && "border-primary/40 text-primary bg-primary-soft",
+                        filtersActive &&
+                          "border-primary/40 text-primary bg-primary-soft",
                       )}
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       {filtersActive ? "Filters on" : "Filters"}
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-72 space-y-2 p-2">
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-72 space-y-2 p-2"
+                    >
                       <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
                       <DeadlineRangeControls
                         deadlineFrom={deadlineFrom}
@@ -203,18 +270,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
                       <div className="grid grid-cols-5 gap-1 px-2">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                          <button key={n} onClick={() => setConfidence(confidence === String(n) ? "" : String(n))} className={cn("h-8 rounded-md border hairline text-xs font-semibold", confidence === String(n) ? "bg-primary text-primary-foreground" : "bg-surface text-foreground")}>{n}</button>
+                          <button
+                            key={n}
+                            onClick={() =>
+                              setConfidence(
+                                confidence === String(n) ? "" : String(n),
+                              )
+                            }
+                            className={cn(
+                              "h-8 rounded-md border hairline text-xs font-semibold",
+                              confidence === String(n)
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-surface text-foreground",
+                            )}
+                          >
+                            {n}
+                          </button>
                         ))}
                       </div>
                       <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup value={status} onValueChange={(v) => setStatus(v as any)}>
-                        <DropdownMenuRadioItem value="all">All goals</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="achieved">Only achieved</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="not-achieved">Only not achieved</DropdownMenuRadioItem>
+                      <DropdownMenuRadioGroup
+                        value={status}
+                        onValueChange={(v) => setStatus(v as GoalStatusFilter)}
+                      >
+                        <DropdownMenuRadioItem value="all">
+                          All goals
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="achieved">
+                          Only achieved
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="not-achieved">
+                          Only not achieved
+                        </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  {filtersActive && <button onClick={resetFilters} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset filters"><X className="h-3.5 w-3.5" /></button>}
+                  {filtersActive && (
+                    <button
+                      onClick={resetFilters}
+                      className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft"
+                      aria-label="Reset filters"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -222,29 +321,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {showSortControls && (
                 <div className="hidden lg:flex items-center gap-1">
                   <DropdownMenu>
-                    <DropdownMenuTrigger className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
+                    <DropdownMenuTrigger
+                      className={cn(
+                        "inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
+                        sortActive &&
+                          "border-primary/40 text-primary bg-primary-soft",
+                      )}
+                    >
                       <ArrowDownUp className="h-3.5 w-3.5" />
-                      {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
+                      {sortActive
+                        ? `Sort ${sortDirection === "asc" ? "up" : "down"}`
+                        : "Sort"}
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
                       <DropdownMenuRadioGroup
                         value={sort}
-                        onValueChange={(v) => setSort(v as any)}
+                        onValueChange={(v) => setSort(v as SortKey)}
                       >
-                        <DropdownMenuRadioItem value="recent">Most recent</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="deadline">Deadline soonest</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="title">Title A→Z</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="recent">
+                          Most recent
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="deadline">
+                          Deadline soonest
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="progress">
+                          Progress
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="confidence">
+                          Confidence
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="title">
+                          Title A-Z
+                        </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                       <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
-                        <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                      <DropdownMenuRadioGroup
+                        value={sortDirection}
+                        onValueChange={(v) =>
+                          setSortDirection(v as SortDirection)
+                        }
+                      >
+                        <DropdownMenuRadioItem value="asc">
+                          Ascending
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="desc">
+                          Descending
+                        </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  {sortActive && <button onClick={resetSort} className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft" aria-label="Reset sort"><X className="h-3.5 w-3.5" /></button>}
+                  {sortActive && (
+                    <button
+                      onClick={resetSort}
+                      className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft"
+                      aria-label="Reset sort"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               )}
               {/* User */}
@@ -253,9 +387,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   SU
                 </div>
                 <div className="hidden md:block leading-tight text-right">
-                  <div className={cn("text-xs font-semibold", isWorkspace ? "text-white" : "text-foreground")}>Spira User</div>
+                  <div
+                    className={cn(
+                      "text-xs font-semibold",
+                      isWorkspace ? "text-white" : "text-foreground",
+                    )}
+                  >
+                    Spira User
+                  </div>
                 </div>
-                <ChevronDown className={cn("hidden md:inline h-3.5 w-3.5", isWorkspace ? "text-white/70" : "text-muted-foreground")} />
+                <ChevronDown
+                  className={cn(
+                    "hidden md:inline h-3.5 w-3.5",
+                    isWorkspace ? "text-white/70" : "text-muted-foreground",
+                  )}
+                />
               </div>
             </div>
           </div>
@@ -269,6 +415,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search goals..."
+                  aria-label="Search goals"
                   className="h-8 w-full rounded-md border border-input bg-surface pl-8 pr-7 text-xs outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary focus:ring-[3px] focus:ring-ring"
                 />
                 {query && (
@@ -281,12 +428,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </button>
                 )}
               </div>
-              {filtersActive && <button onClick={resetFilters} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset filters"><X className="h-3 w-3" /></button>}
+              {filtersActive && (
+                <button
+                  onClick={resetFilters}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft"
+                  aria-label="Reset filters"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
               <DropdownMenu>
-                <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", filtersActive && "border-primary/40 text-primary bg-primary-soft")}>
-                  <SlidersHorizontal className="h-3 w-3" /> {filtersActive ? "Filters on" : "Filter"}
+                <DropdownMenuTrigger
+                  className={cn(
+                    "inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80",
+                    filtersActive &&
+                      "border-primary/40 text-primary bg-primary-soft",
+                  )}
+                >
+                  <SlidersHorizontal className="h-3 w-3" />{" "}
+                  {filtersActive ? "Filters on" : "Filter"}
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-72 space-y-2 p-2">
+                <DropdownMenuContent
+                  align="start"
+                  className="w-72 space-y-2 p-2"
+                >
                   <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
                   <DeadlineRangeControls
                     deadlineFrom={deadlineFrom}
@@ -298,38 +463,98 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
                   <div className="grid grid-cols-5 gap-1 px-2">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                      <button key={n} onClick={() => setConfidence(confidence === String(n) ? "" : String(n))} className={cn("h-8 rounded-md border hairline text-xs font-semibold", confidence === String(n) ? "bg-primary text-primary-foreground" : "bg-surface text-foreground")}>{n}</button>
+                      <button
+                        key={n}
+                        onClick={() =>
+                          setConfidence(
+                            confidence === String(n) ? "" : String(n),
+                          )
+                        }
+                        className={cn(
+                          "h-8 rounded-md border hairline text-xs font-semibold",
+                          confidence === String(n)
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-surface text-foreground",
+                        )}
+                      >
+                        {n}
+                      </button>
                     ))}
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup value={status} onValueChange={(v) => setStatus(v as any)}>
-                    <DropdownMenuRadioItem value="all">All goals</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="achieved">Only achieved</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="not-achieved">Only not achieved</DropdownMenuRadioItem>
+                  <DropdownMenuRadioGroup
+                    value={status}
+                    onValueChange={(v) => setStatus(v as GoalStatusFilter)}
+                  >
+                    <DropdownMenuRadioItem value="all">
+                      All goals
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="achieved">
+                      Only achieved
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="not-achieved">
+                      Only not achieved
+                    </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {showSortControls && sortActive && <button onClick={resetSort} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft" aria-label="Reset sort"><X className="h-3 w-3" /></button>}
+              {showSortControls && sortActive && (
+                <button
+                  onClick={resetSort}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft"
+                  aria-label="Reset sort"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
               {showSortControls && (
                 <DropdownMenu>
-                  <DropdownMenuTrigger className={cn("inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80", sortActive && "border-primary/40 text-primary bg-primary-soft")}>
-                    <ArrowDownUp className="h-3 w-3" /> {sortActive ? `Sort ${sortDirection === "asc" ? "↑" : "↓"}` : "Sort"}
+                  <DropdownMenuTrigger
+                    className={cn(
+                      "inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80",
+                      sortActive &&
+                        "border-primary/40 text-primary bg-primary-soft",
+                    )}
+                  >
+                    <ArrowDownUp className="h-3 w-3" />{" "}
+                    {sortActive
+                      ? `Sort ${sortDirection === "asc" ? "up" : "down"}`
+                      : "Sort"}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuRadioGroup
                       value={sort}
-                      onValueChange={(v) => setSort(v as any)}
+                      onValueChange={(v) => setSort(v as SortKey)}
                     >
-                      <DropdownMenuRadioItem value="recent">Recent</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="deadline">Deadline</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="confidence">Confidence</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="recent">
+                        Recent
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="deadline">
+                        Deadline
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="progress">
+                        Progress
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="confidence">
+                        Confidence
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="title">
+                        Title
+                      </DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                     <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup value={sortDirection} onValueChange={(v) => setSortDirection(v as any)}>
-                      <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                    <DropdownMenuRadioGroup
+                      value={sortDirection}
+                      onValueChange={(v) =>
+                        setSortDirection(v as SortDirection)
+                      }
+                    >
+                      <DropdownMenuRadioItem value="asc">
+                        Ascending
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="desc">
+                        Descending
+                      </DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -338,7 +563,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </header>
 
-        <main className="spira-main min-w-0 flex-1 md:min-w-[390px]">{children}</main>
+        {syncError && (
+          <div
+            className="border-b border-destructive/25 bg-destructive/10 px-4 py-2 text-sm text-destructive sm:px-6"
+            role="status"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Backend sync failed: {syncError}</span>
+              <button
+                type="button"
+                onClick={() => void refreshGoals()}
+                className="rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-semibold hover:bg-destructive/10"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+        {isLoadingGoals && !syncError && (
+          <div
+            className="border-b hairline bg-primary-soft px-4 py-2 text-sm text-primary sm:px-6"
+            role="status"
+          >
+            Syncing goals with the backend...
+          </div>
+        )}
+        <main className="spira-main min-w-0 flex-1 md:min-w-[390px]">
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -356,7 +608,10 @@ function DeadlineRangeControls({
   setDeadlineTo: (value: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 px-2" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="grid grid-cols-2 gap-2 px-2"
+      onClick={(e) => e.stopPropagation()}
+    >
       <DeadlinePopover
         iso={deadlineFrom || undefined}
         onChange={(next) => setDeadlineFrom(next ?? "")}
@@ -376,17 +631,5 @@ function DeadlineRangeControls({
         className="h-9 justify-start px-2 text-xs"
       />
     </div>
-  );
-}
-
-function WorkspaceBreadcrumbTitle() {
-  const params = useParams({ strict: false }) as { goalId?: string };
-  const goalId = params.goalId;
-  const goal = useSpira((s) => s.goals.find((g) => g.id === goalId));
-  if (!goal) return <span className="text-white/50 truncate max-w-[180px] sm:max-w-xs">&hellip;</span>;
-  return (
-    <span className="text-white/90 font-medium truncate max-w-[180px] sm:max-w-xs">
-      {goal.title || "Untitled goal"}
-    </span>
   );
 }

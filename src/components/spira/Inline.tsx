@@ -1,4 +1,9 @@
-import { useState, useRef, useEffect, type TextareaHTMLAttributes } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  type TextareaHTMLAttributes,
+} from "react";
 import { Plus, X, BookmarkCheck, BookmarkX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,13 +48,15 @@ export function InlineList({
           "flex items-stretch overflow-hidden rounded-md border transition-colors focus-within:border-primary",
           tone === "warning"
             ? "border-destructive/30 focus-within:border-destructive bg-surface"
-            : "border-border bg-surface"
+            : "border-border bg-surface",
         )}
       >
         <div
           className={cn(
             "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
-            tone === "warning" ? "border-destructive/20 bg-destructive/5" : "border-border bg-secondary/30"
+            tone === "warning"
+              ? "border-destructive/20 bg-destructive/5"
+              : "border-border bg-secondary/30",
           )}
         >
           <Plus
@@ -74,7 +81,7 @@ export function InlineList({
                 "ml-2 text-sm font-semibold rounded-md px-2 py-1",
                 tone === "warning"
                   ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                  : "bg-primary/10 text-primary hover:bg-primary/20"
+                  : "bg-primary/10 text-primary hover:bg-primary/20",
               )}
             >
               Add
@@ -95,7 +102,9 @@ export function InlineList({
             key={it.id}
             className={cn(
               "group flex items-start gap-3 rounded-md px-2 py-2 transition-colors",
-              onPrimary ? "hover:bg-primary-foreground/10" : "hover:bg-white/60",
+              onPrimary
+                ? "hover:bg-primary-foreground/10"
+                : "hover:bg-white/60",
             )}
           >
             <Marker kind={marker} tone={tone} variant={variant} />
@@ -206,10 +215,26 @@ function Marker({
 }) {
   const onPrimary = variant === "onPrimary";
   if (kind === "check") {
-    return <BookmarkCheck className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-primary")} strokeWidth={2} />;
+    return (
+      <BookmarkCheck
+        className={cn(
+          "mt-0.5 h-5 w-5 shrink-0",
+          onPrimary ? "text-primary-foreground" : "text-primary",
+        )}
+        strokeWidth={2}
+      />
+    );
   }
   if (kind === "warn") {
-    return <BookmarkX className={cn("mt-0.5 h-5 w-5 shrink-0", onPrimary ? "text-primary-foreground" : "text-[#ea580c]")} strokeWidth={2} />;
+    return (
+      <BookmarkX
+        className={cn(
+          "mt-0.5 h-5 w-5 shrink-0",
+          onPrimary ? "text-primary-foreground" : "text-[#ea580c]",
+        )}
+        strokeWidth={2}
+      />
+    );
   }
   return (
     <span
@@ -241,14 +266,14 @@ export function AutoTextarea({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    
+
     const updateHeight = () => {
       el.style.height = "auto";
       el.style.height = el.scrollHeight + "px";
     };
-    
+
     updateHeight();
-    
+
     window.addEventListener("resize", updateHeight);
     return () => window.removeEventListener("resize", updateHeight);
   }, [value]);
