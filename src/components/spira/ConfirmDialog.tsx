@@ -34,14 +34,14 @@ export function ConfirmDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="bg-surface border-0 rounded-lg shadow-2xl max-w-[640px] p-6">
-        <button 
+        <button
           onClick={() => onOpenChange(false)}
           className="absolute right-5 top-5 text-muted-foreground/70 hover:text-foreground transition-colors"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
         </button>
-        
+
         <AlertDialogHeader className="space-y-2 text-left pr-8">
           <AlertDialogTitle className="font-sans font-semibold text-[20px] text-foreground tracking-tight">
             {title}
@@ -50,7 +50,7 @@ export function ConfirmDialog({
             {description}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        
+
         <AlertDialogFooter className="mt-6 gap-3 sm:gap-3 flex-row justify-end">
           <AlertDialogCancel className="mt-0 h-10 px-5 rounded-md border border-border/80 bg-surface text-foreground font-semibold hover:bg-secondary">
             {cancelLabel}

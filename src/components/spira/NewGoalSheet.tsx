@@ -2,7 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfidenceStepper } from "./Confidence";
@@ -37,6 +37,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
           New goal
         </h2>
         <button
+          type="button"
           onClick={onDone}
           className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
           aria-label="Close"
@@ -46,7 +47,10 @@ function FormBody({ onDone }: { onDone: () => void }) {
       </div>
 
       {/* Body */}
-      <div id="new-goal-scroll-container" className="px-7 pt-2 pb-[400px] space-y-6 overflow-y-auto flex-1">
+      <div
+        id="new-goal-scroll-container"
+        className="px-7 pt-2 pb-[400px] space-y-6 overflow-y-auto flex-1"
+      >
         <Field label="Title" required>
           <Input
             value={title}
@@ -72,7 +76,11 @@ function FormBody({ onDone }: { onDone: () => void }) {
         <Field
           label="Confidence"
           required
-          hintRight={<span className="num font-semibold text-foreground">{confidence}/10</span>}
+          hintRight={
+            <span className="num font-semibold text-foreground">
+              {confidence}/10
+            </span>
+          }
         >
           <div className="pt-1">
             <ConfidenceStepper
@@ -93,10 +101,15 @@ function FormBody({ onDone }: { onDone: () => void }) {
 
       {/* Footer — sticky */}
       <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
-        <button onClick={onDone} className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">
+        <button
+          type="button"
+          onClick={onDone}
+          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
+        >
           Cancel
         </button>
         <button
+          type="button"
           onClick={() => submit(true)}
           disabled={!title.trim()}
           className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
@@ -161,6 +174,10 @@ export function NewGoalSheet({
         side="right"
         className="w-full sm:max-w-xl p-0 flex flex-col bg-surface border-l hairline"
       >
+        <SheetTitle className="sr-only">New goal</SheetTitle>
+        <SheetDescription className="sr-only">
+          Create a new Spira goal.
+        </SheetDescription>
         <FormBody onDone={() => onOpenChange(false)} />
       </SheetContent>
     </Sheet>

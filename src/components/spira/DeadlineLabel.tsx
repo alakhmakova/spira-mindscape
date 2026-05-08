@@ -40,7 +40,12 @@ export function DeadlineLabel({
       <Calendar className="h-3 w-3 opacity-70" />
       {format(d, "MMM d, yyyy")}
       <span className="opacity-60 font-normal">
-        · {overdue ? `${Math.abs(days)}d overdue` : days === 0 ? "today" : `${days}d left`}
+        ·{" "}
+        {overdue
+          ? `${Math.abs(days)}d overdue`
+          : days === 0
+            ? "today"
+            : `${days}d left`}
       </span>
     </span>
   );

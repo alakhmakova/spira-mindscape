@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,6 +66,35 @@ public class TargetService {
         return checklistItemRepository.findByTargetIdInOrderByTargetIdAscCreatedAtAsc(targetIds)
                 .stream()
                 .collect(Collectors.groupingBy(item -> item.getTarget().getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<Long, Double> calculateGoalProgressByGoalIds(List<Long> goalIds) {
+        if (goalIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Target> targets = targetRepository.findByGoalIdInOrderByGoalIdAscCreatedAtAsc(goalIds);
+        Map<Long, List<Target>> targetsByGoalId = targets.stream()
+                .collect(Collectors.groupingBy(target -> target.getGoal().getId()));
+        Map<Long, Double> progressByTargetId = calculateProgressByTargetsInternal(targets);
+
+        Map<Long, Double> result = new LinkedHashMap<>();
+        for (Long goalId : goalIds) {
+            List<Target> goalTargets = targetsByGoalId.getOrDefault(goalId, List.of());
+            double progress = goalTargets.isEmpty() ? 0 :
+                    goalTargets.stream()
+                            .map(Target::getId)
+                            .mapToDouble(targetId -> progressByTargetId.getOrDefault(targetId, 0d))
+                            .average()
+                            .orElse(0);
+            result.put(goalId, progress);
+        }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<Long, Double> calculateProgressByTargets(List<Target> targets) {
+        return calculateProgressByTargetsInternal(targets);
     }
 
     @Transactional
@@ -143,5 +173,63 @@ public class TargetService {
         if (value == null || value.isBlank()) return null;
         try { return Long.parseLong(value); }
         catch (NumberFormatException ignored) { return null; }
+    }
+
+    private Map<Long, Double> calculateProgressByTargetsInternal(List<Target> targets) {
+        List<Long> checklistTargetIds = targets.stream()
+                .filter(target -> "checklist".equals(normalizeNullableType(target.getType())))
+                .map(Target::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, List<ChecklistItem>> itemsByTargetId = findItemsByTargetIds(checklistTargetIds);
+
+        Map<Long, Double> result = new LinkedHashMap<>();
+        for (Target target : targets) {
+            if (target.getId() != null) {
+                result.put(target.getId(),
+                        calculateTargetProgress(target, itemsByTargetId.getOrDefault(target.getId(), List.of())));
+            }
+        }
+        return result;
+    }
+
+    private double calculateTargetProgress(Target target, List<ChecklistItem> checklistItems) {
+        String type = normalizeNullableType(target.getType());
+        if ("binary".equals(type)) {
+            return Boolean.TRUE.equals(target.getDone()) ? 1 : 0;
+        }
+
+        if ("numeric".equals(type)) {
+            double currentValue = target.getCurrent() == null ? 0 : target.getCurrent();
+            double totalValue = target.getTotal() == null ? 0 : target.getTotal();
+            double startValue = target.getStart() == null
+                    ? (currentValue > totalValue ? currentValue : 0)
+                    : target.getStart();
+            double distance = Math.abs(totalValue - startValue);
+            if (distance == 0) {
+                return currentValue == totalValue ? 1 : 0;
+            }
+            double completed = totalValue >= startValue
+                    ? currentValue - startValue
+                    : startValue - currentValue;
+            return Math.max(0, Math.min(1, completed / distance));
+        }
+
+        if ("checklist".equals(type)) {
+            if (checklistItems.isEmpty()) {
+                return 0;
+            }
+            long completed = checklistItems.stream()
+                    .filter(item -> Boolean.TRUE.equals(item.getDone()))
+                    .count();
+            return (double) completed / checklistItems.size();
+        }
+
+        return 0;
+    }
+
+    private String normalizeNullableType(String type) {
+        return type == null ? "" : type.toLowerCase(Locale.ROOT);
     }
 }

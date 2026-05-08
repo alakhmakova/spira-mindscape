@@ -73,17 +73,13 @@ export function RichTextEditor({
     if (value !== editor.getHTML()) {
       editor.commands.setContent(value || "", { emitUpdate: false });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, value]);
 
   if (!editor) return null;
 
   if (isMobile) {
     return (
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        data-vaul-no-drag
-      >
+      <div className="flex min-h-0 flex-1 flex-col" data-vaul-no-drag>
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           <EditorContent editor={editor} />
         </div>
@@ -181,7 +177,8 @@ function Toolbar({
     const node = scrollRef.current;
     if (!node) return;
 
-    const amount = Math.max(160, node.clientWidth * 0.65) * (direction === "left" ? -1 : 1);
+    const amount =
+      Math.max(160, node.clientWidth * 0.65) * (direction === "left" ? -1 : 1);
     node.scrollBy({ left: amount, behavior: "smooth" });
   };
 
@@ -235,59 +232,126 @@ function Toolbar({
 
   const toolbarItems = (
     <>
-      <Btn label="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+      <Btn
+        label="Heading 1"
+        active={editor.isActive("heading", { level: 1 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+      >
         <Heading1 className="h-4 w-4" />
       </Btn>
-      <Btn label="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+      <Btn
+        label="Heading 2"
+        active={editor.isActive("heading", { level: 2 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+      >
         <Heading2 className="h-4 w-4" />
       </Btn>
-      <Btn label="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+      <Btn
+        label="Heading 3"
+        active={editor.isActive("heading", { level: 3 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+      >
         <Heading3 className="h-4 w-4" />
       </Btn>
       <Sep />
-      <Btn label="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
+      <Btn
+        label="Bold"
+        active={editor.isActive("bold")}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+      >
         <Bold className="h-4 w-4" />
       </Btn>
-      <Btn label="Italic" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
+      <Btn
+        label="Italic"
+        active={editor.isActive("italic")}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+      >
         <Italic className="h-4 w-4" />
       </Btn>
-      <Btn label="Underline" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+      <Btn
+        label="Underline"
+        active={editor.isActive("underline")}
+        onClick={() => editor.chain().focus().toggleUnderline().run()}
+      >
         <UnderlineIcon className="h-4 w-4" />
       </Btn>
-      <Btn label="Strikethrough" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
+      <Btn
+        label="Strikethrough"
+        active={editor.isActive("strike")}
+        onClick={() => editor.chain().focus().toggleStrike().run()}
+      >
         <Strikethrough className="h-4 w-4" />
       </Btn>
-      <Btn label="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()}>
+      <Btn
+        label="Highlight"
+        active={editor.isActive("highlight")}
+        onClick={() => editor.chain().focus().toggleHighlight().run()}
+      >
         <Highlighter className="h-4 w-4" />
       </Btn>
       <Sep />
-      <Btn label="Task list" active={editor.isActive("taskList")} onClick={() => editor.chain().focus().toggleTaskList().run()}>
+      <Btn
+        label="Task list"
+        active={editor.isActive("taskList")}
+        onClick={() => editor.chain().focus().toggleTaskList().run()}
+      >
         <ListChecks className="h-4 w-4" />
       </Btn>
-      <Btn label="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+      <Btn
+        label="Bullet list"
+        active={editor.isActive("bulletList")}
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+      >
         <List className="h-4 w-4" />
       </Btn>
-      <Btn label="Numbered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+      <Btn
+        label="Numbered list"
+        active={editor.isActive("orderedList")}
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+      >
         <ListOrdered className="h-4 w-4" />
       </Btn>
       <Sep />
-      <Btn label="Quote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+      <Btn
+        label="Quote"
+        active={editor.isActive("blockquote")}
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+      >
         <Quote className="h-4 w-4" />
       </Btn>
-      <Btn label="Code" active={editor.isActive("codeBlock")} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
+      <Btn
+        label="Code"
+        active={editor.isActive("codeBlock")}
+        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+      >
         <Code className="h-4 w-4" />
       </Btn>
-      <Btn label="Link" active={editor.isActive("link")} onClick={openLinkDialog}>
+      <Btn
+        label="Link"
+        active={editor.isActive("link")}
+        onClick={openLinkDialog}
+      >
         <LinkIcon className="h-4 w-4" />
       </Btn>
-      <Btn label="Divider" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+      <Btn
+        label="Divider"
+        onClick={() => editor.chain().focus().setHorizontalRule().run()}
+      >
         <Minus className="h-4 w-4" />
       </Btn>
       <Sep />
-      <Btn label="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}>
+      <Btn
+        label="Undo"
+        disabled={!editor.can().undo()}
+        onClick={() => editor.chain().focus().undo().run()}
+      >
         <Undo2 className="h-4 w-4" />
       </Btn>
-      <Btn label="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}>
+      <Btn
+        label="Redo"
+        disabled={!editor.can().redo()}
+        onClick={() => editor.chain().focus().redo().run()}
+      >
         <Redo2 className="h-4 w-4" />
       </Btn>
     </>
@@ -438,7 +502,9 @@ function LinkDialog({
             onClick={canRemove ? onRemove : () => onOpenChange(false)}
             className={cn(
               "h-11 px-4 text-sm font-semibold",
-              canRemove ? "text-destructive hover:text-destructive/80" : "link-action",
+              canRemove
+                ? "text-destructive hover:text-destructive/80"
+                : "link-action",
             )}
           >
             {canRemove ? "Remove link" : "Cancel"}

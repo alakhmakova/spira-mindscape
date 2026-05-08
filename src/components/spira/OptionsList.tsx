@@ -6,7 +6,13 @@ import { cn } from "@/lib/utils";
 import { InlineText } from "./Inline";
 
 export function OptionsList({ goal }: { goal: Goal }) {
-  const { addOption, updateOption, selectOption, removeOption, reorderOptions } = useSpira();
+  const {
+    addOption,
+    updateOption,
+    selectOption,
+    removeOption,
+    reorderOptions,
+  } = useSpira();
   const [draft, setDraft] = useState("");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const touchDragIdx = useRef<number | null>(null);
@@ -33,14 +39,19 @@ export function OptionsList({ goal }: { goal: Goal }) {
             onDragStart={() => setDragIdx(idx)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => {
-              if (dragIdx !== null && dragIdx !== idx) reorderOptions(goal.id, dragIdx, idx);
+              if (dragIdx !== null && dragIdx !== idx)
+                reorderOptions(goal.id, dragIdx, idx);
               setDragIdx(null);
             }}
             onTouchMove={(e) => {
               if (touchDragIdx.current === null) return;
               const touch = e.touches[0];
-              const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-option-index]");
-              const nextIdx = target ? Number((target as HTMLElement).dataset.optionIndex) : NaN;
+              const target = document
+                .elementFromPoint(touch.clientX, touch.clientY)
+                ?.closest("[data-option-index]");
+              const nextIdx = target
+                ? Number((target as HTMLElement).dataset.optionIndex)
+                : NaN;
               if (!Number.isNaN(nextIdx) && nextIdx !== touchDragIdx.current) {
                 reorderOptions(goal.id, touchDragIdx.current, nextIdx);
                 touchDragIdx.current = nextIdx;
@@ -53,7 +64,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
               "group flex items-stretch overflow-hidden rounded-md border transition-colors",
               opt.selected
                 ? "border-primary"
-                : "border-border hover:border-primary/50"
+                : "border-border hover:border-primary/50",
             )}
           >
             {/* Left Section with Radio */}
@@ -63,18 +74,22 @@ export function OptionsList({ goal }: { goal: Goal }) {
                 "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
                 opt.selected
                   ? "bg-primary-soft border-primary"
-                  : "bg-surface border-border hover:bg-secondary/50"
+                  : "bg-surface border-border hover:bg-secondary/50",
               )}
               aria-label="Select strategy"
             >
-              <div className={cn(
-                "h-5 w-5 rounded-full border-2 grid place-items-center transition-colors",
-                opt.selected ? "border-primary" : "border-border-strong"
-              )}>
-                {opt.selected && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
+              <div
+                className={cn(
+                  "h-5 w-5 rounded-full border-2 grid place-items-center transition-colors",
+                  opt.selected ? "border-primary" : "border-border-strong",
+                )}
+              >
+                {opt.selected && (
+                  <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+                )}
               </div>
             </button>
-            
+
             {/* Right Section with Text */}
             <div className="flex-1 flex items-center bg-surface px-4 py-3 relative min-h-[48px]">
               <button
@@ -95,7 +110,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
                 className="flex-1 text-base font-medium leading-relaxed"
                 ariaLabel="Edit strategy"
               />
-              
+
               <button
                 onClick={() => removeOption(goal.id, opt.id)}
                 className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"

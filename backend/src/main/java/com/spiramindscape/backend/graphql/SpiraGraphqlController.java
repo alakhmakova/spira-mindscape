@@ -223,13 +223,10 @@ public class SpiraGraphqlController {
 
     @BatchMapping(typeName = "Goal", field = "progress")
     public Map<Goal, Double> goalProgress(List<Goal> goals) {
-        Map<Long, List<Target>> targetsByGoalId = targetService.findByGoalIds(goalIds(goals));
+        Map<Long, Double> progressByGoalId = targetService.calculateGoalProgressByGoalIds(goalIds(goals));
         Map<Goal, Double> result = new LinkedHashMap<>();
         for (Goal goal : goals) {
-            List<Target> goalTargets = targetsByGoalId.getOrDefault(goal.getId(), List.of());
-            double progress = goalTargets.isEmpty() ? 0 :
-                    goalTargets.stream().mapToDouble(Target::getProgress).average().orElse(0);
-            result.put(goal, progress);
+            result.put(goal, progressByGoalId.getOrDefault(goal.getId(), 0d));
         }
         return result;
     }
@@ -251,9 +248,10 @@ public class SpiraGraphqlController {
 
     @BatchMapping(typeName = "Target", field = "progress")
     public Map<Target, Double> progress(List<Target> targets) {
+        Map<Long, Double> progressByTargetId = targetService.calculateProgressByTargets(targets);
         Map<Target, Double> result = new LinkedHashMap<>();
         for (Target target : targets) {
-            result.put(target, target.getProgress());
+            result.put(target, progressByTargetId.getOrDefault(target.getId(), 0d));
         }
         return result;
     }

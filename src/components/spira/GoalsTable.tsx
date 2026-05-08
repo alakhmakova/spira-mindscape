@@ -13,39 +13,99 @@ import { Checkbox } from "@/components/ui/checkbox";
 type TimelineKind = "goal" | "target" | "task";
 
 type TimelineItem =
-  | { id: string; kind: "goal"; goal: Goal; title: string; deadline: string; progress: number; achievedAt?: string }
-  | { id: string; kind: "target"; goal: Goal; target: Target; title: string; deadline: string; progress: number; achievedAt?: string }
   | {
-    id: string;
-    kind: "task";
-    goal: Goal;
-    target: Extract<Target, { type: "checklist" }>;
-    title: string;
-    deadline: string;
-    done: boolean;
-    achievedAt?: string;
-  };
+      id: string;
+      kind: "goal";
+      goal: Goal;
+      title: string;
+      deadline: string;
+      progress: number;
+      achievedAt?: string;
+    }
+  | {
+      id: string;
+      kind: "target";
+      goal: Goal;
+      target: Target;
+      title: string;
+      deadline: string;
+      progress: number;
+      achievedAt?: string;
+    }
+  | {
+      id: string;
+      kind: "task";
+      goal: Goal;
+      target: Extract<Target, { type: "checklist" }>;
+      title: string;
+      deadline: string;
+      done: boolean;
+      achievedAt?: string;
+    };
 
 function GoalIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978" /><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978" /><path d="M18 9h1.5a1 1 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" /><path d="M6 9H4.5a1 1 0 0 1 0-5H6" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978" />
+      <path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978" />
+      <path d="M18 9h1.5a1 1 0 0 0 0-5H18" />
+      <path d="M4 22h16" />
+      <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
+      <path d="M6 9H4.5a1 1 0 0 1 0-5H6" />
     </svg>
   );
 }
 
 function TargetIconSvg(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M17 3h4v4" /><path d="M18.575 11.082a13 13 0 0 1 1.048 9.027 1.17 1.17 0 0 1-1.914.597L14 17" /><path d="M7 10 3.29 6.29a1.17 1.17 0 0 1 .6-1.91 13 13 0 0 1 9.03 1.05" /><path d="M7 14a1.7 1.7 0 0 0-1.207.5l-2.646 2.646A.5.5 0 0 0 3.5 18H5a1 1 0 0 1 1 1v1.5a.5.5 0 0 0 .854.354L9.5 18.207A1.7 1.7 0 0 0 10 17v-2a1 1 0 0 0-1-1z" /><path d="M9.707 14.293 21 3" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M17 3h4v4" />
+      <path d="M18.575 11.082a13 13 0 0 1 1.048 9.027 1.17 1.17 0 0 1-1.914.597L14 17" />
+      <path d="M7 10 3.29 6.29a1.17 1.17 0 0 1 .6-1.91 13 13 0 0 1 9.03 1.05" />
+      <path d="M7 14a1.7 1.7 0 0 0-1.207.5l-2.646 2.646A.5.5 0 0 0 3.5 18H5a1 1 0 0 1 1 1v1.5a.5.5 0 0 0 .854.354L9.5 18.207A1.7 1.7 0 0 0 10 17v-2a1 1 0 0 0-1-1z" />
+      <path d="M9.707 14.293 21 3" />
     </svg>
   );
 }
 
 function TaskIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M21.801 10A10 10 0 1 1 17 3.335" /><path d="m9 11 3 3L22 4" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+      <path d="m9 11 3 3L22 4" />
     </svg>
   );
 }
@@ -77,10 +137,18 @@ function PartyPopperIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filteredGoalIds?: Set<string> }) {
+export function GoalsTable({
+  goals,
+  filteredGoalIds,
+}: {
+  goals: Goal[];
+  filteredGoalIds?: Set<string>;
+}) {
   const nav = useNavigate();
   const { updateGoal, updateTarget } = useSpira();
-  const [visibleKinds, setVisibleKinds] = useState<Record<TimelineKind, boolean>>({ goal: true, target: true, task: true });
+  const [visibleKinds, setVisibleKinds] = useState<
+    Record<TimelineKind, boolean>
+  >({ goal: true, target: true, task: true });
   const items = buildTimelineItems(goals, visibleKinds, filteredGoalIds);
 
   const toggleKind = (kind: TimelineKind) => {
@@ -89,10 +157,15 @@ export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filtered
 
   const updateItemDeadline = (item: TimelineItem, next?: string) => {
     if (item.kind === "goal") updateGoal(item.goal.id, { deadline: next });
-    if (item.kind === "target") updateTarget(item.goal.id, item.target.id, { deadline: next });
+    if (item.kind === "target")
+      updateTarget(item.goal.id, item.target.id, { deadline: next });
     if (item.kind === "task") {
       updateTarget(item.goal.id, item.target.id, {
-        items: item.target.items.map((task) => (task.id === item.id.replace("task-", "") ? { ...task, deadline: next } : task)),
+        items: item.target.items.map((task) =>
+          task.id === item.id.replace("task-", "")
+            ? { ...task, deadline: next }
+            : task,
+        ),
       });
     }
   };
@@ -100,9 +173,21 @@ export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filtered
   return (
     <div className="space-y-7">
       <div className="grid gap-2 sm:grid-cols-3">
-        <KindCheckbox checked={visibleKinds.goal} onChange={() => toggleKind("goal")} label="Goals" />
-        <KindCheckbox checked={visibleKinds.target} onChange={() => toggleKind("target")} label="Targets" />
-        <KindCheckbox checked={visibleKinds.task} onChange={() => toggleKind("task")} label="Tasks" />
+        <KindCheckbox
+          checked={visibleKinds.goal}
+          onChange={() => toggleKind("goal")}
+          label="Goals"
+        />
+        <KindCheckbox
+          checked={visibleKinds.target}
+          onChange={() => toggleKind("target")}
+          label="Targets"
+        />
+        <KindCheckbox
+          checked={visibleKinds.task}
+          onChange={() => toggleKind("task")}
+          label="Tasks"
+        />
       </div>
 
       {items.length === 0 ? (
@@ -116,12 +201,19 @@ export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filtered
               key={item.id}
               item={item}
               isLast={idx === items.length - 1}
-              onDeadlineChange={(next?: string) => updateItemDeadline(item, next)}
+              onDeadlineChange={(next?: string) =>
+                updateItemDeadline(item, next)
+              }
               onOpen={() =>
                 nav({
                   to: "/goals/$goalId",
                   params: { goalId: item.goal.id },
-                  hash: item.kind === "goal" ? "goal-top" : item.kind === "target" ? `target-${item.target.id}` : `task-${item.id.replace("task-", "")}`,
+                  hash:
+                    item.kind === "goal"
+                      ? "goal-top"
+                      : item.kind === "target"
+                        ? `target-${item.target.id}`
+                        : `task-${item.id.replace("task-", "")}`,
                 })
               }
             />
@@ -132,7 +224,11 @@ export function GoalsTable({ goals, filteredGoalIds }: { goals: Goal[]; filtered
   );
 }
 
-function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, boolean>, filteredGoalIds?: Set<string>): TimelineItem[] {
+function buildTimelineItems(
+  goals: Goal[],
+  visibleKinds: Record<TimelineKind, boolean>,
+  filteredGoalIds?: Set<string>,
+): TimelineItem[] {
   const items: TimelineItem[] = [];
   // When filters are active (filteredGoalIds is provided), only include items whose goal passed the filter
   const hasGoalFilter = filteredGoalIds !== undefined;
@@ -144,7 +240,9 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
 
     // Auto-compute goal achieved date from targets if missing
     if (gProgress >= 1 && !goalAchievedAt) {
-      const dates = goal.targets.map(t => t.achievedAt).filter(Boolean) as string[];
+      const dates = goal.targets
+        .map((t) => t.achievedAt)
+        .filter(Boolean) as string[];
       if (dates.length > 0) {
         dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
         goalAchievedAt = dates[0];
@@ -169,7 +267,9 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
 
       // Auto-compute checklist target achieved date from tasks if missing
       if (tProgress >= 1 && !targetAchievedAt && target.type === "checklist") {
-        const dates = target.items.map(i => i.achievedAt).filter(Boolean) as string[];
+        const dates = target.items
+          .map((i) => i.achievedAt)
+          .filter(Boolean) as string[];
         if (dates.length > 0) {
           dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
           targetAchievedAt = dates[0];
@@ -189,7 +289,11 @@ function buildTimelineItems(goals: Goal[], visibleKinds: Record<TimelineKind, bo
         });
       }
 
-      if (target.type === "checklist" && visibleKinds.task && goalPassesFilter) {
+      if (
+        target.type === "checklist" &&
+        visibleKinds.task &&
+        goalPassesFilter
+      ) {
         for (const task of target.items) {
           if (!task.deadline) continue;
           items.push({
@@ -227,7 +331,10 @@ function TimelineRow({
   const days = differenceInCalendarDays(deadline, new Date());
   const overdue = isPast(deadline) && !achieved && days < 0;
 
-  const achievedButtonColor = item.kind === "goal" ? "bg-primary border-primary" : "bg-[#ea580c] border-[#ea580c]";
+  const achievedButtonColor =
+    item.kind === "goal"
+      ? "bg-primary border-primary"
+      : "bg-[#ea580c] border-[#ea580c]";
 
   return (
     <div className="group relative flex gap-5">
@@ -236,7 +343,9 @@ function TimelineRow({
           <div
             className={cn(
               "absolute bottom-0 left-[9px] top-5 w-[2px]",
-              achieved ? "bg-primary" : "bg-border border-l-2 border-dashed border-border-strong bg-transparent",
+              achieved
+                ? "bg-primary"
+                : "bg-border border-l-2 border-dashed border-border-strong bg-transparent",
             )}
           />
         )}
@@ -256,7 +365,10 @@ function TimelineRow({
 
       <div className="flex-1 pb-8">
         <div className="flex items-start">
-          <button onClick={onOpen} className="text-left transition-opacity hover:opacity-80 focus-visible:opacity-80 focus-visible:outline-none">
+          <button
+            onClick={onOpen}
+            className="text-left transition-opacity hover:opacity-80 focus-visible:opacity-80 focus-visible:outline-none"
+          >
             <h3 className="text-base font-bold leading-tight text-foreground">
               {item.title}
               <meta.icon className="inline-block ml-2.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70 align-[-2px]" />
@@ -267,7 +379,10 @@ function TimelineRow({
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px]">
           {achieved ? (
             <span className="font-medium text-muted-foreground/60 italic">
-              Completed {item.achievedAt ? format(new Date(item.achievedAt), "MMM d") : ""}
+              Completed{" "}
+              {item.achievedAt
+                ? format(new Date(item.achievedAt), "MMM d")
+                : ""}
             </span>
           ) : (
             <>
@@ -298,7 +413,11 @@ function TimelineRow({
 
         {item.kind === "goal" && (
           <div className="mt-3 flex max-w-xs items-center gap-3">
-            <ProgressBar value={item.progress} className="h-1 flex-1" tone="primary" />
+            <ProgressBar
+              value={item.progress}
+              className="h-1 flex-1"
+              tone="primary"
+            />
             <span className="num text-[11px] font-bold tabular-nums text-muted-foreground/60">
               {Math.round(item.progress * 100)}%
             </span>
@@ -318,7 +437,9 @@ function TimelineRow({
             >
               {achieved ? (
                 <>
-                  {item.kind === "goal" && <PartyPopperIcon className="h-3.5 w-3.5" />}
+                  {item.kind === "goal" && (
+                    <PartyPopperIcon className="h-3.5 w-3.5" />
+                  )}
                   {item.kind === "goal" ? "Achieved" : "Complete"}
                 </>
               ) : (
@@ -332,7 +453,15 @@ function TimelineRow({
   );
 }
 
-function KindCheckbox({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
+function KindCheckbox({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
   return (
     <label
       className={cn(
@@ -343,14 +472,23 @@ function KindCheckbox({ checked, onChange, label }: { checked: boolean; onChange
       <span
         className={cn(
           "flex w-12 shrink-0 items-center justify-center border-r transition-colors",
-          checked ? "bg-primary-soft border-primary" : "bg-surface border-border group-hover:bg-secondary/50",
+          checked
+            ? "bg-primary-soft border-primary"
+            : "bg-surface border-border group-hover:bg-secondary/50",
         )}
       >
-        <div className={cn(
-          "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
-          checked ? "bg-primary border-primary" : "border-border-strong",
-        )}>
-          {checked && <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />}
+        <div
+          className={cn(
+            "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+            checked ? "bg-primary border-primary" : "border-border-strong",
+          )}
+        >
+          {checked && (
+            <Check
+              className="h-3 w-3 text-primary-foreground"
+              strokeWidth={3}
+            />
+          )}
         </div>
         <input
           type="checkbox"

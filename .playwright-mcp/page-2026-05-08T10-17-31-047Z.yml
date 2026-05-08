@@ -1,0 +1,152 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - banner:
+          - generic:
+            - generic:
+              - link:
+                - /url: /
+                - text: spira
+              - button: ai coach
+            - generic:
+              - generic:
+                - img
+                - textbox:
+                  - /placeholder: Search goals
+            - generic:
+              - generic:
+                - generic: SU
+                - generic:
+                  - generic: Spira User
+                - img
+        - main:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=1]: All goals
+                  - paragraph: 3 goals in motion. Pick one to dive into, or shape a new one.
+                - generic:
+                  - generic:
+                    - button [pressed]:
+                      - img
+                      - text: Cards
+                    - button:
+                      - img
+                      - text: Timeline
+                    - link:
+                      - /url: /calendar
+                      - img
+                      - text: Calendar
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: Confidence
+                        - generic: 10/10
+                      - generic:
+                        - generic: 0%
+                    - button:
+                      - img
+                  - generic:
+                    - heading [level=3]:
+                      - link:
+                        - /url: /goals/3
+                        - text: Testing Backend
+                  - generic:
+                    - generic:
+                      - button: Set deadline
+                      - link:
+                        - /url: /goals/3
+                        - generic: Start
+                        - img
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: Confidence
+                        - generic: 8/10
+                      - generic:
+                        - generic: 0%
+                    - button:
+                      - img
+                  - generic:
+                    - heading [level=3]:
+                      - link:
+                        - /url: /goals/2
+                        - text: Learn GraphQL
+                  - generic:
+                    - generic:
+                      - button: Set deadline
+                      - link:
+                        - /url: /goals/2
+                        - generic: Start
+                        - img
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: Confidence
+                        - generic: 7/10
+                      - generic:
+                        - generic: 0%
+                    - button:
+                      - img
+                  - generic:
+                    - heading [level=3]:
+                      - link:
+                        - /url: /goals/1
+                        - text: Test Goal
+                  - generic:
+                    - generic:
+                      - button: Set deadline
+                      - link:
+                        - /url: /goals/1
+                        - generic: Start
+                        - img
+              - button:
+                - img
+          - region "Notifications alt+T"
+  - dialog "New goal" [ref=e125]:
+    - button "Close" [ref=e126]:
+      - img [ref=e127]
+      - generic [ref=e130]: Close
+    - heading "New goal" [level=2] [ref=e131]
+    - paragraph [ref=e132]: Create a new Spira goal.
+    - generic [ref=e133]:
+      - heading "New goal" [level=2] [ref=e134]
+      - button "Close" [ref=e135]:
+        - img [ref=e136]
+    - generic [ref=e139]:
+      - generic [ref=e140]:
+        - generic [ref=e142]: Title*
+        - textbox "e.g. Launch Spira to first 50 users" [active] [ref=e143]
+      - generic [ref=e144]:
+        - generic [ref=e146]: Description
+        - textbox "What does success look like?" [ref=e147]
+        - paragraph [ref=e148]: Specific, measurable, achievable, relevant, time-bound.
+      - generic [ref=e149]:
+        - generic [ref=e150]:
+          - generic [ref=e151]: Confidence*
+          - generic [ref=e152]: 5/10
+        - generic [ref=e154]:
+          - button "Confidence 1" [ref=e155]: "1"
+          - button "Confidence 2" [ref=e156]: "2"
+          - button "Confidence 3" [ref=e157]: "3"
+          - button "Confidence 4" [ref=e158]: "4"
+          - button "Confidence 5" [ref=e159]: "5"
+          - button "Confidence 6" [ref=e160]: "6"
+          - button "Confidence 7" [ref=e161]: "7"
+          - button "Confidence 8" [ref=e162]: "8"
+          - button "Confidence 9" [ref=e163]: "9"
+          - button "Confidence 10" [ref=e164]: "10"
+      - generic [ref=e165]:
+        - generic [ref=e167]: Deadline
+        - button "Pick a deadline" [ref=e169]:
+          - img [ref=e170]
+          - text: Pick a deadline
+    - generic [ref=e172]:
+      - button "Cancel" [ref=e173]
+      - button "Create goal" [disabled] [ref=e174]

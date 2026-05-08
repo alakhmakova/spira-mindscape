@@ -47,6 +47,7 @@ export const useShellFilters = create<State>((set) => ({
   setDeadlineTo: (deadlineTo) => set({ deadlineTo }),
   setConfidence: (confidence) => set({ confidence }),
   setStatus: (status) => set({ status }),
-  resetFilters: () => set({ deadlineFrom: "", deadlineTo: "", confidence: "", status: "all" }),
+  resetFilters: () =>
+    set({ deadlineFrom: "", deadlineTo: "", confidence: "", status: "all" }),
   setViewMode: (viewMode) => set({ viewMode }),
 }));

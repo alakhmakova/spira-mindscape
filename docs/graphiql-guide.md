@@ -88,7 +88,7 @@ The response will include an `id` — save it for the next requests.
 
 ```graphql
 query {
-  goal(id: "paste-your-id-here") {
+  goalById(id: "2") {
     id
     title
     description
@@ -207,7 +207,7 @@ mutation {
 **2. Copy the `id` from the response and paste it into this query:**
 ```graphql
 query {
-  goal(id: "PASTE_ID_HERE") {
+  goalById(id: "PASTE_ID_HERE") {
     id
     title
     description

@@ -16,7 +16,10 @@ export function ConfidencePill({
   const color = getConfidenceColor(value);
   return (
     <span
-      className={cn("inline-flex items-center gap-1.5 text-xs font-semibold text-foreground", className)}
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs font-semibold text-foreground",
+        className,
+      )}
       title={`Confidence ${value}/10`}
     >
       <span
