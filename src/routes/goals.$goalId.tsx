@@ -199,9 +199,9 @@ function GoalWorkspace() {
         action={
           <button
             onClick={() => setNewResource(true)}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
+            className="inline-flex items-center px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
           >
-            <Plus className="h-3.5 w-3.5" /> Add resource
+            Add resource
           </button>
         }
       >

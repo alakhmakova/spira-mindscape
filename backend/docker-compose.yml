@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: spira-mindscape-postgres
+    environment:
+      POSTGRES_DB: spira
+      POSTGRES_USER: spira
+      POSTGRES_PASSWORD: spira
+    ports:
+      - "5432:5432"
+    volumes:
+      - spira-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spira -d spira"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  spira-postgres-data:
