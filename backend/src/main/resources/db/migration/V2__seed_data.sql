@@ -1,0 +1,3 @@
+-- Intentionally empty.
+-- Seed data is not inserted in the production backend foundation because the
+-- current application still owns demo/local data in the frontend store.

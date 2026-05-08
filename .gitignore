@@ -17,6 +17,20 @@ dist-ssr
 .nitro
 *.local
 
+# Local environment and tool state
+.env
+.env.*
+!.env.example
+!.env.*.example
+.claude/
+
+# Backend build/cache output
+backend/target/
+backend/.gradle/
+backend/gradle/
+backend/.mvn/wrapper/apache-maven-*/
+backend/.mvn/wrapper/*.zip
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

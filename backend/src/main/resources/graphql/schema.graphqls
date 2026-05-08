@@ -1,0 +1,182 @@
+type Query {
+    goals: [Goal!]!
+    goalById(id: ID!): Goal
+
+    resourcesByGoal(goalId: ID!): [Resource!]!
+    resourceById(id: ID!): Resource
+
+    targetsByGoal(goalId: ID!): [Target!]!
+    targetById(id: ID!): Target
+
+    optionsByGoal(goalId: ID!): [Option!]!
+    realityByGoal(goalId: ID!): Reality!
+}
+
+type Mutation {
+    createGoal(input: CreateGoalInput!): Goal!
+    updateGoal(id: ID!, input: UpdateGoalInput!): Goal!
+    deleteGoal(id: ID!): Boolean!
+
+    addRealityItem(goalId: ID!, kind: String!, text: String!): Reality!
+    updateRealityItem(goalId: ID!, kind: String!, itemId: ID!, text: String!): Reality!
+    removeRealityItem(goalId: ID!, kind: String!, itemId: ID!): Reality!
+
+    addOption(goalId: ID!, text: String!): Option!
+    updateOption(goalId: ID!, optionId: ID!, input: UpdateOptionInput!): Option!
+    selectOption(goalId: ID!, optionId: ID!): Option!
+    removeOption(goalId: ID!, optionId: ID!): Boolean!
+
+    createTarget(goalId: ID!, input: CreateTargetInput!): Target!
+    updateTarget(id: ID!, input: UpdateTargetInput!): Target!
+    deleteTarget(id: ID!): Boolean!
+
+    createResource(goalId: ID!, input: CreateResourceInput!): Resource!
+    updateResource(id: ID!, input: UpdateResourceInput!): Resource!
+    deleteResource(id: ID!): Boolean!
+}
+
+type Goal {
+    id: ID!
+    title: String!
+    description: String!
+    confidence: Int!
+    deadline: String
+    createdAt: String!
+    achievedAt: String
+    reality: Reality!
+    options: [Option!]!
+    resources: [Resource!]!
+    targets: [Target!]!
+    progress: Float!
+}
+
+type Reality {
+    id: ID!
+    actions: [RealityItem!]!
+    obstacles: [RealityItem!]!
+}
+
+type RealityItem {
+    id: ID!
+    text: String!
+}
+
+type Option {
+    id: ID!
+    text: String!
+    selected: Boolean!
+}
+
+type Target {
+    id: ID!
+    type: String!
+    title: String!
+    start: Float
+    current: Float
+    total: Float
+    unit: String
+    done: Boolean
+    items: [ChecklistItem!]!
+    deadline: String
+    achievedAt: String
+    progress: Float!
+}
+
+type ChecklistItem {
+    id: ID!
+    text: String!
+    done: Boolean!
+    deadline: String
+    achievedAt: String
+}
+
+type Resource {
+    id: ID!
+    type: String!
+    title: String
+    body: String
+    url: String
+    mime: String
+    dataUrl: String
+    name: String
+    role: String
+    email: String
+    phone: String
+}
+
+input CreateGoalInput {
+    title: String!
+    description: String
+    confidence: Int!
+    deadline: String
+}
+
+input UpdateGoalInput {
+    title: String
+    description: String
+    confidence: Int
+    deadline: String
+    achievedAt: String
+}
+
+input UpdateOptionInput {
+    text: String
+    selected: Boolean
+}
+
+input CreateTargetInput {
+    title: String!
+    type: String!
+    deadline: String
+    start: Float
+    current: Float
+    total: Float
+    unit: String
+    done: Boolean
+    items: [ChecklistItemInput!]
+}
+
+input UpdateTargetInput {
+    title: String
+    deadline: String
+    achievedAt: String
+    start: Float
+    current: Float
+    total: Float
+    unit: String
+    done: Boolean
+    items: [ChecklistItemInput!]
+}
+
+input ChecklistItemInput {
+    id: ID
+    text: String!
+    done: Boolean
+    deadline: String
+    achievedAt: String
+}
+
+input CreateResourceInput {
+    type: String!
+    title: String
+    body: String
+    url: String
+    mime: String
+    dataUrl: String
+    name: String
+    role: String
+    email: String
+    phone: String
+}
+
+input UpdateResourceInput {
+    title: String
+    body: String
+    url: String
+    mime: String
+    dataUrl: String
+    name: String
+    role: String
+    email: String
+    phone: String
+}

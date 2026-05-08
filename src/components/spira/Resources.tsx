@@ -14,7 +14,6 @@ import {
   ZoomIn,
   X,
   ChevronRight,
-  ChevronLeft,
 } from "lucide-react";
 import type { Goal, Resource } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
@@ -244,80 +243,91 @@ function ResourceCard({
   const canCopy = r.type === "note" || r.type === "link" || (r.type === "file" && r.mime.startsWith("image/")) || (r.type === "email" && !!r.email);
   const canDownload = r.type === "note" || r.type === "file";
 
+  const typeColors: Record<string, { bg: string; text: string; border: string; icon: string }> = {
+    note: { bg: "bg-[#f0f9ff]", text: "text-[#0c69a3]", border: "border-[#bae2fd]", icon: "text-[#0c69a3]" },
+    link: { bg: "bg-[#f0fdf4]", text: "text-[#15803d]", border: "border-[#b7e4c7]", icon: "text-[#15803d]" },
+    file: { bg: "bg-[#fef3c7]", text: "text-[#92400e]", border: "border-[#fde68a]", icon: "text-[#92400e]" },
+    email: { bg: "bg-[#faf5ff]", text: "text-[#7c3aed]", border: "border-[#e9d5ff]", icon: "text-[#7c3aed]" },
+  };
+
+  const colors = typeColors[r.type] || typeColors.note;
+
   return (
     <div
       className={cn(
-        "inline-flex items-center h-10 rounded-full border border-border bg-white transition-all shadow-sm overflow-hidden",
-        expanded ? "pr-2" : ""
+        "group inline-flex items-center rounded-lg border bg-white transition-all duration-200 overflow-hidden",
+        expanded
+          ? "border-border/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)]"
+          : "border-border/40 hover:border-border/60 hover:shadow-[0_1px_6px_-1px_rgba(0,0,0,0.04)]"
       )}
     >
       <button
         onClick={onOpen}
-        className="flex items-center gap-2 px-3.5 h-full hover:bg-secondary/30 transition-colors"
+        className="flex items-center gap-1.5 pl-2 pr-1 py-1.5 h-9 transition-colors hover:bg-secondary/20"
       >
-        <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
-        <span className="text-sm font-semibold text-foreground whitespace-nowrap">
+        <div className={cn("grid h-5 w-5 place-items-center rounded-md shrink-0", colors.bg)}>
+          <Icon className={cn("h-3 w-3", colors.icon)} />
+        </div>
+        <span className="text-sm font-medium text-foreground whitespace-nowrap max-w-[140px] truncate">
           {resourceDisplayName(r)}
         </span>
       </button>
 
-      <div className="w-px h-full bg-border" />
-
       {!expanded ? (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
-          className="px-2.5 h-full flex items-center justify-center hover:bg-secondary/30 text-muted-foreground transition-colors"
+          className="flex h-full items-center justify-center px-1.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground hover:bg-secondary/30"
         >
-          <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+          <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
         </button>
       ) : (
-        <div className="flex items-center pl-1 gap-1 h-full">
+        <div className="flex items-center gap-0.5 pr-1 pl-0.5">
           <button
             onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
-            className="px-2 h-full flex items-center justify-center hover:bg-secondary/30 text-muted-foreground transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-secondary/50"
           >
-            <ChevronLeft className="h-3.5 w-3.5 opacity-60" />
+            <ChevronRight className="h-3 w-3 rotate-180" />
           </button>
-          
-          <div className="w-px h-4 bg-border mx-0.5" />
+
+          <div className="w-px h-3.5 bg-border/60" />
 
           {r.type === "email" ? (
              <button
                onClick={(e) => { e.stopPropagation(); onOpen(); }}
-               className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+               className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
                title="Edit email"
              >
-               <Pencil className="h-3.5 w-3.5" />
+               <Pencil className="h-3 w-3" />
              </button>
           ) : (
             <>
               {canCopy && (
                 <button
                   onClick={handleCopy}
-                  className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
                   title={copied ? "Copied!" : "Copy"}
                 >
-                  {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
                 </button>
               )}
               {canDownload && (
                 <button
                   onClick={handleDownload}
-                  className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
+                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
                   title="Download"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3 w-3" />
                 </button>
               )}
             </>
           )}
-          
+
           <button
             onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            className="h-8 w-8 grid place-items-center rounded-full text-muted-foreground hover:bg-destructive-soft hover:text-destructive transition-colors"
+            className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-destructive-soft hover:text-destructive transition-colors"
             title="Remove"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3 w-3" />
           </button>
         </div>
       )}
