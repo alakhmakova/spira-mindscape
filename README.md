@@ -170,6 +170,10 @@ Expected: `spira-mindscape-postgres` is healthy.
 
   
 
+If the backend later fails with `Connection refused` on `localhost:5432`, PostgreSQL is not running. Start it again with the same `docker compose up -d postgres` command above.
+
+  
+
 ### 2. Start The Backend
 
   
@@ -231,6 +235,7 @@ Stop-Process -Id <PID_FROM_LISTENING_LINE> -Force
 # Frontend on port 5173
 netstat -ano | Select-String ":5173"
 Stop-Process -Id <PID_FROM_LISTENING_LINE> -Force
+Stop-Process -Id 26928 -Force
 
 ```
 
@@ -264,6 +269,8 @@ docker compose down
 npm run dev
 
 npm run build
+
+npm test
 
 npm run lint
 

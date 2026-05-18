@@ -11,12 +11,47 @@ const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? "/graphql";
 
 type GraphqlError = {
   message: string;
+  extensions?: {
+    classification?: string;
+  };
 };
 
 type GraphqlResponse<T> = {
   data?: T;
   errors?: GraphqlError[];
 };
+
+const DEFAULT_API_ERROR_MESSAGE =
+  "We couldn't sync with the backend. Please try again.";
+const BACKEND_UNAVAILABLE_MESSAGE =
+  "We couldn't reach the backend. Check that it is running, then retry.";
+const VALIDATION_ERROR_CLASSIFICATION = "ValidationError";
+
+export class SpiraApiError extends Error {
+  readonly details?: string;
+  readonly errors?: GraphqlError[];
+  readonly status?: number;
+  /** "network" = fetch failed (no connection), "service" = server replied with error */
+  readonly kind: "network" | "service";
+
+  constructor(
+    message: string,
+    options: {
+      details?: string;
+      errors?: GraphqlError[];
+      status?: number;
+      cause?: unknown;
+      kind?: "network" | "service";
+    } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "SpiraApiError";
+    this.details = options.details;
+    this.errors = options.errors;
+    this.status = options.status;
+    this.kind = options.kind ?? "service";
+  }
+}
 
 type GraphqlRealityItem = {
   id: string;
@@ -33,6 +68,7 @@ type GraphqlOption = {
   id: string;
   text: string;
   selected: boolean;
+  position: number;
 };
 
 type GraphqlChecklistItem = {
@@ -96,13 +132,16 @@ type UpdateGoalInput = Partial<{
   title: string;
   description: string;
   confidence: Confidence;
-  deadline?: string;
-  achievedAt?: string;
+  deadline: string | null;
+  achievedAt: string | null;
 }>;
 
 type CreateResourceInput = Omit<Resource, "id">;
 type UpdateResourceInput = Partial<Resource>;
-type CreateTargetInput = Omit<Target, "id">;
+type CreateTargetInput =
+  | Omit<Extract<Target, { type: "numeric" }>, "id" | "current">
+  | Omit<Extract<Target, { type: "binary" }>, "id">
+  | Omit<Extract<Target, { type: "checklist" }>, "id">;
 type UpdateTargetInput = Partial<Target>;
 
 const GOAL_FIELDS = `
@@ -118,7 +157,7 @@ const GOAL_FIELDS = `
     actions { id text }
     obstacles { id text }
   }
-  options { id text selected }
+  options { id text selected position }
   resources {
     id
     type
@@ -181,26 +220,53 @@ const REALITY_FIELDS = `
   obstacles { id text }
 `;
 
+const OPTION_FIELDS = `
+  id
+  text
+  selected
+  position
+`;
+
 async function graphql<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
-  const response = await fetch(GRAPHQL_ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (error) {
+    throw new SpiraApiError(BACKEND_UNAVAILABLE_MESSAGE, {
+      cause: error,
+      kind: "network",
+    });
+  }
 
   if (!response.ok) {
-    throw new Error(`GraphQL request failed with HTTP ${response.status}`);
+    throw new SpiraApiError(DEFAULT_API_ERROR_MESSAGE, {
+      details: `GraphQL request failed with HTTP ${response.status}`,
+      status: response.status,
+    });
   }
 
   const body = (await response.json()) as GraphqlResponse<T>;
   if (body.errors?.length) {
-    throw new Error(body.errors.map((error) => error.message).join("; "));
+    const validationMessage = body.errors.find(
+      (error) =>
+        error.extensions?.classification === VALIDATION_ERROR_CLASSIFICATION,
+    )?.message;
+    throw new SpiraApiError(validationMessage ?? DEFAULT_API_ERROR_MESSAGE, {
+      details: body.errors.map((error) => error.message).join("; "),
+      errors: body.errors,
+    });
   }
   if (!body.data) {
-    throw new Error("GraphQL response did not include data");
+    throw new SpiraApiError(DEFAULT_API_ERROR_MESSAGE, {
+      details: "GraphQL response did not include data",
+    });
   }
   return body.data;
 }
@@ -209,6 +275,13 @@ function cleanInput<T extends Record<string, unknown>>(input: T) {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined),
   ) as T;
+}
+
+function nullableWhenPresent<T extends Record<string, unknown>>(
+  input: T,
+  field: keyof T,
+) {
+  return field in input ? (input[field] ?? null) : undefined;
 }
 
 function toChecklistItem(item: GraphqlChecklistItem): ChecklistItem {
@@ -299,6 +372,7 @@ function toOption(option: GraphqlOption): Option {
     id: option.id,
     text: option.text,
     selected: option.selected,
+    position: option.position,
   };
 }
 
@@ -351,8 +425,8 @@ function checklistInput(items?: ChecklistItem[]) {
       id: item.id.startsWith("local-") ? undefined : item.id,
       text: item.text,
       done: item.done,
-      deadline: item.deadline,
-      achievedAt: item.achievedAt,
+      deadline: nullableWhenPresent(item, "deadline"),
+      achievedAt: nullableWhenPresent(item, "achievedAt"),
     }),
   );
 }
@@ -364,8 +438,8 @@ function targetInput(
   return cleanInput({
     type: includeType && "type" in target ? target.type : undefined,
     title: "title" in target ? target.title : undefined,
-    deadline: "deadline" in target ? target.deadline : undefined,
-    achievedAt: "achievedAt" in target ? target.achievedAt : undefined,
+    deadline: nullableWhenPresent(target, "deadline"),
+    achievedAt: nullableWhenPresent(target, "achievedAt"),
     start: "start" in target ? target.start : undefined,
     current: "current" in target ? target.current : undefined,
     total: "total" in target ? target.total : undefined,
@@ -402,6 +476,11 @@ export const spiraApi = {
   },
 
   async updateGoal(id: string, input: UpdateGoalInput): Promise<Goal> {
+    const updateInput = cleanInput({
+      ...input,
+      deadline: nullableWhenPresent(input, "deadline"),
+      achievedAt: nullableWhenPresent(input, "achievedAt"),
+    });
     const data = await graphql<{ updateGoal: GraphqlGoal }>(
       `
         mutation UpdateGoal($id: ID!, $input: UpdateGoalInput!) {
@@ -410,7 +489,7 @@ export const spiraApi = {
           }
         }
       `,
-      { id, input: cleanInput(input) },
+      { id, input: updateInput },
     );
     return toGoal(data.updateGoal);
   },
@@ -513,9 +592,7 @@ export const spiraApi = {
       `
         mutation AddOption($goalId: ID!, $text: String!) {
           addOption(goalId: $goalId, text: $text) {
-            id
-            text
-            selected
+            ${OPTION_FIELDS}
           }
         }
       `,
@@ -537,9 +614,7 @@ export const spiraApi = {
           $input: UpdateOptionInput!
         ) {
           updateOption(goalId: $goalId, optionId: $optionId, input: $input) {
-            id
-            text
-            selected
+            ${OPTION_FIELDS}
           }
         }
       `,
@@ -557,9 +632,7 @@ export const spiraApi = {
       `
         mutation SelectOption($goalId: ID!, $optionId: ID!) {
           selectOption(goalId: $goalId, optionId: $optionId) {
-            id
-            text
-            selected
+            ${OPTION_FIELDS}
           }
         }
       `,
@@ -577,6 +650,20 @@ export const spiraApi = {
       `,
       { goalId, optionId },
     );
+  },
+
+  async reorderOptions(goalId: string, optionIds: string[]): Promise<Option[]> {
+    const data = await graphql<{ reorderOptions: GraphqlOption[] }>(
+      `
+        mutation ReorderOptions($goalId: ID!, $optionIds: [ID!]!) {
+          reorderOptions(goalId: $goalId, optionIds: $optionIds) {
+            ${OPTION_FIELDS}
+          }
+        }
+      `,
+      { goalId, optionIds },
+    );
+    return data.reorderOptions.map(toOption);
   },
 
   async createTarget(

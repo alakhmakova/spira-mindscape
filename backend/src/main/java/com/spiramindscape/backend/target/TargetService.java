@@ -11,11 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -99,22 +101,50 @@ public class TargetService {
 
     @Transactional
     public Target create(Long goalId, CreateTargetInput input) {
+        return create(goalId, input, Map.of());
+    }
+
+    @Transactional
+    public Target create(Long goalId, CreateTargetInput input, Map<String, Object> rawInput) {
         Goal goal = goalRepository.findById(goalId)
                 .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        if ("binary".equalsIgnoreCase(input.type()) && Boolean.TRUE.equals(input.done())) {
+            throw new IllegalArgumentException(
+                    "Cannot create binary target as already done - use update to mark as done");
+        }
+        validateItemsAllowedOnCreate(input);
+        validateNumericCreateInput(input, rawInput);
+        validateChecklistCreateInput(input);
+        Double initialCurrent = "numeric".equalsIgnoreCase(input.type()) ? input.start() : input.current();
         Target target = new Target();
         target.setGoal(goal);
         applyFields(target, input.title(), input.type(), input.deadline(), null,
-                input.start(), input.current(), input.total(), input.unit(), input.done());
+                input.start(), initialCurrent, input.total(), input.unit(), input.done());
         replaceChecklistItems(target, input.items());
         return targetRepository.save(target);
     }
 
     @Transactional
     public Target update(Long id, UpdateTargetInput input) {
+        return update(id, input, false, Map.of());
+    }
+
+    @Transactional
+    public Target update(Long id, UpdateTargetInput input, boolean deadlineProvided) {
+        return update(id, input, deadlineProvided, Map.of());
+    }
+
+    @Transactional
+    public Target update(Long id, UpdateTargetInput input, boolean deadlineProvided, Map<String, Object> rawInput) {
         Target target = findById(id);
+        validateNumericUpdateInput(target, input, rawInput);
         applyFields(target, input.title(), null, input.deadline(), input.achievedAt(),
                 input.start(), input.current(), input.total(), input.unit(), input.done());
+        if (deadlineProvided && input.deadline() == null) {
+            target.setDeadline(null);
+        }
         if (input.items() != null) {
+            validateChecklistUpdateInput(target, input);
             replaceChecklistItems(target, input.items());
         }
         return targetRepository.save(target);
@@ -128,15 +158,15 @@ public class TargetService {
     private void applyFields(Target target, String title, String type, Instant deadline,
                               Instant achievedAt, Double start, Double current,
                               Double total, String unit, Boolean done) {
-        if (title != null)     target.setTitle(title);
-        if (type != null)      target.setType(normalizeType(type));
-        if (deadline != null)  target.setDeadline(deadline);
+        if (title != null)      target.setTitle(title);
+        if (type != null)       target.setType(normalizeType(type));
+        if (deadline != null)   target.setDeadline(deadline);
         if (achievedAt != null) target.setAchievedAt(achievedAt);
-        if (start != null)     target.setStart(start);
-        if (current != null)   target.setCurrent(current);
-        if (total != null)     target.setTotal(total);
-        if (unit != null)      target.setUnit(unit);
-        if (done != null)      target.setDone(done);
+        if (start != null)      target.setStart(start);
+        if (current != null)    target.setCurrent(current);
+        if (total != null)      target.setTotal(total);
+        if (unit != null)       target.setUnit(unit);
+        if (done != null)       target.setDone(done);
     }
 
     private void replaceChecklistItems(Target target, List<ChecklistItemInput> inputs) {
@@ -149,7 +179,10 @@ public class TargetService {
             Long parsedId = parseLong(input.id());
             ChecklistItem item = parsedId == null
                     ? new ChecklistItem()
-                    : existingById.getOrDefault(parsedId, new ChecklistItem());
+                    : existingById.get(parsedId);
+            if (item == null) {
+                throw new IllegalArgumentException("Checklist item not found: " + input.id());
+            }
             item.setTarget(target);
             item.setText(input.text());
             item.setDone(Boolean.TRUE.equals(input.done()));
@@ -167,6 +200,125 @@ public class TargetService {
             throw new IllegalArgumentException("Unknown target type: " + type);
         }
         return normalized;
+    }
+
+    private void validateNumericCreateInput(CreateTargetInput input, Map<String, Object> rawInput) {
+        if (!"numeric".equalsIgnoreCase(input.type())) {
+            return;
+        }
+        rejectProvidedNull(rawInput, "start", "Numeric target start cannot be null");
+        rejectProvidedNull(rawInput, "current", "Numeric target current cannot be null");
+        rejectProvidedNull(rawInput, "total", "Numeric target target cannot be null");
+        if (input.start() == null) {
+            throw new IllegalArgumentException("Numeric target requires start");
+        }
+        if (input.current() != null) {
+            throw new IllegalArgumentException("Numeric target current cannot be set on create");
+        }
+        if (input.total() == null) {
+            throw new IllegalArgumentException("Numeric target requires total");
+        }
+        validateNonNegative(input.start(), "Numeric target start cannot be negative");
+        validateNonNegative(input.total(), "Numeric target target cannot be negative");
+        validateNumericDistance(input.start(), input.total());
+    }
+
+    private void validateNumericUpdateInput(Target target, UpdateTargetInput input, Map<String, Object> rawInput) {
+        if (!"numeric".equalsIgnoreCase(target.getType())) {
+            return;
+        }
+
+        rejectProvidedNull(rawInput, "start", "Numeric target start cannot be null");
+        rejectProvidedNull(rawInput, "current", "Numeric target current cannot be null");
+        rejectProvidedNull(rawInput, "total", "Numeric target target cannot be null");
+
+        Double nextStart = input.start() == null ? target.getStart() : input.start();
+        Double nextCurrent = input.current() == null ? target.getCurrent() : input.current();
+        Double nextTotal = input.total() == null ? target.getTotal() : input.total();
+
+        if (nextStart == null) {
+            throw new IllegalArgumentException("Numeric target requires start");
+        }
+        if (nextCurrent == null) {
+            throw new IllegalArgumentException("Numeric target requires current");
+        }
+        if (nextTotal == null) {
+            throw new IllegalArgumentException("Numeric target requires total");
+        }
+
+        validateNonNegative(nextStart, "Numeric target start cannot be negative");
+        validateNonNegative(nextCurrent, "Numeric target current cannot be negative");
+        validateNonNegative(nextTotal, "Numeric target target cannot be negative");
+        validateNumericDistance(nextStart, nextTotal);
+
+        double min = Math.min(nextStart, nextTotal);
+        double max = Math.max(nextStart, nextTotal);
+        if (nextCurrent < min || nextCurrent > max) {
+            throw new IllegalArgumentException(
+                    "Numeric target current must be between start and target");
+        }
+    }
+
+    private void rejectProvidedNull(Map<String, Object> rawInput, String field, String message) {
+        if (rawInput != null && rawInput.containsKey(field) && rawInput.get(field) == null) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private void validateNonNegative(Double value, String message) {
+        if (value != null && value < 0) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private void validateNumericDistance(Double start, Double total) {
+        if (start != null && total != null && start.equals(total)) {
+            throw new IllegalArgumentException("Numeric target start and target must be different");
+        }
+    }
+
+    private void validateChecklistCreateInput(CreateTargetInput input) {
+        if (!"checklist".equalsIgnoreCase(input.type())) {
+            return;
+        }
+        if (input.items() == null || input.items().isEmpty()) {
+            throw new IllegalArgumentException("Checklist target requires at least one item");
+        }
+        validateChecklistItemText(input.items());
+    }
+
+    private void validateChecklistUpdateInput(Target target, UpdateTargetInput input) {
+        if (!"checklist".equalsIgnoreCase(target.getType())) {
+            throw new IllegalArgumentException("Only checklist targets can have items");
+        }
+        if (input.items().isEmpty()) {
+            throw new IllegalArgumentException("Checklist target requires at least one item");
+        }
+        validateChecklistItemText(input.items());
+        validateUniqueChecklistItemIds(input.items());
+    }
+
+    private void validateItemsAllowedOnCreate(CreateTargetInput input) {
+        if (input.items() != null && !"checklist".equalsIgnoreCase(input.type())) {
+            throw new IllegalArgumentException("Only checklist targets can have items");
+        }
+    }
+
+    private void validateChecklistItemText(List<ChecklistItemInput> inputs) {
+        for (ChecklistItemInput input : inputs) {
+            if (input.text() == null || input.text().isBlank()) {
+                throw new IllegalArgumentException("Checklist item text cannot be blank");
+            }
+        }
+    }
+
+    private void validateUniqueChecklistItemIds(List<ChecklistItemInput> inputs) {
+        Set<String> seenIds = new HashSet<>();
+        for (ChecklistItemInput input : inputs) {
+            if (input.id() != null && !input.id().isBlank() && !seenIds.add(input.id())) {
+                throw new IllegalArgumentException("Checklist item ids must be unique");
+            }
+        }
     }
 
     private Long parseLong(String value) {

@@ -1,10 +1,5 @@
 import { cn } from "@/lib/utils";
-
-function getConfidenceColor(value: number) {
-  if (value <= 4) return "#EF7B6C";
-  if (value <= 7) return "#F8D068";
-  return "#7ECEC4";
-}
+import { getConfidenceColor } from "./confidence-color";
 
 export function ConfidencePill({
   value,
@@ -31,8 +26,6 @@ export function ConfidencePill({
     </span>
   );
 }
-
-export { getConfidenceColor };
 
 export function ConfidenceStepper({
   value,

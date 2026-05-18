@@ -1,6 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Calendar, LayoutGrid, List, Plus } from "lucide-react";
+import {
+  Calendar,
+  LayoutGrid,
+  List,
+  Trophy,
+  Cable,
+  GlobeOff,
+  RefreshCw,
+} from "lucide-react";
 import { GoalCard } from "@/components/spira/GoalCard";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
@@ -27,6 +35,9 @@ function GoalsOverview() {
   const goals = useSpira((s) => s.goals);
   const isLoading = useSpira((s) => s.isLoading);
   const hasLoaded = useSpira((s) => s.hasLoaded);
+  const syncError = useSpira((s) => s.syncError);
+  const syncErrorKind = useSpira((s) => s.syncErrorKind);
+  const refreshGoals = useSpira((s) => s.refreshGoals);
   const {
     query,
     sort,
@@ -159,29 +170,73 @@ function GoalsOverview() {
         </header>
 
         {isLoading && !hasLoaded ? (
+          /* ── Loading ── */
           <div className="surface-card p-12 text-center" role="status">
-            <div className="font-display text-3xl">Loading goals</div>
+            <div className="font-display text-3xl">Loading your goals…</div>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              Connecting to the Spira backend.
+              Just a moment while we fetch your workspace.
             </p>
           </div>
         ) : filtered.length === 0 ? (
+          /* ── Empty / Error ── */
           <div className="surface-card p-12 text-center">
-            <div className="font-display text-3xl">No goals match</div>
-            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              {goals.length === 0
-                ? "Start with one. You can always shape it as you think."
-                : "Try clearing your search or filters above."}
-            </p>
-            {goals.length === 0 && (
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                <Plus className="h-4 w-4" />
-                Create your first goal
-              </button>
+            {goals.length === 0 && syncError ? (
+              /* Error: backend or network problem — no CTA */
+              <>
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                  {syncErrorKind === "network" ? (
+                    <GlobeOff className="h-8 w-8" />
+                  ) : (
+                    <Cable className="h-8 w-8" />
+                  )}
+                </div>
+                <div className="font-display text-2xl text-foreground">
+                  {syncErrorKind === "network"
+                    ? "You appear to be offline"
+                    : "Couldn't load your goals"}
+                </div>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  {syncError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refreshGoals()}
+                  className="mt-5 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Try again
+                </button>
+              </>
+            ) : goals.length === 0 ? (
+              /* Truly empty — DB has no goals, connection is fine */
+              <>
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary">
+                  <Trophy className="h-8 w-8" />
+                </div>
+                <div className="font-display text-2xl text-foreground">
+                  Your journey starts here
+                </div>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  Set your first goal and start turning ambition into progress.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOpen(true)}
+                  className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Create your first goal
+                </button>
+              </>
+            ) : (
+              /* Filtered: no matches */
+              <>
+                <div className="font-display text-2xl text-foreground">
+                  No goals match
+                </div>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  Try clearing your search or filters above.
+                </p>
+              </>
             )}
           </div>
         ) : viewMode === "cards" ? (
@@ -200,7 +255,20 @@ function GoalsOverview() {
           className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-raised transition-transform hover:scale-105 hover:bg-primary/90 sm:bottom-7 sm:right-7"
           aria-label="New goal"
         >
-          <Plus className="h-7 w-7" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
         </button>
 
         <NewGoalSheet open={open} onOpenChange={setOpen} />

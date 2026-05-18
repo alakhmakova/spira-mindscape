@@ -2,6 +2,7 @@ package com.spiramindscape.backend.target;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,6 +19,7 @@ public class ChecklistItem {
     private Long id;
 
     @NotBlank
+    @Size(max = 500)
     @Column(length = 500)
     private String text;
 
@@ -35,7 +37,7 @@ public class ChecklistItem {
     private Target target;
 
     @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         if (done == null) {
             done = false;
         }
@@ -44,7 +46,7 @@ public class ChecklistItem {
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         if (done == null) {
             done = false;
         }

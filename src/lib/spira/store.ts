@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { spiraApi } from "./api";
-import { goalProgress } from "./progress";
+import { SpiraApiError, spiraApi } from "./api";
+import { goalProgress, targetProgress } from "./progress";
 import type {
   ChatMessage,
   Confidence,
@@ -11,6 +11,11 @@ import type {
 } from "./types";
 
 const localId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
+
+type CreateTargetInput =
+  | Omit<Extract<Target, { type: "numeric" }>, "id" | "current">
+  | Omit<Extract<Target, { type: "binary" }>, "id">
+  | Omit<Extract<Target, { type: "checklist" }>, "id">;
 const nowIso = () => new Date().toISOString();
 
 type RealityKind = "actions" | "obstacles";
@@ -21,6 +26,7 @@ type State = {
   isLoading: boolean;
   hasLoaded: boolean;
   syncError?: string;
+  syncErrorKind?: "network" | "service";
   loadGoals: () => Promise<void>;
   refreshGoals: () => Promise<void>;
   clearSyncError: () => void;
@@ -41,7 +47,7 @@ type State = {
   selectOption: (id: string, optId: string) => void;
   removeOption: (id: string, optId: string) => void;
   reorderOptions: (id: string, from: number, to: number) => void;
-  addTarget: (id: string, t: Omit<Target, "id">) => void;
+  addTarget: (id: string, t: CreateTargetInput) => void;
   updateTarget: (id: string, targetId: string, patch: Partial<Target>) => void;
   removeTarget: (id: string, targetId: string) => void;
   addResource: (id: string, r: Omit<Resource, "id">) => void;
@@ -82,36 +88,18 @@ function updateGoalInList(
 
 function mergeGoalPatch(goal: Goal, patch: Partial<Goal>): Goal {
   const updated = { ...goal, ...patch };
-  if (
-    patch.achievedAt === undefined &&
-    !goal.achievedAt &&
-    goalProgress(updated) >= 1
-  ) {
-    updated.achievedAt = nowIso();
+  if (patch.achievedAt === undefined) {
+    if (goalProgress(updated) >= 1) {
+      updated.achievedAt = updated.achievedAt ?? nowIso();
+    } else {
+      updated.achievedAt = undefined;
+    }
   }
   return updated;
 }
 
 function mergeTargetPatch(target: Target, patch: Partial<Target>): Target {
   const next = { ...target, ...patch } as Target;
-
-  if (
-    next.type === "binary" &&
-    target.type === "binary" &&
-    next.done &&
-    !target.done
-  ) {
-    next.achievedAt = nowIso();
-  }
-
-  if (
-    next.type === "numeric" &&
-    target.type === "numeric" &&
-    next.current >= next.total &&
-    target.current < target.total
-  ) {
-    next.achievedAt = nowIso();
-  }
 
   if (
     next.type === "checklist" &&
@@ -125,16 +113,40 @@ function mergeTargetPatch(target: Target, patch: Partial<Target>): Target {
       if (item.done && (!previous || !previous.done)) {
         return { ...item, achievedAt: item.achievedAt ?? nowIso() };
       }
+      if (!item.done && previous?.done) {
+        return { ...item, achievedAt: undefined };
+      }
       return item;
     });
+  }
+
+  if (patch.achievedAt === undefined) {
+    if (targetProgress(next) >= 1) {
+      next.achievedAt = next.achievedAt ?? nowIso();
+    } else {
+      next.achievedAt = undefined;
+    }
   }
 
   return next;
 }
 
+function updateGoalAchievementFromProgress(goal: Goal): Goal {
+  if (goalProgress(goal) >= 1) {
+    return { ...goal, achievedAt: goal.achievedAt ?? nowIso() };
+  }
+  return { ...goal, achievedAt: undefined };
+}
+
 function setSyncError(set: (state: Partial<State>) => void, error: unknown) {
+  console.error("Spira sync failed", error);
+  const kind = error instanceof SpiraApiError ? error.kind : "service";
   set({
-    syncError: error instanceof Error ? error.message : "Backend sync failed",
+    syncError:
+      error instanceof SpiraApiError
+        ? error.message
+        : "Something went wrong. Please try again in a moment.",
+    syncErrorKind: kind,
   });
 }
 
@@ -144,31 +156,62 @@ export const useSpira = create<State>()((set, get) => ({
   isLoading: false,
   hasLoaded: false,
   syncError: undefined,
+  syncErrorKind: undefined,
 
   loadGoals: async () => {
     if (get().isLoading || get().hasLoaded) return;
-    set({ isLoading: true, syncError: undefined });
+    set({ isLoading: true, syncError: undefined, syncErrorKind: undefined });
     try {
       const goals = await spiraApi.fetchGoals();
-      set({ goals, isLoading: false, hasLoaded: true });
+      set({
+        goals,
+        isLoading: false,
+        hasLoaded: true,
+        syncError: undefined,
+        syncErrorKind: undefined,
+      });
     } catch (error) {
-      set({ isLoading: false, hasLoaded: true });
-      setSyncError(set, error);
+      console.error("Spira sync failed", error);
+      const kind = error instanceof SpiraApiError ? error.kind : "service";
+      set({
+        isLoading: false,
+        hasLoaded: true,
+        syncError:
+          error instanceof SpiraApiError
+            ? error.message
+            : "Something went wrong. Please try again in a moment.",
+        syncErrorKind: kind,
+      });
     }
   },
 
   refreshGoals: async () => {
-    set({ isLoading: true, syncError: undefined });
+    set({ isLoading: true, syncError: undefined, syncErrorKind: undefined });
     try {
       const goals = await spiraApi.fetchGoals();
-      set({ goals, isLoading: false, hasLoaded: true });
+      set({
+        goals,
+        isLoading: false,
+        hasLoaded: true,
+        syncError: undefined,
+        syncErrorKind: undefined,
+      });
     } catch (error) {
-      set({ isLoading: false, hasLoaded: true });
-      setSyncError(set, error);
+      console.error("Spira sync failed", error);
+      const kind = error instanceof SpiraApiError ? error.kind : "service";
+      set({
+        isLoading: false,
+        hasLoaded: true,
+        syncError:
+          error instanceof SpiraApiError
+            ? error.message
+            : "Something went wrong. Please try again in a moment.",
+        syncErrorKind: kind,
+      });
     }
   },
 
-  clearSyncError: () => set({ syncError: undefined }),
+  clearSyncError: () => set({ syncError: undefined, syncErrorKind: undefined }),
 
   addGoal: (g) => {
     const tempId = localId();
@@ -337,7 +380,7 @@ export const useSpira = create<State>()((set, get) => ({
 
   addOption: (id, text) => {
     const tempId = localId();
-    const option: Option = { id: tempId, text, selected: false };
+    const option: Option = { id: tempId, text, selected: false, position: 0 };
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -422,7 +465,7 @@ export const useSpira = create<State>()((set, get) => ({
     });
   },
 
-  reorderOptions: (id, from, to) =>
+  reorderOptions: (id, from, to) => {
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => {
         const options = [...goal.options];
@@ -431,11 +474,36 @@ export const useSpira = create<State>()((set, get) => ({
         options.splice(to, 0, moved);
         return { ...goal, options };
       }),
-    })),
+    }));
+
+    if (id.startsWith("local-")) return;
+    debounceRemote(`reorderOptions:${id}`, async () => {
+      const goal = get().goals.find((item) => item.id === id);
+      if (!goal) return;
+      const optionIds = goal.options.map((option) => option.id);
+      try {
+        const updated = await spiraApi.reorderOptions(id, optionIds);
+        set((state) => ({
+          goals: updateGoalInList(state.goals, id, (g) => ({
+            ...g,
+            options: updated,
+          })),
+        }));
+      } catch (error) {
+        setSyncError(set, error);
+      }
+    });
+  },
 
   addTarget: (id, targetInput) => {
     const tempId = localId();
-    const target = { ...targetInput, id: tempId } as Target;
+    const target = {
+      ...targetInput,
+      id: tempId,
+      ...(targetInput.type === "numeric"
+        ? { current: targetInput.start ?? 0 }
+        : {}),
+    } as Target;
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -462,12 +530,14 @@ export const useSpira = create<State>()((set, get) => ({
 
   updateTarget: (id, targetId, patch) => {
     set((state) => ({
-      goals: updateGoalInList(state.goals, id, (goal) => ({
-        ...goal,
-        targets: goal.targets.map((target) =>
-          target.id === targetId ? mergeTargetPatch(target, patch) : target,
-        ),
-      })),
+      goals: updateGoalInList(state.goals, id, (goal) =>
+        updateGoalAchievementFromProgress({
+          ...goal,
+          targets: goal.targets.map((target) =>
+            target.id === targetId ? mergeTargetPatch(target, patch) : target,
+          ),
+        }),
+      ),
       syncError: undefined,
     }));
 
@@ -504,6 +574,7 @@ export const useSpira = create<State>()((set, get) => ({
   addResource: (id, resourceInput) => {
     const tempId = localId();
     const resource = { ...resourceInput, id: tempId } as Resource;
+    const previous = get().goals;
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -525,10 +596,14 @@ export const useSpira = create<State>()((set, get) => ({
           })),
         })),
       )
-      .catch((error) => setSyncError(set, error));
+      .catch((error) => {
+        set({ goals: previous });
+        setSyncError(set, error);
+      });
   },
 
   updateResource: (id, resourceId, patch) => {
+    const previous = get().goals;
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -549,6 +624,7 @@ export const useSpira = create<State>()((set, get) => ({
       try {
         await spiraApi.updateResource(resourceId, resource);
       } catch (error) {
+        set({ goals: previous });
         setSyncError(set, error);
       }
     });

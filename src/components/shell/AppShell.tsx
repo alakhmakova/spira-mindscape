@@ -1,11 +1,14 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Search,
   SlidersHorizontal,
   ArrowDownUp,
   ChevronDown,
   X,
+  GlobeOff,
+  Cable,
+  RefreshCw,
 } from "lucide-react";
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -37,6 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const refreshGoals = useSpira((s) => s.refreshGoals);
   const isLoadingGoals = useSpira((s) => s.isLoading);
   const syncError = useSpira((s) => s.syncError);
+  const syncErrorKind = useSpira((s) => s.syncErrorKind);
   const {
     query,
     setQuery,
@@ -81,6 +85,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void loadGoals();
   }, [loadGoals]);
+
+  // ── Offline / online detection ──────────────────────────────────────────
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== "undefined" ? !navigator.onLine : false,
+  );
+
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      // Auto-retry when connection is restored
+      void refreshGoals();
+    };
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [refreshGoals]);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -563,29 +587,56 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </header>
 
-        {syncError && (
+        {/* Offline banner — fires instantly from browser events */}
+        {isOffline && (
+          <div
+            className="border-b border-amber-300/40 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 sm:px-6"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2">
+              <GlobeOff className="h-4 w-4 shrink-0" />
+              <span>
+                You&apos;re offline. Your goals are still visible — changes will
+                sync when you reconnect.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* API error banner — only when not already covered by offline banner */}
+        {syncError && !isOffline && (
           <div
             className="border-b border-destructive/25 bg-destructive/10 px-4 py-2 text-sm text-destructive sm:px-6"
-            role="status"
+            role="alert"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span>Backend sync failed: {syncError}</span>
+              <div className="flex items-center gap-2">
+                {syncErrorKind === "network" ? (
+                  <GlobeOff className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Cable className="h-4 w-4 shrink-0" />
+                )}
+                <span>{syncError}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => void refreshGoals()}
-                className="rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-semibold hover:bg-destructive/10"
+                className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-semibold hover:bg-destructive/10"
               >
-                Retry
+                <RefreshCw className="h-3 w-3" />
+                Try again
               </button>
             </div>
           </div>
         )}
-        {isLoadingGoals && !syncError && (
+
+        {isLoadingGoals && !syncError && !isOffline && (
           <div
             className="border-b hairline bg-primary-soft px-4 py-2 text-sm text-primary sm:px-6"
             role="status"
           >
-            Syncing goals with the backend...
+            Loading your goals…
           </div>
         )}
         <main className="spira-main min-w-0 flex-1 md:min-w-[390px]">

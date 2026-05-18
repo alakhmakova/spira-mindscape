@@ -25,6 +25,7 @@ type Mutation {
     updateOption(goalId: ID!, optionId: ID!, input: UpdateOptionInput!): Option!
     selectOption(goalId: ID!, optionId: ID!): Option!
     removeOption(goalId: ID!, optionId: ID!): Boolean!
+    reorderOptions(goalId: ID!, optionIds: [ID!]!): [Option!]!
 
     createTarget(goalId: ID!, input: CreateTargetInput!): Target!
     updateTarget(id: ID!, input: UpdateTargetInput!): Target!
@@ -48,6 +49,14 @@ type Goal {
     resources: [Resource!]!
     targets: [Target!]!
     progress: Float!
+    updatedAt: String!
+    confidenceHistory: [ConfidenceHistory!]!
+}
+
+type ConfidenceHistory {
+    id: ID!
+    confidence: Int!
+    at: String!
 }
 
 type Reality {
@@ -59,12 +68,17 @@ type Reality {
 type RealityItem {
     id: ID!
     text: String!
+    createdAt: String!
+    updatedAt: String!
 }
 
 type Option {
     id: ID!
     text: String!
     selected: Boolean!
+    position: Int!
+    createdAt: String!
+    updatedAt: String!
 }
 
 type Target {
@@ -80,6 +94,8 @@ type Target {
     deadline: String
     achievedAt: String
     progress: Float!
+    createdAt: String!
+    updatedAt: String!
 }
 
 type ChecklistItem {
@@ -88,6 +104,8 @@ type ChecklistItem {
     done: Boolean!
     deadline: String
     achievedAt: String
+    createdAt: String!
+    updatedAt: String!
 }
 
 type Resource {
@@ -102,6 +120,8 @@ type Resource {
     role: String
     email: String
     phone: String
+    createdAt: String!
+    updatedAt: String!
 }
 
 input CreateGoalInput {
@@ -180,3 +200,4 @@ input UpdateResourceInput {
     email: String
     phone: String
 }
+

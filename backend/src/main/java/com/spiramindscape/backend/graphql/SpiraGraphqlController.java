@@ -4,6 +4,7 @@ import com.spiramindscape.backend.goal.Goal;
 import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.goal.Option;
 import com.spiramindscape.backend.goal.RealityService;
+import com.spiramindscape.backend.goal.ConfidenceHistory;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Controller;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import graphql.schema.DataFetchingEnvironment;
 
 @Controller
 @RequiredArgsConstructor
@@ -87,8 +89,10 @@ public class SpiraGraphqlController {
     }
 
     @MutationMapping
-    public Goal updateGoal(@Argument Long id, @Argument UpdateGoalInput input) {
-        return goalService.update(id, input);
+    public Goal updateGoal(@Argument Long id, @Argument UpdateGoalInput input,
+                           DataFetchingEnvironment environment) {
+        Map<String, Object> rawInput = environment.getArgument("input");
+        return goalService.update(id, input, rawInput);
     }
 
     @MutationMapping
@@ -143,16 +147,26 @@ public class SpiraGraphqlController {
         return true;
     }
 
+    @MutationMapping
+    public List<Option> reorderOptions(@Argument Long goalId, @Argument List<Long> optionIds) {
+        return goalService.reorderOptions(goalId, optionIds);
+    }
+
     // Target mutations
 
     @MutationMapping
-    public Target createTarget(@Argument Long goalId, @Argument CreateTargetInput input) {
-        return targetService.create(goalId, input);
+    public Target createTarget(@Argument Long goalId, @Argument CreateTargetInput input,
+                               DataFetchingEnvironment environment) {
+        Map<String, Object> rawInput = environment.getArgument("input");
+        return targetService.create(goalId, input, rawInput);
     }
 
     @MutationMapping
-    public Target updateTarget(@Argument Long id, @Argument UpdateTargetInput input) {
-        return targetService.update(id, input);
+    public Target updateTarget(@Argument Long id, @Argument UpdateTargetInput input,
+                               DataFetchingEnvironment environment) {
+        Map<String, Object> rawInput = environment.getArgument("input");
+        boolean deadlineProvided = rawInput != null && rawInput.containsKey("deadline");
+        return targetService.update(id, input, deadlineProvided, rawInput);
     }
 
     @MutationMapping
@@ -164,13 +178,17 @@ public class SpiraGraphqlController {
     // Resource mutations
 
     @MutationMapping
-    public Resource createResource(@Argument Long goalId, @Argument CreateResourceInput input) {
-        return resourceService.create(goalId, input);
+    public Resource createResource(@Argument Long goalId, @Argument CreateResourceInput input,
+                                   DataFetchingEnvironment environment) {
+        Map<String, Object> rawInput = environment.getArgument("input");
+        return resourceService.create(goalId, input, rawInput);
     }
 
     @MutationMapping
-    public Resource updateResource(@Argument Long id, @Argument UpdateResourceInput input) {
-        return resourceService.update(id, input);
+    public Resource updateResource(@Argument Long id, @Argument UpdateResourceInput input,
+                                   DataFetchingEnvironment environment) {
+        Map<String, Object> rawInput = environment.getArgument("input");
+        return resourceService.update(id, input, rawInput);
     }
 
     @MutationMapping
@@ -197,6 +215,16 @@ public class SpiraGraphqlController {
         Map<Goal, List<Option>> result = new LinkedHashMap<>();
         for (Goal goal : goals) {
             result.put(goal, optionsByGoalId.getOrDefault(goal.getId(), List.of()));
+        }
+        return result;
+    }
+
+    @BatchMapping(typeName = "Goal", field = "confidenceHistory")
+    public Map<Goal, List<ConfidenceHistory>> confidenceHistory(List<Goal> goals) {
+        Map<Long, List<ConfidenceHistory>> historyByGoalId = goalService.findConfidenceHistoryByGoalIds(goalIds(goals));
+        Map<Goal, List<ConfidenceHistory>> result = new LinkedHashMap<>();
+        for (Goal goal : goals) {
+            result.put(goal, historyByGoalId.getOrDefault(goal.getId(), List.of()));
         }
         return result;
     }
@@ -263,3 +291,4 @@ public class SpiraGraphqlController {
                 .toList();
     }
 }
+

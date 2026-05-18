@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
  */
 export function DeadlinePopover({
   iso,
+  achievedAt,
+  completed = false,
   onChange,
   size = "sm",
   align = "start",
@@ -44,10 +46,12 @@ export function DeadlinePopover({
   renderTrigger,
 }: {
   iso?: string;
+  achievedAt?: string;
+  completed?: boolean;
   onChange: (next: string | undefined) => void;
   size?: "sm" | "md";
   align?: "start" | "center" | "end";
-  variant?: "pill" | "input" | "button" | "text" | "icon";
+  variant?: "pill" | "input" | "button" | "text" | "icon" | "icon-text";
   placeholder?: React.ReactNode;
   hideDaysLeft?: boolean;
   className?: string;
@@ -58,11 +62,19 @@ export function DeadlinePopover({
 }) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
-  const date = iso ? new Date(iso) : undefined;
+  const displayIso = completed && achievedAt ? achievedAt : iso;
+  const date = displayIso ? new Date(displayIso) : undefined;
   const [month, setMonth] = useState<Date>(date || new Date());
 
   const days = date ? differenceInCalendarDays(date, new Date()) : 0;
-  const overdue = !!date && isPast(date) && days < 0;
+  const overdue = !!date && !completed && isPast(date) && days < 0;
+  const relativeText = completed
+    ? "achieved"
+    : overdue
+      ? `${Math.abs(days)}d overdue`
+      : days === 0
+        ? "today"
+        : `${days}d left`;
 
   let toneClass =
     "text-muted-foreground border-border bg-surface hover:border-primary/40 hover:bg-primary-soft/50";
@@ -141,6 +153,7 @@ export function DeadlinePopover({
           className={cn(
             "text-sm hover:text-primary transition-colors text-left",
             !date && "text-muted-foreground",
+            overdue && "!text-destructive hover:!text-destructive/80",
             className,
           )}
         >
@@ -150,11 +163,7 @@ export function DeadlinePopover({
               {!hideDaysLeft && (
                 <span className="opacity-60 font-normal">
                   ·{" "}
-                  {overdue
-                    ? `${Math.abs(days)}d overdue`
-                    : days === 0
-                      ? "today"
-                      : `${days}d left`}
+                  {relativeText}
                 </span>
               )}
               {!hideChevron && (
@@ -176,13 +185,50 @@ export function DeadlinePopover({
           className={cn(
             "h-7 w-7 grid place-items-center rounded-md transition-colors",
             date
-              ? "text-primary"
+              ? overdue
+                ? "text-destructive hover:text-destructive/80"
+                : "text-primary"
               : "text-muted-foreground hover:text-primary hover:bg-secondary",
             className,
           )}
-          title={date ? format(date, "MMM d, yyyy") : "Set deadline"}
+          title={
+            date
+              ? overdue
+                ? `${format(date, "MMM d, yyyy")} · ${Math.abs(days)}d overdue`
+                : format(date, "MMM d, yyyy")
+              : "Set deadline"
+          }
         >
           <CalendarIcon className="h-3.5 w-3.5" />
+        </PopoverTrigger>
+      ) : variant === "icon-text" ? (
+        <PopoverTrigger
+          className={cn(
+            "inline-flex items-center gap-1 text-xs transition-colors rounded",
+            date
+              ? overdue
+                ? "text-destructive hover:text-destructive/80"
+                : days <= 7
+                  ? "text-amber-700 hover:text-amber-800"
+                  : "text-foreground/70 hover:text-foreground"
+              : "text-muted-foreground hover:text-primary",
+            className,
+          )}
+        >
+          <CalendarIcon className="h-3 w-3 shrink-0" />
+          {date ? (
+            <>
+              <span>{format(date, "MMM d, yyyy")}</span>
+              {!hideDaysLeft && (
+                <span className="opacity-60">
+                  ·{" "}
+                  {relativeText}
+                </span>
+              )}
+            </>
+          ) : (
+            <span>{placeholder || "Set deadline"}</span>
+          )}
         </PopoverTrigger>
       ) : (
         <PopoverTrigger
@@ -202,11 +248,7 @@ export function DeadlinePopover({
               {!hideDaysLeft && (
                 <span className="opacity-60 font-normal">
                   ·{" "}
-                  {overdue
-                    ? `${Math.abs(days)}d overdue`
-                    : days === 0
-                      ? "today"
-                      : `${days}d left`}
+                  {relativeText}
                 </span>
               )}
             </>

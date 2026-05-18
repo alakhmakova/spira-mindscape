@@ -54,6 +54,7 @@ export type Option = {
   id: string;
   text: string;
   selected: boolean;
+  position: number;
 };
 
 export type Goal = {

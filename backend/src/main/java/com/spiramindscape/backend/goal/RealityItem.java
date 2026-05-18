@@ -13,6 +13,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,6 +26,8 @@ import java.util.Locale;
 @Setter
 public class RealityItem {
 
+    public static final int MAX_REALITY_ITEM_TEXT_LENGTH = 500;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -35,7 +38,8 @@ public class RealityItem {
     private String kind;
 
     @NotBlank
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Size(max = MAX_REALITY_ITEM_TEXT_LENGTH)
+    @Column(length = 500)
     private String text;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -49,14 +53,14 @@ public class RealityItem {
     private Instant updatedAt;
 
     @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         normalizeKind();
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         normalizeKind();
         this.updatedAt = Instant.now();
     }

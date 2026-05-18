@@ -4,12 +4,17 @@ import { cn } from "@/lib/utils";
 
 export function DeadlineLabel({
   iso,
+  achievedAt,
+  completed = false,
   className,
 }: {
   iso?: string;
+  achievedAt?: string;
+  completed?: boolean;
   className?: string;
 }) {
-  if (!iso)
+  const displayIso = completed && achievedAt ? achievedAt : iso;
+  if (!displayIso)
     return (
       <span
         className={cn(
@@ -21,9 +26,9 @@ export function DeadlineLabel({
         No deadline
       </span>
     );
-  const d = new Date(iso);
+  const d = new Date(displayIso);
   const days = differenceInCalendarDays(d, new Date());
-  const overdue = isPast(d) && days < 0;
+  const overdue = !completed && isPast(d) && days < 0;
   const tone = overdue
     ? "text-destructive"
     : days <= 7
@@ -41,11 +46,13 @@ export function DeadlineLabel({
       {format(d, "MMM d, yyyy")}
       <span className="opacity-60 font-normal">
         ·{" "}
-        {overdue
-          ? `${Math.abs(days)}d overdue`
-          : days === 0
-            ? "today"
-            : `${days}d left`}
+        {completed
+          ? "achieved"
+          : overdue
+            ? `${Math.abs(days)}d overdue`
+            : days === 0
+              ? "today"
+              : `${days}d left`}
       </span>
     </span>
   );

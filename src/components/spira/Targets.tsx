@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Check, Minus, Plus, Trash2, X } from "lucide-react";
+import { Check, Minus, Plus, SquareDashed, Trash2, X } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { targetProgress } from "@/lib/spira/progress";
@@ -245,6 +245,8 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                 <TableCell>
                   <DeadlinePopover
                     iso={t.deadline}
+                    achievedAt={t.achievedAt}
+                    completed={progress >= 1}
                     variant="text"
                     side="top"
                     hideChevron
@@ -265,7 +267,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                               t.done ? "bg-success" : "bg-muted-foreground/40",
                             )}
                           ></div>
-                          <span className="text-sm text-foreground group-hover:text-primary transition-colors">
+                          <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
                             {t.done ? "Done" : "Not done"}
                           </span>
                         </button>
@@ -304,7 +306,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                           progress >= 1 ? "bg-success" : "bg-[#ea580c]",
                         )}
                       ></div>
-                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">
+                      <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
                         {progress >= 1 ? "Complete" : "Update"}
                       </span>
                     </button>
@@ -317,10 +319,10 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
                       <div
                         className={cn(
                           "h-2 w-2 rounded-full shrink-0",
-                          progress >= 1 ? "bg-success" : "bg-[#ea580c]",
+                          progress >= 1 ? "bg-success" : "bg-[#B8A9D4]",
                         )}
                       ></div>
-                      <span className="text-sm text-foreground group-hover:text-primary transition-colors">
+                      <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
                         {progress >= 1 ? "Complete" : "Tasks"}
                       </span>
                     </button>
@@ -496,6 +498,8 @@ function TargetRow({
           {/* Top row: deadline (replaces type label) */}
           <DeadlinePopover
             iso={target.deadline}
+            achievedAt={target.achievedAt}
+            completed={progress >= 1}
             onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
           />
           <InlineText
@@ -596,27 +600,43 @@ function NumericBody({
   onUpdate: (patch: Partial<Target>) => void;
   progress: number;
 }) {
-  const updateCurrent = (next: number) => {
-    const inferredStart =
-      target.start === undefined && next > target.total
-        ? target.current === 0
-          ? next
-          : 0
-        : target.start;
+  const [validationMessage, setValidationMessage] = useState<string | null>(
+    null,
+  );
+  const start = target.start ?? 0;
+  const minValue = Math.min(start, target.total);
+  const maxValue = Math.max(start, target.total);
 
-    onUpdate({
-      ...(inferredStart !== undefined ? { start: inferredStart } : {}),
-      current: next,
-    } as Partial<Target>);
+  const validatePatch = (
+    patch: Partial<Extract<Target, { type: "numeric" }>>,
+  ) => {
+    const nextStart = patch.start ?? start;
+    const nextCurrent = patch.current ?? target.current;
+    const nextTotal = patch.total ?? target.total;
+    if (nextStart < 0 || nextCurrent < 0 || nextTotal < 0) {
+      return "Numbers cannot be negative.";
+    }
+    if (nextStart === nextTotal) {
+      return "Start and target must be different.";
+    }
+    const min = Math.min(nextStart, nextTotal);
+    const max = Math.max(nextStart, nextTotal);
+    if (nextCurrent < min || nextCurrent > max) {
+      return `Current must stay between ${min} and ${max}.`;
+    }
+    return null;
   };
 
-  const updateTotal = (next: number) => {
-    onUpdate({
-      ...(target.start === undefined && target.current > next
-        ? { start: target.current }
-        : {}),
-      total: next,
-    } as Partial<Target>);
+  const commitPatch = (
+    patch: Partial<Extract<Target, { type: "numeric" }>>,
+  ) => {
+    const message = validatePatch(patch);
+    if (message) {
+      setValidationMessage(message);
+      return;
+    }
+    setValidationMessage(null);
+    onUpdate(patch as Partial<Target>);
   };
 
   return (
@@ -626,16 +646,16 @@ function NumericBody({
         <InlineEditable
           value={String(target.current)}
           numeric
-          min={0}
-          onChange={(v) => updateCurrent(parseInt(v, 10))}
+          onChange={(v) => commitPatch({ current: parseInt(v, 10) })}
+          onInvalid={setValidationMessage}
           ariaLabel="Current value"
         />
         <span>/</span>
         <InlineEditable
           value={String(target.total)}
           numeric
-          min={0}
-          onChange={(v) => updateTotal(parseInt(v, 10))}
+          onChange={(v) => commitPatch({ total: parseInt(v, 10) })}
+          onInvalid={setValidationMessage}
           ariaLabel="Total value"
         />
         <InlineEditable
@@ -652,20 +672,24 @@ function NumericBody({
           <InlineEditable
             value={String(target.start ?? 0)}
             numeric
-            min={0}
-            onChange={(v) =>
-              onUpdate({ start: parseInt(v, 10) } as Partial<Target>)
-            }
+            onChange={(v) => commitPatch({ start: parseInt(v, 10) })}
+            onInvalid={setValidationMessage}
             ariaLabel="Start value"
           />
           <span>)</span>
         </div>
       </div>
+      {validationMessage && (
+        <p className="text-xs font-medium text-destructive" role="alert">
+          {validationMessage}
+        </p>
+      )}
       {/* Single progress bar with ± controls; percentage sits inline before the + */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => updateCurrent(Math.max(0, target.current - 1))}
-          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
+          onClick={() => commitPatch({ current: target.current - 1 })}
+          disabled={target.current <= minValue}
+          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-40"
           aria-label="Decrement"
         >
           <Minus className="h-4 w-4" />
@@ -675,8 +699,9 @@ function NumericBody({
           {Math.round(progress * 100)}%
         </span>
         <button
-          onClick={() => updateCurrent(target.current + 1)}
-          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
+          onClick={() => commitPatch({ current: target.current + 1 })}
+          disabled={target.current >= maxValue}
+          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-40"
           aria-label="Increment"
         >
           <Plus className="h-4 w-4" />
@@ -692,7 +717,7 @@ function InlineEditable({
   placeholder,
   ariaLabel,
   numeric,
-  min,
+  onInvalid,
   className,
 }: {
   value: string;
@@ -700,7 +725,7 @@ function InlineEditable({
   placeholder?: string;
   ariaLabel: string;
   numeric?: boolean;
-  min?: number;
+  onInvalid?: (message: string) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -715,10 +740,17 @@ function InlineEditable({
   const handleBlur = (e: React.FocusEvent<HTMLSpanElement>) => {
     let text = e.currentTarget.textContent || "";
     if (numeric) {
-      text = text.replace(/[^0-9]/g, "");
-      if (text === "") text = "0";
-      const n = parseInt(text, 10);
-      text = String(typeof min === "number" ? Math.max(min, n) : n);
+      text = text.trim();
+      if (!text) {
+        e.currentTarget.textContent = value;
+        onInvalid?.("Value is required.");
+        return;
+      }
+      if (!/^\d+$/.test(text)) {
+        e.currentTarget.textContent = value;
+        onInvalid?.("Enter a non-negative whole number.");
+        return;
+      }
     }
 
     if (e.currentTarget.textContent !== text) {
@@ -769,10 +801,22 @@ function TasksResizableSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  items: { id: string; text: string; done: boolean; deadline?: string }[];
+  items: {
+    id: string;
+    text: string;
+    done: boolean;
+    deadline?: string;
+    achievedAt?: string;
+  }[];
   title: string;
   onChange: (
-    items: { id: string; text: string; done: boolean; deadline?: string }[],
+    items: {
+      id: string;
+      text: string;
+      done: boolean;
+      deadline?: string;
+      achievedAt?: string;
+    }[],
   ) => void;
 }) {
   const [width, setWidth] = useState<number>(() => {
@@ -842,9 +886,10 @@ function TasksResizableSheet({
           aria-label="Resize panel"
         />
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
           <div
             className={cn(
-              "flex items-center justify-between bg-surface z-10 sticky top-0",
+              "flex items-center justify-between bg-surface z-10 shrink-0",
               compact ? "px-3 pt-3 pb-1" : "px-6 pt-5 pb-2",
             )}
           >
@@ -863,10 +908,12 @@ function TasksResizableSheet({
               <X className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Scrollable task list */}
           <div
             className={cn(
               "flex-1 overflow-y-auto",
-              compact ? "px-2 pb-2 pt-0" : "px-6 pb-6 pt-0",
+              compact ? "px-2 pt-0" : "px-6 pt-0",
             )}
           >
             <ChecklistEditor
@@ -876,6 +923,21 @@ function TasksResizableSheet({
               hideCountdown={compact}
             />
           </div>
+
+          {/* Sticky bottom input — chat-style */}
+          <ChecklistAddInput
+            compact={compact}
+            onAdd={(text) =>
+              onChange([
+                ...items,
+                {
+                  id: Math.random().toString(36).slice(2, 9),
+                  text,
+                  done: false,
+                },
+              ])
+            }
+          />
         </div>
       </SheetContent>
     </Sheet>
@@ -888,15 +950,25 @@ function ChecklistEditor({
   compact = false,
   hideCountdown = false,
 }: {
-  items: { id: string; text: string; done: boolean; deadline?: string }[];
+  items: {
+    id: string;
+    text: string;
+    done: boolean;
+    deadline?: string;
+    achievedAt?: string;
+  }[];
   onChange: (
-    items: { id: string; text: string; done: boolean; deadline?: string }[],
+    items: {
+      id: string;
+      text: string;
+      done: boolean;
+      deadline?: string;
+      achievedAt?: string;
+    }[],
   ) => void;
   compact?: boolean;
   hideCountdown?: boolean;
 }) {
-  const [draft, setDraft] = useState("");
-  const uid = () => Math.random().toString(36).slice(2, 9);
   return (
     <div className={cn("space-y-1", !compact && "mt-4")}>
       {items.map((it) => (
@@ -961,18 +1033,31 @@ function ChecklistEditor({
                 it.done && "line-through text-muted-foreground",
               )}
             />
-            <DeadlinePopover
-              iso={it.deadline}
-              variant="icon"
-              hideDaysLeft={hideCountdown}
-              onChange={(next) =>
-                onChange(
-                  items.map((i) =>
-                    i.id === it.id ? { ...i, deadline: next } : i,
-                  ),
-                )
-              }
-            />
+            {/* Fixed-width deadline column – keeps icons aligned */}
+            <div
+              className={cn(
+                "shrink-0 flex items-center",
+                compact ? "w-7" : "w-[6.5rem]",
+              )}
+            >
+              <DeadlinePopover
+                iso={it.deadline}
+                achievedAt={it.achievedAt}
+                completed={it.done}
+                variant={compact ? "icon" : "icon-text"}
+                size="sm"
+                hideDaysLeft
+                placeholder="Set deadline"
+                onChange={(next) =>
+                  onChange(
+                    items.map((i) =>
+                      i.id === it.id ? { ...i, deadline: next } : i,
+                    ),
+                  )
+                }
+              />
+            </div>
+
             <button
               onClick={() => onChange(items.filter((i) => i.id !== it.id))}
               className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0"
@@ -983,41 +1068,76 @@ function ChecklistEditor({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Sticky chat-style input pinned to the bottom of the tasks panel */
+function ChecklistAddInput({
+  compact,
+  onAdd,
+}: {
+  compact: boolean;
+  onAdd: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onAdd(text);
+    setDraft("");
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div
+      className={cn("shrink-0 bg-surface", compact ? "px-2 py-2" : "px-4 py-3")}
+    >
       <div
         className={cn(
           "flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary",
-          compact ? "mt-2 min-h-[40px]" : "mt-4 min-h-[44px]",
         )}
       >
+        {/* Plus icon left column */}
         <div
           className={cn(
             "shrink-0 flex items-center justify-center border-r border-border bg-secondary/30",
             compact ? "w-10" : "w-12",
           )}
         >
-          <span className="h-4 w-4 rounded-sm border-2 border-dashed border-border-strong/70" />
+          <Plus className="h-4 w-4 text-muted-foreground" />
         </div>
+
+        {/* Text input */}
         <div
           className={cn(
-            "flex-1 flex items-center relative",
-            compact ? "px-2" : "px-3",
+            "flex-1 flex items-center gap-2 px-3 py-1",
+            compact ? "py-1" : "py-1",
           )}
         >
           <input
+            ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && draft.trim()) {
-                onChange([
-                  ...items,
-                  { id: uid(), text: draft.trim(), done: false },
-                ]);
-                setDraft("");
-              }
+              if (e.key === "Enter") commit();
             }}
-            placeholder="Add subtask…"
-            className="flex-1 bg-transparent outline-none text-base min-h-[40px] placeholder:text-muted-foreground/75"
+            placeholder="Add task…"
+            className={cn(
+              "flex-1 bg-transparent outline-none placeholder:text-muted-foreground/75",
+              compact ? "text-sm min-h-[36px]" : "text-base min-h-[40px]",
+            )}
           />
+          {draft.trim() && (
+            <button
+              onClick={commit}
+              className="ml-1 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 shrink-0"
+            >
+              Add
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1071,30 +1191,61 @@ function NewTargetForm({
     "numeric",
   );
   const [title, setTitle] = useState("");
-  const [start, setStart] = useState(0);
-  const [total, setTotal] = useState(10);
+  const [start, setStart] = useState("0");
+  const [total, setTotal] = useState("10");
   const [unit, setUnit] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [checklistItems, setChecklistItems] = useState<
+    { id: string; text: string; done: boolean; deadline?: string }[]
+  >([]);
+
+  const newTaskUid = () => Math.random().toString(36).slice(2, 9);
+  const parsedStart = Number(start);
+  const parsedTotal = Number(total);
+  const numericMessage = (() => {
+    if (type !== "numeric") return null;
+    if (!start.trim() || !total.trim()) return "Start and target are required.";
+    if (!/^\d+$/.test(start.trim()) || !/^\d+$/.test(total.trim())) {
+      return "Start and target must be non-negative whole numbers.";
+    }
+    if (parsedStart === parsedTotal) {
+      return "Start and target must be different.";
+    }
+    return null;
+  })();
+
+  const canSubmit =
+    !!title.trim() &&
+    (type !== "checklist" || checklistItems.length >= 1) &&
+    (type !== "numeric" || numericMessage === null);
 
   const submit = () => {
-    if (!title.trim()) return;
-    const base = {
-      title: title.trim(),
-      deadline: deadline ? new Date(deadline).toISOString() : undefined,
-    };
+    if (!canSubmit) return;
+    const t = title.trim();
+    const dl = deadline ? new Date(deadline).toISOString() : undefined;
     if (type === "numeric") {
       addTarget(goalId, {
-        ...base,
         type: "numeric",
-        start,
-        current: start,
-        total,
+        title: t,
+        deadline: dl,
+        start: parsedStart,
+        total: parsedTotal,
         unit: unit || undefined,
       });
     } else if (type === "binary") {
-      addTarget(goalId, { ...base, type: "binary", done: false });
+      addTarget(goalId, {
+        type: "binary",
+        title: t,
+        deadline: dl,
+        done: false,
+      });
     } else {
-      addTarget(goalId, { ...base, type: "checklist", items: [] });
+      addTarget(goalId, {
+        type: "checklist",
+        title: t,
+        deadline: dl,
+        items: checklistItems,
+      });
     }
     onDone();
   };
@@ -1196,23 +1347,27 @@ function NewTargetForm({
         {type === "numeric" && (
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-sm font-semibold block mb-1.5 text-muted-foreground">
-                Start
+              <label className="text-sm font-semibold block mb-1.5">
+                Start <span className="text-destructive">*</span>
               </label>
               <Input
                 type="number"
+                min={0}
+                step={1}
                 value={start}
-                onChange={(e) => setStart(Number(e.target.value) || 0)}
+                onChange={(e) => setStart(e.target.value)}
               />
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">
-                Target
+                Target <span className="text-destructive">*</span>
               </label>
               <Input
                 type="number"
+                min={0}
+                step={1}
                 value={total}
-                onChange={(e) => setTotal(Number(e.target.value) || 0)}
+                onChange={(e) => setTotal(e.target.value)}
               />
             </div>
             <div>
@@ -1223,6 +1378,62 @@ function NewTargetForm({
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="apps…"
+              />
+            </div>
+            {numericMessage && (
+              <p
+                className="col-span-3 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {numericMessage}
+              </p>
+            )}
+          </div>
+        )}
+        {type === "checklist" && (
+          <div>
+            <label className="text-sm font-semibold block mb-2">
+              Tasks <span className="text-destructive">*</span>
+              {checklistItems.length === 0 && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  — add at least one
+                </span>
+              )}
+            </label>
+            <div className="space-y-1.5">
+              {checklistItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-stretch overflow-hidden rounded-md border border-border bg-surface min-h-[44px]"
+                >
+                  <div className="w-12 shrink-0 flex items-center justify-center border-r border-border bg-surface">
+                    <SquareDashed className="h-4 w-4 text-muted-foreground/50" />
+                  </div>
+                  <div className="flex-1 flex items-center min-w-0 gap-1 px-3 py-1.5 bg-surface">
+                    <span className="flex-1 text-sm text-foreground truncate">
+                      {item.text}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setChecklistItems((prev) =>
+                          prev.filter((i) => i.id !== item.id),
+                        )
+                      }
+                      className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0 transition-colors"
+                      aria-label="Remove task"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <NewTaskInlineInput
+                onAdd={(text) =>
+                  setChecklistItems((prev) => [
+                    ...prev,
+                    { id: newTaskUid(), text, done: false },
+                  ])
+                }
               />
             </div>
           </div>
@@ -1252,12 +1463,55 @@ function NewTargetForm({
         </button>
         <button
           onClick={submit}
-          disabled={!title.trim()}
+          disabled={!canSubmit}
           className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
         >
           Add target
         </button>
       </div>
     </>
+  );
+}
+
+function NewTaskInlineInput({ onAdd }: { onAdd: (text: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = () => {
+    if (!draft.trim()) return;
+    onAdd(draft.trim());
+    setDraft("");
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary min-h-[40px]">
+      <div className="w-10 shrink-0 flex items-center justify-center border-r border-border bg-secondary/30">
+        <Plus className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="flex-1 flex items-center px-3 py-1 gap-2">
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+          }}
+          placeholder="Add task… (Enter to confirm)"
+          className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/75 min-h-[38px]"
+        />
+        {draft.trim() && (
+          <button
+            onClick={commit}
+            className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors"
+          >
+            Add
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

@@ -63,6 +63,10 @@ public class Goal {
     @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Target> targets = new ArrayList<>();
 
+    @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("at DESC")
+    private List<ConfidenceHistory> confidenceHistory = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         if (this.description == null) {
