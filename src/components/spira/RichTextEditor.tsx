@@ -5,7 +5,7 @@ import Link from "@tiptap/extension-link";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Highlight from "@tiptap/extension-highlight";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -141,7 +141,7 @@ function Toolbar({
 
   const Sep = () => <span className="mx-1 h-6 w-px shrink-0 bg-border" />;
 
-  const updateScrollState = () => {
+  const updateScrollState = useCallback(() => {
     const node = scrollRef.current;
 
     if (!node || variant !== "desktop") {
@@ -153,7 +153,7 @@ function Toolbar({
     const maxScrollLeft = node.scrollWidth - node.clientWidth;
     setCanScrollLeft(node.scrollLeft > 4);
     setCanScrollRight(node.scrollLeft < maxScrollLeft - 4);
-  };
+  }, [variant]);
 
   useEffect(() => {
     if (variant !== "desktop") return;
@@ -171,7 +171,7 @@ function Toolbar({
       node.removeEventListener("scroll", updateScrollState);
       window.removeEventListener("resize", handleResize);
     };
-  }, [variant]);
+  }, [variant, updateScrollState]);
 
   const scrollToolbar = (direction: "left" | "right") => {
     const node = scrollRef.current;

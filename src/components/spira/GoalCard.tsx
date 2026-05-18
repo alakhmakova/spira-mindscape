@@ -3,7 +3,8 @@ import { ChevronRight, X, Calendar, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
 import { goalProgress } from "@/lib/spira/progress";
-import { ConfidencePill, getConfidenceColor } from "./Confidence";
+import { ConfidencePill } from "./Confidence";
+import { getConfidenceColor } from "./confidence-color";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
@@ -12,7 +13,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 /** Overdue red — same as "Yes, delete" button in ConfirmDialog */
 const OVERDUE_RED = "#d13239";
 
-function formatDeadlineInfo(iso: string | undefined) {
+function formatDeadlineInfo(iso: string | undefined, completed = false) {
   if (!iso) return null;
 
   const deadline = new Date(iso);
@@ -26,7 +27,7 @@ function formatDeadlineInfo(iso: string | undefined) {
   const diffDays = Math.round(
     (deadlineDay.getTime() - todayDay.getTime()) / 86_400_000,
   );
-  const isOverdue = diffDays < 0;
+  const isOverdue = !completed && diffDays < 0;
 
   const dateStr = deadline.toLocaleDateString("en-US", {
     month: "short",
@@ -35,7 +36,9 @@ function formatDeadlineInfo(iso: string | undefined) {
   });
 
   const countdown =
-    diffDays === 0
+    completed
+      ? "achieved"
+      : diffDays === 0
       ? "due today"
       : diffDays === 1
         ? "1 day left"
@@ -50,12 +53,14 @@ function formatDeadlineInfo(iso: string | undefined) {
 
 export function GoalCard({ goal }: { goal: Goal }) {
   const progress = goalProgress(goal);
+  const completed = progress >= 1;
   const deleteGoal = useSpira((s) => s.deleteGoal);
   const updateGoal = useSpira((s) => s.updateGoal);
   const [confirm, setConfirm] = useState(false);
 
   const accentColor = getConfidenceColor(goal.confidence);
-  const deadlineInfo = formatDeadlineInfo(goal.deadline);
+  const displayDate = completed && goal.achievedAt ? goal.achievedAt : goal.deadline;
+  const deadlineInfo = formatDeadlineInfo(displayDate, completed);
   const isOverdue = deadlineInfo?.isOverdue ?? false;
 
   const stripeColor = isOverdue ? OVERDUE_RED : accentColor;
@@ -117,6 +122,8 @@ export function GoalCard({ goal }: { goal: Goal }) {
           {/* Deadline clickable trigger */}
           <DeadlinePopover
             iso={goal.deadline}
+            achievedAt={goal.achievedAt}
+            completed={completed}
             onChange={(next) => updateGoal(goal.id, { deadline: next })}
             renderTrigger={() =>
               deadlineInfo ? (
@@ -134,7 +141,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
                     ) : (
                       <Calendar className="h-3.5 w-3.5 opacity-70 translate-y-[1px]" />
                     )}
-                    Due {deadlineInfo.dateStr}
+                    {completed ? "Achieved" : "Due"} {deadlineInfo.dateStr}
                   </span>
                   <span className="w-px h-3.5 bg-border shrink-0" />
                   <span className="text-foreground font-semibold truncate">

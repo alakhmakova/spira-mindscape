@@ -155,6 +155,8 @@ function GoalWorkspace() {
           />
           <DeadlineKpi
             iso={goal.deadline}
+            achievedAt={goal.achievedAt}
+            completed={progress >= 1}
             createdAt={goal.createdAt}
             onChange={(next) => updateGoal(goal.id, { deadline: next })}
           />
@@ -469,16 +471,21 @@ function ConfidenceKpi({
 
 function DeadlineKpi({
   iso,
+  achievedAt,
+  completed = false,
   createdAt,
   onChange,
 }: {
   iso?: string;
+  achievedAt?: string;
+  completed?: boolean;
   createdAt: string;
   onChange: (next: string | undefined) => void;
 }) {
-  const date = iso ? new Date(iso) : undefined;
+  const displayIso = completed && achievedAt ? achievedAt : iso;
+  const date = displayIso ? new Date(displayIso) : undefined;
   const days = date ? differenceInCalendarDays(date, new Date()) : null;
-  const overdue = !!date && isPast(date) && (days ?? 0) < 0;
+  const overdue = !!date && !completed && isPast(date) && (days ?? 0) < 0;
 
   let distanceValue = "";
   let distanceUnit = "";
@@ -492,11 +499,13 @@ function DeadlineKpi({
 
   return (
     <KpiCard
-      label={date ? "Deadline" : "Created"}
+      label={completed && date ? "Achieved" : date ? "Deadline" : "Created"}
       hint={date ? "Click to change or remove" : "Click to set a deadline"}
       footer={
         <DeadlinePopover
           iso={iso}
+          achievedAt={achievedAt}
+          completed={completed}
           onChange={onChange}
           variant="text"
           placeholder={
@@ -527,7 +536,13 @@ function DeadlineKpi({
                 overdue ? "text-destructive" : "text-muted-foreground/60",
               )}
             >
-              {overdue ? "days overdue" : days === 0 ? "today" : "days left"}
+              {completed
+                ? "achieved"
+                : overdue
+                  ? "days overdue"
+                  : days === 0
+                    ? "today"
+                    : "days left"}
             </span>
           </div>
         ) : (

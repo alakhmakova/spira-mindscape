@@ -2,6 +2,7 @@ package com.spiramindscape.backend.goal;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,24 +19,28 @@ public class Option {
     private Long id;
 
     @NotBlank
+    @Size(max = 500)
     @Column(length = 500)
     private String text;
 
     @Column(nullable = false)
     private Boolean selected = false;
 
+    @Column(nullable = false)
+    private Integer position = 0;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "goal_id", nullable = false)
     private Goal goal;
 
     @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         this.updatedAt = Instant.now();
     }
 

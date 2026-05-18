@@ -59,7 +59,7 @@ public class Target {
     private List<ChecklistItem> items = new ArrayList<>();
 
     @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         normalizeType();
         if (done == null) {
             done = false;
@@ -69,7 +69,7 @@ public class Target {
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         normalizeType();
         if (done == null) {
             done = false;

@@ -27,10 +27,12 @@ public class RealityService {
     public RealityPayload addItem(Long goalId, String kind, String text) {
         Goal goal = goalRepository.findById(goalId)
                 .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        String normalizedText = normalizeRequiredText(text, "Reality item text is required");
+        validateRealityItemText(normalizedText);
         RealityItem item = new RealityItem();
         item.setGoal(goal);
         item.setKind(normalizeKind(kind));
-        item.setText(text);
+        item.setText(normalizedText);
         realityRepository.save(item);
         return buildReality(goalId);
     }
@@ -38,7 +40,9 @@ public class RealityService {
     @Transactional
     public RealityPayload updateItem(Long goalId, String kind, Long itemId, String text) {
         RealityItem item = getItem(goalId, kind, itemId);
-        item.setText(text);
+        String normalizedText = normalizeRequiredText(text, "Reality item text is required");
+        validateRealityItemText(normalizedText);
+        item.setText(normalizedText);
         realityRepository.save(item);
         return buildReality(goalId);
     }
@@ -94,5 +98,23 @@ public class RealityService {
                 items.stream().filter(item -> "actions".equals(item.getKind())).toList(),
                 items.stream().filter(item -> "obstacles".equals(item.getKind())).toList()
         );
+    }
+
+    private String normalizeRequiredText(String value, String message) {
+        if (value == null) {
+            throw new IllegalArgumentException(message);
+        }
+        String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    private void validateRealityItemText(String text) {
+        if (text.length() > RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Reality item text must be " + RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + " characters or fewer");
+        }
     }
 }

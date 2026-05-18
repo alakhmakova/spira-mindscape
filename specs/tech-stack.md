@@ -302,6 +302,25 @@ The page should prioritize:
 - AI interaction in goal context
 - goal-specific mini tools when they are useful for execution
 
+### Side Panel Design Rules
+
+Side panels (Sheet, Drawer, ResizableSheet) must follow these rules:
+
+**No dividers between content and sticky input areas.**
+When a panel contains a scrollable list and a sticky bottom input (chat-style), there must be no `border-t` or any other visual separator between them. The transition should be seamless — the input floats at the bottom without a line dividing it from the list above.
+
+**Unchecked task placeholder icon.**
+Use the `SquareDashed` icon from Lucide (`lucide-square-dashed`) for all unchecked/empty checkbox placeholders in task input rows and in task preview rows inside forms. Do not use a hand-crafted `<span>` or `<div>` with `border-dashed` for this purpose.
+
+```tsx
+import { SquareDashed } from "lucide-react";
+// ...
+<SquareDashed className="h-4 w-4 text-muted-foreground/50" />
+```
+
+**Panel content padding.**
+Panels should use consistent horizontal padding (`px-4` or `px-6` for desktop, `px-2` for compact/mobile). The sticky bottom input area inherits the same horizontal padding as the scrollable list.
+
 ## AI-Created Mini Tools
 
 Spira should support AI-created mini tools for goals that need a specialized interaction model beyond the standard goal sections.
@@ -656,6 +675,114 @@ The production system should include a CI/CD pipeline that runs:
 
 No code should be considered production-ready if it bypasses tests, type checks, or migration validation.
 
+## User-Facing Error Handling Standards
+
+Established: 2026-05-12.
+
+### Language Rules
+
+Technical internals must never appear in user-facing messages.
+
+Prohibited phrases in the UI:
+- "backend"
+- "sync with the backend"
+- "GraphQL"
+- "HTTP 500"
+- "endpoint"
+- "check that it is running"
+
+All error messages must be written from the user's perspective: what happened, and what they can do about it.
+
+### Error Kind Classification
+
+`SpiraApiError` carries a `kind` discriminator:
+
+- `"network"` — the fetch itself failed (no connection, DNS failure, timeout). The user is likely offline.
+- `"service"` — the server responded but returned an error (HTTP 4xx / 5xx or a GraphQL error body).
+
+The kind is set in `api.ts` at the point of the `fetch` call.
+
+### Icon Convention
+
+| Error kind | Icon | Use |
+|---|---|---|
+| `"network"` | `GlobeOff` (Lucide) | User is offline or cannot reach the server |
+| `"service"` | `Cable` (Lucide) | Server responded with an error |
+
+### Global Sync Banner (AppShell)
+
+The `AppShell` renders a thin banner above `<main>` for two states:
+
+**Loading** (`isLoading && !syncError`):
+- Background: `bg-primary-soft`
+- Text: "Loading your goals…"
+- No icon
+
+**Error** (`syncError` set):
+- Background: `bg-destructive/10`
+- Icon: `GlobeOff` or `Cable` depending on `syncErrorKind`
+- Text: the user-friendly message from the store
+- Button: "Try again" with `RefreshCw` icon, calls `refreshGoals()`
+
+### Goals Dashboard Empty States
+
+The dashboard (`/`) handles three distinct empty states when `filtered.length === 0`:
+
+| Condition | Heading | Icon | CTA |
+|---|---|---|---|
+| `isLoading && !hasLoaded` | "Loading your goals…" | — | — |
+| `goals.length === 0 && syncError` (network) | "You appear to be offline" | `GlobeOff` (destructive) | "Try again" |
+| `goals.length === 0 && syncError` (service) | "Couldn't load your goals" | `Cable` (destructive) | "Try again" |
+| `goals.length === 0` (no error) | "Your journey starts here" | `Trophy` (primary) | "Create your first goal" (no `+` icon) |
+| `filtered.length === 0` (has goals, filters active) | "No goals match" | — | — |
+
+The "Create your first goal" button must **not** appear when `syncError` is set, because creation would fail.
+
+## Offline Resilience
+
+The frontend must remain fully visible and usable when the server is unreachable.
+
+### Principle
+
+The Spira frontend uses an optimistic, local-first model via Zustand:
+
+- All mutations are applied immediately to local state
+- Network sync happens asynchronously in the background
+- If the network call fails, `syncError` is set and the banner is shown
+- Local state is never wiped because of a network failure
+
+This means users can continue reading, editing, and navigating even when offline or when the server is temporarily unavailable.
+
+### On Initial Load With No Network
+
+If the app loads for the first time with no network connection:
+
+- `loadGoals()` sets `isLoading: true` then catches the fetch error
+- `hasLoaded` is set to `true` even on failure (prevents infinite loading)
+- `syncError` and `syncErrorKind` are set
+- The dashboard renders the appropriate error empty state with a "Try again" button
+
+Previously loaded goals are not yet persisted across sessions. When local persistence is added, the app should display stale cached goals with the offline banner instead of an error empty state.
+
+### Offline Banner
+
+When `syncError` is set, `AppShell` renders a persistent banner. This banner:
+
+- Stays visible on all pages while the error persists
+- Is cleared when `refreshGoals()` succeeds
+- Shows the correct icon (`GlobeOff` for network, `Cable` for service)
+- Does not use the word "backend"
+
+### Future: Service Worker / Cache
+
+When the app is production-deployed, a service worker should cache the app shell and last-known GraphQL responses so that:
+
+- The app loads instantly even on slow connections
+- Users can read their goals while offline
+- Mutations are queued locally and replayed when connection is restored
+
+This is not implemented in the current prototype but must be part of the production deployment plan.
+
 ## Architectural Principles
 
 - Preserve the current Spira goal structure unless the constitution is intentionally updated.
@@ -668,3 +795,5 @@ No code should be considered production-ready if it bypasses tests, type checks,
 - Do not overcomplicate Reality; it is contextual, not analytical.
 - Do not expose technical enum names in user-facing UI.
 - Build for production safety from the start.
+- Never expose technical internals (backend, GraphQL, HTTP status codes) in user-facing messages.
+- The frontend must remain visible and navigable when the server is unreachable.

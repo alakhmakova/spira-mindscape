@@ -24,6 +24,14 @@ export function OptionsList({ goal }: { goal: Goal }) {
     setDraft("");
   };
 
+  const handleOptionClick = (optId: string, isSelected: boolean) => {
+    if (isSelected) {
+      updateOption(goal.id, optId, { selected: false });
+    } else {
+      selectOption(goal.id, optId);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {goal.options.length === 0 && (
@@ -69,14 +77,16 @@ export function OptionsList({ goal }: { goal: Goal }) {
           >
             {/* Left Section with Radio */}
             <button
-              onClick={() => selectOption(goal.id, opt.id)}
+              onClick={() => handleOptionClick(opt.id, opt.selected)}
               className={cn(
                 "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
                 opt.selected
                   ? "bg-primary-soft border-primary"
                   : "bg-surface border-border hover:bg-secondary/50",
               )}
-              aria-label="Select strategy"
+              aria-label={
+                opt.selected ? "Deselect strategy" : "Select strategy"
+              }
             >
               <div
                 className={cn(

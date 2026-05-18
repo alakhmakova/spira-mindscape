@@ -24,23 +24,27 @@ public class Resource {
     @Column(nullable = false, length = 20)
     private String type;
 
-    @Size(max = 200)
-    @Column(length = 200)
+    @Size(max = 20)
+    @Column(length = 20)
     private String title;
 
+    @Size(max = 50000)
     @Column(columnDefinition = "TEXT")
     private String body;
 
+    @Size(max = 1000)
     @Column(length = 1000)
     private String url;
 
     @Column(length = 100)
     private String mime;
 
+    @Size(max = 50000)
     @Column(name = "data_url", columnDefinition = "TEXT")
     private String dataUrl;
 
-    @Column(length = 200)
+    @Size(max = 20)
+    @Column(length = 20)
     private String name;
 
     @Column(length = 200)
@@ -63,14 +67,14 @@ public class Resource {
     private Instant updatedAt;
 
     @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         normalizeType();
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         normalizeType();
         this.updatedAt = Instant.now();
     }

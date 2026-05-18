@@ -33,20 +33,37 @@ const typeMeta = {
   email: { icon: Mail, label: "Email" },
 } as const;
 
+const MAX_RESOURCE_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_RESOURCE_LABEL_LENGTH = 20;
+
+function validResourceFileType(mime: string) {
+  return mime.startsWith("image/") || mime === "application/pdf";
+}
+
+function validResourceUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validResourceEmail(value: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+}
+
 function titleFromUrl(url: string) {
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return host.split(".")[0] || host;
   } catch {
     return url;
   }
 }
 
 function nameFromEmail(email: string) {
-  const local = email.split("@")[0]?.trim();
-  if (!local) return "Email";
-  return local
-    .replace(/[._-]+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return email.trim();
 }
 
 function resourceDisplayName(resource: Resource) {
@@ -1075,21 +1092,69 @@ function Form({
   const [phone, setPhone] = useState(
     initialResource?.type === "email" ? initialResource.phone || "" : "",
   );
+  const [fileError, setFileError] = useState("");
   const fileInputId = `resource-file-${goalId}-${initialResource?.id ?? "new"}`;
 
   const onFile = (f: File) => {
+    if (!validResourceFileType(f.type)) {
+      setFileData(null);
+      setFileError("Choose an image or PDF.");
+      return;
+    }
+    if (f.size > MAX_RESOURCE_FILE_BYTES) {
+      setFileData(null);
+      setFileError("File must be 5 MB or smaller.");
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () =>
+    reader.onload = () => {
+      setFileError("");
       setFileData({
         name: f.name,
         mime: f.type,
         dataUrl: String(reader.result),
       });
+    };
     reader.readAsDataURL(f);
   };
 
+  const trimmedUrl = url.trim();
+  const trimmedEmail = email.trim();
+  const linkError =
+    type === "link" && trimmedUrl && !validResourceUrl(trimmedUrl)
+      ? "Enter a valid http or https URL."
+      : "";
+  const emailError =
+    type === "email" && trimmedEmail && !validResourceEmail(trimmedEmail)
+      ? "Enter a valid email address."
+      : "";
+  const labelValue =
+    type === "email"
+      ? name.trim() || trimmedEmail
+      : title.trim() ||
+        (type === "link" && trimmedUrl
+          ? titleFromUrl(trimmedUrl)
+          : type === "file"
+            ? fileData?.name || ""
+            : "");
+  const labelError =
+    labelValue.trim().length > MAX_RESOURCE_LABEL_LENGTH
+      ? `${type === "email" ? "Name" : "Title"} must be ${MAX_RESOURCE_LABEL_LENGTH} characters or fewer.`
+      : "";
+
+  const canSubmit = labelError
+    ? false
+    : type === "note"
+      ? !!title.trim()
+      : type === "link"
+        ? !!trimmedUrl && !linkError
+        : type === "file"
+          ? !!fileData && !fileError
+          : !!trimmedEmail && !emailError;
+
   const submit = () => {
     if (submittedRef.current) return;
+    if (!canSubmit) return;
     let payload: Partial<Resource> | null = null;
     if (type === "note") {
       payload = { type: "note", title: title.trim() || "Untitled note", body };
@@ -1183,13 +1248,22 @@ function Form({
           <div>
             <label className="text-sm font-semibold block mb-1.5">
               Title{" "}
-              {type !== "file" && <span className="text-destructive">*</span>}
+              {type === "note" && <span className="text-destructive">*</span>}
             </label>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              maxLength={MAX_RESOURCE_LABEL_LENGTH + 1}
               autoFocus
             />
+            {labelError && (
+              <p
+                className="mt-2 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {labelError}
+              </p>
+            )}
           </div>
         )}
         {type === "note" && (
@@ -1212,11 +1286,21 @@ function Form({
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://"
             />
+            {linkError && (
+              <p
+                className="mt-2 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {linkError}
+              </p>
+            )}
           </div>
         )}
         {type === "file" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">File</label>
+            <label className="text-sm font-semibold block mb-1.5">
+              File <span className="text-destructive">*</span>
+            </label>
             <input
               id={fileInputId}
               type="file"
@@ -1235,6 +1319,14 @@ function Form({
                 Browse
               </span>
             </label>
+            {fileError && (
+              <p
+                className="mt-2 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {fileError}
+              </p>
+            )}
           </div>
         )}
         {type === "email" && (
@@ -1244,8 +1336,17 @@ function Form({
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={MAX_RESOURCE_LABEL_LENGTH + 1}
                 placeholder="Optional"
               />
+              {labelError && (
+                <p
+                  className="mt-2 text-xs font-medium text-destructive"
+                  role="alert"
+                >
+                  {labelError}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">
@@ -1258,6 +1359,14 @@ function Form({
                 placeholder="name@example.com"
                 autoFocus
               />
+              {emailError && (
+                <p
+                  className="mt-2 text-xs font-medium text-destructive"
+                  role="alert"
+                >
+                  {emailError}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">Role</label>
@@ -1289,7 +1398,8 @@ function Form({
         </button>
         <button
           onClick={submit}
-          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90"
+          disabled={!canSubmit}
+          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
         >
           {initialResource ? "Save changes" : "Add resource"}
         </button>
