@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.graphql;
 
+import com.spiramindscape.backend.goal.GoalRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,10 +30,12 @@ class GoalConfidenceIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private GoalRepository goalRepository;
+
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("DELETE FROM confidence_history");
-        jdbcTemplate.execute("DELETE FROM goal");
+        goalRepository.deleteAll();
     }
 
     @ParameterizedTest
