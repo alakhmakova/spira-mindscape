@@ -50,7 +50,7 @@ The report is generated in CI with:
 
 ```yaml
 - name: Allure Report
-  uses: simple-elf/allure-report-action@v1
+  uses: simple-elf/allure-report-action@ec94841949c65c674aadd3c97a648218e0be1153 # v1
   with:
     allure_results: backend/target/allure-results
 ```
