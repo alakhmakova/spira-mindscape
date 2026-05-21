@@ -1,6 +1,6 @@
 # Plan: Backend And Progress Test Coverage
 
-**Last Updated**: 2026-05-18
+**Last Updated**: 2026-05-21
 
 ## Group 1: Frontend Progress Unit Tests
 
@@ -62,3 +62,14 @@
 38. Update docs/test-coverage-report.md with @Size fixes
 39. Update docs/testing-guide.md with text field validation info
 40. Update specs/2026-05-08-backend-test-coverage/validation.md
+
+## Group 8: CI And Test Reporting (2026-05-21)
+
+41. Add a GitHub Actions workflow in `.github/workflows/ci.yml`.
+42. Trigger CI on push, pull request, manual dispatch, and scheduled runs.
+43. Run frontend test and build commands in CI.
+44. Run backend Maven tests in CI.
+45. Configure backend tests to emit Allure results into `backend/target/allure-results`.
+46. Generate Allure HTML report in CI using `simple-elf/allure-report-action@v1`.
+47. Upload backend surefire and Allure report artifacts from workflow runs.
+48. Add English CI implementation documentation under `docs/`.
