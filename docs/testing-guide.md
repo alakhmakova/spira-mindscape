@@ -46,19 +46,25 @@ On Windows PowerShell, use `npm.cmd` if `npm` is blocked by the local execution 
 Files:
 
 ```text
+src/lib/spira/api.contract.test.ts
 src/lib/spira/api.test.ts
 src/lib/spira/progress.test.ts
+src/lib/spira/store.test.ts
 ```
 
 What they cover:
 
 - GraphQL `INTERNAL_ERROR` details are kept out of the public API error message while remaining available in `details`.
 - Network failures use a safe backend-unavailable message.
+- Goal payload mapping for title, description, confidence, deadline, created date, achieved date, reality, options, resources, targets, and checklist tasks.
+- API input serialization for all resource types and all target types, including removal of local checklist task ids before create.
 - Numeric target progress, including inferred start values, reverse progress, and clamping.
 - Done / Not Done target progress.
 - Checklist progress, including empty checklists.
 - Goal progress as an equal average of all target progress values.
 - Goal progress returning `0` when a goal has no targets.
+- Store-level optimistic rollback for resource validation errors.
+- Store-level achieved date propagation and clearing for goals, targets, and checklist tasks.
 
 Why these tests exist:
 
