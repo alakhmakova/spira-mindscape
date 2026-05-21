@@ -16,6 +16,8 @@ This task covers backend unit tests, backend Spring integration tests, and a sma
 - H2-backed persistence for integration tests.
 - Frontend unit tests for `targetProgress` and `goalProgress`.
 - Documentation explaining what tests were created, why they exist, and how to run them.
+- GitHub Actions CI that runs frontend and backend validation on push, pull requests, manual dispatch, and scheduled execution.
+- Test results reporting through Allure report artifacts generated from backend test runs.
 
 ## Excluded
 
@@ -46,4 +48,6 @@ This task covers backend unit tests, backend Spring integration tests, and a sma
 - `cd backend && .\mvnw.cmd test` passes.
 - Backend integration tests exercise the real Spring GraphQL controller/service/repository path.
 - Test documentation exists under `docs/`.
+- CI workflow exists under `.github/workflows/` and runs frontend/backend validation automatically.
+- CI publishes backend test report artifacts, including Allure output.
 - This spec exists under `specs/`.
