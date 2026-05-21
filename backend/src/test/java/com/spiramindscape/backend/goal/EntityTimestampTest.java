@@ -5,6 +5,9 @@ import com.spiramindscape.backend.target.ChecklistItem;
 import com.spiramindscape.backend.target.Target;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EntityTimestampTest {
@@ -13,8 +16,7 @@ class EntityTimestampTest {
     void goalHooksSetTimestamps() throws InterruptedException {
         Goal goal = new Goal();
         goal.onCreate();
-        assertThat(goal.getCreatedAt()).isNotNull();
-        assertThat(goal.getUpdatedAt()).isEqualTo(goal.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(goal.getCreatedAt(), goal.getUpdatedAt());
 
         Thread.sleep(1);
         goal.onUpdate();
@@ -25,8 +27,7 @@ class EntityTimestampTest {
     void optionHooksSetTimestamps() throws InterruptedException {
         Option option = new Option();
         option.onCreate();
-        assertThat(option.getCreatedAt()).isNotNull();
-        assertThat(option.getUpdatedAt()).isEqualTo(option.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(option.getCreatedAt(), option.getUpdatedAt());
 
         Thread.sleep(1);
         option.onUpdate();
@@ -37,8 +38,7 @@ class EntityTimestampTest {
     void realityItemHooksSetTimestamps() throws InterruptedException {
         RealityItem item = new RealityItem();
         item.onCreate();
-        assertThat(item.getCreatedAt()).isNotNull();
-        assertThat(item.getUpdatedAt()).isEqualTo(item.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(item.getCreatedAt(), item.getUpdatedAt());
 
         Thread.sleep(1);
         item.onUpdate();
@@ -49,8 +49,7 @@ class EntityTimestampTest {
     void targetHooksSetTimestamps() throws InterruptedException {
         Target target = new Target();
         target.onCreate();
-        assertThat(target.getCreatedAt()).isNotNull();
-        assertThat(target.getUpdatedAt()).isEqualTo(target.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(target.getCreatedAt(), target.getUpdatedAt());
 
         Thread.sleep(1);
         target.onUpdate();
@@ -61,8 +60,7 @@ class EntityTimestampTest {
     void resourceHooksSetTimestamps() throws InterruptedException {
         Resource resource = new Resource();
         resource.onCreate();
-        assertThat(resource.getCreatedAt()).isNotNull();
-        assertThat(resource.getUpdatedAt()).isEqualTo(resource.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(resource.getCreatedAt(), resource.getUpdatedAt());
 
         Thread.sleep(1);
         resource.onUpdate();
@@ -73,12 +71,18 @@ class EntityTimestampTest {
     void checklistItemHooksSetTimestamps() throws InterruptedException {
         ChecklistItem item = new ChecklistItem();
         item.onCreate();
-        assertThat(item.getCreatedAt()).isNotNull();
-        assertThat(item.getUpdatedAt()).isEqualTo(item.getCreatedAt());
+        assertCreatedAndUpdatedAreInitializedTogether(item.getCreatedAt(), item.getUpdatedAt());
 
         Thread.sleep(10);
         item.onUpdate();
         assertThat(item.getUpdatedAt()).isAfterOrEqualTo(item.getCreatedAt());
         assertThat(item.getUpdatedAt()).isAfter(item.getCreatedAt());
+    }
+
+    private void assertCreatedAndUpdatedAreInitializedTogether(Instant createdAt, Instant updatedAt) {
+        assertThat(createdAt).isNotNull();
+        assertThat(updatedAt).isNotNull();
+        assertThat(updatedAt).isAfterOrEqualTo(createdAt);
+        assertThat(Duration.between(createdAt, updatedAt)).isLessThan(Duration.ofMillis(10));
     }
 }

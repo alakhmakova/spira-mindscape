@@ -141,7 +141,7 @@ describe("useSpira resource sync errors", () => {
     expect(target.achievedAt).toBe("2026-05-16T10:00:00.000Z");
   });
 
-  it("clears achieved dates but keeps the old target deadline when completion is undone", () => {
+  it("clears binary target and goal achieved dates when completion is undone", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-16T12:00:00.000Z"));
     vi.spyOn(spiraApi, "updateTarget").mockResolvedValue({
@@ -153,34 +153,35 @@ describe("useSpira resource sync errors", () => {
       achievedAt: null,
     });
     useSpira.setState({
-      goals: [
-        {
-          ...goalFixture(),
-          targets: [
-            {
-              id: "target-1",
-              type: "binary",
-              title: "Submit application",
-              done: false,
-              deadline: "2026-05-15T00:00:00.000Z",
-            },
-          ],
-        },
-      ],
+      goals: [binaryGoalFixture()],
     });
 
-    useSpira.getState().updateTarget("goal-1", "target-1", { done: true });
-    let goal = useSpira.getState().goals[0];
-    let target = goal.targets[0];
-    expect(goal.achievedAt).toBe("2026-05-16T12:00:00.000Z");
-    expect(target.achievedAt).toBe("2026-05-16T12:00:00.000Z");
-    expect(target.deadline).toBe("2026-05-15T00:00:00.000Z");
-
     useSpira.getState().updateTarget("goal-1", "target-1", { done: false });
-    goal = useSpira.getState().goals[0];
-    target = goal.targets[0];
+    const goal = useSpira.getState().goals[0];
+    const target = goal.targets[0];
     expect(goal.achievedAt).toBeUndefined();
     expect(target.achievedAt).toBeUndefined();
+  });
+
+  it("keeps the binary target deadline when completion is undone", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T12:00:00.000Z"));
+    vi.spyOn(spiraApi, "updateTarget").mockResolvedValue({
+      id: "target-1",
+      type: "binary",
+      title: "Submit application",
+      done: false,
+      deadline: "2026-05-15T00:00:00.000Z",
+      achievedAt: null,
+    });
+    useSpira.setState({
+      goals: [binaryGoalFixture()],
+    });
+
+    useSpira.getState().updateTarget("goal-1", "target-1", { done: false });
+
+    const goal = useSpira.getState().goals[0];
+    const target = goal.targets[0];
     expect(target.deadline).toBe("2026-05-15T00:00:00.000Z");
   });
 
@@ -231,7 +232,7 @@ describe("useSpira resource sync errors", () => {
     );
   });
 
-  it("clears task, target, and goal achieved dates but keeps task deadlines when a task is undone", () => {
+  it("clears checklist task, target, and goal achieved dates when a task is undone", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-16T13:00:00.000Z"));
     vi.spyOn(spiraApi, "updateTarget").mockResolvedValue({
@@ -249,29 +250,7 @@ describe("useSpira resource sync errors", () => {
       ],
     });
     useSpira.setState({
-      goals: [
-        {
-          ...goalFixture(),
-          achievedAt: "2026-05-16T11:00:00.000Z",
-          targets: [
-            {
-              id: "target-1",
-              type: "checklist",
-              title: "Launch checklist",
-              achievedAt: "2026-05-16T11:00:00.000Z",
-              items: [
-                {
-                  id: "task-1",
-                  text: "Write notes",
-                  done: true,
-                  deadline: "2026-05-15T00:00:00.000Z",
-                  achievedAt: "2026-05-16T11:00:00.000Z",
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      goals: [completedChecklistGoalFixture()],
     });
 
     useSpira.getState().updateTarget("goal-1", "target-1", {
@@ -289,9 +268,87 @@ describe("useSpira resource sync errors", () => {
     const target = goal.targets[0];
     expect(goal.achievedAt).toBeUndefined();
     expect(target.achievedAt).toBeUndefined();
-    expect(target.type === "checklist" && target.items[0].achievedAt).toBeUndefined();
+    expect(
+      target.type === "checklist" && target.items[0].achievedAt,
+    ).toBeUndefined();
+  });
+
+  it("keeps checklist task deadlines when a task is undone", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-16T13:00:00.000Z"));
+    vi.spyOn(spiraApi, "updateTarget").mockResolvedValue({
+      id: "target-1",
+      type: "checklist",
+      title: "Launch checklist",
+      items: [
+        {
+          id: "task-1",
+          text: "Write notes",
+          done: false,
+          deadline: "2026-05-15T00:00:00.000Z",
+          achievedAt: null,
+        },
+      ],
+    });
+    useSpira.setState({
+      goals: [completedChecklistGoalFixture()],
+    });
+
+    useSpira.getState().updateTarget("goal-1", "target-1", {
+      items: [
+        {
+          id: "task-1",
+          text: "Write notes",
+          done: false,
+          deadline: "2026-05-15T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const target = useSpira.getState().goals[0].targets[0];
     expect(target.type === "checklist" && target.items[0].deadline).toBe(
       "2026-05-15T00:00:00.000Z",
     );
   });
 });
+
+function binaryGoalFixture(): Goal {
+  return {
+    ...goalFixture(),
+    achievedAt: "2026-05-16T11:00:00.000Z",
+    targets: [
+      {
+        id: "target-1",
+        type: "binary",
+        title: "Submit application",
+        done: true,
+        deadline: "2026-05-15T00:00:00.000Z",
+        achievedAt: "2026-05-16T11:00:00.000Z",
+      },
+    ],
+  };
+}
+
+function completedChecklistGoalFixture(): Goal {
+  return {
+    ...goalFixture(),
+    achievedAt: "2026-05-16T11:00:00.000Z",
+    targets: [
+      {
+        id: "target-1",
+        type: "checklist",
+        title: "Launch checklist",
+        achievedAt: "2026-05-16T11:00:00.000Z",
+        items: [
+          {
+            id: "task-1",
+            text: "Write notes",
+            done: true,
+            deadline: "2026-05-15T00:00:00.000Z",
+            achievedAt: "2026-05-16T11:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+}

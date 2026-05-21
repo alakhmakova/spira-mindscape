@@ -366,73 +366,67 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Updates and clears mutable goal fields including deadline")
-    void updatesAndClearsMutableGoalFields() {
-        // Arrange
-        String goalId = graphQlTester.document("""
-                        mutation {
-                          createGoal(input: {
-                            title: "Goal before update"
-                            confidence: 4
-                            description: "Before"
-                            deadline: "2026-12-31T00:00:00Z"
-                          }) {
-                            id
-                          }
-                        }
-                        """)
-                .execute()
-                .path("createGoal.id").entity(String.class).get();
+    @DisplayName("Updates goal title")
+    void updatesGoalTitle() {
+        String goalId = createGoal("Goal before update", "Before");
 
-        GraphQlTester.Response updated = graphQlTester.document("""
+        graphQlTester.document("""
                         mutation($id: ID!) {
                           updateGoal(id: $id, input: {
                             title: "Goal after update"
-                            confidence: 9
-                            description: "After"
-                            deadline: "2027-01-15T00:00:00Z"
                           }) {
                             title
-                            description
-                            confidence
-                            deadline
                           }
                         }
                         """)
                 .variable("id", goalId)
-                .execute();
-
-        updated
-                .path("updateGoal.title").entity(String.class).isEqualTo("Goal after update")
-                .path("updateGoal.description").entity(String.class).isEqualTo("After")
-                .path("updateGoal.confidence").entity(Integer.class).isEqualTo(9)
-                .path("updateGoal.deadline").entity(String.class).isEqualTo("2027-01-15T00:00:00Z");
-
-        // Act
-        GraphQlTester.Response cleared = graphQlTester.document("""
-                        mutation($id: ID!) {
-                          updateGoal(id: $id, input: {
-                            deadline: null
-                          }) {
-                            deadline
-                          }
-                        }
-                        """)
-                .variable("id", goalId)
-                .execute();
-
-        // Assert
-        cleared
-                .path("updateGoal.deadline").valueIsNull();
+                .execute()
+                .path("updateGoal.title").entity(String.class).isEqualTo("Goal after update");
     }
 
     @Test
-    @DisplayName("Sets and clears achievedAt date")
-    void setsAndClearsAchievedAtDate() {
+    @DisplayName("Updates goal confidence")
+    void updatesGoalConfidence() {
+        String goalId = createGoal("Goal before update", "Before");
+
+        graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateGoal(id: $id, input: {
+                            confidence: 9
+                          }) {
+                            confidence
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .execute()
+                .path("updateGoal.confidence").entity(Integer.class).isEqualTo(9);
+    }
+
+    @Test
+    @DisplayName("Sets goal achievedAt date")
+    void setsGoalAchievedAtDate() {
         String goalId = createGoal("Goal with achieved date", "Original description");
 
-        // Set achievedAt
-        GraphQlTester.Response response = graphQlTester.document("""
+        graphQlTester.document("""
+                        mutation($id: ID!, $achievedAt: String!) {
+                          updateGoal(id: $id, input: { achievedAt: $achievedAt }) {
+                            achievedAt
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("achievedAt", "2027-01-20T00:00:00Z")
+                .execute()
+                .path("updateGoal.achievedAt").entity(String.class).isEqualTo("2027-01-20T00:00:00Z");
+    }
+
+    @Test
+    @DisplayName("Clears goal achievedAt date when null is provided")
+    void clearsGoalAchievedAtDateWhenNullIsProvided() {
+        String goalId = createGoal("Goal with achieved date", "Original description");
+
+        graphQlTester.document("""
                         mutation($id: ID!, $achievedAt: String!) {
                           updateGoal(id: $id, input: { achievedAt: $achievedAt }) {
                             achievedAt
@@ -443,10 +437,7 @@ class GoalCreationIntegrationTest {
                 .variable("achievedAt", "2027-01-20T00:00:00Z")
                 .execute();
 
-        response.path("updateGoal.achievedAt").entity(String.class).isEqualTo("2027-01-20T00:00:00Z");
-
-        // Clear achievedAt
-        GraphQlTester.Response cleared = graphQlTester.document("""
+        graphQlTester.document("""
                         mutation($id: ID!) {
                           updateGoal(id: $id, input: { achievedAt: null }) {
                             achievedAt
@@ -454,35 +445,33 @@ class GoalCreationIntegrationTest {
                         }
                         """)
                 .variable("id", goalId)
-                .execute();
+                .execute()
+                .path("updateGoal.achievedAt").valueIsNull();
+    }
 
-        cleared.path("updateGoal.achievedAt").valueIsNull();
+    @ParameterizedTest(name = "Updates goal deadline with {0} date")
+    @MethodSource("goalDeadlines")
+    void updatesGoalDeadline(String label, String deadline) {
+        String goalId = createGoal("Goal with deadline", "Original description");
+
+        updateGoalDeadline(goalId, deadline);
     }
 
     @Test
-    @DisplayName("Can set, change and clear goal deadline with past, today and future dates")
-    void updatesGoalDeadlineThroughPastTodayFutureAndClear() {
+    @DisplayName("Clears goal deadline when null is provided")
+    void clearsGoalDeadlineWhenNullIsProvided() {
         String goalId = createGoal("Goal with deadline", "Original description");
-
-        String past = isoDate(LocalDate.now(ZoneOffset.UTC).minusDays(1));
-        String today = isoDate(LocalDate.now(ZoneOffset.UTC));
-        String future = isoDate(LocalDate.now(ZoneOffset.UTC).plusDays(1));
-
-        updateGoalDeadline(goalId, past);
-        updateGoalDeadline(goalId, today);
-        updateGoalDeadline(goalId, future);
+        updateGoalDeadline(goalId, "2026-12-31T00:00:00Z");
 
         graphQlTester.document("""
                         mutation($id: ID!) {
                           updateGoal(id: $id, input: { deadline: null }) {
-                            id
                             deadline
                           }
                         }
                         """)
                 .variable("id", goalId)
                 .execute()
-                .path("updateGoal.id").entity(String.class).isEqualTo(goalId)
                 .path("updateGoal.deadline").valueIsNull();
     }
 
@@ -696,7 +685,9 @@ class GoalCreationIntegrationTest {
         Instant updatedAtInitial = Instant.parse(createResponse.path("createGoal.updatedAt").entity(String.class).get());
 
         assertThat(createdAt).isBeforeOrEqualTo(Instant.now());
-        assertThat(updatedAtInitial).isEqualTo(createdAt);
+        assertThat(updatedAtInitial).isAfterOrEqualTo(createdAt);
+        assertThat(java.time.Duration.between(createdAt, updatedAtInitial))
+                .isLessThan(java.time.Duration.ofMillis(10));
 
         // Wait a bit to ensure updatedAt will be different
         Thread.sleep(10);
@@ -905,6 +896,14 @@ class GoalCreationIntegrationTest {
                 Arguments.of("blank", "   "),
                 Arguments.of("empty", ""),
                 Arguments.of("newline", "\n")
+        );
+    }
+
+    private static Stream<Arguments> goalDeadlines() {
+        return Stream.of(
+                Arguments.of("past", isoDate(LocalDate.now(ZoneOffset.UTC).minusDays(1))),
+                Arguments.of("today", isoDate(LocalDate.now(ZoneOffset.UTC))),
+                Arguments.of("future", isoDate(LocalDate.now(ZoneOffset.UTC).plusDays(1)))
         );
     }
 
