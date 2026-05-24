@@ -23,7 +23,7 @@ At some point, I learned that clear specs and tests are the best form of documen
 
 In summer 2023 I moved to Sweden with one large goal: to build a life here. In practice that meant many parallel goals — language, education, work, social integration. I needed one place to structure all of it and track visible progress.
 
-I tried notes and existing products, but most were corporate-focused (OKRs, performance tracking, team processes). I wanted a personal long-term goal system.
+I first tried plain notes in Notion, then traditional task-management apps, and then goal-tracking products. Most tools were still focused on work-style processes (OKRs, team performance, reporting), while I needed a personal long-term goal system.
 
 So I built Spira.
 
@@ -375,12 +375,28 @@ What is correct:
 - Many integration tests use AAA comments (`Arrange / Act / Assert`) and `@DisplayName`.
 - Many error-path tests verify both message and error classification (for example `ValidationError` or `NOT_FOUND`).
 
-What is not universally true for all files:
+How conventions are applied in practice:
 
-- Not every single test method in the whole suite has `@DisplayName` (some unit tests use parameterized names instead).
-- AAA comments are used widely in integration tests, but not in every test method across all files.
-- Cleanup strategy differs by class: some use `@AfterEach`, some clean state in `@BeforeEach`.
-- Some error tests assert that errors are present, but do not always assert both message and classification.
+- `@DisplayName` and parameterized tests are both first-class patterns in this suite.
+  - Parameterized tests (`@ParameterizedTest`) are used when one behavior must be validated across multiple inputs without duplicating test code.
+  - This keeps tests shorter, keeps scenarios aligned, and improves failure diagnostics by showing exactly which input case failed.
+  - Examples:
+    - `backend/src/test/java/com/spiramindscape/backend/goal/GoalValidationTest.java` (`goalValidationCases`)
+    - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalCreationIntegrationTest.java` (deadline/title boundary matrices)
+    - `backend/src/test/java/com/spiramindscape/backend/graphql/ResourceIntegrationTest.java` (resource-type validation matrices)
+    - `backend/src/test/java/com/spiramindscape/backend/graphql/TargetIntegrationTest.java` (invalid deadline matrices)
+  - Result of review: no additional immediate refactor to parameterized tests is required right now; current parameterization already covers repeated input matrices where it gives clear value.
+
+- AAA comments (`Arrange / Act / Assert`) are used where they materially improve readability (especially multi-step integration flows with setup + mutation/query + grouped assertions).
+  - In very short or fluent-chain tests, AAA headers are intentionally omitted to avoid visual noise when the structure is already obvious from the code.
+
+- Cleanup strategy (`@BeforeEach` vs `@AfterEach`) differs intentionally by class setup style:
+  - `@BeforeEach` cleanup is used when each test starts from a guaranteed empty state before building its own fixtures.
+  - `@AfterEach` cleanup is used when tests rely on shared setup created in `@BeforeEach` and need guaranteed teardown after execution.
+  - Some classes use both (`@BeforeEach` for deterministic fixture creation, `@AfterEach` for teardown), which is expected for integration tests touching persistence.
+
+- Error assertions now follow the same principle: validate both classification and message fragment when checking expected failure paths.
+  - In particular, confidence validation tests in `GoalConfidenceIntegrationTest` now assert `ValidationError` plus a relevant message fragment, not only the presence of any error.
 
 ### Testing stack
 
