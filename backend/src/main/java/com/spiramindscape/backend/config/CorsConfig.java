@@ -25,10 +25,5 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "OPTIONS")
                 .allowedHeaders("*");
-
-        registry.addMapping("/health")
-                .allowedOrigins(allowedOrigins)
-                .allowedMethods("GET", "OPTIONS")
-                .allowedHeaders("*");
     }
 }
