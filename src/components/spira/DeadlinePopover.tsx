@@ -161,10 +161,7 @@ export function DeadlinePopover({
             <div className="flex items-center gap-1.5">
               <span>{format(date, "MMM d, yyyy")}</span>
               {!hideDaysLeft && (
-                <span className="opacity-60 font-normal">
-                  ·{" "}
-                  {relativeText}
-                </span>
+                <span className="opacity-60 font-normal">· {relativeText}</span>
               )}
               {!hideChevron && (
                 <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -220,10 +217,7 @@ export function DeadlinePopover({
             <>
               <span>{format(date, "MMM d, yyyy")}</span>
               {!hideDaysLeft && (
-                <span className="opacity-60">
-                  ·{" "}
-                  {relativeText}
-                </span>
+                <span className="opacity-60">· {relativeText}</span>
               )}
             </>
           ) : (
@@ -246,10 +240,7 @@ export function DeadlinePopover({
             <>
               <span>{format(date, "MMM d, yyyy")}</span>
               {!hideDaysLeft && (
-                <span className="opacity-60 font-normal">
-                  ·{" "}
-                  {relativeText}
-                </span>
+                <span className="opacity-60 font-normal">· {relativeText}</span>
               )}
             </>
           ) : (
