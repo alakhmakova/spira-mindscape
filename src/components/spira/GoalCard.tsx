@@ -35,10 +35,9 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
     year: "numeric",
   });
 
-  const countdown =
-    completed
-      ? "achieved"
-      : diffDays === 0
+  const countdown = completed
+    ? "achieved"
+    : diffDays === 0
       ? "due today"
       : diffDays === 1
         ? "1 day left"
@@ -59,7 +58,8 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const [confirm, setConfirm] = useState(false);
 
   const accentColor = getConfidenceColor(goal.confidence);
-  const displayDate = completed && goal.achievedAt ? goal.achievedAt : goal.deadline;
+  const displayDate =
+    completed && goal.achievedAt ? goal.achievedAt : goal.deadline;
   const deadlineInfo = formatDeadlineInfo(displayDate, completed);
   const isOverdue = deadlineInfo?.isOverdue ?? false;
 

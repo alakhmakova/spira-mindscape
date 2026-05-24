@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.graphql.ResponseError;
 import org.springframework.graphql.test.tester.GraphQlTester;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -42,7 +43,7 @@ class GoalConfidenceIntegrationTest {
     @ValueSource(ints = {0, 11, -1})
     @DisplayName("Rejects creating goal with invalid confidence")
     void rejectsCreatingGoalWithInvalidConfidence(int invalidConfidence) {
-        graphQlTester.document("""
+        GraphQlTester.Response response = graphQlTester.document("""
                         mutation($confidence: Int!) {
                           createGoal(input: { title: "Invalid Confidence", confidence: $confidence }) {
                             id
@@ -50,9 +51,9 @@ class GoalConfidenceIntegrationTest {
                         }
                         """)
                 .variable("confidence", invalidConfidence)
-                .execute()
-                .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .execute();
+
+        assertValidationErrorContains(response, "confidence");
     }
 
     @ParameterizedTest
@@ -88,7 +89,7 @@ class GoalConfidenceIntegrationTest {
                 .path("createGoal.id").entity(String.class).get();
 
         // Try to update with invalid confidence
-        graphQlTester.document("""
+        GraphQlTester.Response response = graphQlTester.document("""
                         mutation($id: ID!, $confidence: Int!) {
                           updateGoal(id: $id, input: { confidence: $confidence }) {
                             id
@@ -97,9 +98,9 @@ class GoalConfidenceIntegrationTest {
                         """)
                 .variable("id", id)
                 .variable("confidence", invalidConfidence)
-                .execute()
-                .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .execute();
+
+        assertValidationErrorContains(response, "confidence");
     }
 
     @Test
@@ -119,7 +120,7 @@ class GoalConfidenceIntegrationTest {
         // Try to update with null confidence. 
         // Note: in UpdateGoalInput, confidence is Integer, so it can be null.
         // But Goal entity has @NotNull on confidence_rating.
-        graphQlTester.document("""
+        GraphQlTester.Response response = graphQlTester.document("""
                         mutation($id: ID!) {
                           updateGoal(id: $id, input: { confidence: null }) {
                             id
@@ -127,24 +128,24 @@ class GoalConfidenceIntegrationTest {
                         }
                         """)
                 .variable("id", id)
-                .execute()
-                .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .execute();
+
+        assertValidationErrorContains(response, "confidence");
     }
 
     @Test
     @DisplayName("Rejects non-numeric confidence value")
     void rejectsNonNumericConfidence() {
-        graphQlTester.document("""
+        GraphQlTester.Response response = graphQlTester.document("""
                         mutation {
                           createGoal(input: { title: "Non-numeric", confidence: "high" }) {
                             id
                           }
                         }
                         """)
-                .execute()
-                .errors()
-                .satisfy(errors -> assertThat(errors).isNotEmpty());
+                .execute();
+
+        assertValidationErrorContains(response, "int");
     }
 
     @Test
@@ -227,5 +228,21 @@ class GoalConfidenceIntegrationTest {
                 Integer.class,
                 goalId
         );
+    }
+
+    private void assertValidationErrorContains(GraphQlTester.Response response, String messageFragment) {
+        String expectedFragment = messageFragment.toLowerCase();
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                isValidationError(error)
+                                        && error.getMessage() != null
+                                        && error.getMessage().toLowerCase().contains(expectedFragment)));
+    }
+
+    private boolean isValidationError(ResponseError error) {
+        Object classification = error.getExtensions() == null ? null : error.getExtensions().get("classification");
+        return "ValidationError".equals(classification)
+                || "ValidationError".equals(error.getErrorType().toString());
     }
 }
