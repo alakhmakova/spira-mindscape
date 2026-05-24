@@ -340,14 +340,14 @@ cd backend
 .\mvnw.cmd test
 ```
 
-### Frontend test files
+### Frontend test files (current)
 
 - `src/lib/spira/api.contract.test.ts`
 - `src/lib/spira/api.test.ts`
 - `src/lib/spira/progress.test.ts`
 - `src/lib/spira/store.test.ts`
 
-### Backend unit/service-level test files
+### Backend unit/service-level test files (current)
 
 - `backend/src/test/java/com/spiramindscape/backend/goal/GoalValidationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/target/TargetServiceTest.java`
@@ -356,7 +356,7 @@ cd backend
 - `backend/src/test/java/com/spiramindscape/backend/goal/RealityServiceTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/goal/EntityTimestampTest.java`
 
-### Backend GraphQL integration/contract test files
+### Backend GraphQL integration/contract test files (current)
 
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalCreationIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalWorkspaceIntegrationTest.java`
@@ -432,6 +432,20 @@ How to know tests passed even if Allure HTML report is unavailable:
 3. Download `backend-surefire-reports` artifact and inspect XML results (`failures=\"0\"`, `errors=\"0\"`).
 
 If Allure report job fails but frontend/backend jobs are green, test execution still passed; only report generation failed.
+
+### Where to find the report in GitHub UI
+
+1. Open repository -> **Actions** -> choose the latest **CI** run.
+2. Open run page and go to **Artifacts**.
+3. Download `allure-report`.
+4. Unzip locally and open `index.html` from the extracted report folder.
+
+### Other ways to check test status (without Allure report)
+
+- **PR checks:** in the pull request, check that `Frontend tests and build` and `Backend tests` are green.
+- **Workflow jobs:** in Actions run details, confirm `Run frontend tests` and `Run backend tests` steps are green.
+- **Surefire artifact:** download `backend-surefire-reports` and verify XML counters (`failures=\"0\"`, `errors=\"0\"`, `skipped` as expected).
+- **Raw backend logs:** backend job logs include Maven summary (`Tests run`, `Failures`, `Errors`, `Skipped`).
 
 ---
 
