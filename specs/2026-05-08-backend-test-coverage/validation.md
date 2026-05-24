@@ -1,12 +1,27 @@
 # Validation: Backend And Progress Test Coverage
 
-**Last Updated**: 2026-05-18
+**Last Updated**: 2026-05-21
 
 ## Automated Checks
 
 - [x] `npm.cmd test`
 - [x] `npm.cmd run build`
 - [x] `cd backend && .\mvnw.cmd test`
+- [x] `npm test` (Linux shell)
+- [x] `npm run build` (Linux shell)
+- [x] `cd backend && sh ./mvnw test` (Linux shell)
+
+## CI / Reporting Checks
+
+- [x] `.github/workflows/ci.yml` exists.
+- [x] CI is configured for `push`, `pull_request`, `workflow_dispatch`, and `schedule`.
+- [x] CI runs frontend tests and frontend build.
+- [x] CI runs backend Maven tests.
+- [x] Backend tests are configured to write Allure results to `backend/target/allure-results`.
+- [x] Workflow uses `simple-elf/allure-report-action@v1`.
+- [x] Workflow uploads backend surefire artifacts.
+- [x] Workflow uploads generated Allure HTML artifact.
+- [x] CI implementation is documented in `docs/github-actions-ci.md`.
 
 ## Test Coverage Checks
 
