@@ -87,7 +87,7 @@ jobs:
           path: backend/target/allure-results
 
       - name: Allure Report
-        uses: simple-elf/allure-report-action@ec94841949c65c674aadd3c97a648218e0be1153 # v1
+        uses: simple-elf/allure-report-action@53ebb757a2097edc77c53ecef4d454fc2f2f774c # v1.13
         with:
           allure_results: backend/target/allure-results
 
