@@ -392,19 +392,46 @@ What is not universally true for all files:
 - Mockito (for unit/service tests, e.g. `TargetServiceTest`)
 - Vitest (frontend tests)
 
----
+### CI (GitHub Actions) for tests
 
-## CI pipeline status
+Workflow file:
 
-In the current repository snapshot, there is no `.github/workflows/` directory, so no active GitHub Actions CI workflow file is present here right now.
+- `.github/workflows/ci.yml`
 
-Current practical validation flow is local:
+When it runs:
 
-- `npm test`
-- `npm run build`
-- `cd backend && sh ./mvnw test`
+- on every `push`
+- on every `pull_request`
+- manually via `workflow_dispatch`
+- every night by schedule (`0 3 * * *`, UTC)
 
-For detailed test scope and scenarios, see `docs/testing-guide.md`.
+What it runs:
+
+1. **Frontend tests and build**
+   - `npm ci`
+   - `npm test`
+   - `npm run build`
+2. **Backend tests**
+   - `cd backend && sh ./mvnw test`
+3. **Artifacts**
+   - `backend-surefire-reports` (raw Maven test reports)
+   - `backend-allure-results` (raw Allure input files)
+   - `allure-report` (generated HTML Allure report)
+
+Allure generation:
+
+- Uses `simple-elf/allure-report-action` pinned to commit `53ebb757a2097edc77c53ecef4d454fc2f2f774c` (`v1.13`).
+- Backend tests write Allure results to `backend/target/allure-results`.
+
+How to know tests passed even if Allure HTML report is unavailable:
+
+1. Open the workflow run and check job conclusions:
+   - `Frontend tests and build` must be **success**
+   - `Backend tests` must be **success**
+2. Open backend job steps and verify `Run backend tests` is **success**.
+3. Download `backend-surefire-reports` artifact and inspect XML results (`failures=\"0\"`, `errors=\"0\"`).
+
+If Allure report job fails but frontend/backend jobs are green, test execution still passed; only report generation failed.
 
 ---
 
