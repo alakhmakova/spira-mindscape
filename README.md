@@ -368,14 +368,10 @@ cd backend
 
 ### Test structure and conventions 
 
-What is correct:
-
 - Most integration test classes are organized by domain area (goals/reality/options/targets/resources/confidence).
 - Integration tests run with Spring Boot + GraphQL tester and test the full flow (GraphQL -> service -> persistence -> response).
 - Many integration tests use AAA comments (`Arrange / Act / Assert`) and `@DisplayName`.
 - Many error-path tests verify both message and error classification (for example `ValidationError` or `NOT_FOUND`).
-
-How conventions are applied in practice:
 
 - `@DisplayName` and parameterized tests are both first-class patterns in this suite.
   - Parameterized tests (`@ParameterizedTest`) are used when one behavior must be validated across multiple inputs without duplicating test code.
@@ -396,8 +392,7 @@ How conventions are applied in practice:
   - Some classes use both (`@BeforeEach` for deterministic fixture creation, `@AfterEach` for teardown), which is expected for integration tests touching persistence.
 
 - Error assertions now follow the same principle: validate both classification and message fragment when checking expected failure paths.
-  - In particular, confidence validation tests in `GoalConfidenceIntegrationTest` now assert `ValidationError` plus a relevant message fragment, not only the presence of any error.
-
+  
 ### Testing stack
 
 - JUnit 5
