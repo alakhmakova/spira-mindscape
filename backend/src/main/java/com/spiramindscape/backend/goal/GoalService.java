@@ -17,6 +17,7 @@ public class GoalService {
 
     public static final int MAX_GOAL_TITLE_LENGTH = 200;
     public static final int MAX_GOAL_DESCRIPTION_LENGTH = 5000;
+    public static final int MAX_OPTION_TEXT_LENGTH = 500;
 
     private final GoalRepository goalRepository;
     private final OptionRepository optionRepository;
@@ -128,7 +129,9 @@ public class GoalService {
         int nextPosition = optionRepository.findMaxPositionByGoalId(goalId) + 1;
         Option option = new Option();
         option.setGoal(goal);
-        option.setText(text);
+        String normalized = normalizeRequiredText(text, "Option text is required");
+        validateOptionText(normalized);
+        option.setText(normalized);
         option.setSelected(false);
         option.setPosition(nextPosition);
         return optionRepository.save(option);
@@ -138,7 +141,11 @@ public class GoalService {
     public Option updateOption(Long goalId, Long optionId, UpdateOptionInput input) {
         findById(goalId);
         Option option = getOption(goalId, optionId);
-        if (input.text() != null)     option.setText(input.text());
+        if (input.text() != null) {
+            String normalized = normalizeRequiredText(input.text(), "Option text is required");
+            validateOptionText(normalized);
+            option.setText(normalized);
+        }
         if (input.selected() != null) option.setSelected(input.selected());
         return optionRepository.save(option);
     }
@@ -194,6 +201,13 @@ public class GoalService {
             throw new IllegalArgumentException("Option does not belong to goal");
         }
         return option;
+    }
+
+    private void validateOptionText(String text) {
+        if (text.length() > MAX_OPTION_TEXT_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Option text must be " + MAX_OPTION_TEXT_LENGTH + " characters or fewer");
+        }
     }
 
     private String normalizeRequiredText(String value, String message) {

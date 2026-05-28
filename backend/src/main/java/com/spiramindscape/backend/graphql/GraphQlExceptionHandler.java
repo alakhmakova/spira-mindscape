@@ -33,7 +33,7 @@ public class GraphQlExceptionHandler extends DataFetcherExceptionResolverAdapter
                     .path(env.getExecutionStepInfo().getPath())
                     .build();
         }
-        if (ex instanceof BindException bindException && hasInvalidDeadline(bindException)) {
+        if (ex instanceof BindException bindException && hasInvalidDateField(bindException)) {
             return invalidDateFormatError(env);
         }
 
@@ -47,13 +47,14 @@ public class GraphQlExceptionHandler extends DataFetcherExceptionResolverAdapter
         return null;
     }
 
-    private boolean hasInvalidDeadline(BindException bindException) {
+    private boolean hasInvalidDateField(BindException bindException) {
         return bindException.getFieldErrors().stream()
-                .anyMatch(this::isInvalidDeadline);
+                .anyMatch(this::isInvalidDateField);
     }
 
-    private boolean isInvalidDeadline(FieldError fieldError) {
-        return fieldError.getField().endsWith(".deadline")
+    private boolean isInvalidDateField(FieldError fieldError) {
+        String field = fieldError.getField();
+        return (field.endsWith(".deadline") || field.endsWith(".achievedAt"))
                 && fieldError.getCodes() != null
                 && java.util.Arrays.asList(fieldError.getCodes()).contains("typeMismatch");
     }

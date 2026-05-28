@@ -54,6 +54,24 @@ jobs:
           cd backend
           sh ./mvnw test
 
+      - name: Backend line coverage summary
+        if: always()
+        run: |
+          report=backend/target/site/jacoco/jacoco.csv
+          if [ -f "$report" ]; then
+            awk -F, 'NR>1 {miss+=$8; cov+=$9} END {if (miss+cov>0) printf "Backend line coverage: %.1f%% (%d/%d lines)\n", 100*cov/(cov+miss), cov, cov+miss}' "$report"
+          else
+            echo "No JaCoCo report found at $report"
+          fi
+
+      - name: Upload backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco-report
+          path: backend/target/site/jacoco
+          if-no-files-found: warn
+
       - name: Upload backend test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,9 +88,100 @@ jobs:
           path: backend/target/allure-results
           if-no-files-found: warn
 
+  e2e:
+    name: Python E2E tests
+    needs: [backend]
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: spira
+          POSTGRES_USER: spira
+          POSTGRES_PASSWORD: spira
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Build backend JAR
+        run: |
+          cd backend
+          sh ./mvnw package -DskipTests -q
+
+      # Start against a real PostgreSQL so Flyway migrations run end-to-end,
+      # matching production. The bundled jar has no test profile, so we pass the
+      # database connection through the same env vars production uses.
+      - name: Start backend against PostgreSQL
+        run: |
+          java -jar backend/target/*.jar &
+          echo $! > backend.pid
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/spira
+          DATABASE_USERNAME: spira
+          DATABASE_PASSWORD: spira
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf -X POST http://localhost:8080/graphql \
+              -H 'Content-Type: application/json' \
+              -d '{"query":"{ __typename }"}' > /dev/null 2>&1; then
+              echo "Backend ready"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "Backend did not start in time"
+          exit 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install E2E dependencies
+        run: pip install -r tests-e2e/requirements.txt
+
+      - name: Run E2E tests
+        run: pytest tests-e2e/ -v --alluredir=e2e-allure-results
+        env:
+          SPIRA_BASE_URL: http://localhost:8080
+
+      - name: Upload E2E Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-allure-results
+          path: e2e-allure-results
+          if-no-files-found: warn
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill $(cat backend.pid) || true
+          fi
+
   allure-report:
     name: Allure report
-    needs: [backend]
+    needs: [backend, e2e]
     if: always()
     runs-on: ubuntu-latest
 
@@ -84,12 +193,18 @@ jobs:
         uses: actions/download-artifact@v4.1.3
         with:
           name: backend-allure-results
-          path: backend/target/allure-results
+          path: allure-input/backend
+
+      - name: Download E2E Allure results
+        uses: actions/download-artifact@v4.1.3
+        with:
+          name: e2e-allure-results
+          path: allure-input/e2e
 
       - name: Allure Report
         uses: simple-elf/allure-report-action@53ebb757a2097edc77c53ecef4d454fc2f2f774c # v1.13
         with:
-          allure_results: backend/target/allure-results
+          allure_results: allure-input
 
       - name: Upload Allure report artifact
         uses: actions/upload-artifact@v4

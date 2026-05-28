@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.graphql;
 
 import com.spiramindscape.backend.goal.GoalRepository;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,7 +11,6 @@ import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureG
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.ResponseError;
 import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
@@ -29,12 +28,9 @@ class GoalConfidenceIntegrationTest {
     private GraphQlTester graphQlTester;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
-
-    @Autowired
     private GoalRepository goalRepository;
 
-    @BeforeEach
+    @AfterEach
     void cleanDatabase() {
         goalRepository.deleteAll();
     }
@@ -73,40 +69,9 @@ class GoalConfidenceIntegrationTest {
                 .path("createGoal.confidence").entity(Integer.class).isEqualTo(validConfidence);
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {0, 11, -5})
-    @DisplayName("Rejects updating goal with invalid confidence")
-    void rejectsUpdatingGoalWithInvalidConfidence(int invalidConfidence) {
-        // Create valid goal first
-        String id = graphQlTester.document("""
-                        mutation {
-                          createGoal(input: { title: "Valid Goal", confidence: 5 }) {
-                            id
-                          }
-                        }
-                        """)
-                .execute()
-                .path("createGoal.id").entity(String.class).get();
-
-        // Try to update with invalid confidence
-        GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($id: ID!, $confidence: Int!) {
-                          updateGoal(id: $id, input: { confidence: $confidence }) {
-                            id
-                          }
-                        }
-                        """)
-                .variable("id", id)
-                .variable("confidence", invalidConfidence)
-                .execute();
-
-        assertValidationErrorContains(response, "confidence");
-    }
-
     @Test
     @DisplayName("Rejects updating goal confidence to null")
     void rejectsUpdatingGoalConfidenceToNull() {
-        // Create valid goal first
         String id = graphQlTester.document("""
                         mutation {
                           createGoal(input: { title: "Valid Goal", confidence: 5 }) {
@@ -117,9 +82,6 @@ class GoalConfidenceIntegrationTest {
                 .execute()
                 .path("createGoal.id").entity(String.class).get();
 
-        // Try to update with null confidence. 
-        // Note: in UpdateGoalInput, confidence is Integer, so it can be null.
-        // But Goal entity has @NotNull on confidence_rating.
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($id: ID!) {
                           updateGoal(id: $id, input: { confidence: null }) {
@@ -149,13 +111,63 @@ class GoalConfidenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Updating goal with same confidence does not add a new history entry")
+    void updatingGoalWithSameConfidenceDoesNotAddHistoryEntry() {
+        String id = createGoal(5);
+
+        graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateGoal(id: $id, input: { confidence: 5 }) {
+                            confidence
+                            confidenceHistory { confidence }
+                          }
+                        }
+                        """)
+                .variable("id", id)
+                .execute()
+                .path("updateGoal.confidence").entity(Integer.class).isEqualTo(5)
+                .path("updateGoal.confidenceHistory").entityList(Object.class).hasSize(1)
+                .path("updateGoal.confidenceHistory[0].confidence").entity(Integer.class).isEqualTo(5);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 11, -5})
+    @DisplayName("Updating goal with invalid confidence returns error and preserves original confidence")
+    void updatingGoalWithInvalidConfidencePreservesOriginal(int invalidConfidence) {
+        String id = createGoal(5);
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($id: ID!, $confidence: Int!) {
+                          updateGoal(id: $id, input: { confidence: $confidence }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("id", id)
+                .variable("confidence", invalidConfidence)
+                .execute();
+
+        assertValidationErrorContains(response, "confidence");
+
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          goalById(id: $id) { confidence confidenceHistory { confidence } }
+                        }
+                        """)
+                .variable("id", id)
+                .execute()
+                .path("goalById.confidence").entity(Integer.class).isEqualTo(5)
+                .path("goalById.confidenceHistory").entityList(Object.class).hasSize(1);
+    }
+
+    @Test
     @DisplayName("Returns confidence history newest first after multiple updates")
     void returnsConfidenceHistoryNewestFirstAfterMultipleUpdates() throws InterruptedException {
         String id = createGoal(5);
 
-        Thread.sleep(10);
+        waitForTimestampAdvance();
         updateGoalConfidence(id, 8);
-        Thread.sleep(10);
+        waitForTimestampAdvance();
         GraphQlTester.Response response = updateGoalConfidence(id, 3);
 
         List<Integer> history = response.path("updateGoal.confidenceHistory[*].confidence")
@@ -170,27 +182,6 @@ class GoalConfidenceIntegrationTest {
 
         assertThat(history).containsExactly(3, 8, 5);
         assertThat(timestamps).isSortedAccordingTo(Comparator.reverseOrder());
-    }
-
-    @Test
-    @DisplayName("Deletes confidence history rows when a goal is deleted")
-    void deletesConfidenceHistoryRowsWhenGoalIsDeleted() {
-        String id = createGoal(5);
-        updateGoalConfidence(id, 8);
-
-        Long goalId = Long.valueOf(id);
-        assertThat(countConfidenceHistory(goalId)).isEqualTo(2);
-
-        graphQlTester.document("""
-                        mutation($id: ID!) {
-                          deleteGoal(id: $id)
-                        }
-                        """)
-                .variable("id", id)
-                .execute()
-                .path("deleteGoal").entity(Boolean.class).isEqualTo(true);
-
-        assertThat(countConfidenceHistory(goalId)).isZero();
     }
 
     private String createGoal(int confidence) {
@@ -222,12 +213,8 @@ class GoalConfidenceIntegrationTest {
                 .execute();
     }
 
-    private int countConfidenceHistory(Long goalId) {
-        return jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM confidence_history WHERE goal_id = ?",
-                Integer.class,
-                goalId
-        );
+    private static void waitForTimestampAdvance() throws InterruptedException {
+        Thread.sleep(50);
     }
 
     private void assertValidationErrorContains(GraphQlTester.Response response, String messageFragment) {

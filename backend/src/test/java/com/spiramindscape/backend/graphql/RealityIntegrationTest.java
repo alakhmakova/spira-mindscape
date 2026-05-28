@@ -18,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 class RealityIntegrationTest {
 
+    private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
+
     @Autowired
     private GraphQlTester graphQlTester;
 
@@ -258,7 +260,147 @@ class RealityIntegrationTest {
                 .path("realityByGoal.obstacles[0].text").entity(String.class).isEqualTo("Missing automated coverage");
     }
 
+    @Test
+    @DisplayName("Returns NOT_FOUND error when adding reality item to non-existent goal")
+    void returnsErrorWhenAddingRealityItemToNonExistentGoal() {
+        // Act
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: "Orphan action") {
+                            actions { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .execute();
+
+        // Assert
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when querying reality for non-existent goal")
+    void returnsErrorWhenQueryingRealityForNonExistentGoal() {
+        // Act
+        GraphQlTester.Response response = graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) {
+                            actions { id text }
+                            obstacles { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .execute();
+
+        // Assert
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
     // ─── validation ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Returns error when removing action with obstacle kind - kind mismatch")
+    void returnsErrorWhenRemovingItemWithWrongKind() {
+        String actionId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Action that should not be removable as obstacle")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          removeRealityItem(goalId: $goalId, kind: "obstacles", itemId: $itemId) {
+                            obstacles { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", actionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item does not belong to goal/kind") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        // Item is not deleted - still retrievable
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          realityItemById(id: $id) { id text }
+                        }
+                        """)
+                .variable("id", actionId)
+                .execute()
+                .path("realityItemById.id").entity(String.class).isEqualTo(actionId);
+    }
+
+    @Test
+    @DisplayName("Removing one action from multiple preserves remaining actions")
+    void removingOneActionPreservesRemainingActions() {
+        String firstId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "First action")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        String secondId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Second action")
+                .execute()
+                .path("addRealityItem.actions[1].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          removeRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", firstId)
+                .execute();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) {
+                            actions { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("realityByGoal.actions").entityList(Object.class).hasSize(1)
+                .path("realityByGoal.actions[0].id").entity(String.class).isEqualTo(secondId)
+                .path("realityByGoal.actions[0].text").entity(String.class).isEqualTo("Second action");
+    }
 
     @Test
     @DisplayName("Returns error when updating action with obstacle kind - kind mismatch")
@@ -626,6 +768,294 @@ class RealityIntegrationTest {
     }
 
     @Test
+    @DisplayName("Trims whitespace from action text on update")
+    void trimsWhitespaceFromActionTextOnUpdate() {
+        String actionId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original action")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId, text: $text) {
+                            actions { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", actionId)
+                .variable("text", "   Updated action   ")
+                .execute()
+                .path("updateRealityItem.actions[0].text").entity(String.class).isEqualTo("Updated action");
+    }
+
+    @Test
+    @DisplayName("Trims whitespace from obstacle text on update")
+    void trimsWhitespaceFromObstacleTextOnUpdate() {
+        String obstacleId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
+                            obstacles { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original obstacle")
+                .execute()
+                .path("addRealityItem.obstacles[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "obstacles", itemId: $itemId, text: $text) {
+                            obstacles { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", obstacleId)
+                .variable("text", "   Updated obstacle   ")
+                .execute()
+                .path("updateRealityItem.obstacles[0].text").entity(String.class).isEqualTo("Updated obstacle");
+    }
+
+    @Test
+    @DisplayName("Accepts action text at maximum length on update")
+    void acceptsActionTextAtMaximumLengthOnUpdate() {
+        String maxText = "E".repeat(500);
+        String actionId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Short text")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId, text: $text) {
+                            actions { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", actionId)
+                .variable("text", maxText)
+                .execute()
+                .path("updateRealityItem.actions[0].text").entity(String.class).isEqualTo(maxText);
+    }
+
+    @Test
+    @DisplayName("Accepts obstacle text at maximum length on update")
+    void acceptsObstacleTextAtMaximumLengthOnUpdate() {
+        String maxText = "F".repeat(500);
+        String obstacleId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
+                            obstacles { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Short text")
+                .execute()
+                .path("addRealityItem.obstacles[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "obstacles", itemId: $itemId, text: $text) {
+                            obstacles { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", obstacleId)
+                .variable("text", maxText)
+                .execute()
+                .path("updateRealityItem.obstacles[0].text").entity(String.class).isEqualTo(maxText);
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating action with oversized text - text is preserved")
+    void returnsErrorWhenUpdatingActionWithOversizedText() {
+        String actionId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original action")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId, text: $text) {
+                            actions { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", actionId)
+                .variable("text", "A".repeat(501))
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) { actions { text } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("realityByGoal.actions[0].text").entity(String.class).isEqualTo("Original action");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating obstacle with oversized text - text is preserved")
+    void returnsErrorWhenUpdatingObstacleWithOversizedText() {
+        String obstacleId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
+                            obstacles { id }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original obstacle")
+                .execute()
+                .path("addRealityItem.obstacles[0].id").entity(String.class).get();
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!, $text: String!) {
+                          updateRealityItem(goalId: $goalId, kind: "obstacles", itemId: $itemId, text: $text) {
+                            obstacles { text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", obstacleId)
+                .variable("text", "B".repeat(501))
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) { obstacles { text } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("realityByGoal.obstacles[0].text").entity(String.class).isEqualTo("Original obstacle");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating action with blank text - text is preserved")
+    void returnsErrorWhenUpdatingActionWithBlankText() {
+        String actionId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original action")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId, text: "   ") {
+                            actions { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", actionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item text is required") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) { actions { text } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("realityByGoal.actions[0].text").entity(String.class).isEqualTo("Original action");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating obstacle with blank text - text is preserved")
+    void returnsErrorWhenUpdatingObstacleWithBlankText() {
+        String obstacleId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
+                            obstacles { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Original obstacle")
+                .execute()
+                .path("addRealityItem.obstacles[0].id").entity(String.class).get();
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          updateRealityItem(goalId: $goalId, kind: "obstacles", itemId: $itemId, text: "") {
+                            obstacles { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("itemId", obstacleId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item text is required") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          realityByGoal(goalId: $goalId) { obstacles { text } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("realityByGoal.obstacles[0].text").entity(String.class).isEqualTo("Original obstacle");
+    }
+
+    @Test
     @DisplayName("Returns error when updating non-existent reality item")
     void returnsErrorWhenUpdatingNonExistentItem() {
         // Arrange
@@ -633,13 +1063,14 @@ class RealityIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($goalId: ID!) {
-                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: "999999", text: "Updated") {
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          updateRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId, text: "Updated") {
                             actions { id text }
                           }
                         }
                         """)
                 .variable("goalId", goalId)
+                .variable("itemId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -726,16 +1157,101 @@ class RealityIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($goalId: ID!) {
-                          removeRealityItem(goalId: $goalId, kind: "actions", itemId: "999999") {
+                        mutation($goalId: ID!, $itemId: ID!) {
+                          removeRealityItem(goalId: $goalId, kind: "actions", itemId: $itemId) {
                             actions { id text }
                           }
                         }
                         """)
                 .variable("goalId", goalId)
+                .variable("itemId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Reality item not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    // ─── realityItemById ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("realityItemById returns the item with correct id, text and timestamps")
+    void realityItemByIdReturnsCorrectItem() {
+        String itemId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
+                            actions { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "Find me by id")
+                .execute()
+                .path("addRealityItem.actions[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          realityItemById(id: $id) {
+                            id
+                            text
+                            createdAt
+                            updatedAt
+                          }
+                        }
+                        """)
+                .variable("id", itemId)
+                .execute()
+                .path("realityItemById.id").entity(String.class).isEqualTo(itemId)
+                .path("realityItemById.text").entity(String.class).isEqualTo("Find me by id")
+                .path("realityItemById.createdAt").hasValue()
+                .path("realityItemById.updatedAt").hasValue();
+    }
+
+    @Test
+    @DisplayName("realityItemById works for obstacle items too")
+    void realityItemByIdWorksForObstacles() {
+        String itemId = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
+                            obstacles { id text }
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "This obstacle by id")
+                .execute()
+                .path("addRealityItem.obstacles[0].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          realityItemById(id: $id) {
+                            id
+                            text
+                          }
+                        }
+                        """)
+                .variable("id", itemId)
+                .execute()
+                .path("realityItemById.id").entity(String.class).isEqualTo(itemId)
+                .path("realityItemById.text").entity(String.class).isEqualTo("This obstacle by id");
+    }
+
+    @Test
+    @DisplayName("realityItemById returns NOT_FOUND error for non-existent id")
+    void realityItemByIdReturnsNotFoundForNonExistentId() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        query($id: ID!) {
+                          realityItemById(id: $id) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("id", NON_EXISTENT_ID)
+                .execute();
+
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->

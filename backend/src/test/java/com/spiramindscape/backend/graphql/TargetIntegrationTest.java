@@ -25,6 +25,8 @@ import static org.assertj.core.data.Offset.offset;
 @ActiveProfiles("test")
 class TargetIntegrationTest {
 
+    private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
+
     @Autowired
     private GraphQlTester graphQlTester;
 
@@ -68,7 +70,7 @@ class TargetIntegrationTest {
                             type: "binary"
                             title: $title
                           }) {
-                            id type title done progress
+                            id type title done deadline progress
                           }
                         }
                         """)
@@ -82,6 +84,7 @@ class TargetIntegrationTest {
                 .path("createTarget.type").entity(String.class).isEqualTo("binary")
                 .path("createTarget.title").entity(String.class).isEqualTo(title)
                 .path("createTarget.done").entity(Boolean.class).isEqualTo(expectedDone)
+                .path("createTarget.deadline").valueIsNull()
                 .path("createTarget.progress").entity(Double.class).isEqualTo(expectedProgress);
     }
 
@@ -104,6 +107,95 @@ class TargetIntegrationTest {
         // Assert
         assertGraphQlValidationError(response, "missing required fields", "type");
         assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when creating binary target with blank title")
+    void returnsErrorWhenCreatingBinaryTargetWithBlankTitle() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "binary"
+                            title: "   "
+                          }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Target title is required");
+        assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when creating numeric target with blank title")
+    void returnsErrorWhenCreatingNumericTargetWithBlankTitle() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "numeric"
+                            title: "   "
+                            start: 0
+                            total: 10
+                          }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Target title is required");
+        assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when creating checklist target with blank title")
+    void returnsErrorWhenCreatingChecklistTargetWithBlankTitle() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "checklist"
+                            title: "   "
+                            items: [{ text: "Step 1" }]
+                          }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Target title is required");
+        assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating target with blank title - original title is preserved")
+    void returnsErrorWhenUpdatingTargetWithBlankTitle() {
+        String targetId = createBinaryTarget(goalId, "Original title", false);
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateTarget(id: $id, input: { title: "   " }) {
+                            id title
+                          }
+                        }
+                        """)
+                .variable("id", targetId)
+                .execute();
+
+        assertValidationError(response, "Target title is required");
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          targetById(id: $id) { title }
+                        }
+                        """)
+                .variable("id", targetId)
+                .execute()
+                .path("targetById.title").entity(String.class).isEqualTo("Original title");
     }
 
     @Test
@@ -220,7 +312,7 @@ class TargetIntegrationTest {
                             start: $start
                             total: $total
                           }) {
-                            id type title start current total progress
+                            id type title start current total unit deadline progress
                           }
                         }
                         """)
@@ -238,6 +330,8 @@ class TargetIntegrationTest {
                 .path("createTarget.start").entity(Double.class).isEqualTo(start)
                 .path("createTarget.current").entity(Double.class).isEqualTo(expectedCurrent)
                 .path("createTarget.total").entity(Double.class).isEqualTo(total)
+                .path("createTarget.unit").valueIsNull()
+                .path("createTarget.deadline").valueIsNull()
                 .path("createTarget.progress").entity(Double.class).isEqualTo(expectedProgress);
     }
 
@@ -475,6 +569,67 @@ class TargetIntegrationTest {
         assertNoTargetsCreated();
     }
 
+    @Test
+    @DisplayName("Returns ValidationError when creating numeric target with explicit null start")
+    void returnsErrorWhenCreatingNumericTargetWithExplicitNullStart() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "numeric"
+                            title: "Read pages"
+                            start: null
+                            total: 10
+                          }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Numeric target start cannot be null");
+        assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when creating numeric target with explicit null total")
+    void returnsErrorWhenCreatingNumericTargetWithExplicitNullTotal() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "numeric"
+                            title: "Read pages"
+                            start: 0
+                            total: null
+                          }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Numeric target target cannot be null");
+        assertNoTargetsCreated();
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when creating numeric target with explicit null current")
+    void returnsErrorWhenCreatingNumericTargetWithExplicitNullCurrent() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "numeric"
+                            title: "Read pages"
+                            start: 0
+                            current: null
+                            total: 10
+                          }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        assertValidationError(response, "Numeric target current cannot be null");
+        assertNoTargetsCreated();
+    }
+
     // --- createTarget: checklist ---------------------------------------------
 
     @Test
@@ -497,7 +652,7 @@ class TargetIntegrationTest {
                               { text: $secondTask }
                             ]
                           }) {
-                            id type title items { id text done } progress
+                            id type title deadline items { id text done } progress
                           }
                         }
                         """)
@@ -512,6 +667,7 @@ class TargetIntegrationTest {
                 .path("createTarget.id").hasValue()
                 .path("createTarget.type").entity(String.class).isEqualTo("checklist")
                 .path("createTarget.title").entity(String.class).isEqualTo(title)
+                .path("createTarget.deadline").valueIsNull()
                 .path("createTarget.items").entityList(Object.class).hasSize(2)
                 .path("createTarget.items[0].text").entity(String.class).isEqualTo(firstTask)
                 .path("createTarget.items[0].done").entity(Boolean.class).isEqualTo(false)
@@ -774,8 +930,8 @@ class TargetIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          createTarget(goalId: "999999", input: {
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
                             type: "binary"
                             title: "Some target"
                             done: false
@@ -784,6 +940,7 @@ class TargetIntegrationTest {
                           }
                         }
                         """)
+                .variable("goalId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -825,16 +982,17 @@ class TargetIntegrationTest {
     @DisplayName("Returns NOT_FOUND error when querying targets for non-existent goal")
     void returnsErrorWhenQueryingTargetsForNonExistentGoal() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        query {
-                          targetsByGoal(goalId: "999999") { id }
+                        query($goalId: ID!) {
+                          targetsByGoal(goalId: $goalId) { id }
                         }
                         """)
+                .variable("goalId", NON_EXISTENT_ID)
                 .execute();
 
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Goal not found: 999999") &&
+                                error.getMessage().contains("Goal not found: " + NON_EXISTENT_ID) &&
                                 "NOT_FOUND".equals(error.getExtensions().get("classification"))));
     }
 
@@ -888,10 +1046,11 @@ class TargetIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        query {
-                          targetById(id: "999999") { id }
+                        query($id: ID!) {
+                          targetById(id: $id) { id }
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -1057,6 +1216,78 @@ class TargetIntegrationTest {
     }
 
     @Test
+    @DisplayName("Returns ValidationError when updating numeric target with negative start")
+    void returnsErrorWhenUpdatingNumericTargetWithNegativeStart() {
+        String targetId = createNumericTarget(goalId, "Read pages", 0d, 10d);
+
+        assertUpdateTargetValidationError(targetId, "start: -1",
+                "Numeric target start cannot be negative");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating numeric target with negative total")
+    void returnsErrorWhenUpdatingNumericTargetWithNegativeTotal() {
+        String targetId = createNumericTarget(goalId, "Read pages", 0d, 10d);
+
+        assertUpdateTargetValidationError(targetId, "total: -1",
+                "Numeric target target cannot be negative");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating numeric target start to equal total")
+    void returnsErrorWhenUpdatingNumericTargetWithStartEqualToTotal() {
+        // start=0, current=0, total=10 → update start to 10 → start == total
+        String targetId = createNumericTarget(goalId, "Read pages", 0d, 10d);
+
+        assertUpdateTargetValidationError(targetId, "start: 10",
+                "Numeric target start and target must be different");
+    }
+
+    @Test
+    @DisplayName("Updates numeric target start value and recalculates progress")
+    void updatesNumericTargetStartValue() {
+        // create: start=5, current=5, total=10 → update start to 2 → progress=(5-2)/(10-2)=3/8
+        String targetId = createNumericTarget(goalId, "Read pages", 5d, 10d);
+
+        graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateTarget(id: $id, input: { start: 2 }) {
+                            start current total progress
+                          }
+                        }
+                        """)
+                .variable("id", targetId)
+                .execute()
+                .path("updateTarget.start").entity(Double.class).isEqualTo(2d)
+                .path("updateTarget.current").entity(Double.class).isEqualTo(5d)
+                .path("updateTarget.total").entity(Double.class).isEqualTo(10d)
+                .path("updateTarget.progress").entity(Double.class)
+                .satisfies(p -> assertThat(p).isCloseTo(3d / 8d, offset(0.000001d)));
+    }
+
+    @Test
+    @DisplayName("Updates numeric target total value and recalculates progress")
+    void updatesNumericTargetTotalValue() {
+        // create: start=0, current=0, total=10; advance to 5 → update total to 20 → progress=5/20=0.25
+        String targetId = createNumericTarget(goalId, "Read pages", 0d, 10d);
+        updateNumericTargetCurrent(targetId, 5d);
+
+        graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateTarget(id: $id, input: { total: 20 }) {
+                            start current total progress
+                          }
+                        }
+                        """)
+                .variable("id", targetId)
+                .execute()
+                .path("updateTarget.start").entity(Double.class).isEqualTo(0d)
+                .path("updateTarget.current").entity(Double.class).isEqualTo(5d)
+                .path("updateTarget.total").entity(Double.class).isEqualTo(20d)
+                .path("updateTarget.progress").entity(Double.class).isEqualTo(0.25d);
+    }
+
+    @Test
     @DisplayName("Updates checklist target items - progress recalculates")
     void updatesChecklistTargetItems() {
         // Arrange
@@ -1193,10 +1424,10 @@ class TargetIntegrationTest {
         String targetId = createChecklistTarget(goalId, "Prepare workspace");
 
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($id: ID!) {
+                        mutation($id: ID!, $itemId: ID!) {
                           updateTarget(id: $id, input: {
                             items: [
-                              { id: "999999", text: "Ghost task", done: false }
+                              { id: $itemId, text: "Ghost task", done: false }
                             ]
                           }) {
                             id
@@ -1204,12 +1435,13 @@ class TargetIntegrationTest {
                         }
                         """)
                 .variable("id", targetId)
+                .variable("itemId", NON_EXISTENT_ID)
                 .execute();
 
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Checklist item not found: 999999") &&
+                                error.getMessage().contains("Checklist item not found: " + NON_EXISTENT_ID) &&
                                 "NOT_FOUND".equals(error.getExtensions().get("classification"))));
         getTargetItems(targetId)
                 .path("targetById.items").entityList(Object.class).hasSize(2);
@@ -1414,10 +1646,11 @@ class TargetIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          updateTarget(id: "999999", input: { done: true }) { id }
+                        mutation($id: ID!) {
+                          updateTarget(id: $id, input: { done: true }) { id }
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -1477,10 +1710,11 @@ class TargetIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          deleteTarget(id: "999999")
+                        mutation($id: ID!) {
+                          deleteTarget(id: $id)
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -1535,6 +1769,263 @@ class TargetIntegrationTest {
                 .path("goalById.progress").entity(Double.class).isEqualTo(1d)
                 .path("goalById.targets[0].done").entity(Boolean.class).isEqualTo(true)
                 .path("goalById.targets[0].progress").entity(Double.class).isEqualTo(1d);
+    }
+
+    @Test
+    @DisplayName("Goal progress reaches 100% when all targets are completed, then drops when one is reverted")
+    void goalProgressReachesFullThenDropsWhenTargetIsReverted() {
+        String binaryId = createBinaryTarget(goalId, "Binary task", false);
+        String numericId = createNumericTarget(goalId, "Numeric task", 0d, 10d);
+
+        updateBinaryTargetDone(binaryId, true);
+        updateNumericTargetCurrent(numericId, 10d);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          goalById(id: $goalId) { progress }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+
+        updateBinaryTargetDone(binaryId, false);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          goalById(id: $goalId) { progress }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+    }
+
+    @Test
+    @DisplayName("Goal progress reaches 100% when single numeric target reaches its total")
+    void goalProgressReachesOneHundredPercentWithSingleNumericTarget() {
+        String numericId = createNumericTarget(goalId, "Read pages", 0d, 10d);
+        updateNumericTargetCurrent(numericId, 10d);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          goalById(id: $goalId) { progress }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+    }
+
+    @Test
+    @DisplayName("Goal progress reaches 100% when single checklist target has all items done")
+    void goalProgressReachesOneHundredPercentWithSingleChecklistTarget() {
+        GraphQlTester.Response createResponse = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "checklist"
+                            title: "Full checklist"
+                            items: [{ text: "Step 1" }, { text: "Step 2" }]
+                          }) { id items { id } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        String checklistId = createResponse.path("createTarget.id").entity(String.class).get();
+        String item1Id = createResponse.path("createTarget.items[0].id").entity(String.class).get();
+        String item2Id = createResponse.path("createTarget.items[1].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($id: ID!, $i1: ID!, $i2: ID!) {
+                          updateTarget(id: $id, input: {
+                            items: [
+                              { id: $i1, text: "Step 1", done: true }
+                              { id: $i2, text: "Step 2", done: true }
+                            ]
+                          }) { id }
+                        }
+                        """)
+                .variable("id", checklistId)
+                .variable("i1", item1Id)
+                .variable("i2", item2Id)
+                .execute();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          goalById(id: $goalId) { progress }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+    }
+
+    @Test
+    @DisplayName("Goal progress drops when new incomplete binary target is added to a 100% goal")
+    void goalProgressDropsWhenNewIncompleteBinaryTargetIsAdded() {
+        String binaryId = createBinaryTarget(goalId, "Done task", false);
+        updateBinaryTargetDone(binaryId, true);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+
+        createBinaryTarget(goalId, "Not yet done", false);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+    }
+
+    @Test
+    @DisplayName("Goal progress drops when new incomplete numeric target is added to a 100% goal")
+    void goalProgressDropsWhenNewIncompleteNumericTargetIsAdded() {
+        String binaryId = createBinaryTarget(goalId, "Done task", false);
+        updateBinaryTargetDone(binaryId, true);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+
+        createNumericTarget(goalId, "Pages to read", 0d, 10d);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+    }
+
+    @Test
+    @DisplayName("Goal progress drops when new incomplete checklist target is added to a 100% goal")
+    void goalProgressDropsWhenNewIncompleteChecklistTargetIsAdded() {
+        String binaryId = createBinaryTarget(goalId, "Done task", false);
+        updateBinaryTargetDone(binaryId, true);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "checklist"
+                            title: "Not started yet"
+                            items: [{ text: "Step 1" }, { text: "Step 2" }]
+                          }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+    }
+
+    @Test
+    @DisplayName("Goal progress drops when a checklist item is unchecked from a 100% goal")
+    void goalProgressDropsWhenChecklistItemIsUnchecked() {
+        GraphQlTester.Response createResponse = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "checklist"
+                            title: "Full checklist"
+                            items: [
+                              { text: "Step 1", done: true }
+                              { text: "Step 2", done: true }
+                            ]
+                          }) { id items { id } }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        String checklistId = createResponse.path("createTarget.id").entity(String.class).get();
+        String item1Id = createResponse.path("createTarget.items[0].id").entity(String.class).get();
+        String item2Id = createResponse.path("createTarget.items[1].id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
+
+        graphQlTester.document("""
+                        mutation($id: ID!, $i1: ID!, $i2: ID!) {
+                          updateTarget(id: $id, input: {
+                            items: [
+                              { id: $i1, text: "Step 1", done: true }
+                              { id: $i2, text: "Step 2", done: false }
+                            ]
+                          }) { id }
+                        }
+                        """)
+                .variable("id", checklistId)
+                .variable("i1", item1Id)
+                .variable("i2", item2Id)
+                .execute();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+    }
+
+    @Test
+    @DisplayName("Goal progress recalculates after target deletion")
+    void goalProgressRecalculatesAfterTargetDeletion() {
+        String binaryId = createBinaryTarget(goalId, "Done task", false);
+        updateBinaryTargetDone(binaryId, true);
+
+        String checklistId = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createTarget(goalId: $goalId, input: {
+                            type: "checklist"
+                            title: "Not started yet"
+                            items: [{ text: "Step 1" }, { text: "Step 2" }]
+                          }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("createTarget.id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(0.5d);
+
+        deleteTarget(checklistId);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { goalById(id: $goalId) { progress } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("goalById.progress").entity(Double.class).isEqualTo(1d);
     }
 
     @Test

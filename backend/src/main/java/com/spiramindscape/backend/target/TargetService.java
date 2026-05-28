@@ -158,7 +158,11 @@ public class TargetService {
     private void applyFields(Target target, String title, String type, Instant deadline,
                               Instant achievedAt, Double start, Double current,
                               Double total, String unit, Boolean done) {
-        if (title != null)      target.setTitle(title);
+        if (title != null) {
+            String normalized = title.trim();
+            if (normalized.isEmpty()) throw new IllegalArgumentException("Target title is required");
+            target.setTitle(normalized);
+        }
         if (type != null)       target.setType(normalizeType(type));
         if (deadline != null)   target.setDeadline(deadline);
         if (achievedAt != null) target.setAchievedAt(achievedAt);
