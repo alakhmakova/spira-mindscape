@@ -50,6 +50,20 @@ export type Resource =
       phone?: string;
     };
 
+/**
+ * Resource fields for creation: same union as {@link Resource} but without
+ * `id` (assigned by the server).
+ *
+ * Plain `Omit<Resource, "id">` does NOT distribute over union members in
+ * TypeScript — it collapses to only the keys common to every variant.
+ * This explicit form gives each discriminant its full set of fields.
+ */
+export type ResourceInput =
+  | Omit<Extract<Resource, { type: "note" }>, "id">
+  | Omit<Extract<Resource, { type: "link" }>, "id">
+  | Omit<Extract<Resource, { type: "file" }>, "id">
+  | Omit<Extract<Resource, { type: "email" }>, "id">;
+
 export type Option = {
   id: string;
   text: string;

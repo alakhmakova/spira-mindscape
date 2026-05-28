@@ -1,40 +1,26 @@
 package com.spiramindscape.backend.graphql;
 
-import com.spiramindscape.backend.goal.GoalRepository;
 import com.spiramindscape.backend.resource.ResourceService;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.support.BaseGraphQlIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@AutoConfigureGraphQlTester
-@ActiveProfiles("test")
-class ResourceIntegrationTest {
+class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
 
     private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
     private static final String PNG_DATA_URL = "data:image/png;base64,aGVsbG8=";
     private static final String UPDATED_PNG_DATA_URL = "data:image/png;base64,dXBkYXRlZA==";
     private static final String PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQ=";
     private static final String UPDATED_PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjUK";
-
-    @Autowired
-    private GraphQlTester graphQlTester;
-
-    @Autowired
-    private GoalRepository goalRepository;
 
     private String goalId;
 
@@ -49,11 +35,6 @@ class ResourceIntegrationTest {
                         """)
                 .execute()
                 .path("createGoal.id").entity(String.class).get();
-    }
-
-    @AfterEach
-    void cleanDatabase() {
-        goalRepository.deleteAll();
     }
 
     @Test

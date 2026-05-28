@@ -1,32 +1,18 @@
 package com.spiramindscape.backend.graphql;
 
-import com.spiramindscape.backend.goal.GoalRepository;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.support.BaseGraphQlIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@AutoConfigureGraphQlTester
-@ActiveProfiles("test")
-class OptionIntegrationTest {
+class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
 
     private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
-
-    @Autowired
-    private GraphQlTester graphQlTester;
-
-    @Autowired
-    private GoalRepository goalRepository;
 
     private String goalId;
 
@@ -41,11 +27,6 @@ class OptionIntegrationTest {
                         """)
                 .execute()
                 .path("createGoal.id").entity(String.class).get();
-    }
-
-    @AfterEach
-    void cleanDatabase() {
-        goalRepository.deleteAll();
     }
 
     // --- add option ----------------------------------------------------------

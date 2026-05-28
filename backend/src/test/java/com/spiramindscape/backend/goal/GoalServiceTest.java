@@ -1,8 +1,11 @@
 package com.spiramindscape.backend.goal;
 
+import com.spiramindscape.backend.auth.AppUser;
+import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,16 +27,40 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class GoalServiceTest {
 
+    // ─── Test fixtures ────────────────────────────────────────────────────────
+
+    private static final Long TEST_USER_ID = 42L;
+    private static final AppUser TEST_USER;
+    static {
+        TEST_USER = new AppUser();
+        TEST_USER.setId(TEST_USER_ID);
+        TEST_USER.setGoogleSub("test-sub");
+        TEST_USER.setEmail("test@example.com");
+        TEST_USER.setName("Test User");
+        TEST_USER.setRole("USER");
+    }
+
     @Mock
     private GoalRepository goalRepository;
 
     @Mock
     private OptionRepository optionRepository;
+
     @Mock
     private ConfidenceHistoryRepository confidenceHistoryRepository;
 
+    @Mock
+    private CurrentUserProvider currentUserProvider;
+
     @InjectMocks
     private GoalService goalService;
+
+    @BeforeEach
+    void stubCurrentUser() {
+        // Use lenient so tests that don't call user-scoped methods aren't flagged
+        // for unused stubbing (e.g., findOptionsByGoalIds, findConfidenceHistoryByGoalIds)
+        lenient().when(currentUserProvider.getCurrentUser()).thenReturn(TEST_USER);
+    }
 
     // ─── findAll ──────────────────────────────────────────────────────────────
 
@@ -42,7 +69,7 @@ class GoalServiceTest {
     void findAllReturnsDelegatedList() {
         Goal first = goal(1L);
         Goal second = goal(2L);
-        when(goalRepository.findAllByOrderByCreatedAtAsc()).thenReturn(List.of(first, second));
+        when(goalRepository.findByUserIdOrderByCreatedAtAsc(TEST_USER_ID)).thenReturn(List.of(first, second));
 
         List<Goal> result = goalService.findAll();
 
@@ -55,7 +82,7 @@ class GoalServiceTest {
     @DisplayName("findById returns goal when it exists")
     void findByIdReturnsGoalWhenFound() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
 
         Goal result = goalService.findById(1L);
 
@@ -65,7 +92,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("findById throws IllegalArgumentException with message when goal does not exist")
     void findByIdThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.findById(99L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -78,7 +105,7 @@ class GoalServiceTest {
     @DisplayName("delete removes goal via repository when goal exists")
     void deleteRemovesGoal() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
 
         goalService.delete(1L);
 
@@ -88,7 +115,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("delete throws IllegalArgumentException when goal does not exist")
     void deleteThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.delete(99L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -103,7 +130,7 @@ class GoalServiceTest {
     @DisplayName("addOption assigns position 0 when goal has no existing options")
     void addOptionAtPositionZeroWhenNoOptionsExist() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(-1);
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -117,7 +144,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("addOption: blank text throws with required message and does not save")
     void addOptionRejectsBlankText() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(-1);
 
         assertThatThrownBy(() -> goalService.addOption(1L, "   "))
@@ -131,7 +158,7 @@ class GoalServiceTest {
     @DisplayName("addOption: text at maximum length (500 chars) is accepted")
     void addOptionAcceptsTextAtMaximumLength() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(-1);
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String maxText = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH);
@@ -145,7 +172,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("addOption: text over maximum length (501 chars) throws and does not save")
     void addOptionRejectsOversizedText() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(-1);
 
         assertThatThrownBy(() -> goalService.addOption(1L, "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1)))
@@ -158,7 +185,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("addOption: throws NOT_FOUND when goal does not exist, option repository not touched")
     void addOptionThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.addOption(99L, "Some text"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -174,7 +201,7 @@ class GoalServiceTest {
     void removeOptionDeletesOption() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
 
         goalService.removeOption(1L, 10L);
@@ -185,7 +212,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("removeOption throws NOT_FOUND when option does not exist")
     void removeOptionThrowsWhenOptionNotFound() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.removeOption(1L, 99L))
@@ -200,7 +227,7 @@ class GoalServiceTest {
     void removeOptionRejectsOptionFromAnotherGoal() {
         Goal goal = goal(1L);
         Option otherGoalOption = option(10L, goal(2L), false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(otherGoalOption));
 
         assertThatThrownBy(() -> goalService.removeOption(1L, 10L))
@@ -217,7 +244,7 @@ class GoalServiceTest {
     void updateOptionRejectsBlankText() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
 
         assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("   ", null)))
@@ -232,7 +259,7 @@ class GoalServiceTest {
     void updateOptionAcceptsTextAtMaximumLength() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String maxText = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH);
@@ -248,7 +275,7 @@ class GoalServiceTest {
     void updateOptionRejectsOversizedText() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
 
         assertThatThrownBy(() -> goalService.updateOption(1L, 10L,
@@ -264,7 +291,7 @@ class GoalServiceTest {
     void updateOptionUpdatesText() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -280,7 +307,7 @@ class GoalServiceTest {
     void updateOptionUpdatesSelectedFlag() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -295,7 +322,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("findOptions returns empty list when goal exists but has no options")
     void findOptionsReturnsEmptyListWhenGoalHasNoOptions() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(1L)).thenReturn(List.of());
 
         List<Option> result = goalService.findOptions(1L);
@@ -306,7 +333,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("findOptions throws NOT_FOUND when goal does not exist")
     void findOptionsThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.findOptions(99L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -478,7 +505,7 @@ class GoalServiceTest {
     void updatesAndClearsGoalDescriptionWhenExplicitNullProvided() {
         Goal goal = goal(1L);
         goal.setDescription("Before");
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Goal updated = goalService.update(1L,
@@ -492,7 +519,7 @@ class GoalServiceTest {
     @Test
     void updateGoalIgnoresExplicitNullTitle() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Goal updated = goalService.update(1L,
@@ -505,7 +532,7 @@ class GoalServiceTest {
     @Test
     void rejectsUpdateGoalWithBlankTitleAfterTrimming() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
 
         assertThatThrownBy(() -> goalService.update(1L,
                 new UpdateGoalInput("   ", null, null, null, null),
@@ -520,7 +547,7 @@ class GoalServiceTest {
     @DisplayName("update: title is trimmed before storing")
     void trimsGoalTitleOnUpdate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Goal updated = goalService.update(1L,
@@ -535,7 +562,7 @@ class GoalServiceTest {
     void updatesGoalDescriptionToNewValue() {
         Goal goal = goal(1L);
         goal.setDescription("Old description");
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Goal updated = goalService.update(1L,
@@ -549,7 +576,7 @@ class GoalServiceTest {
     @DisplayName("update: rejects description longer than 5000 characters")
     void rejectsGoalDescriptionOverMaxLengthOnUpdate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
 
         assertThatThrownBy(() -> goalService.update(1L,
                 new UpdateGoalInput(null, "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH + 1), null, null, null)))
@@ -562,7 +589,7 @@ class GoalServiceTest {
     @Test
     void addsOptionAtNextPositionUnselected() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(2);
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -577,7 +604,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("selectOption throws NOT_FOUND when option does not exist")
     void selectOptionThrowsWhenOptionNotFound() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.selectOption(1L, 99L))
@@ -590,7 +617,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("selectOption throws NOT_FOUND when goal does not exist, option repository not touched")
     void selectOptionThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.selectOption(99L, 10L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -605,7 +632,7 @@ class GoalServiceTest {
         Option first = option(10L, goal, true, 0);
         Option second = option(11L, goal, false, 1);
         Option third = option(12L, goal, true, 2);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(11L)).thenReturn(Optional.of(second));
         when(optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(1L))
                 .thenReturn(List.of(first, second, third));
@@ -623,7 +650,7 @@ class GoalServiceTest {
     void updateOptionRejectsOptionFromAnotherGoal() {
         Goal goal = goal(1L);
         Option otherGoalOption = option(10L, goal(2L), false, 0);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(otherGoalOption));
 
         assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("Updated", null)))
@@ -636,7 +663,7 @@ class GoalServiceTest {
         Goal goal = goal(1L);
         Option first = option(10L, goal, false, 0);
         Option second = option(11L, goal, false, 1);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(1L))
                 .thenReturn(List.of(first, second));
 
@@ -652,7 +679,7 @@ class GoalServiceTest {
         Option first  = option(10L, goal, false, 0);
         Option second = option(11L, goal, false, 1);
         Option third  = option(12L, goal, false, 2);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(1L))
                 .thenReturn(List.of(first, second, third));
 
@@ -667,7 +694,7 @@ class GoalServiceTest {
     @Test
     @DisplayName("reorderOptions throws NOT_FOUND when goal does not exist, option repository not touched")
     void reorderOptionsThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalRepository.findByIdAndUserId(99L, TEST_USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> goalService.reorderOptions(99L, List.of(10L, 11L)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -679,7 +706,7 @@ class GoalServiceTest {
     @Test
     void updatesAchievedAt() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Instant achievedAt = Instant.parse("2026-05-16T10:00:00Z");
@@ -693,7 +720,7 @@ class GoalServiceTest {
     void clearsAchievedAtWhenExplicitNullProvided() {
         Goal goal = goal(1L);
         goal.setAchievedAt(Instant.now());
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Goal updated = goalService.update(1L,
@@ -722,7 +749,7 @@ class GoalServiceTest {
     void createsConfidenceHistoryOnGoalUpdateWhenConfidenceChanged() {
         Goal goal = goal(1L);
         goal.setConfidence(5);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         goalService.update(1L, new UpdateGoalInput(null, null, 8, null, null));
@@ -736,7 +763,7 @@ class GoalServiceTest {
     void doesNotCreateConfidenceHistoryWhenConfidenceNotChanged() {
         Goal goal = goal(1L);
         goal.setConfidence(5);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         goalService.update(1L, new UpdateGoalInput("New Title", null, null, null, null));

@@ -1,9 +1,11 @@
+import { getCsrfToken } from "./auth";
 import type {
   ChecklistItem,
   Confidence,
   Goal,
   Option,
   Resource,
+  ResourceInput,
   Target,
 } from "./types";
 
@@ -136,7 +138,7 @@ type UpdateGoalInput = Partial<{
   achievedAt: string | null;
 }>;
 
-type CreateResourceInput = Omit<Resource, "id">;
+type CreateResourceInput = ResourceInput;
 type UpdateResourceInput = Partial<Resource>;
 type CreateTargetInput =
   | Omit<Extract<Target, { type: "numeric" }>, "id" | "current">
@@ -235,7 +237,13 @@ async function graphql<T>(
   try {
     response = await fetch(GRAPHQL_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // Include session cookie and echo the CSRF token so Spring Security
+      // accepts the request.
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        "X-XSRF-TOKEN": getCsrfToken(),
+      },
       body: JSON.stringify({ query, variables }),
     });
   } catch (error) {

@@ -115,7 +115,7 @@ describe("spiraApi errors", () => {
       achievedAt: null,
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body = callBody(fetchMock);
     expect(body.variables.input).toMatchObject({
       title: "Goal",
       deadline: null,
@@ -160,7 +160,7 @@ describe("spiraApi errors", () => {
       achievedAt: undefined,
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body = callBody(fetchMock);
     expect(body.variables.input).toMatchObject({
       title: "Book session",
       deadline: null,
@@ -168,6 +168,17 @@ describe("spiraApi errors", () => {
     });
   });
 });
+
+/**
+ * Parse the body of the first fetch call made to the mock.
+ * Typed as `ReturnType<typeof vi.fn>` so `mock.calls` is `any[][]` and
+ * TypeScript does not complain about argument tuple length.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function callBody(mock: ReturnType<typeof vi.fn>): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return JSON.parse(mock.mock.calls[0][1].body as string);
+}
 
 function goalResponse(
   overrides: Partial<{

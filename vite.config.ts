@@ -65,7 +65,26 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/graphql": "http://localhost:8080",
+      // All backend routes forwarded to Spring Boot so the browser sees a
+      // single origin in dev (no cross-origin cookie issues).
+      "/graphql": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      // OAuth2 Authorization Code flow — browser follows redirect to Google
+      // and back to /login/oauth2/code/google on the backend.
+      "/oauth2": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/login": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
   build: {
