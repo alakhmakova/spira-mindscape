@@ -19,7 +19,15 @@ public class RealityService {
     private final GoalRepository goalRepository;
 
     @Transactional(readOnly = true)
+    public RealityItem findItemById(Long id) {
+        return realityRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Reality item not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
     public RealityPayload findByGoal(Long goalId) {
+        goalRepository.findById(goalId)
+                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
         return buildReality(goalId);
     }
 

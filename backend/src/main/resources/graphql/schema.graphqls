@@ -10,6 +10,7 @@ type Query {
 
     optionsByGoal(goalId: ID!): [Option!]!
     realityByGoal(goalId: ID!): Reality!
+    realityItemById(id: ID!): RealityItem
 }
 
 type Mutation {

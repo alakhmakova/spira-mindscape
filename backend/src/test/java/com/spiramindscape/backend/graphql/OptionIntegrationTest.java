@@ -20,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 class OptionIntegrationTest {
 
+    private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
+
     @Autowired
     private GraphQlTester graphQlTester;
 
@@ -114,6 +116,32 @@ class OptionIntegrationTest {
     }
 
     @Test
+    @DisplayName("Returns ValidationError when adding option with blank text")
+    void returnsErrorWhenAddingOptionWithBlankText() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          addOption(goalId: $goalId, text: "   ") {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Option text is required") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal").entityList(Object.class).hasSize(0);
+    }
+
+    @Test
     @DisplayName("Returns NOT_FOUND error when adding option to non-existent goal")
     void returnsErrorWhenAddingOptionToNonExistentGoal() {
         // Arrange
@@ -121,12 +149,13 @@ class OptionIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          addOption(goalId: "999999", text: "Some option") {
+                        mutation($goalId: ID!) {
+                          addOption(goalId: $goalId, text: "Some option") {
                             id
                           }
                         }
                         """)
+                .variable("goalId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert - "Goal not found: 999999" -> contains "not found" -> NOT_FOUND
@@ -154,6 +183,26 @@ class OptionIntegrationTest {
                 .variable("goalId", goalId)
                 .execute()
                 .path("optionsByGoal").entityList(Object.class).hasSize(0);
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when querying options for non-existent goal")
+    void returnsErrorWhenQueryingOptionsForNonExistentGoal() {
+        // Act
+        GraphQlTester.Response response = graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .execute();
+
+        // Assert
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
     }
 
     // --- selectOption --------------------------------------------------------
@@ -249,14 +298,15 @@ class OptionIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($goalId: ID!) {
-                          selectOption(goalId: $goalId, optionId: "999999") {
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          selectOption(goalId: $goalId, optionId: $optionId) {
                             id
                             selected
                           }
                         }
                         """)
                 .variable("goalId", goalId)
+                .variable("optionId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert - "Option not found: ..." -> contains "not found" -> NOT_FOUND
@@ -379,6 +429,36 @@ class OptionIntegrationTest {
     }
 
     @Test
+    @DisplayName("Returns ValidationError when updating option with blank text - original text is preserved")
+    void returnsErrorWhenUpdatingOptionWithBlankText() {
+        String optionId = addOption(goalId, "Original option text");
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: "   " }) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Option text is required") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id text } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal[0].text").entity(String.class).isEqualTo("Original option text");
+    }
+
+    @Test
     @DisplayName("Returns NOT_FOUND error when updating option with non-existent id")
     void returnsErrorWhenUpdatingNonExistentOption() {
         // Arrange
@@ -386,13 +466,14 @@ class OptionIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($goalId: ID!) {
-                          updateOption(goalId: $goalId, optionId: "999999", input: { text: "Updated" }) {
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: "Updated" }) {
                             id text
                           }
                         }
                         """)
                 .variable("goalId", goalId)
+                .variable("optionId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert - "Option not found: ..." -> contains "not found" -> NOT_FOUND
@@ -500,11 +581,12 @@ class OptionIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($goalId: ID!) {
-                          removeOption(goalId: $goalId, optionId: "999999")
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          removeOption(goalId: $goalId, optionId: $optionId)
                         }
                         """)
                 .variable("goalId", goalId)
+                .variable("optionId", NON_EXISTENT_ID)
                 .execute();
 
         // Assert - "Option not found: ..." -> contains "not found" -> NOT_FOUND
@@ -639,6 +721,284 @@ class OptionIntegrationTest {
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
                                 error.getMessage().contains("Option not found or does not belong to goal") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    // --- text normalisation --------------------------------------------------
+
+    @Test
+    @DisplayName("Trims whitespace from option text on add - stored text is trimmed")
+    void trimsWhitespaceFromOptionTextOnAdd() {
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addOption(goalId: $goalId, text: $text) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", "   Move to Berlin   ")
+                .execute()
+                .path("addOption.text").entity(String.class).isEqualTo("Move to Berlin");
+    }
+
+    @Test
+    @DisplayName("Trims whitespace from option text on update - stored text is trimmed")
+    void trimsWhitespaceFromOptionTextOnUpdate() {
+        String optionId = addOption(goalId, "Original text");
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!, $text: String!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: $text }) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .variable("text", "   Updated text   ")
+                .execute()
+                .path("updateOption.text").entity(String.class).isEqualTo("Updated text");
+    }
+
+    @Test
+    @DisplayName("Accepts option text at maximum length (500 chars) on add")
+    void acceptsOptionTextAtMaxLengthOnAdd() {
+        String maxText = "A".repeat(500);
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addOption(goalId: $goalId, text: $text) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", maxText)
+                .execute()
+                .path("addOption.text").entity(String.class).isEqualTo(maxText);
+    }
+
+    @Test
+    @DisplayName("Accepts option text at maximum length (500 chars) on update")
+    void acceptsOptionTextAtMaxLengthOnUpdate() {
+        String optionId = addOption(goalId, "Original text");
+        String maxText = "A".repeat(500);
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!, $text: String!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: $text }) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .variable("text", maxText)
+                .execute()
+                .path("updateOption.text").entity(String.class).isEqualTo(maxText);
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when adding option with text over 500 chars - no option created")
+    void returnsErrorWhenAddingOptionWithOversizedText() {
+        String oversized = "A".repeat(501);
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $text: String!) {
+                          addOption(goalId: $goalId, text: $text) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("text", oversized)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Option text must be 500 characters or fewer") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal").entityList(Object.class).hasSize(0);
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating option with text over 500 chars - original text preserved")
+    void returnsErrorWhenUpdatingOptionWithOversizedText() {
+        String optionId = addOption(goalId, "Original option text");
+        String oversized = "A".repeat(501);
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!, $text: String!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: $text }) {
+                            id text
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .variable("text", oversized)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Option text must be 500 characters or fewer") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id text } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal[0].text").entity(String.class).isEqualTo("Original option text");
+    }
+
+    // --- removeOption (extra scenarios) --------------------------------------
+
+    @Test
+    @DisplayName("Removing one option preserves remaining options")
+    void removingOneOptionPreservesRemainingOption() {
+        String firstId  = addOption(goalId, "Keep me");
+        String secondId = addOption(goalId, "Remove me");
+
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          removeOption(goalId: $goalId, optionId: $optionId)
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", secondId)
+                .execute()
+                .path("removeOption").entity(Boolean.class).isEqualTo(true);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id text } }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal").entityList(Object.class).hasSize(1)
+                .path("optionsByGoal[0].id").entity(String.class).isEqualTo(firstId)
+                .path("optionsByGoal[0].text").entity(String.class).isEqualTo("Keep me");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when removing option that belongs to another goal")
+    void returnsErrorWhenRemovingOptionOfAnotherGoal() {
+        String otherGoalId = graphQlTester.document("""
+                        mutation {
+                          createGoal(input: { title: "Other goal", confidence: 3 }) { id }
+                        }
+                        """)
+                .execute()
+                .path("createGoal.id").entity(String.class).get();
+
+        String optionId = addOption(otherGoalId, "An option belonging to another goal");
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          removeOption(goalId: $goalId, optionId: $optionId)
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Option does not belong to goal") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+
+        // option must still exist under the correct goal
+        graphQlTester.document("""
+                        query($goalId: ID!) { optionsByGoal(goalId: $goalId) { id } }
+                        """)
+                .variable("goalId", otherGoalId)
+                .execute()
+                .path("optionsByGoal").entityList(Object.class).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when selecting option with non-existent goal id")
+    void returnsErrorWhenSelectingOptionOfNonExistentGoal() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          selectOption(goalId: $goalId, optionId: $optionId) { id }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .variable("optionId", NON_EXISTENT_ID)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when updating option for non-existent goal")
+    void returnsErrorWhenUpdatingOptionForNonExistentGoal() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { text: "Updated" }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .variable("optionId", NON_EXISTENT_ID)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when removing option for non-existent goal")
+    void returnsErrorWhenRemovingOptionForNonExistentGoal() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          removeOption(goalId: $goalId, optionId: $optionId)
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .variable("optionId", NON_EXISTENT_ID)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
+                                "NOT_FOUND".equals(error.getExtensions().get("classification"))));
+    }
+
+    @Test
+    @DisplayName("Returns NOT_FOUND error when reordering options for non-existent goal")
+    void returnsErrorWhenReorderingOptionsForNonExistentGoal() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionIds: [ID!]!) {
+                          reorderOptions(goalId: $goalId, optionIds: $optionIds) { id }
+                        }
+                        """)
+                .variable("goalId", NON_EXISTENT_ID)
+                .variable("optionIds", List.of(NON_EXISTENT_ID))
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Goal not found") &&
                                 "NOT_FOUND".equals(error.getExtensions().get("classification"))));
     }
 

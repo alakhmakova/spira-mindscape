@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 class ResourceIntegrationTest {
 
+    private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
     private static final String PNG_DATA_URL = "data:image/png;base64,aGVsbG8=";
     private static final String UPDATED_PNG_DATA_URL = "data:image/png;base64,dXBkYXRlZA==";
     private static final String PDF_DATA_URL = "data:application/pdf;base64,JVBERi0xLjQ=";
@@ -1294,6 +1295,27 @@ class ResourceIntegrationTest {
         assertValidationError(response, "Field 'body' is not allowed for link resources");
     }
 
+    @Test
+    @DisplayName("Returns error when resource type is the old 'contact' alias")
+    void rejectsOldContactAlias() {
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!) {
+                          createResource(goalId: $goalId, input: {
+                            type: "contact"
+                            name: "Old alias"
+                          }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error -> error.getMessage().contains("Unknown resource type: contact")));
+    }
+
     @ParameterizedTest(name = "Rejects {2} when creating {0} resource")
     @MethodSource("disallowedResourceCreateFields")
     void returnsErrorWhenCreateFieldDoesNotMatchResourceType(String resourceKind, String validFields,
@@ -1966,8 +1988,8 @@ class ResourceIntegrationTest {
     @DisplayName("Returns NOT_FOUND error when creating resource for non-existent goal")
     void returnsErrorWhenCreatingResourceForNonExistentGoal() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          createResource(goalId: "999999", input: {
+                        mutation($goalId: ID!) {
+                          createResource(goalId: $goalId, input: {
                             type: "note"
                             title: "Note"
                           }) {
@@ -1975,61 +1997,66 @@ class ResourceIntegrationTest {
                           }
                         }
                         """)
+                .variable("goalId", NON_EXISTENT_ID)
                 .execute();
 
-        assertNotFound(response, "Goal not found: 999999");
+        assertNotFound(response, "Goal not found: " + NON_EXISTENT_ID);
     }
 
     @Test
     @DisplayName("Returns NOT_FOUND error when querying resources for non-existent goal")
     void returnsErrorWhenQueryingResourcesForNonExistentGoal() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        query {
-                          resourcesByGoal(goalId: "999999") { id }
+                        query($goalId: ID!) {
+                          resourcesByGoal(goalId: $goalId) { id }
                         }
                         """)
+                .variable("goalId", NON_EXISTENT_ID)
                 .execute();
 
-        assertNotFound(response, "Goal not found: 999999");
+        assertNotFound(response, "Goal not found: " + NON_EXISTENT_ID);
     }
 
     @Test
     @DisplayName("Returns NOT_FOUND error when querying non-existent resource")
     void returnsErrorWhenQueryingNonExistentResource() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        query {
-                          resourceById(id: "999999") { id }
+                        query($id: ID!) {
+                          resourceById(id: $id) { id }
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
-        assertNotFound(response, "Resource not found: 999999");
+        assertNotFound(response, "Resource not found: " + NON_EXISTENT_ID);
     }
 
     @Test
     @DisplayName("Returns NOT_FOUND error when updating non-existent resource")
     void returnsErrorWhenUpdatingNonExistentResource() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          updateResource(id: "999999", input: { title: "Updated" }) { id }
+                        mutation($id: ID!) {
+                          updateResource(id: $id, input: { title: "Updated" }) { id }
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
-        assertNotFound(response, "Resource not found: 999999");
+        assertNotFound(response, "Resource not found: " + NON_EXISTENT_ID);
     }
 
     @Test
     @DisplayName("Returns NOT_FOUND error when deleting non-existent resource")
     void returnsErrorWhenDeletingNonExistentResource() {
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          deleteResource(id: "999999")
+                        mutation($id: ID!) {
+                          deleteResource(id: $id)
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
-        assertNotFound(response, "Resource not found: 999999");
+        assertNotFound(response, "Resource not found: " + NON_EXISTENT_ID);
     }
 
     private String createLinkResource(String goalId) {
