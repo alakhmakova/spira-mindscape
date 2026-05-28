@@ -66,6 +66,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/graphql": "http://localhost:8080",
+      "/api": "http://localhost:8080",
     },
   },
   build: {

@@ -4,6 +4,7 @@ import type {
   Goal,
   Option,
   Resource,
+  ResourceInput,
   Target,
 } from "./types";
 
@@ -136,7 +137,7 @@ type UpdateGoalInput = Partial<{
   achievedAt: string | null;
 }>;
 
-type CreateResourceInput = Omit<Resource, "id">;
+type CreateResourceInput = ResourceInput;
 type UpdateResourceInput = Partial<Resource>;
 type CreateTargetInput =
   | Omit<Extract<Target, { type: "numeric" }>, "id" | "current">

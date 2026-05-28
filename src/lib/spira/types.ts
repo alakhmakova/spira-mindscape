@@ -50,6 +50,16 @@ export type Resource =
       phone?: string;
     };
 
+/**
+ * Resource without the server-assigned `id` — used when creating a new resource.
+ * Defined as an explicit union so TypeScript distributes Omit correctly over each variant.
+ */
+export type ResourceInput =
+  | Omit<Extract<Resource, { type: "note" }>, "id">
+  | Omit<Extract<Resource, { type: "link" }>, "id">
+  | Omit<Extract<Resource, { type: "file" }>, "id">
+  | Omit<Extract<Resource, { type: "email" }>, "id">;
+
 export type Option = {
   id: string;
   text: string;
