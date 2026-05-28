@@ -3,6 +3,7 @@ package com.spiramindscape.backend.graphql;
 import com.spiramindscape.backend.goal.Goal;
 import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.goal.Option;
+import com.spiramindscape.backend.goal.RealityItem;
 import com.spiramindscape.backend.goal.RealityService;
 import com.spiramindscape.backend.goal.ConfidenceHistory;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
@@ -79,6 +80,11 @@ public class SpiraGraphqlController {
     @QueryMapping
     public RealityPayload realityByGoal(@Argument Long goalId) {
         return realityService.findByGoal(goalId);
+    }
+
+    @QueryMapping
+    public RealityItem realityItemById(@Argument Long id) {
+        return realityService.findItemById(id);
     }
 
     // Goal mutations

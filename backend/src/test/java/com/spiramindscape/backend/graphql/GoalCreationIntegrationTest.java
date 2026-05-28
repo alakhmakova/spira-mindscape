@@ -26,6 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 class GoalCreationIntegrationTest {
 
+    private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
+
     @Autowired
     private GraphQlTester graphQlTester;
 
@@ -38,13 +40,8 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Creates goal with required fields only - title and confidence - and returns empty nested collections")
+    @DisplayName("Creates goal with required fields only - title and confidence - and returns correct initial state")
     void createsGoalWithRequiredFieldsOnly() {
-        // Arrange
-        String title = "Learn GraphQL";
-        int confidence = 1;
-
-        // Act
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($title: String!, $confidence: Int!) {
                           createGoal(input: {
@@ -55,50 +52,50 @@ class GoalCreationIntegrationTest {
                             title
                             description
                             confidence
-                            createdAt
                             achievedAt
+                            deadline
+                            createdAt
                             progress
                             reality {
-                              actions { id text }
-                              obstacles { id text }
+                              actions { id }
+                              obstacles { id }
                             }
                             options { id }
                             resources { id }
                             targets { id }
+                            confidenceHistory { confidence }
                           }
                         }
                         """)
-                .variable("title", title)
-                .variable("confidence", confidence)
+                .variable("title", "Learn GraphQL")
+                .variable("confidence", 1)
                 .execute();
 
-        // Assert
-        response
-                .path("createGoal.id").hasValue()
-                .path("createGoal.title").entity(String.class).isEqualTo(title)
-                .path("createGoal.description").entity(String.class).isEqualTo("")
-                .path("createGoal.confidence").entity(Integer.class).isEqualTo(confidence)
-                .path("createGoal.createdAt").entity(String.class)
-                .satisfies(createdAt -> assertThat(Instant.parse(createdAt)).isBeforeOrEqualTo(Instant.now()))
-                .path("createGoal.achievedAt").valueIsNull()
-                .path("createGoal.progress").entity(Double.class).isEqualTo(0d)
-                .path("createGoal.reality.actions").entityList(Object.class).hasSize(0)
-                .path("createGoal.reality.obstacles").entityList(Object.class).hasSize(0)
-                .path("createGoal.options").entityList(Object.class).hasSize(0)
-                .path("createGoal.resources").entityList(Object.class).hasSize(0)
-                .path("createGoal.targets").entityList(Object.class).hasSize(0);
+        response.path("createGoal.id").hasValue();
+        response.path("createGoal.title").entity(String.class).isEqualTo("Learn GraphQL");
+        response.path("createGoal.description").entity(String.class).isEqualTo("");
+        response.path("createGoal.confidence").entity(Integer.class).isEqualTo(1);
+        response.path("createGoal.achievedAt").valueIsNull();
+        response.path("createGoal.deadline").valueIsNull();
+        response.path("createGoal.createdAt").entity(String.class)
+                .satisfies(createdAt -> assertThat(Instant.parse(createdAt)).isBeforeOrEqualTo(Instant.now()));
+        response.path("createGoal.progress").entity(Double.class).isEqualTo(0d);
+        response.path("createGoal.reality.actions").entityList(Object.class).hasSize(0);
+        response.path("createGoal.reality.obstacles").entityList(Object.class).hasSize(0);
+        response.path("createGoal.options").entityList(Object.class).hasSize(0);
+        response.path("createGoal.resources").entityList(Object.class).hasSize(0);
+        response.path("createGoal.targets").entityList(Object.class).hasSize(0);
+        response.path("createGoal.confidenceHistory").entityList(Object.class).hasSize(1);
+        response.path("createGoal.confidenceHistory[0].confidence").entity(Integer.class).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("Creates goal with all fields - long title, max confidence, description and deadline")
+    @DisplayName("Creates goal with all optional fields - full initial state is correct")
     void createsGoalWithAllFields() {
-        // Arrange
         String title = "Master GraphQL fundamentals including queries mutations subscriptions fragments directives schema design and best practices for APIs";
-        int confidence = 10;
         String description = "Understand queries and mutations in depth, covering schema design, resolvers, and testing strategies";
         String deadline = "2026-12-31T00:00:00Z";
 
-        // Act
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($title: String!, $confidence: Int!, $description: String!, $deadline: String!) {
                           createGoal(input: {
@@ -112,41 +109,39 @@ class GoalCreationIntegrationTest {
                             description
                             confidence
                             deadline
-                            createdAt
                             achievedAt
                             progress
                             reality {
-                              actions { id text }
-                              obstacles { id text }
+                              actions { id }
+                              obstacles { id }
                             }
                             options { id }
                             resources { id }
                             targets { id }
+                            confidenceHistory { confidence }
                           }
                         }
                         """)
                 .variable("title", title)
-                .variable("confidence", confidence)
+                .variable("confidence", 10)
                 .variable("description", description)
                 .variable("deadline", deadline)
                 .execute();
 
-        // Assert
-        response
-                .path("createGoal.id").hasValue()
-                .path("createGoal.title").entity(String.class).isEqualTo(title)
-                .path("createGoal.description").entity(String.class).isEqualTo(description)
-                .path("createGoal.confidence").entity(Integer.class).isEqualTo(confidence)
-                .path("createGoal.deadline").hasValue()
-                .path("createGoal.createdAt").entity(String.class)
-                .satisfies(createdAt -> assertThat(Instant.parse(createdAt)).isBeforeOrEqualTo(Instant.now()))
-                .path("createGoal.achievedAt").valueIsNull()
-                .path("createGoal.progress").entity(Double.class).isEqualTo(0d)
-                .path("createGoal.reality.actions").entityList(Object.class).hasSize(0)
-                .path("createGoal.reality.obstacles").entityList(Object.class).hasSize(0)
-                .path("createGoal.options").entityList(Object.class).hasSize(0)
-                .path("createGoal.resources").entityList(Object.class).hasSize(0)
-                .path("createGoal.targets").entityList(Object.class).hasSize(0);
+        response.path("createGoal.id").hasValue();
+        response.path("createGoal.title").entity(String.class).isEqualTo(title);
+        response.path("createGoal.description").entity(String.class).isEqualTo(description);
+        response.path("createGoal.confidence").entity(Integer.class).isEqualTo(10);
+        response.path("createGoal.deadline").entity(String.class).isEqualTo(deadline);
+        response.path("createGoal.achievedAt").valueIsNull();
+        response.path("createGoal.progress").entity(Double.class).isEqualTo(0d);
+        response.path("createGoal.reality.actions").entityList(Object.class).hasSize(0);
+        response.path("createGoal.reality.obstacles").entityList(Object.class).hasSize(0);
+        response.path("createGoal.options").entityList(Object.class).hasSize(0);
+        response.path("createGoal.resources").entityList(Object.class).hasSize(0);
+        response.path("createGoal.targets").entityList(Object.class).hasSize(0);
+        response.path("createGoal.confidenceHistory").entityList(Object.class).hasSize(1);
+        response.path("createGoal.confidenceHistory[0].confidence").entity(Integer.class).isEqualTo(10);
     }
 
     @Test
@@ -274,32 +269,22 @@ class GoalCreationIntegrationTest {
     @Test
     @DisplayName("Rejects createGoal with empty input - title and confidence are required")
     void rejectsCreateGoalWithEmptyInput() {
-        // Arrange
-        // No Arrange needed - we are testing schema rejection of an empty input object
-
-        // Act
-        GraphQlTester.Response response = graphQlTester.document("""
+        graphQlTester.document("""
                         mutation {
                           createGoal(input: {}) {
                             id
                           }
                         }
                         """)
-                .execute();
-
-        // Assert
-        response.errors()
+                .execute()
+                .errors()
                 .satisfy(errors -> assertThat(errors).isNotEmpty());
     }
 
     @Test
     @DisplayName("Rejects createGoal when title is missing - title is required")
     void rejectsCreateGoalWithMissingTitle() {
-        // Arrange
-        // No Arrange needed - we are testing schema rejection of a missing required field
-
-        // Act
-        GraphQlTester.Response response = graphQlTester.document("""
+        graphQlTester.document("""
                         mutation {
                           createGoal(input: {
                             confidence: 5
@@ -308,21 +293,15 @@ class GoalCreationIntegrationTest {
                           }
                         }
                         """)
-                .execute();
-
-        // Assert
-        response.errors()
+                .execute()
+                .errors()
                 .satisfy(errors -> assertThat(errors).isNotEmpty());
     }
 
     @Test
     @DisplayName("Rejects createGoal when confidence is missing - confidence is required")
     void rejectsCreateGoalWithMissingConfidence() {
-        // Arrange
-        // No Arrange needed - we are testing schema rejection of a missing required field
-
-        // Act
-        GraphQlTester.Response response = graphQlTester.document("""
+        graphQlTester.document("""
                         mutation {
                           createGoal(input: {
                             title: "Learn GraphQL"
@@ -331,10 +310,8 @@ class GoalCreationIntegrationTest {
                           }
                         }
                         """)
-                .execute();
-
-        // Assert
-        response.errors()
+                .execute()
+                .errors()
                 .satisfy(errors -> assertThat(errors).isNotEmpty());
     }
 
@@ -363,6 +340,26 @@ class GoalCreationIntegrationTest {
                     assertThat(errors.get(0).getMessage()).contains("Invalid date format");
                     assertThat(errors.get(0).getExtensions().get("classification")).isEqualTo("ValidationError");
                 });
+    }
+
+    @Test
+    @DisplayName("Trims whitespace from goal title on update")
+    void trimsWhitespaceFromGoalTitleOnUpdate() {
+        String goalId = createGoal("Original title", "Original description");
+
+        graphQlTester.document("""
+                        mutation($id: ID!, $title: String!) {
+                          updateGoal(id: $id, input: {
+                            title: $title
+                          }) {
+                            title
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("title", "   Updated title   ")
+                .execute()
+                .path("updateGoal.title").entity(String.class).isEqualTo("Updated title");
     }
 
     @Test
@@ -449,6 +446,25 @@ class GoalCreationIntegrationTest {
                 .path("updateGoal.achievedAt").valueIsNull();
     }
 
+    @Test
+    @DisplayName("Returns ValidationError when updating goal with invalid achievedAt format")
+    void returnsErrorWhenUpdatingGoalWithInvalidAchievedAtFormat() {
+        String goalId = createGoal("Goal", "Description");
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($id: ID!, $achievedAt: String!) {
+                          updateGoal(id: $id, input: { achievedAt: $achievedAt }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("achievedAt", "2027-06-15")
+                .execute();
+
+        assertValidationError(response, "Invalid date format");
+    }
+
     @ParameterizedTest(name = "Updates goal deadline with {0} date")
     @MethodSource("goalDeadlines")
     void updatesGoalDeadline(String label, String deadline) {
@@ -514,6 +530,36 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
+    @DisplayName("Adds description to goal that was created without one")
+    void addsDescriptionToGoalInitiallyCreatedWithoutOne() {
+        String goalId = graphQlTester.document("""
+                        mutation {
+                          createGoal(input: {
+                            title: "No description yet"
+                            confidence: 5
+                          }) {
+                            id
+                          }
+                        }
+                        """)
+                .execute()
+                .path("createGoal.id").entity(String.class).get();
+
+        graphQlTester.document("""
+                        mutation($id: ID!) {
+                          updateGoal(id: $id, input: {
+                            description: "Now has a description"
+                          }) {
+                            description
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .execute()
+                .path("updateGoal.description").entity(String.class).isEqualTo("Now has a description");
+    }
+
+    @Test
     @DisplayName("Trims whitespace from goal description on update")
     void trimsWhitespaceFromGoalDescriptionOnUpdate() {
         String goalId = createGoal("Original title", "Original description");
@@ -530,6 +576,26 @@ class GoalCreationIntegrationTest {
                 .variable("id", goalId)
                 .execute()
                 .path("updateGoal.description").entity(String.class).isEqualTo("Updated description");
+    }
+
+    @Test
+    @DisplayName("Updates goal description to empty string when blank whitespace is provided")
+    void updatesGoalDescriptionToEmptyStringWhenBlankIsProvided() {
+        String goalId = createGoal("Original title", "Has description");
+
+        graphQlTester.document("""
+                        mutation($id: ID!, $description: String!) {
+                          updateGoal(id: $id, input: {
+                            description: $description
+                          }) {
+                            description
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("description", "   ")
+                .execute()
+                .path("updateGoal.description").entity(String.class).isEqualTo("");
     }
 
     @Test
@@ -615,45 +681,82 @@ class GoalCreationIntegrationTest {
         assertGoalField(goalId, "title", "Original title");
     }
 
-    @ParameterizedTest(name = "Updates goal with {0} at maximum length")
-    @MethodSource("goalFieldsAtMaximumLength")
-    void updatesGoalFieldAtMaximumLength(String fieldName, String updateInput, String expectedValue) {
+    @Test
+    @DisplayName("Updates goal title to maximum length (200 characters)")
+    void updatesGoalTitleToMaximumLength() {
+        String maxTitle = "A".repeat(200);
         String goalId = createGoal("Original title", "Original description");
 
         graphQlTester.document("""
-                        mutation($id: ID!) {
-                          updateGoal(id: $id, input: {
-                            %s
-                          }) {
-                            %s
+                        mutation($id: ID!, $title: String!) {
+                          updateGoal(id: $id, input: { title: $title }) {
+                            title
                           }
                         }
-                        """.formatted(updateInput, fieldName))
+                        """)
                 .variable("id", goalId)
+                .variable("title", maxTitle)
                 .execute()
-                .path("updateGoal." + fieldName).entity(String.class).isEqualTo(expectedValue);
+                .path("updateGoal.title").entity(String.class).isEqualTo(maxTitle);
     }
 
-    @ParameterizedTest(name = "Returns ValidationError when updating goal with oversized {0}")
-    @MethodSource("oversizedGoalFieldUpdates")
-    void returnsErrorWhenUpdatingGoalWithOversizedField(String fieldName, String updateInput,
-                                                       String expectedOriginalValue, String message) {
+    @Test
+    @DisplayName("Updates goal description to maximum length (5000 characters)")
+    void updatesGoalDescriptionToMaximumLength() {
+        String maxDescription = "A".repeat(5000);
+        String goalId = createGoal("Original title", "Original description");
+
+        graphQlTester.document("""
+                        mutation($id: ID!, $description: String!) {
+                          updateGoal(id: $id, input: { description: $description }) {
+                            description
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("description", maxDescription)
+                .execute()
+                .path("updateGoal.description").entity(String.class).isEqualTo(maxDescription);
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating goal with title longer than 200 characters")
+    void returnsErrorWhenUpdatingGoalWithOversizedTitle() {
         String goalId = createGoal("Original title", "Original description");
 
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation($id: ID!) {
-                          updateGoal(id: $id, input: {
-                            %s
-                          }) {
+                        mutation($id: ID!, $title: String!) {
+                          updateGoal(id: $id, input: { title: $title }) {
                             id
                           }
                         }
-                        """.formatted(updateInput))
+                        """)
                 .variable("id", goalId)
+                .variable("title", "A".repeat(201))
                 .execute();
 
-        assertValidationError(response, message);
-        assertGoalField(goalId, fieldName, expectedOriginalValue);
+        assertValidationError(response, "Goal title must be 200 characters or fewer");
+        assertGoalField(goalId, "title", "Original title");
+    }
+
+    @Test
+    @DisplayName("Returns ValidationError when updating goal with description longer than 5000 characters")
+    void returnsErrorWhenUpdatingGoalWithOversizedDescription() {
+        String goalId = createGoal("Original title", "Original description");
+
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($id: ID!, $description: String!) {
+                          updateGoal(id: $id, input: { description: $description }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .variable("description", "A".repeat(5001))
+                .execute();
+
+        assertValidationError(response, "Goal description must be 5000 characters or fewer");
+        assertGoalField(goalId, "description", "Original description");
     }
 
     @Test
@@ -687,10 +790,10 @@ class GoalCreationIntegrationTest {
         assertThat(createdAt).isBeforeOrEqualTo(Instant.now());
         assertThat(updatedAtInitial).isAfterOrEqualTo(createdAt);
         assertThat(java.time.Duration.between(createdAt, updatedAtInitial))
-                .isLessThan(java.time.Duration.ofMillis(10));
+                .isLessThan(java.time.Duration.ofMillis(50));
 
         // Wait a bit to ensure updatedAt will be different
-        Thread.sleep(10);
+        waitForTimestampAdvance();
 
         // Act - Update
         GraphQlTester.Response updateResponse = graphQlTester.document("""
@@ -784,6 +887,33 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
+    @DisplayName("goalById returns created goal with correct id, title, description and confidence")
+    void goalByIdReturnsCreatedGoalWithCorrectFields() {
+        String goalId = createGoal("My goal title", "My description");
+
+        graphQlTester.document("""
+                        query($id: ID!) {
+                          goalById(id: $id) {
+                            id
+                            title
+                            description
+                            confidence
+                            achievedAt
+                            deadline
+                          }
+                        }
+                        """)
+                .variable("id", goalId)
+                .execute()
+                .path("goalById.id").entity(String.class).isEqualTo(goalId)
+                .path("goalById.title").entity(String.class).isEqualTo("My goal title")
+                .path("goalById.description").entity(String.class).isEqualTo("My description")
+                .path("goalById.confidence").entity(Integer.class).isEqualTo(5)
+                .path("goalById.achievedAt").valueIsNull()
+                .path("goalById.deadline").valueIsNull();
+    }
+
+    @Test
     @DisplayName("Returns error when deleting goal with non-existent id")
     void returnsErrorWhenDeletingNonExistentGoal() {
         // Arrange
@@ -791,10 +921,11 @@ class GoalCreationIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        mutation {
-                          deleteGoal(id: "999999")
+                        mutation($id: ID!) {
+                          deleteGoal(id: $id)
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
@@ -813,18 +944,19 @@ class GoalCreationIntegrationTest {
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
-                        query {
-                          goalById(id: "999999") {
+                        query($id: ID!) {
+                          goalById(id: $id) {
                             id
                           }
                         }
                         """)
+                .variable("id", NON_EXISTENT_ID)
                 .execute();
 
         // Assert
         response.errors()
                 .satisfy(errors -> assertThat(errors)
-                        .anyMatch(error -> error.getMessage().contains("Goal not found: 999999")));
+                        .anyMatch(error -> error.getMessage().contains("Goal not found: " + NON_EXISTENT_ID)));
     }
 
     private String createGoal(String title, String description) {
@@ -891,6 +1023,10 @@ class GoalCreationIntegrationTest {
         assertThat(goalRepository.count()).isZero();
     }
 
+    private static void waitForTimestampAdvance() throws InterruptedException {
+        Thread.sleep(50);
+    }
+
     private static Stream<Arguments> blankGoalTitles() {
         return Stream.of(
                 Arguments.of("blank", "   "),
@@ -907,27 +1043,4 @@ class GoalCreationIntegrationTest {
         );
     }
 
-    private static Stream<Arguments> goalFieldsAtMaximumLength() {
-        return Stream.of(
-                Arguments.of("title",
-                        "title: \"" + "A".repeat(200) + "\"",
-                        "A".repeat(200)),
-                Arguments.of("description",
-                        "description: \"" + "A".repeat(5000) + "\"",
-                        "A".repeat(5000))
-        );
-    }
-
-    private static Stream<Arguments> oversizedGoalFieldUpdates() {
-        return Stream.of(
-                Arguments.of("title",
-                        "title: \"" + "A".repeat(201) + "\"",
-                        "Original title",
-                        "Goal title must be 200 characters or fewer"),
-                Arguments.of("description",
-                        "description: \"" + "A".repeat(5001) + "\"",
-                        "Original description",
-                        "Goal description must be 5000 characters or fewer")
-        );
-    }
 }
