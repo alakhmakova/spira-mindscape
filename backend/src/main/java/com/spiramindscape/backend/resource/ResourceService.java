@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.resource;
 
 import com.spiramindscape.backend.goal.Goal;
-import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
 import lombok.RequiredArgsConstructor;
@@ -35,12 +35,11 @@ public class ResourceService {
     private static final Set<String> EMAIL_FIELDS = Set.of("name", "role", "email", "phone");
 
     private final ResourceRepository resourceRepository;
-    private final GoalRepository goalRepository;
+    private final GoalService goalService;
 
     @Transactional(readOnly = true)
     public List<Resource> findByGoal(Long goalId) {
-        goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        goalService.findById(goalId); // owner-scoped check
         return resourceRepository.findByGoalIdOrderByCreatedAtAsc(goalId);
     }
 
@@ -67,8 +66,7 @@ public class ResourceService {
 
     @Transactional
     public Resource create(Long goalId, CreateResourceInput input, Map<String, Object> rawInput) {
-        Goal goal = goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        Goal goal = goalService.findById(goalId); // owner-scoped
         Resource resource = new Resource();
         resource.setGoal(goal);
         resource.setType(normalizeType(input.type()));

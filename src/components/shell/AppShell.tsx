@@ -1,10 +1,11 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Search,
   SlidersHorizontal,
   ArrowDownUp,
   ChevronDown,
+  LogOut,
   X,
   GlobeOff,
   Cable,
@@ -13,6 +14,7 @@ import {
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { useSpira } from "@/lib/spira/store";
+import { useAuth } from "@/lib/spira/auth";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import {
   useShellFilters,
@@ -26,10 +28,21 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -41,6 +54,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isLoadingGoals = useSpira((s) => s.isLoading);
   const syncError = useSpira((s) => s.syncError);
   const syncErrorKind = useSpira((s) => s.syncErrorKind);
+  const authUser = useAuth((s) => s.user);
+  const logout = useAuth((s) => s.logout);
+  const navigate = useNavigate();
   const {
     query,
     setQuery,
@@ -406,27 +422,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
               {/* User */}
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold bg-primary-soft border-primary/30 text-primary">
-                  SU
-                </div>
-                <div className="hidden md:block leading-tight text-right">
-                  <div
-                    className={cn(
-                      "text-xs font-semibold",
-                      isWorkspace ? "text-white" : "text-foreground",
-                    )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex items-center gap-2 outline-none rounded-md focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="User menu"
                   >
-                    Spira User
-                  </div>
-                </div>
-                <ChevronDown
-                  className={cn(
-                    "hidden md:inline h-3.5 w-3.5",
-                    isWorkspace ? "text-white/70" : "text-muted-foreground",
-                  )}
-                />
-              </div>
+                    {authUser?.pictureUrl ? (
+                      <img
+                        src={authUser.pictureUrl}
+                        alt={authUser.name}
+                        referrerPolicy="no-referrer"
+                        className="h-8 w-8 rounded-full object-cover border border-white/20"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-full border grid place-items-center text-xs font-semibold bg-primary-soft border-primary/30 text-primary">
+                        {authUser ? getInitials(authUser.name) : "?"}
+                      </div>
+                    )}
+                    <div className="hidden md:block leading-tight text-right">
+                      <div
+                        className={cn(
+                          "text-xs font-semibold",
+                          isWorkspace ? "text-white" : "text-foreground",
+                        )}
+                      >
+                        {authUser?.name ?? ""}
+                      </div>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "hidden md:inline h-3.5 w-3.5",
+                        isWorkspace ? "text-white/70" : "text-muted-foreground",
+                      )}
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="text-sm font-semibold truncate">
+                      {authUser?.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {authUser?.email}
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="gap-2 text-destructive focus:text-destructive"
+                    onSelect={async () => {
+                      await logout();
+                      void navigate({ to: "/login" });
+                    }}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 

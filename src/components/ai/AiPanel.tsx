@@ -235,7 +235,8 @@ function Conversation() {
       addTarget(goal.id, {
         type: "numeric",
         title: msg.action.title.replace(/^Add a numeric target: /, ""),
-        current: 0,
+        // `current` is intentionally omitted — it defaults to 0 and is
+        // excluded from CreateTargetInput for numeric targets.
         total: 5,
       });
       toast.success("Target added");

@@ -7,6 +7,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
 
+/**
+ * CORS configuration.
+ *
+ * <p>In development, a Vite proxy makes the browser see a single origin
+ * ({@code http://localhost:5173}), so SPA requests are same-origin and CORS is not
+ * involved. This config covers any direct-to-backend calls or fallback scenarios.
+ *
+ * <p>In production, the SPA and backend share the same domain, so CORS is irrelevant —
+ * but the config is kept harmless ({@code allowCredentials} + specific origin, never
+ * wildcard {@code *} with credentials).
+ */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
@@ -21,9 +32,10 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/graphql")
+        registry.addMapping("/**")
                 .allowedOrigins(allowedOrigins)
-                .allowedMethods("GET", "POST", "OPTIONS")
-                .allowedHeaders("*");
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);   // required for session cookies + CSRF header
     }
 }

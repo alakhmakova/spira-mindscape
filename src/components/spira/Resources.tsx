@@ -15,7 +15,7 @@ import {
   X,
   ChevronRight,
 } from "lucide-react";
-import type { Goal, Resource } from "@/lib/spira/types";
+import type { Goal, Resource, ResourceInput } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -1194,7 +1194,7 @@ function Form({
       );
     } else {
       setTimeout(
-        () => addResource(goalId, payload as Omit<Resource, "id">),
+        () => addResource(goalId, payload as ResourceInput),
         50,
       );
     }

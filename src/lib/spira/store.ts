@@ -7,6 +7,7 @@ import type {
   Goal,
   Option,
   Resource,
+  ResourceInput,
   Target,
 } from "./types";
 
@@ -50,7 +51,7 @@ type State = {
   addTarget: (id: string, t: CreateTargetInput) => void;
   updateTarget: (id: string, targetId: string, patch: Partial<Target>) => void;
   removeTarget: (id: string, targetId: string) => void;
-  addResource: (id: string, r: Omit<Resource, "id">) => void;
+  addResource: (id: string, r: ResourceInput) => void;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
   removeResource: (id: string, rId: string) => void;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
@@ -171,6 +172,12 @@ export const useSpira = create<State>()((set, get) => ({
         syncErrorKind: undefined,
       });
     } catch (error) {
+      // Session expired mid-use — do a hard redirect so auth state is fully
+      // reset (no partial React state to clean up).
+      if (error instanceof SpiraApiError && error.status === 401) {
+        window.location.replace("/login");
+        return;
+      }
       console.error("Spira sync failed", error);
       const kind = error instanceof SpiraApiError ? error.kind : "service";
       set({

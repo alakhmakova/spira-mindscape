@@ -28,7 +28,7 @@ class RealityServiceTest {
     private RealityRepository realityRepository;
 
     @Mock
-    private GoalRepository goalRepository;
+    private GoalService goalService;
 
     @InjectMocks
     private RealityService realityService;
@@ -116,7 +116,7 @@ class RealityServiceTest {
     @Test
     @DisplayName("findByGoal throws NOT_FOUND when goal does not exist")
     void findByGoalThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalService.findById(99L)).thenThrow(new IllegalArgumentException("Goal not found: 99"));
 
         assertThatThrownBy(() -> realityService.findByGoal(99L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -129,7 +129,7 @@ class RealityServiceTest {
     @DisplayName("addItem saves item with normalized kind and returns updated reality payload")
     void addItemSavesItemAndReturnsUpdatedPayload() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(realityRepository.findByGoalIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(
                 item(10L, goal, "actions")
         ));
@@ -144,7 +144,7 @@ class RealityServiceTest {
     @Test
     @DisplayName("addItem throws NOT_FOUND when goal does not exist")
     void addItemThrowsWhenGoalNotFound() {
-        when(goalRepository.findById(99L)).thenReturn(Optional.empty());
+        when(goalService.findById(99L)).thenThrow(new IllegalArgumentException("Goal not found: 99"));
 
         assertThatThrownBy(() -> realityService.addItem(99L, "actions", "Take notes"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -155,7 +155,7 @@ class RealityServiceTest {
     @DisplayName("addItem stores item with normalized plural kind even when singular form is passed")
     void addItemNormalizesKindToPlural() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(realityRepository.save(any(RealityItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(realityRepository.findByGoalIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
 
@@ -168,7 +168,7 @@ class RealityServiceTest {
     @DisplayName("addItem rejects blank text")
     void addItemRejectsBlankText() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> realityService.addItem(1L, "actions", "   "))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -179,7 +179,7 @@ class RealityServiceTest {
     @DisplayName("addItem trims whitespace from text before saving")
     void addItemTrimsWhitespaceFromText() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(realityRepository.save(any(RealityItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(realityRepository.findByGoalIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
 
@@ -192,7 +192,7 @@ class RealityServiceTest {
     @DisplayName("addItem accepts text at maximum length")
     void addItemAcceptsTextAtMaximumLength() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(realityRepository.save(any(RealityItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String maxText = "A".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH);
         when(realityRepository.findByGoalIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
@@ -206,7 +206,7 @@ class RealityServiceTest {
     @DisplayName("addItem rejects text exceeding maximum length")
     void addItemRejectsOversizedText() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         String oversized = "A".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + 1);
 
         assertThatThrownBy(() -> realityService.addItem(1L, "actions", oversized))
@@ -369,7 +369,7 @@ class RealityServiceTest {
     @DisplayName("findByGoal returns reality payload built from repository items for that goal")
     void findByGoalReturnsBuildReality() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(realityRepository.findByGoalIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(
                 item(10L, goal, "actions"),
                 item(11L, goal, "obstacles")
