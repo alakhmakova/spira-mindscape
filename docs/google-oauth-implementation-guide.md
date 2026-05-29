@@ -1,7 +1,7 @@
 # Google OAuth Login — Implementation Guide
 
-> **Audience:** A developer (beginner to intermediate) who wants to understand how Google
-> sign-in is implemented in Spira and reproduce it in another Spring Boot + React application.
+> **Purpose:** To understand how Google
+> sign-in is implemented in this project and reproduce it in another Spring Boot + React application.
 >
 > **Stack:** Java 17, Spring Boot 3, Spring Security OAuth2/OIDC, PostgreSQL, Flyway,
 > React 19, Vite, Zustand, TanStack Router.
