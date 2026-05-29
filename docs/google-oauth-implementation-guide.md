@@ -26,7 +26,7 @@
 
 ### Key terms
 
-| Term | Plain-English meaning |
+| Term | Meaning |
 |------|-----------------------|
 | **OAuth2** | A protocol that lets users grant your app access to their account at a third party (Google, GitHub, …) without giving you their password. |
 | **OIDC (OpenID Connect)** | An extension of OAuth2 that adds a standard way to get the user's identity — name, email, profile picture — as a signed **ID Token** (JWT). |
