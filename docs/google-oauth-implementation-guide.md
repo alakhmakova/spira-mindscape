@@ -69,7 +69,7 @@ Browser           Vite (proxy)       Spring Boot            Google
 
 ### Design principles
 
-1. **Server-managed session** — Spring owns the session. No JWT in `localStorage`, no XSS exposure.
+1. **Server-managed session** — this project owns the session. No JWT in `localStorage`, no XSS exposure.
 2. **Single origin in dev** — Vite proxies all backend routes. The browser always talks to `localhost:5173`. No CORS issues with cookies.
 3. **Per-user data isolation** — every goal row has a `user_id` FK. Fetching another user's goal by ID returns "not found", not "forbidden". The caller cannot tell whether the object exists at all.
 4. **CSRF protection** — Spring writes a readable `XSRF-TOKEN` cookie; the client echoes it in the `X-XSRF-TOKEN` request header for every mutating call.
