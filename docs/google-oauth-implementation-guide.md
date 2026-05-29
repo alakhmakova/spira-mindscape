@@ -987,6 +987,9 @@ Or in IntelliJ: **Run → Edit Configurations → Environment variables**.
 cd backend
 GOOGLE_CLIENT_ID=xxx GOOGLE_CLIENT_SECRET=yyy ./mvnw spring-boot:run
 
+# For powershell
+$env:GOOGLE_CLIENT_ID="xxx"; $env:GOOGLE_CLIENT_SECRET="yyy"; .\mvnw spring-boot:run
+
 # Terminal 2 — frontend
 npm run dev
 ```
