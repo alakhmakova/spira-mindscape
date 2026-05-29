@@ -106,20 +106,21 @@ Each phase should be independently shippable and should produce a clearer, more 
 
 **Goal:** Add optional structured AI coaching sessions for a selected goal.
 
-- [ ] Add GROW session backend model
-- [ ] Add session phases: Goal, Reality, Options, Will, Summary, Complete
+The session is a real coaching conversation — the AI does not announce GROW phases or follow a rigid script. GROW structure may emerge naturally. The backend tracks time state (ACTIVE → CLOSING → COMPLETE), not coaching phases.
+
+- [ ] Add GROW session backend model (status: ACTIVE, CLOSING, COMPLETE, ABANDONED)
 - [ ] Allow user to choose session length: 15, 30, 45, or 60 minutes
-- [ ] Store session start time, scheduled end time, and actual end time
-- [ ] Add graceful session opening behavior
-- [ ] Add graceful session closing behavior with summary and next steps
-- [ ] Store session transcript, phase summaries, insights, decisions, and proposals
+- [ ] Store session start time, closing_starts_at (80% of duration), scheduled end time, and actual end time
+- [ ] Add graceful session opening behavior (no phase announcement)
+- [ ] Transition to CLOSING status at 80% of session duration; shift AI to integrative questioning without announcing it
+- [ ] Add graceful session closing behavior: summary, insights, decisions, proposed next steps
+- [ ] Store session transcript and AI memory block (saved only if user approves)
 - [ ] Add goal-page UI to start a GROW session
-- [ ] Add phase-aware prompts based on the derived coaching guidance
+- [ ] Provide time-remaining context to AI prompt; do not expose it directly to user
 - [ ] Keep ordinary AI chat separate from GROW sessions
-- [ ] Allow users to pause or exit a GROW session
-- [ ] Generate proposed next actions or targets in Will/Summary
-- [ ] Require approval before applying proposed changes
-- [ ] Add tests for phase order, coaching behavior, summaries, approvals, and safety refusal
+- [ ] Allow users to exit a GROW session
+- [ ] Generate proposed next actions or targets at session close; require approval before applying
+- [ ] Add tests for time-state transitions, coaching behavior, memory save/discard, approval flow, and safety refusal
 
 ---
 
