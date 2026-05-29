@@ -29,7 +29,7 @@
 | Term | Meaning |
 |------|-----------------------|
 | **OAuth2** | A protocol that lets users grant your app access to their account at a third party (Google, GitHub, …) without giving you their password. |
-| **OIDC (OpenID Connect)** | An extension of OAuth2 that adds a standard way to get the user's identity — name, email, profile picture — as a signed **ID Token** (JWT). |
+| **OIDC (OpenID Connect)** | An extension of OAuth2 that adds a standard way to get the user's identity — name, email, profile picture — as a signed **ID Token** (JWT - JSON Web Token). |
 | **Authorization Code Flow** | The web-app flow. The browser only receives a short-lived "code". The server exchanges that code for tokens directly with Google — the browser never sees a secret token. |
 | **Server-side session** | After login, the server creates a session and sends `JSESSIONID` as an `HttpOnly` cookie. The browser sends this cookie automatically on every request. JavaScript cannot read it (XSS protection). |
 | **CSRF** | Cross-Site Request Forgery — a browser attack where another website tricks the browser into sending a request to your site using the victim's cookies. See [Section 5](#5-security-guarantees). |
