@@ -963,7 +963,10 @@ resources, confidence history, progress score, and option selection state.
 5. Add **Authorized redirect URIs**:
    - Development: `http://localhost:5173/login/oauth2/code/google`
    - Production: `https://your-domain.com/login/oauth2/code/google`
-6. Click **Create** and note down the **Client ID** and **Client Secret**.
+6. Click "OAuth consent"
+7. In the block "Verification status. Verification is not required since your app is in Testing status. You can change your app's publishing status on the Audience page." click "Audience page"
+8. Click "Publish App"
+9. Go back to Create OAuth client ID page and click **Create** and note down the **Client ID** and **Client Secret**.
 
 ### 8.2 Environment variables for the backend
 
