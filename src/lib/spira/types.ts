@@ -86,6 +86,9 @@ export type Goal = {
   options: Option[];
   resources: Resource[];
   targets: Target[];
+  /** Confidence values over time, newest first. Loaded from the server; the
+   *  store also prepends an entry optimistically when confidence changes. */
+  confidenceHistory?: { value: number; at: string }[];
 };
 
 export type AiAction = {

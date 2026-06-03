@@ -1,11 +1,10 @@
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
-import Link from "@tiptap/extension-link";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Highlight from "@tiptap/extension-highlight";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { TextStyle, Color, FontFamily, FontSize, LineHeight } from "@tiptap/extension-text-style";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +29,10 @@ import {
   Redo2,
   ChevronLeft,
   ChevronRight,
+  Baseline,
+  Eraser,
+  Copy,
+  Paintbrush,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,14 +48,21 @@ export function RichTextEditor({
   const isMobile = useIsMobile();
   const editor = useEditor({
     extensions: [
+      // StarterKit 3.x already bundles link, underline and the list extensions —
+      // configure them here rather than re-registering (a duplicate registration
+      // breaks the link mark).
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        link: { openOnClick: false, autolink: true },
       }),
-      Underline,
-      Highlight.configure({ multicolor: false }),
-      Link.configure({ openOnClick: false, autolink: true }),
+      Highlight.configure({ multicolor: true }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      TextStyle,
+      Color,
+      FontFamily,
+      FontSize,
+      LineHeight,
     ],
     content: value || "",
     editorProps: {
@@ -107,9 +117,49 @@ function Toolbar({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // @tiptap/react v3's useEditor does not re-render on selection changes, so the
+  // toolbar's active states and the font/size/spacing/colour controls would show
+  // stale values. Re-render the toolbar whenever the selection or document changes
+  // so every control reflects the CURRENT selection.
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const rerender = () => forceUpdate();
+    editor.on("selectionUpdate", rerender);
+    editor.on("transaction", rerender);
+    return () => {
+      editor.off("selectionUpdate", rerender);
+      editor.off("transaction", rerender);
+    };
+  }, [editor]);
+
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
+  const [copiedMarks, setCopiedMarks] = useState<
+    { type: string; attrs: Record<string, unknown> }[] | null
+  >(null);
+
+  // ── Format painter / clear formatting ──────────────────────────────────────
+  const copyFormatting = () => {
+    // Marks active at the start of the selection. Skip links — copying a href
+    // onto unrelated text is rarely intended.
+    const marks = editor.state.selection.$from
+      .marks()
+      .filter((m) => m.type.name !== "link");
+    setCopiedMarks(marks.map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })));
+  };
+
+  const applyFormatting = () => {
+    if (!copiedMarks) return;
+    let chain = editor.chain().focus().unsetAllMarks();
+    for (const m of copiedMarks) chain = chain.setMark(m.type, m.attrs);
+    chain.run();
+  };
+
+  const clearFormatting = () => {
+    editor.chain().focus().unsetAllMarks().clearNodes().run();
+  };
 
   const Btn = ({
     onClick,
@@ -282,13 +332,97 @@ function Toolbar({
       >
         <Strikethrough className="h-4 w-4" />
       </Btn>
-      <Btn
-        label="Highlight"
-        active={editor.isActive("highlight")}
-        onClick={() => editor.chain().focus().toggleHighlight().run()}
+      <Sep />
+      {/* Font family / size / colors. stopPropagation so the toolbar's
+          mousedown-preventDefault (which keeps the editor selection for the
+          icon buttons) doesn't stop these native controls from opening. */}
+      <select
+        aria-label="Font family"
+        title="Font"
+        value={(editor.getAttributes("textStyle").fontFamily as string) || ""}
+        onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v) editor.chain().focus().setFontFamily(v).run();
+          else editor.chain().focus().unsetFontFamily().run();
+        }}
+        className="h-9 shrink-0 rounded-md border hairline bg-transparent px-1.5 text-xs text-foreground"
+      >
+        <option value="">Font</option>
+        <option value="Arial, Helvetica, sans-serif">Sans</option>
+        <option value="Georgia, 'Times New Roman', serif">Serif</option>
+        <option value="'Courier New', monospace">Mono</option>
+      </select>
+      <select
+        aria-label="Font size"
+        title="Size"
+        value={(editor.getAttributes("textStyle").fontSize as string) || ""}
+        onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v) editor.chain().focus().setFontSize(v).run();
+          else editor.chain().focus().unsetFontSize().run();
+        }}
+        className="h-9 shrink-0 rounded-md border hairline bg-transparent px-1.5 text-xs text-foreground"
+      >
+        <option value="">Size</option>
+        <option value="12px">12</option>
+        <option value="14px">14</option>
+        <option value="16px">16</option>
+        <option value="18px">18</option>
+        <option value="24px">24</option>
+        <option value="32px">32</option>
+      </select>
+      <select
+        aria-label="Line spacing"
+        title="Line spacing"
+        value={(editor.getAttributes("textStyle").lineHeight as string) || ""}
+        onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v) editor.chain().focus().setLineHeight(v).run();
+          else editor.chain().focus().unsetLineHeight().run();
+        }}
+        className="h-9 shrink-0 rounded-md border hairline bg-transparent px-1.5 text-xs text-foreground"
+      >
+        <option value="">Spacing</option>
+        <option value="1">1.0</option>
+        <option value="1.15">1.15</option>
+        <option value="1.5">1.5</option>
+        <option value="2">2.0</option>
+      </select>
+      <label
+        title="Text color"
+        onMouseDown={(e) => e.stopPropagation()}
+        className="relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+      >
+        <Baseline className="h-4 w-4" />
+        <input
+          type="color"
+          aria-label="Text color"
+          value={(editor.getAttributes("textStyle").color as string) || "#111111"}
+          onInput={(e) =>
+            editor.chain().focus().setColor((e.target as HTMLInputElement).value).run()
+          }
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </label>
+      <label
+        title="Highlight color"
+        onMouseDown={(e) => e.stopPropagation()}
+        className="relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
       >
         <Highlighter className="h-4 w-4" />
-      </Btn>
+        <input
+          type="color"
+          aria-label="Highlight color"
+          value={(editor.getAttributes("highlight").color as string) || "#fff2a8"}
+          onInput={(e) =>
+            editor.chain().focus().setHighlight({ color: (e.target as HTMLInputElement).value }).run()
+          }
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </label>
       <Sep />
       <Btn
         label="Task list"
@@ -338,6 +472,20 @@ function Toolbar({
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
       >
         <Minus className="h-4 w-4" />
+      </Btn>
+      <Sep />
+      <Btn label="Copy formatting" onClick={copyFormatting}>
+        <Copy className="h-4 w-4" />
+      </Btn>
+      <Btn
+        label="Apply copied formatting"
+        disabled={!copiedMarks}
+        onClick={applyFormatting}
+      >
+        <Paintbrush className="h-4 w-4" />
+      </Btn>
+      <Btn label="Clear formatting" onClick={clearFormatting}>
+        <Eraser className="h-4 w-4" />
       </Btn>
       <Sep />
       <Btn

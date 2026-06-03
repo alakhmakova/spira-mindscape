@@ -342,7 +342,8 @@ If you can do the above without anyone telling you which file to open, this guid
 ## 8. Common mistakes (read once, avoid forever)
 
 - **Mocking the repository and thinking you tested the database.** A mock only returns what you told it. Real SQL / cascade behaviour is only proven at the integration (H2) and E2E (PostgreSQL) levels.
-- **Only testing the happy path.** Most bugs hide in blank strings, nulls, ids from another parent, unknown type names, and boundary values (20 vs 21). Test the unhappy paths.
+- **Only testing the happy path.** Most bugs hide in blank strings, nulls, ids from another parent, unknown type names, and boundary values (`LIMIT` vs `LIMIT + 1`). Test the unhappy paths.
+- **Hardcoding a limit number in a boundary test.** Never write `"A".repeat(201)` or `"… must be 200 characters or fewer"`. Derive both the boundary value and the message from the production constant (`GoalService.MAX_GOAL_TITLE_LENGTH`, `ResourceService.MAX_RESOURCE_LABEL_LENGTH`, …) so the test tracks the real limit instead of becoming a second source of truth that drifts. Full rule + example: `docs/testing-guide.md` → *Convention: bind boundary tests to the production constant*.
 - **Starting Spring for tiny logic.** If it's `action` → `actions`, a unit test is enough.
 - **Only unit-testing a GraphQL contract.** GraphQL binding behaves differently for omitted vs explicit-`null` fields. The frontend depends on that — cover it with an integration test.
 - **Testing private methods.** Test through the public method that calls them.

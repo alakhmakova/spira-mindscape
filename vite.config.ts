@@ -64,6 +64,7 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    host: true, // expose on all network interfaces → shows Network URL on startup
     proxy: {
       // All backend routes forwarded to Spring Boot so the browser sees a
       // single origin in dev (no cross-origin cookie issues).

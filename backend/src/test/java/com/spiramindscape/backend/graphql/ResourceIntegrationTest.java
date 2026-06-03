@@ -227,26 +227,26 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when creating resource with title longer than 20 characters")
+    @DisplayName("Returns ValidationError when creating resource with title longer than the label limit")
     void returnsErrorWhenCreatingResourceWithLongTitle() {
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($goalId: ID!) {
                           createResource(goalId: $goalId, input: {
                             type: "note"
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
+                            title: "%s"
                           }) {
                             id
                           }
                         }
-                        """)
+                        """.formatted(labelOverLimit()))
                 .variable("goalId", goalId)
                 .execute();
 
-        assertValidationError(response, "Note resource title must be 20 characters or fewer");
+        assertValidationError(response, labelTooLongMessage("Note resource title"));
         assertNoResourcesCreated();
     }
 
-    @ParameterizedTest(name = "Creates {0} resource with label at 20 character limit")
+    @ParameterizedTest(name = "Creates {0} resource with label at the label limit")
     @MethodSource("resourcesWithMaximumLengthLabels")
     void createsResourceWithLabelAtMaximumLength(String resourceKind, String inputFields, String fieldName) {
         graphQlTester.document("""
@@ -262,10 +262,10 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
                         """.formatted(inputFields))
                 .variable("goalId", goalId)
                 .execute()
-                .path("createResource." + fieldName).entity(String.class).isEqualTo("ABCDEFGHIJKLMNOPQRST");
+                .path("createResource." + fieldName).entity(String.class).isEqualTo(labelAtLimit());
     }
 
-    @ParameterizedTest(name = "Returns ValidationError when creating {0} resource with label longer than 20 characters")
+    @ParameterizedTest(name = "Returns ValidationError when creating {0} resource with label longer than the label limit")
     @MethodSource("resourcesWithOversizedLabels")
     void returnsErrorWhenCreatingResourceWithOversizedLabel(String resourceKind, String inputFields, String message) {
         GraphQlTester.Response response = graphQlTester.document("""
@@ -1016,23 +1016,23 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when creating email resource with name longer than 20 characters")
+    @DisplayName("Returns ValidationError when creating email resource with name longer than the label limit")
     void returnsErrorWhenCreatingEmailWithLongName() {
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($goalId: ID!) {
                           createResource(goalId: $goalId, input: {
                             type: "email"
-                            name: "ABCDEFGHIJKLMNOPQRSTU"
+                            name: "%s"
                             email: "ada@example.com"
                           }) {
                             id
                           }
                         }
-                        """)
+                        """.formatted(labelOverLimit()))
                 .variable("goalId", goalId)
                 .execute();
 
-        assertValidationError(response, "Email resource name must be 20 characters or fewer");
+        assertValidationError(response, labelTooLongMessage("Email resource name"));
         assertNoResourcesCreated();
     }
 
@@ -1429,7 +1429,7 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
                 .path("updateResource.url").entity(String.class).isEqualTo("https://chatgpt.com");
     }
 
-    @ParameterizedTest(name = "Returns ValidationError when updating {0} resource label past 20 characters")
+    @ParameterizedTest(name = "Returns ValidationError when updating {0} resource label past the label limit")
     @MethodSource("resourcesWithOversizedLabelUpdates")
     void returnsErrorWhenUpdatingResourceWithOversizedLabel(String resourceKind, String existingInput,
                                                             String updateInput, String fieldName,
@@ -2094,85 +2094,88 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
     }
 
     private static Stream<Arguments> resourcesWithMaximumLengthLabels() {
+        String label = labelAtLimit();
         return Stream.of(
                 Arguments.of("note", """
                             type: "note"
-                            title: "ABCDEFGHIJKLMNOPQRST"
-                        """, "title"),
+                            title: "%s"
+                        """.formatted(label), "title"),
                 Arguments.of("link", """
                             type: "link"
-                            title: "ABCDEFGHIJKLMNOPQRST"
+                            title: "%s"
                             url: "https://example.com/docs"
-                        """, "title"),
+                        """.formatted(label), "title"),
                 Arguments.of("file", """
                             type: "file"
-                            title: "ABCDEFGHIJKLMNOPQRST"
+                            title: "%s"
                             mime: "application/pdf"
                             dataUrl: "data:application/pdf;base64,JVBERi0xLjQ="
-                        """, "title"),
+                        """.formatted(label), "title"),
                 Arguments.of("email", """
                             type: "email"
-                            name: "ABCDEFGHIJKLMNOPQRST"
+                            name: "%s"
                             email: "ada@example.com"
-                        """, "name")
+                        """.formatted(label), "name")
         );
     }
 
     private static Stream<Arguments> resourcesWithOversizedLabels() {
+        String label = labelOverLimit();
         return Stream.of(
                 Arguments.of("note", """
                             type: "note"
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
-                        """, "Note resource title must be 20 characters or fewer"),
+                            title: "%s"
+                        """.formatted(label), labelTooLongMessage("Note resource title")),
                 Arguments.of("link", """
                             type: "link"
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
+                            title: "%s"
                             url: "https://example.com/docs"
-                        """, "Link resource title must be 20 characters or fewer"),
+                        """.formatted(label), labelTooLongMessage("Link resource title")),
                 Arguments.of("file", """
                             type: "file"
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
+                            title: "%s"
                             mime: "application/pdf"
                             dataUrl: "data:application/pdf;base64,JVBERi0xLjQ="
-                        """, "File resource title must be 20 characters or fewer"),
+                        """.formatted(label), labelTooLongMessage("File resource title")),
                 Arguments.of("email", """
                             type: "email"
-                            name: "ABCDEFGHIJKLMNOPQRSTU"
+                            name: "%s"
                             email: "ada@example.com"
-                        """, "Email resource name must be 20 characters or fewer")
+                        """.formatted(label), labelTooLongMessage("Email resource name"))
         );
     }
 
     private static Stream<Arguments> resourcesWithOversizedLabelUpdates() {
+        String label = labelOverLimit();
         return Stream.of(
                 Arguments.of("note", """
                             type: "note"
                             title: "Research notes"
                         """, """
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
-                        """, "title", "Research notes", "Note resource title must be 20 characters or fewer"),
+                            title: "%s"
+                        """.formatted(label), "title", "Research notes", labelTooLongMessage("Note resource title")),
                 Arguments.of("link", """
                             type: "link"
                             title: "Docs"
                             url: "https://example.com/docs"
                         """, """
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
-                        """, "title", "Docs", "Link resource title must be 20 characters or fewer"),
+                            title: "%s"
+                        """.formatted(label), "title", "Docs", labelTooLongMessage("Link resource title")),
                 Arguments.of("file", """
                             type: "file"
                             title: "Brief"
                             mime: "application/pdf"
                             dataUrl: "data:application/pdf;base64,JVBERi0xLjQ="
                         """, """
-                            title: "ABCDEFGHIJKLMNOPQRSTU"
-                        """, "title", "Brief", "File resource title must be 20 characters or fewer"),
+                            title: "%s"
+                        """.formatted(label), "title", "Brief", labelTooLongMessage("File resource title")),
                 Arguments.of("email", """
                             type: "email"
                             name: "Ada Lovelace"
                             email: "ada@example.com"
                         """, """
-                            name: "ABCDEFGHIJKLMNOPQRSTU"
-                        """, "name", "Ada Lovelace", "Email resource name must be 20 characters or fewer")
+                            name: "%s"
+                        """.formatted(label), "name", "Ada Lovelace", labelTooLongMessage("Email resource name"))
         );
     }
 
@@ -2302,6 +2305,21 @@ class ResourceIntegrationTest extends BaseGraphQlIntegrationTest {
 
     private String maxNoteBodyLengthMessage() {
         return "Note resource body must be " + ResourceService.MAX_NOTE_BODY_LENGTH + " characters or fewer";
+    }
+
+    /** A label exactly at the allowed maximum (accepted). */
+    private static String labelAtLimit() {
+        return "A".repeat(ResourceService.MAX_RESOURCE_LABEL_LENGTH);
+    }
+
+    /** A label one character over the allowed maximum (rejected). */
+    private static String labelOverLimit() {
+        return "A".repeat(ResourceService.MAX_RESOURCE_LABEL_LENGTH + 1);
+    }
+
+    /** The validation message for an over-long label, kept in sync with the limit. */
+    private static String labelTooLongMessage(String fieldLabel) {
+        return fieldLabel + " must be " + ResourceService.MAX_RESOURCE_LABEL_LENGTH + " characters or fewer";
     }
 
     private void assertValidationError(GraphQlTester.Response response, String message) {

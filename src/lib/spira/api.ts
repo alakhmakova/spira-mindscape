@@ -121,6 +121,7 @@ type GraphqlGoal = {
   options: GraphqlOption[];
   resources: GraphqlResource[];
   targets: GraphqlTarget[];
+  confidenceHistory?: { confidence: number; at: string }[];
 };
 
 type CreateGoalInput = {
@@ -186,6 +187,7 @@ const GOAL_FIELDS = `
     achievedAt
     items { id text done deadline achievedAt }
   }
+  confidenceHistory { confidence at }
 `;
 
 const TARGET_FIELDS = `
@@ -406,6 +408,7 @@ function toGoal(goal: GraphqlGoal): Goal {
     options: goal.options.map(toOption),
     resources: goal.resources.map(toResource),
     targets: goal.targets.map(toTarget),
+    confidenceHistory: goal.confidenceHistory?.map((h) => ({ value: h.confidence, at: h.at })) ?? [],
   };
 }
 

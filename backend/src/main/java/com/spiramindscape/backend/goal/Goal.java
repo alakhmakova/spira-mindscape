@@ -32,10 +32,10 @@ public class Goal {
     private AppUser user;
 
     @NotBlank
-    @Size(max = 200)
+    @Size(max = GoalService.MAX_GOAL_TITLE_LENGTH)
     private String title;
 
-    @Size(max = 5000)
+    @Size(max = GoalService.MAX_GOAL_DESCRIPTION_LENGTH)
     @Column(columnDefinition = "TEXT")
     private String description = "";
 
