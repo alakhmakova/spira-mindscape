@@ -398,6 +398,7 @@
       padding-left: 1rem;
       padding-right: 1rem;
       padding-top: 1.5rem;
+      padding-bottom: 1.5rem;
     }
     .spira-overview-header {
       flex-direction: column;
@@ -420,6 +421,19 @@
     .spira-calendar-grid > * {
       min-width: 680px;
     }
+    /* Goal workspace title and description revert to mobile sizes */
+    .spira-goal-title {
+      font-size: 1.875rem !important; /* text-3xl */
+      line-height: 2.25rem !important;
+    }
+    .spira-goal-desc {
+      font-size: 0.875rem !important; /* text-sm */
+      line-height: 1.5rem !important;
+    }
+    /* Section inner padding */
+    .spira-reality-grid > div {
+      padding: 1.25rem;
+    }
   }
 
   @container spira-main (max-width: 520px) {
@@ -434,6 +448,10 @@
     .spira-calendar-page {
       padding-top: 1.25rem;
     }
+    .spira-goal-title {
+      font-size: 1.5rem !important; /* text-2xl */
+      line-height: 2rem !important;
+    }
   }
 }
 
@@ -445,4 +463,24 @@
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* AI panel text selection — readable highlight on dark teal background */
+.spira-ai-dark ::selection {
+  background-color: rgba(255, 255, 255, 0.28);
+}
+/* White cards inside the panel (user bubbles, proposal cards, provider sheet) */
+.spira-ai-dark .bg-white ::selection {
+  background-color: rgba(0, 109, 103, 0.2);
+}
+
+/* Force text to be selectable in the AI panel message area.
+   Vaul Drawer and some pointer-event handlers can reset user-select to none. */
+.spira-ai-dark p,
+.spira-ai-dark li,
+.spira-ai-dark div.text-white,
+.spira-ai-dark .whitespace-pre-wrap {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
 }

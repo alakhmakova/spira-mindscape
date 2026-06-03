@@ -8,6 +8,7 @@ import com.spiramindscape.backend.resource.Resource;
 import com.spiramindscape.backend.target.ChecklistItem;
 import com.spiramindscape.backend.target.Target;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -37,6 +38,7 @@ public class GoalContextBuilder {
      * Loads the goal and returns its context block, or an empty string if
      * the goal is not found.
      */
+    @Transactional(readOnly = true)
     public String build(Long goalId) {
         if (goalId == null) return "";
         Optional<Goal> opt = goalRepository.findById(goalId);
@@ -70,11 +72,11 @@ public class GoalContextBuilder {
 
         if (!actions.isEmpty()) {
             sb.append("\n**Current actions:**\n");
-            actions.forEach(a -> sb.append("- ").append(a.getText()).append('\n'));
+            actions.forEach(a -> sb.append("- (id=").append(a.getId()).append(") ").append(a.getText()).append('\n'));
         }
         if (!obstacles.isEmpty()) {
             sb.append("\n**Current obstacles:**\n");
-            obstacles.forEach(o -> sb.append("- ").append(o.getText()).append('\n'));
+            obstacles.forEach(o -> sb.append("- (id=").append(o.getId()).append(") ").append(o.getText()).append('\n'));
 
         }
 
@@ -83,7 +85,8 @@ public class GoalContextBuilder {
         if (!options.isEmpty()) {
             sb.append("\n**Options:**\n");
             for (Option o : options) {
-                sb.append(Boolean.TRUE.equals(o.getSelected()) ? "- [x] " : "- [ ] ").append(o.getText()).append('\n');
+                sb.append(Boolean.TRUE.equals(o.getSelected()) ? "- [x] " : "- [ ] ")
+                  .append("(id=").append(o.getId()).append(") ").append(o.getText()).append('\n');
             }
         }
 
@@ -96,12 +99,19 @@ public class GoalContextBuilder {
             }
         }
 
-        // Resources (titles only)
+        // Resources — list only (id/type/title). The actual content is read
+        // on demand via the `read_resource` tool, so we don't spend tokens
+        // embedding note bodies / PDF text in every request.
         var resources = goal.getResources();
         if (!resources.isEmpty()) {
-            sb.append("\n**Resources:**\n");
+            sb.append("\n**Resources** (use the read_resource tool with the id to read one):\n");
             for (Resource r : resources) {
-                sb.append("- [").append(r.getType()).append("] ").append(r.getTitle()).append('\n');
+                sb.append("- [").append(r.getType()).append(" id=").append(r.getId()).append("] ")
+                  .append(r.getTitle());
+                if ("file".equals(r.getType()) && r.getMime() != null) {
+                    sb.append(" (").append(r.getMime()).append(")");
+                }
+                sb.append('\n');
             }
         }
 
@@ -110,18 +120,20 @@ public class GoalContextBuilder {
 
     private String describeTarget(Target t) {
         return switch (t.getType()) {
-            case "numeric" -> String.format("- [numeric] %s: %s/%s %s%s",
+            case "numeric" -> String.format("- [numeric id=%s] %s: %s/%s %s%s",
+                    t.getId(),
                     t.getTitle(),
                     t.getCurrent() != null ? t.getCurrent() : 0,
                     t.getTotal() != null ? t.getTotal() : "?",
                     t.getUnit() != null ? t.getUnit() : "",
                     t.getAchievedAt() != null ? " ✓" : "");
-            case "binary" -> String.format("- [binary] %s: %s%s",
+            case "binary" -> String.format("- [binary id=%s] %s: %s%s",
+                    t.getId(),
                     t.getTitle(),
                     Boolean.TRUE.equals(t.getDone()) ? "done" : "not done",
                     t.getAchievedAt() != null ? " ✓" : "");
             case "checklist" -> describeChecklist(t);
-            default -> "- " + t.getTitle();
+            default -> String.format("- [id=%s] %s", t.getId(), t.getTitle());
         };
     }
 
@@ -129,10 +141,14 @@ public class GoalContextBuilder {
         long done = t.getItems().stream().filter(i -> Boolean.TRUE.equals(i.getDone())).count();
         long total = t.getItems().size();
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("- [checklist] %s: %d/%d done", t.getTitle(), done, total));
+        sb.append(String.format("- [checklist id=%s] %s: %d/%d done", t.getId(), t.getTitle(), done, total));
         for (ChecklistItem item : t.getItems()) {
-            sb.append("\n  - [").append(Boolean.TRUE.equals(item.getDone()) ? "x" : " ").append("] ")
+            sb.append("\n  - (id=").append(item.getId()).append(") [")
+              .append(Boolean.TRUE.equals(item.getDone()) ? "x" : " ").append("] ")
               .append(item.getText());
+            if (item.getDeadline() != null) {
+                sb.append(" · due ").append(item.getDeadline());
+            }
         }
         return sb.toString();
     }

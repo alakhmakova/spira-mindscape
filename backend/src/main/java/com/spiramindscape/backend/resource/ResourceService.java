@@ -24,7 +24,7 @@ public class ResourceService {
 
     public static final int MAX_FILE_BYTES = 5 * 1024 * 1024;
     public static final int MAX_NOTE_BODY_LENGTH = 50_000;
-    public static final int MAX_RESOURCE_LABEL_LENGTH = 20;
+    public static final int MAX_RESOURCE_LABEL_LENGTH = 200;
     public static final int MAX_LINK_URL_LENGTH = 1_000;
 
     private static final Set<String> ALLOWED_FILE_MIME_TYPES = Set.of("application/pdf");

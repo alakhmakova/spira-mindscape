@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   FileText,
   LinkIcon,
@@ -25,6 +26,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
 import { RichTextEditor } from "@/components/spira/RichTextEditor";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { downloadNoteTxt, downloadNoteDoc, printNotePdf, openInGoogleDocs } from "@/components/spira/note-export";
+import { toast } from "sonner";
 
 const typeMeta = {
   note: { icon: FileText, label: "Note" },
@@ -34,7 +43,7 @@ const typeMeta = {
 } as const;
 
 const MAX_RESOURCE_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_RESOURCE_LABEL_LENGTH = 20;
+const MAX_RESOURCE_LABEL_LENGTH = 200;
 
 function validResourceFileType(mime: string) {
   return mime.startsWith("image/") || mime === "application/pdf";
@@ -579,15 +588,52 @@ function PreviewBody({
               )}
             </button>
           )}
-          {canDownload && (
-            <button
-              onClick={handleDownload}
-              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-              aria-label="Download"
-              title="Download"
-            >
-              <Download className="h-4 w-4" />
-            </button>
+          {resource.type === "note" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+                  aria-label="Download"
+                  title="Download as…"
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadNoteTxt(resource.title, resource.body)}>
+                  Plain text (.txt)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadNoteDoc(resource.title, resource.body)}>
+                  Word (.doc)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => printNotePdf(resource.title, resource.body)}>
+                  PDF (Save as PDF)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    const copied = await openInGoogleDocs(resource.body);
+                    toast(
+                      copied
+                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
+                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
+                    );
+                  }}
+                >
+                  Open in Google Docs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            canDownload && (
+              <button
+                onClick={handleDownload}
+                className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
+                aria-label="Download"
+                title="Download"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )
           )}
           {resource.type === "email" && (
             <button
@@ -821,14 +867,20 @@ function ResourcePreview({
     );
   }
   return resource?.type === "email" ? (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline"
-      >
-        {Body}
-      </SheetContent>
-    </Sheet>
+    <>
+      {open && <ResourceBackdrop onClose={onClose} />}
+      <Sheet open={open} onOpenChange={(o) => !o && onClose()} modal={false}>
+        <SheetContent
+          side="right"
+          overlay={false}
+          onInteractOutside={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline shadow-2xl"
+        >
+          {Body}
+        </SheetContent>
+      </Sheet>
+    </>
   ) : (
     <ResizableSheet open={open} onClose={onClose}>
       {Body}
@@ -855,12 +907,6 @@ function MobileNoteBody({
     run(() => copyPlainText(stripHtml(body)));
   };
 
-  const handleDownload = () => {
-    const text = stripHtml(body);
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    downloadBlob(blob, `${title || "note"}.txt`);
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 bg-surface px-5 pt-5 pb-2">
@@ -882,15 +928,41 @@ function MobileNoteBody({
                 <Copy className="h-4.5 w-4.5" />
               )}
             </button>
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
-              aria-label="Download as .txt"
-              title="Download as .txt"
-            >
-              <Download className="h-4.5 w-4.5" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+                  aria-label="Download as…"
+                  title="Download as…"
+                >
+                  <Download className="h-4.5 w-4.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadNoteTxt(title, body)}>
+                  Plain text (.txt)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadNoteDoc(title, body)}>
+                  Word (.doc)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => printNotePdf(title, body)}>
+                  PDF (Save as PDF)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    const ok = await openInGoogleDocs(body);
+                    toast(
+                      ok
+                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
+                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
+                    );
+                  }}
+                >
+                  Open in Google Docs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button
               type="button"
               onClick={onClose}
@@ -922,6 +994,23 @@ function MobileNoteBody({
 
 const MIN_PANEL_WIDTH = 420;
 const RESIZE_KEY = "spira:resource-panel-width";
+
+/**
+ * Partial backdrop for the resource panel: blocks the goal page while leaving
+ * the AI chat (z-40) and the resource panel (z-50) interactive. Rendered at the
+ * document root (portal) so no ancestor transform/blur can trap its stacking.
+ */
+function ResourceBackdrop({ onClose }: { onClose: () => void }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[35] bg-black/40 animate-in fade-in-0"
+      onClick={onClose}
+      aria-hidden
+    />,
+    document.body,
+  );
+}
 
 export function ResizableSheet({
   open,
@@ -987,26 +1076,36 @@ export function ResizableSheet({
   }, [width]);
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent
-        side="right"
-        className={cn(
-          "p-0 flex flex-col bg-surface border-l hairline !max-w-none",
-          isDragging && "[&_iframe]:pointer-events-none",
-        )}
-        style={{ width: `${width}px` }}
-      >
-        <div
-          ref={handleRef}
-          onPointerDown={startDrag}
-          className="resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize panel"
-        />
-        {children}
-      </SheetContent>
-    </Sheet>
+    <>
+      {/* Backdrop blocks the goal page while keeping the AI chat (z-40) and the
+          resource panel (z-50) interactive. Click it to close. */}
+      {open && <ResourceBackdrop onClose={onClose} />}
+      <Sheet open={open} onOpenChange={(o) => !o && onClose()} modal={false}>
+        <SheetContent
+          side="right"
+          overlay={false}
+          // We supply our own partial backdrop above. radix must not auto-close
+          // on outside interaction (clicking the chat should keep it open).
+          onInteractOutside={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          className={cn(
+            "p-0 flex flex-col bg-surface border-l hairline !max-w-none shadow-2xl",
+            isDragging && "[&_iframe]:pointer-events-none",
+          )}
+          style={{ width: `${width}px` }}
+        >
+          <div
+            ref={handleRef}
+            onPointerDown={startDrag}
+            className="resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+          />
+          {children}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

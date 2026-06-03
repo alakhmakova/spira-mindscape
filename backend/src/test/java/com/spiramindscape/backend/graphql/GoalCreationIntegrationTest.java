@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.graphql;
 
 import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.GoalService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -187,7 +188,7 @@ class GoalCreationIntegrationTest {
     @Test
     @DisplayName("Creates goal with title at maximum length")
     void createsGoalWithTitleAtMaximumLength() {
-        String title = "A".repeat(200);
+        String title = "A".repeat(GoalService.MAX_GOAL_TITLE_LENGTH);
 
         graphQlTester.document("""
                         mutation($title: String!) {
@@ -205,7 +206,7 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when creating goal with title longer than 200 characters")
+    @DisplayName("Returns ValidationError when creating goal with title longer than the maximum length")
     void returnsErrorWhenCreatingGoalWithOversizedTitle() {
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($title: String!) {
@@ -217,17 +218,17 @@ class GoalCreationIntegrationTest {
                           }
                         }
                         """)
-                .variable("title", "A".repeat(201))
+                .variable("title", "A".repeat(GoalService.MAX_GOAL_TITLE_LENGTH + 1))
                 .execute();
 
-        assertValidationError(response, "Goal title must be 200 characters or fewer");
+        assertValidationError(response, "Goal title must be " + GoalService.MAX_GOAL_TITLE_LENGTH + " characters or fewer");
         assertNoGoalsCreated();
     }
 
     @Test
     @DisplayName("Creates goal with description at maximum length")
     void createsGoalWithDescriptionAtMaximumLength() {
-        String description = "A".repeat(5000);
+        String description = "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH);
 
         graphQlTester.document("""
                         mutation($description: String!) {
@@ -246,7 +247,7 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when creating goal with description longer than 5000 characters")
+    @DisplayName("Returns ValidationError when creating goal with description longer than the maximum length")
     void returnsErrorWhenCreatingGoalWithOversizedDescription() {
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($description: String!) {
@@ -259,10 +260,10 @@ class GoalCreationIntegrationTest {
                           }
                         }
                         """)
-                .variable("description", "A".repeat(5001))
+                .variable("description", "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH + 1))
                 .execute();
 
-        assertValidationError(response, "Goal description must be 5000 characters or fewer");
+        assertValidationError(response, "Goal description must be " + GoalService.MAX_GOAL_DESCRIPTION_LENGTH + " characters or fewer");
         assertNoGoalsCreated();
     }
 
@@ -682,9 +683,9 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Updates goal title to maximum length (200 characters)")
+    @DisplayName("Updates goal title to maximum length")
     void updatesGoalTitleToMaximumLength() {
-        String maxTitle = "A".repeat(200);
+        String maxTitle = "A".repeat(GoalService.MAX_GOAL_TITLE_LENGTH);
         String goalId = createGoal("Original title", "Original description");
 
         graphQlTester.document("""
@@ -701,9 +702,9 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Updates goal description to maximum length (5000 characters)")
+    @DisplayName("Updates goal description to maximum length")
     void updatesGoalDescriptionToMaximumLength() {
-        String maxDescription = "A".repeat(5000);
+        String maxDescription = "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH);
         String goalId = createGoal("Original title", "Original description");
 
         graphQlTester.document("""
@@ -720,7 +721,7 @@ class GoalCreationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when updating goal with title longer than 200 characters")
+    @DisplayName("Returns ValidationError when updating goal with title longer than the maximum length")
     void returnsErrorWhenUpdatingGoalWithOversizedTitle() {
         String goalId = createGoal("Original title", "Original description");
 
@@ -732,15 +733,15 @@ class GoalCreationIntegrationTest {
                         }
                         """)
                 .variable("id", goalId)
-                .variable("title", "A".repeat(201))
+                .variable("title", "A".repeat(GoalService.MAX_GOAL_TITLE_LENGTH + 1))
                 .execute();
 
-        assertValidationError(response, "Goal title must be 200 characters or fewer");
+        assertValidationError(response, "Goal title must be " + GoalService.MAX_GOAL_TITLE_LENGTH + " characters or fewer");
         assertGoalField(goalId, "title", "Original title");
     }
 
     @Test
-    @DisplayName("Returns ValidationError when updating goal with description longer than 5000 characters")
+    @DisplayName("Returns ValidationError when updating goal with description longer than the maximum length")
     void returnsErrorWhenUpdatingGoalWithOversizedDescription() {
         String goalId = createGoal("Original title", "Original description");
 
@@ -752,10 +753,10 @@ class GoalCreationIntegrationTest {
                         }
                         """)
                 .variable("id", goalId)
-                .variable("description", "A".repeat(5001))
+                .variable("description", "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH + 1))
                 .execute();
 
-        assertValidationError(response, "Goal description must be 5000 characters or fewer");
+        assertValidationError(response, "Goal description must be " + GoalService.MAX_GOAL_DESCRIPTION_LENGTH + " characters or fewer");
         assertGoalField(goalId, "description", "Original description");
     }
 
