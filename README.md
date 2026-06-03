@@ -572,6 +572,7 @@ Testing & tooling:
 - `docs/graphiql-guide.md`
 - `docs/linting-guide.md`
 - `docs/deploy-oracle-vm.md`
+- `docs/deploy-gcp-cloud-run.md`
 
 AI:
 

@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
@@ -364,7 +365,11 @@ public class AiChatService {
     private final UrlReadService urlReadService;
 
     // Cached thread pool for blocking SSE I/O. Threads are reused between requests.
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    // Wrapped so the caller's Spring Security context propagates to the worker
+    // thread — the agentic loop creates proposals via AiProposalService, which
+    // resolves the authenticated user from the security context.
+    private final ExecutorService executor =
+            new DelegatingSecurityContextExecutorService(Executors.newCachedThreadPool());
 
     public AiChatService(
             SafetyService safety,
