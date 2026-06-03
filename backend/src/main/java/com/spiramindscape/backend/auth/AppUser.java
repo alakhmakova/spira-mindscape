@@ -41,6 +41,14 @@ public class AppUser {
     @Column(name = "role", nullable = false)
     private String role = "USER";
 
+    /**
+     * Google OAuth refresh token, AES-256-GCM encrypted (see {@code EncryptionService}).
+     * Null until the user grants offline access. Used to mint fresh Drive access
+     * tokens without a re-login. Never exposed through the API.
+     */
+    @Column(name = "enc_refresh_token", columnDefinition = "TEXT")
+    private String encRefreshToken;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.config;
 
 import com.spiramindscape.backend.auth.AppUserOidcUserService;
+import com.spiramindscape.backend.auth.OAuth2LoginSuccessHandler;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -34,12 +38,15 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 public class SecurityConfig {
 
     private final AppUserOidcUserService appUserOidcUserService;
+    private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            ClientRegistrationRepository clientRegistrationRepository) throws Exception {
 
         // --- CSRF ---
         // CookieCsrfTokenRepository makes the token readable by the SPA (HttpOnly=false).
@@ -72,11 +79,16 @@ public class SecurityConfig {
 
             // ----- OAuth2 login -----
             .oauth2Login(oauth2 -> oauth2
+                // Ask Google for offline access so we receive a refresh token
+                // (required to mint Drive access tokens later without re-login).
+                .authorizationEndpoint(authz -> authz
+                    .authorizationRequestResolver(offlineAccessResolver(clientRegistrationRepository))
+                )
                 .userInfoEndpoint(userInfo -> userInfo
                     .oidcUserService(appUserOidcUserService)
                 )
-                // After successful login, redirect to the SPA
-                .defaultSuccessUrl(frontendUrl, true)
+                // After successful login, capture the refresh token, then redirect to the SPA
+                .successHandler(oAuth2LoginSuccessHandler)
                 // On failure, redirect to the SPA login page with an error flag
                 .failureUrl(frontendUrl + "/login?error")
             )
@@ -103,5 +115,24 @@ public class SecurityConfig {
             );
 
         return http.build();
+    }
+
+    /**
+     * Adds {@code access_type=offline} and {@code prompt=consent} to the Google
+     * authorization request so Google returns a refresh token. {@code prompt=consent}
+     * guarantees a refresh token even on re-login (Google otherwise only issues one
+     * on the very first consent).
+     */
+    private OAuth2AuthorizationRequestResolver offlineAccessResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        DefaultOAuth2AuthorizationRequestResolver resolver =
+                new DefaultOAuth2AuthorizationRequestResolver(
+                        clientRegistrationRepository, "/oauth2/authorization");
+        resolver.setAuthorizationRequestCustomizer(customizer ->
+                customizer.additionalParameters(params -> {
+                    params.put("access_type", "offline");
+                    params.put("prompt", "consent");
+                }));
+        return resolver;
     }
 }

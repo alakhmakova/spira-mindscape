@@ -573,6 +573,7 @@ Testing & tooling:
 - `docs/linting-guide.md`
 - `docs/deploy-oracle-vm.md`
 - `docs/deploy-gcp-cloud-run.md`
+- `docs/google-drive-integration-guide.md`
 
 AI:
 
