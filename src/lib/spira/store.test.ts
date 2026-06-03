@@ -150,7 +150,7 @@ describe("useSpira resource sync errors", () => {
       title: "Submit application",
       done: false,
       deadline: "2026-05-15T00:00:00.000Z",
-      achievedAt: null,
+      achievedAt: undefined,
     });
     useSpira.setState({
       goals: [binaryGoalFixture()],
@@ -172,7 +172,7 @@ describe("useSpira resource sync errors", () => {
       title: "Submit application",
       done: false,
       deadline: "2026-05-15T00:00:00.000Z",
-      achievedAt: null,
+      achievedAt: undefined,
     });
     useSpira.setState({
       goals: [binaryGoalFixture()],
@@ -245,7 +245,7 @@ describe("useSpira resource sync errors", () => {
           text: "Write notes",
           done: false,
           deadline: "2026-05-15T00:00:00.000Z",
-          achievedAt: null,
+          achievedAt: undefined,
         },
       ],
     });
@@ -286,7 +286,7 @@ describe("useSpira resource sync errors", () => {
           text: "Write notes",
           done: false,
           deadline: "2026-05-15T00:00:00.000Z",
-          achievedAt: null,
+          achievedAt: undefined,
         },
       ],
     });

@@ -64,8 +64,10 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    host: true, // expose on all network interfaces → shows Network URL on startup
     proxy: {
       "/graphql": "http://localhost:8080",
+      "/api": "http://localhost:8080",
     },
   },
   build: {

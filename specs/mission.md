@@ -61,47 +61,42 @@ There must also be a global goals page that supports:
 
 Spira's AI is not a generic chatbot.
 
-It is a seamless goal-support system. The user should not manually switch between "coach mode" and "agent mode." Instead, the AI should choose the right posture based on context.
+It is a goal-support system with two clearly separated modes.
 
-When the user needs clarity, reflection, motivation, or prioritization, the AI behaves like a structured coach using the GROW model:
+**Regular goal chat** is always on and always the default. The AI acts as an execution assistant: it helps the user move the goal forward through research, drafts, target proposals, option analysis, next steps, and resource creation. The user never selects this mode — it is simply how the AI behaves in the goal chat panel.
 
-- Goal
-- Reality
-- Options
-- Will
+**GROW sessions** are a separate feature, explicitly started by the user via a dedicated "Start GROW session" button on the goal page. In a GROW session, the AI becomes a coaching intelligence — it raises awareness through questions, follows the user's thinking, and does not give unsolicited advice. GROW sessions are time-bounded: the user chooses 15, 30, 45, or 60 minutes.
 
-When the user needs concrete progress, the AI behaves like an execution assistant that can research, compare options, draft messages, suggest tasks, prepare next steps, and help move a goal forward.
+There is no mode toggle inside the AI chat panel. The two modes are separated by UI surface, not by a setting.
 
-When the user needs a specialized interface that does not exist in the standard Spira goal model, the AI may also behave as a tool builder. It can propose and create small goal-specific frontend tools that support execution without turning the core product into a bloated generic app.
-
-The coaching logic must be grounded in real coaching methodology, with source material maintained in:
+The coaching behavior in GROW sessions is grounded in the source books:
 
 - `grow/Coaching for Performance.docx`
 - `grow/Coach the Person.docx`
 
-The AI should guide structured thinking. It should not behave randomly, over-generalize, or produce generic motivational advice.
+In a GROW session, the AI behaves like a real coach — asking one good question at a time, following the user's thinking rather than a predetermined agenda. The GROW framework may naturally emerge from the conversation, but the AI never announces phases or leads the user through a checklist.
+
+The AI must never give unsolicited advice, over-generalize, or produce generic motivational content — whether in regular chat or in a GROW session.
 
 ## GROW Sessions
 
-Spira should support a dedicated GROW session feature for focused work on a specific goal.
+Spira supports a dedicated GROW session feature for focused, time-bounded coaching on a specific goal.
 
-Ordinary AI interaction should remain flexible. Users should not be forced to speak through the GROW model all the time.
+Regular goal chat is flexible — the user can ask anything, the AI adapts. GROW sessions are explicitly different and are explicitly started by the user via a dedicated **"Start GROW session"** button on the goal page. There is no mode toggle inside the AI chat panel — the default is always regular chat.
 
-A GROW session is different:
+A GROW session is:
 
-- the user explicitly starts it from a goal
-- it is tied to one goal
-- the user chooses a session length: 15, 30, 45, or 60 minutes
-- it follows the GROW sequence: Goal, Reality, Options, Will
-- it helps the user clarify and deepen one goal
-- it saves useful outcomes such as summaries, insights, decisions, and proposed next actions
-- it may propose updates to targets or goal structure, but those changes require user approval
+- started explicitly by the user via a button on the goal page (not a toggle inside the AI panel)
+- tied to one specific goal
+- time-bounded: the user chooses 15, 30, 45, or 60 minutes
+- conducted in full coaching mode for its entire duration
+- saved: if the user approves, the session produces an AI memory block, proposed goal updates, and proposed next actions
 
-GROW sessions should be structured enough to follow real coaching methodology, while still feeling human, focused, and useful.
+The AI opens and closes the session gracefully — like a skilled professional coach. It does not announce GROW phases ("Now we are in the Reality phase"). It conducts a real coaching conversation that, if done well, naturally covers the ground that GROW describes — but the user experiences it as a human conversation, not a structured process.
 
-The AI should open and close a GROW session gracefully, like a real professional. It should set focus at the beginning, manage the time box during the session, and end with a concise summary, decisions, and next steps when the selected time is reached.
+At the end of the session, the AI asks the user whether to save the session memory. If the user says no, the memory is discarded. Any proposed changes to goal data require explicit user approval before being applied.
 
-The AI must not freely improvise the coaching structure during a GROW session. The product should guide the AI with coaching principles derived from the source materials in `grow/`.
+The AI must not apply the GROW framework as a rigid script. The coaching behavior must be grounded in the source materials in `grow/`.
 
 ## AI Execution Layer
 
@@ -132,20 +127,17 @@ The user approves before important changes are applied.
 
 ## AI Tool Builder
 
-Spira may allow the AI to create small frontend tools requested by the user or suggested by the AI when a goal needs a more specific interaction model than the standard goal sections provide.
+Spira supports two kinds of AI-created tools: goal-scoped tools and global personal tools.
 
-These tools should be scoped to a goal and should support execution.
+**Goal-scoped tools** are created in the context of a specific goal when the standard goal interface is not enough for execution. Examples: a weight tracker for a fitness goal, an application tracker for a job search goal, a practice log for a skill goal.
 
-Examples:
+**Global personal tools** are not attached to any goal. They are personal life instruments the user wants in the same space where they manage their goals — a period tracker, a habit log, a savings calculator, a reminder for recurring events. These are created from the global AI chat on the All Goals page.
 
-- a weight tracker with daily entries and a trend chart
-- a habit tracker
-- a savings calculator
-- an application tracker for job search
-- a study streak tracker
-- a practice log for sports or skills
+Tools are built from approved UI primitives and rendered by a generic frontend renderer. The AI proposes the tool schema; the user approves before anything is created.
 
-AI-generated tools must not replace the core goal model. They are extensions that help a specific goal become easier to execute.
+The user controls where each tool appears: on the goal page (goal-scoped only), pinned on the All Goals page for constant visibility, or on a dedicated Tools page for less frequent access.
+
+AI-generated tools must not replace the core goal model. They are execution and life-management aids.
 
 The user must approve tool creation before it is added to the workspace.
 

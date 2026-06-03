@@ -7,6 +7,7 @@ import type {
   Goal,
   Option,
   Resource,
+  ResourceInput,
   Target,
 } from "./types";
 
@@ -47,10 +48,10 @@ type State = {
   selectOption: (id: string, optId: string) => void;
   removeOption: (id: string, optId: string) => void;
   reorderOptions: (id: string, from: number, to: number) => void;
-  addTarget: (id: string, t: CreateTargetInput) => void;
+  addTarget: (id: string, t: CreateTargetInput) => Promise<Target | undefined>;
   updateTarget: (id: string, targetId: string, patch: Partial<Target>) => void;
   removeTarget: (id: string, targetId: string) => void;
-  addResource: (id: string, r: Omit<Resource, "id">) => void;
+  addResource: (id: string, r: ResourceInput) => void;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
   removeResource: (id: string, rId: string) => void;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
@@ -227,6 +228,7 @@ export const useSpira = create<State>()((set, get) => ({
       options: g.options ?? [],
       resources: g.resources ?? [],
       targets: g.targets ?? [],
+      confidenceHistory: [{ value: (g.confidence ?? 5), at: nowIso() }],
     };
 
     set((state) => ({ goals: [goal, ...state.goals], syncError: undefined }));
@@ -253,9 +255,20 @@ export const useSpira = create<State>()((set, get) => ({
 
   updateGoal: (id, patch) => {
     set((state) => ({
-      goals: updateGoalInList(state.goals, id, (goal) =>
-        mergeGoalPatch(goal, patch),
-      ),
+      goals: updateGoalInList(state.goals, id, (goal) => {
+        const merged = mergeGoalPatch(goal, patch);
+        // Record a confidence-history point optimistically whenever confidence
+        // actually changes — covers both the manual control and AI proposals,
+        // which both route through updateGoal. The server records the same
+        // entry; a full reload replaces these with the authoritative list.
+        if (patch.confidence != null && patch.confidence !== goal.confidence) {
+          merged.confidenceHistory = [
+            { value: patch.confidence, at: nowIso() },
+            ...(goal.confidenceHistory ?? []),
+          ];
+        }
+        return merged;
+      }),
       syncError: undefined,
     }));
 
@@ -512,10 +525,12 @@ export const useSpira = create<State>()((set, get) => ({
       syncError: undefined,
     }));
 
-    if (id.startsWith("local-")) return;
-    void spiraApi
+    if (id.startsWith("local-")) return Promise.resolve(undefined);
+    // Returns the persisted target so callers can chain a follow-up update
+    // (e.g. mark a freshly created target done) using its real server id.
+    return spiraApi
       .createTarget(id, targetInput)
-      .then((created) =>
+      .then((created) => {
         set((state) => ({
           goals: updateGoalInList(state.goals, id, (goal) => ({
             ...goal,
@@ -523,9 +538,13 @@ export const useSpira = create<State>()((set, get) => ({
               item.id === tempId ? created : item,
             ),
           })),
-        })),
-      )
-      .catch((error) => setSyncError(set, error));
+        }));
+        return created;
+      })
+      .catch((error) => {
+        setSyncError(set, error);
+        return undefined;
+      });
   },
 
   updateTarget: (id, targetId, patch) => {
