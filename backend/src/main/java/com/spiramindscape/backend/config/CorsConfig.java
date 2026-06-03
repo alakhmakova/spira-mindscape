@@ -21,14 +21,17 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // allowedOriginPatterns (not allowedOrigins) so values may contain
+        // wildcards — e.g. http://192.168.*:* lets a phone on the LAN reach the
+        // Vite dev proxy, which forwards the device's Origin header to us.
         registry.addMapping("/graphql")
-                .allowedOrigins(allowedOrigins)
+                .allowedOriginPatterns(allowedOrigins)
                 .allowedMethods("GET", "POST", "OPTIONS")
                 .allowedHeaders("*");
 
         registry.addMapping("/api/**")
-                .allowedOrigins(allowedOrigins)
-                .allowedMethods("GET", "POST", "DELETE", "OPTIONS")
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
     }
 }

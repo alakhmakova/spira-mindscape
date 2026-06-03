@@ -5,6 +5,7 @@ import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
+import com.spiramindscape.backend.ai.model.AiModelService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.proposal.dto.ProposalDto;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * REST controller for the AI sub-system.
@@ -43,14 +45,17 @@ public class AiController {
 
     private final AiKeyService keyService;
     private final AiChatService chatService;
+    private final AiModelService modelService;
     private final AiProposalService proposalService;
 
     public AiController(
             AiKeyService keyService,
             AiChatService chatService,
+            AiModelService modelService,
             AiProposalService proposalService) {
         this.keyService = keyService;
         this.chatService = chatService;
+        this.modelService = modelService;
         this.proposalService = proposalService;
     }
 
@@ -74,6 +79,25 @@ public class AiController {
     @GetMapping("/keys")
     public List<KeyInfoResponse> listKeys() {
         return keyService.listKeys();
+    }
+
+    /**
+     * Fetch available models from the provider's API.
+     * Requires a saved key for the given provider.
+     */
+    @GetMapping("/keys/{provider}/models")
+    public List<String> listProviderModels(@PathVariable String provider) {
+        return modelService.listModels(provider);
+    }
+
+    /**
+     * Update the model preference for an existing key without re-supplying the key.
+     */
+    @PatchMapping("/keys/{provider}")
+    public KeyInfoResponse updateKeyModel(
+            @PathVariable String provider,
+            @RequestBody Map<String, String> body) {
+        return keyService.updateModel(provider, Objects.requireNonNull(body.get("model"), "model is required"));
     }
 
     /**

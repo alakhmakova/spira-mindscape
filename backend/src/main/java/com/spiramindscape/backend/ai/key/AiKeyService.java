@@ -5,7 +5,9 @@ import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import jakarta.transaction.Transactional;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -63,6 +65,18 @@ public class AiKeyService {
         return repo.findByAppUserId(currentUserId()).stream()
                 .map(k -> new KeyInfoResponse(k.getProvider(), k.getKeyHint(), k.getModel()))
                 .toList();
+    }
+
+    /** Update only the model preference for an existing key. */
+    public KeyInfoResponse updateModel(String provider, String model) {
+        Long userId = currentUserId();
+        String normalized = ProviderType.fromString(provider).name();
+        AiApiKey entity = repo.findByAppUserIdAndProvider(userId, normalized)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "No key configured for provider " + normalized));
+        entity.setModel(model);
+        repo.save(entity);
+        return new KeyInfoResponse(normalized, entity.getKeyHint(), model);
     }
 
     /** Delete the key for the given provider. No-op if no key exists. */

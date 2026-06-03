@@ -1,4 +1,4 @@
-package com.spiramindscape.backend.ai.provider.anthropic;
+package com.spiramindscape.backend.ai.provider.mistral;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,27 +23,24 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * Anthropic Messages API implementation with server-sent-event (SSE) streaming.
+ * Mistral AI chat completions with SSE streaming.
  *
- * <p>Reference: <a href="https://docs.anthropic.com/en/api/messages">
- * Anthropic Messages API</a>
+ * <p>Uses the OpenAI-compatible endpoint at api.mistral.ai. The system prompt
+ * is injected as the first message with {@code role=system} — Mistral does not
+ * have a separate top-level system field.
  *
- * <p>Streaming events:
- * <ul>
- *   <li>{@code message_start} — ignored</li>
- *   <li>{@code content_block_start} — ignored</li>
- *   <li>{@code content_block_delta} with {@code text_delta} — token forwarded via onToken</li>
- *   <li>{@code message_stop} — triggers onComplete</li>
- *   <li>HTTP error (non-200) — triggers onError</li>
- * </ul>
+ * <p>Streaming format (same as OpenAI):
+ * <pre>
+ * data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}
+ * data: [DONE]
+ * </pre>
  */
-public class AnthropicProvider implements LlmProvider {
+public class MistralProvider implements LlmProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(AnthropicProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(MistralProvider.class);
 
-    private static final String ENDPOINT = "https://api.anthropic.com/v1/messages";
-    private static final String ANTHROPIC_VERSION = "2023-06-01";
-    static final String DEFAULT_MODEL = "claude-sonnet-4-6";
+    private static final String ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
+    static final String DEFAULT_MODEL = "mistral-large-latest";
     private static final int MAX_TOKENS = 8192;
 
     private final String apiKey;
@@ -51,7 +48,7 @@ public class AnthropicProvider implements LlmProvider {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public AnthropicProvider(String apiKey, String model, HttpClient httpClient, ObjectMapper objectMapper) {
+    public MistralProvider(String apiKey, String model, HttpClient httpClient, ObjectMapper objectMapper) {
         this.apiKey = apiKey;
         this.model = (model != null && !model.isBlank()) ? model : DEFAULT_MODEL;
         this.httpClient = httpClient;
@@ -74,8 +71,7 @@ public class AnthropicProvider implements LlmProvider {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(ENDPOINT))
                     .header("content-type", "application/json")
-                    .header("x-api-key", apiKey)
-                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .header("authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 
@@ -86,7 +82,8 @@ public class AnthropicProvider implements LlmProvider {
 
             if (response.statusCode() != 200) {
                 String errorBody = response.body().collect(Collectors.joining("\n"));
-                onError.accept(new AnthropicApiException(response.statusCode(), errorBody));
+                onError.accept(new RuntimeException(
+                        "Mistral API error " + response.statusCode() + ": " + errorBody));
                 return;
             }
 
@@ -104,10 +101,11 @@ public class AnthropicProvider implements LlmProvider {
             Runnable onComplete,
             Consumer<Throwable> onError) {
 
-        // Per content-block index: accumulated tool-call id, name and partial JSON args
+        // Per tool-call index: accumulated id, function name and partial JSON arguments
         Map<Integer, String> toolIds = new HashMap<>();
         Map<Integer, String> toolNames = new HashMap<>();
         Map<Integer, StringBuilder> toolArgs = new HashMap<>();
+        final boolean[] sawToolCalls = {false};
 
         try {
             lines.forEach(line -> {
@@ -118,47 +116,52 @@ public class AnthropicProvider implements LlmProvider {
 
                 try {
                     JsonNode node = objectMapper.readTree(data);
-                    String type = node.path("type").asText();
+                    JsonNode choices = node.path("choices");
+                    if (!choices.isArray() || choices.isEmpty()) return;
 
-                    switch (type) {
-                        case "content_block_start" -> {
-                            JsonNode block = node.path("content_block");
-                            if ("tool_use".equals(block.path("type").asText())) {
-                                int index = node.path("index").asInt();
-                                toolIds.put(index, block.path("id").asText());
-                                toolNames.put(index, block.path("name").asText());
-                                toolArgs.put(index, new StringBuilder());
+                    JsonNode delta = choices.get(0).path("delta");
+
+                    String text = delta.path("content").asText("");
+                    if (!text.isEmpty()) onToken.accept(text);
+
+                    JsonNode toolCalls = delta.path("tool_calls");
+                    if (toolCalls.isArray() && !toolCalls.isEmpty()) {
+                        sawToolCalls[0] = true;
+                        for (JsonNode tc : toolCalls) {
+                            int index = tc.path("index").asInt(0);
+                            String id = tc.path("id").asText("");
+                            if (!id.isEmpty()) toolIds.put(index, id);
+                            String name = tc.path("function").path("name").asText("");
+                            if (!name.isEmpty()) {
+                                toolNames.put(index, name);
+                                toolArgs.putIfAbsent(index, new StringBuilder());
+                            }
+                            // Arguments usually stream as string chunks, but some
+                            // responses send the whole object at once — handle both so
+                            // the tool call isn't dropped (which left no proposal card).
+                            JsonNode argNode = tc.path("function").path("arguments");
+                            String argChunk = argNode.isTextual()
+                                    ? argNode.asText()
+                                    : (argNode.isMissingNode() || argNode.isNull()) ? "" : argNode.toString();
+                            if (!argChunk.isEmpty()) {
+                                toolArgs.computeIfAbsent(index, k -> new StringBuilder()).append(argChunk);
                             }
                         }
-                        case "content_block_delta" -> {
-                            String deltaType = node.path("delta").path("type").asText();
-                            if ("text_delta".equals(deltaType)) {
-                                String text = node.path("delta").path("text").asText();
-                                if (!text.isEmpty()) onToken.accept(text);
-                            } else if ("input_json_delta".equals(deltaType)) {
-                                int index = node.path("index").asInt();
-                                StringBuilder sb = toolArgs.get(index);
-                                if (sb != null) sb.append(node.path("delta").path("partial_json").asText());
-                            }
-                        }
-                        case "error" -> {
-                            String message = node.path("error").path("message").asText("Unknown error");
-                            onError.accept(new AnthropicApiException(0, message));
-                        }
-                        default -> { /* message_start, content_block_stop, message_stop, ping — ignored */ }
                     }
                 } catch (Exception e) {
                     log.debug("Skipping unparseable SSE data: {}", data);
                 }
             });
 
-            // Emit any tool calls collected during the stream
+            int emitted = 0;
             for (Map.Entry<Integer, String> entry : toolNames.entrySet()) {
                 String args = toolArgs.getOrDefault(entry.getKey(), new StringBuilder()).toString();
                 if (!args.isBlank()) {
                     onToolCall.accept(new ToolCall(toolIds.get(entry.getKey()), entry.getValue(), args));
+                    emitted++;
                 }
             }
+            log.info("Mistral stream finished: sawToolCalls={}, toolCallsEmitted={}", sawToolCalls[0], emitted);
 
             onComplete.run();
 
@@ -168,30 +171,28 @@ public class AnthropicProvider implements LlmProvider {
     }
 
     private String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
-        // Use LinkedHashMap to guarantee key order in JSON output
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("max_tokens", MAX_TOKENS);
         body.put("stream", true);
 
+        List<Map<String, Object>> allMessages = new ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
-            body.put("system", systemPrompt);
+            allMessages.add(Map.of("role", "system", "content", systemPrompt));
         }
-
-        List<Map<String, Object>> anthropicMessages = new ArrayList<>();
         for (LlmMessage m : messages) {
-            anthropicMessages.add(toAnthropicMessage(m));
+            allMessages.add(toMistralMessage(m));
         }
-        body.put("messages", anthropicMessages);
+        body.put("messages", allMessages);
 
         if (tools != null && !tools.isEmpty()) {
             List<Map<String, Object>> toolList = new ArrayList<>();
             for (ToolSpec t : tools) {
-                Map<String, Object> tool = new LinkedHashMap<>();
-                tool.put("name", t.name());
-                tool.put("description", t.description());
-                tool.put("input_schema", t.inputSchema());
-                toolList.add(tool);
+                Map<String, Object> fn = new LinkedHashMap<>();
+                fn.put("name", t.name());
+                fn.put("description", t.description());
+                fn.put("parameters", t.inputSchema());
+                toolList.add(Map.of("type", "function", "function", fn));
             }
             body.put("tools", toolList);
         }
@@ -200,43 +201,37 @@ public class AnthropicProvider implements LlmProvider {
     }
 
     /**
-     * Converts an {@link LlmMessage} to Anthropic's message format, expanding
-     * tool-call echoes and tool results into the content-block representation.
+     * Converts an {@link LlmMessage} to Mistral's (OpenAI-compatible) format,
+     * expanding tool-call echoes and tool results.
      */
-    private Map<String, Object> toAnthropicMessage(LlmMessage m) throws Exception {
+    private Map<String, Object> toMistralMessage(LlmMessage m) {
         Map<String, Object> msg = new LinkedHashMap<>();
 
         if (m.isToolResult()) {
-            // tool result → a user message carrying a tool_result block
-            Map<String, Object> block = new LinkedHashMap<>();
-            block.put("type", "tool_result");
-            block.put("tool_use_id", m.toolResultFor());
-            block.put("content", m.content());
-            msg.put("role", "user");
-            msg.put("content", List.of(block));
+            msg.put("role", "tool");
+            msg.put("tool_call_id", m.toolResultFor());
+            msg.put("content", m.content());
             return msg;
         }
 
         if (m.toolCalls() != null && !m.toolCalls().isEmpty()) {
-            // assistant echo: optional text + one tool_use block per call
-            List<Map<String, Object>> blocks = new ArrayList<>();
-            if (m.content() != null && !m.content().isBlank()) {
-                blocks.add(Map.of("type", "text", "text", m.content()));
-            }
+            List<Map<String, Object>> calls = new ArrayList<>();
             for (ToolCall tc : m.toolCalls()) {
-                Map<String, Object> use = new LinkedHashMap<>();
-                use.put("type", "tool_use");
-                use.put("id", tc.id());
-                use.put("name", tc.name());
-                use.put("input", objectMapper.readValue(tc.argumentsJson(), Map.class));
-                blocks.add(use);
+                calls.add(Map.of(
+                        "id", tc.id(),
+                        "type", "function",
+                        "function", Map.of("name", tc.name(), "arguments", tc.argumentsJson())));
             }
             msg.put("role", "assistant");
-            msg.put("content", blocks);
+            // Mistral rejects an assistant message with empty content AND tool_calls.
+            // Omit content entirely when blank — tool_calls alone is valid.
+            if (m.content() != null && !m.content().isBlank()) {
+                msg.put("content", m.content());
+            }
+            msg.put("tool_calls", calls);
             return msg;
         }
 
-        // plain text
         msg.put("role", m.role());
         msg.put("content", m.content());
         return msg;
@@ -244,6 +239,6 @@ public class AnthropicProvider implements LlmProvider {
 
     @Override
     public ProviderType providerType() {
-        return ProviderType.ANTHROPIC;
+        return ProviderType.MISTRAL;
     }
 }

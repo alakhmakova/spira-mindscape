@@ -66,10 +66,6 @@ function GoalWorkspace() {
   const [newResource, setNewResource] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  // Local confidence history (mocked, in-memory for demo).
-  const [confidenceHistory, setConfidenceHistory] = useState<
-    { value: number; at: string }[]
-  >(() => [{ value: goal?.confidence ?? 5, at: new Date().toISOString() }]);
 
   useEffect(() => {
     setContext({ goalId });
@@ -89,12 +85,10 @@ function GoalWorkspace() {
 
   const progress = goalProgress(goal);
 
+  // History is maintained in the store (server-backed + optimistic), so this
+  // just records the new value; both manual and AI changes flow through it.
   const changeConfidence = (next: number) => {
     setConfidence(goal.id, next as Confidence);
-    setConfidenceHistory((h) => [
-      { value: next, at: new Date().toISOString() },
-      ...h,
-    ]);
   };
 
   const jumpToTargets = () => {
@@ -134,14 +128,14 @@ function GoalWorkspace() {
           <AutoTextarea
             value={goal.title}
             onChange={(v) => updateGoal(goal.id, { title: v })}
-            className="font-heading text-3xl sm:text-4xl text-foreground w-full leading-tight"
+            className="spira-goal-title font-heading text-3xl sm:text-4xl text-foreground w-full leading-tight"
             placeholder="Untitled goal"
           />
           <AutoTextarea
             value={goal.description}
             onChange={(v) => updateGoal(goal.id, { description: v })}
             placeholder="Specific, measurable, achievable, relevant, time-bound."
-            className="text-muted-foreground mt-1.5 text-sm sm:text-[15px] w-full"
+            className="spira-goal-desc text-muted-foreground mt-1.5 text-sm sm:text-[15px] w-full"
           />
         </header>
 
@@ -267,7 +261,7 @@ function GoalWorkspace() {
         <ConfidenceHistorySheet
           open={historyOpen}
           onOpenChange={setHistoryOpen}
-          history={confidenceHistory}
+          history={goal.confidenceHistory ?? []}
           current={goal.confidence}
         />
 

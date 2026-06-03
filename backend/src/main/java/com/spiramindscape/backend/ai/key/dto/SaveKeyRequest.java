@@ -7,7 +7,9 @@ import jakarta.validation.constraints.Size;
 public record SaveKeyRequest(
 
         @NotBlank
-        @Pattern(regexp = "ANTHROPIC|OPENAI|MISTRAL", message = "provider must be ANTHROPIC, OPENAI, or MISTRAL")
+        @Pattern(
+                regexp = "ANTHROPIC|OPENAI|MISTRAL|OLLAMA|TAVILY|anthropic|openai|mistral|ollama|tavily",
+                message = "provider must be one of ANTHROPIC, OPENAI, MISTRAL, OLLAMA, TAVILY")
         String provider,
 
         @NotBlank

@@ -24,11 +24,17 @@ public interface LlmProvider {
      * Stream a chat completion. Blocks the calling thread until the stream
      * finishes (or fails). Should be called from a virtual thread or task
      * executor, not from the request thread.
+     *
+     * @param tools      tools the model may call; pass an empty list to disable
+     * @param onToolCall invoked once per completed tool call with the full
+     *                   arguments JSON assembled from streamed deltas
      */
     void streamChat(
             List<LlmMessage> messages,
             String systemPrompt,
+            List<ToolSpec> tools,
             Consumer<String> onToken,
+            Consumer<ToolCall> onToolCall,
             Runnable onComplete,
             Consumer<Throwable> onError
     );
