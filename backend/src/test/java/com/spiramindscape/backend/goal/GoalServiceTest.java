@@ -155,7 +155,7 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("addOption: text at maximum length (500 chars) is accepted")
+    @DisplayName("addOption: text at the maximum length is accepted")
     void addOptionAcceptsTextAtMaximumLength() {
         Goal goal = goal(1L);
         when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
@@ -170,14 +170,14 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("addOption: text over maximum length (501 chars) throws and does not save")
+    @DisplayName("addOption: text over the maximum length throws and does not save")
     void addOptionRejectsOversizedText() {
         when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal(1L)));
         when(optionRepository.findMaxPositionByGoalId(1L)).thenReturn(-1);
 
         assertThatThrownBy(() -> goalService.addOption(1L, "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Option text must be 500 characters or fewer");
+                .hasMessageContaining("Option text must be " + GoalService.MAX_OPTION_TEXT_LENGTH + " characters or fewer");
 
         verify(optionRepository, never()).save(any(Option.class));
     }
@@ -255,7 +255,7 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("updateOption: text at maximum length (500 chars) is accepted")
+    @DisplayName("updateOption: text at the maximum length is accepted")
     void updateOptionAcceptsTextAtMaximumLength() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
@@ -271,7 +271,7 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("updateOption: text over maximum length (501 chars) throws and does not save")
+    @DisplayName("updateOption: text over the maximum length throws and does not save")
     void updateOptionRejectsOversizedText() {
         Goal goal = goal(1L);
         Option option = option(10L, goal, false, 0);
@@ -281,7 +281,7 @@ class GoalServiceTest {
         assertThatThrownBy(() -> goalService.updateOption(1L, 10L,
                 new UpdateOptionInput("A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1), null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Option text must be 500 characters or fewer");
+                .hasMessageContaining("Option text must be " + GoalService.MAX_OPTION_TEXT_LENGTH + " characters or fewer");
 
         verify(optionRepository, never()).save(any(Option.class));
     }
@@ -411,7 +411,7 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("create: title at maximum length (200 chars) is accepted")
+    @DisplayName("create: title at the maximum length is accepted")
     void createsGoalWithTitleAtMaximumLength() {
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String maxTitle = "A".repeat(GoalService.MAX_GOAL_TITLE_LENGTH);
@@ -482,7 +482,7 @@ class GoalServiceTest {
                 null
         )))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Goal title must be 200 characters or fewer");
+                .hasMessageContaining("Goal title must be " + GoalService.MAX_GOAL_TITLE_LENGTH + " characters or fewer");
 
         verify(goalRepository, never()).save(any(Goal.class));
     }
@@ -496,7 +496,7 @@ class GoalServiceTest {
                 null
         )))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Goal description must be 5000 characters or fewer");
+                .hasMessageContaining("Goal description must be " + GoalService.MAX_GOAL_DESCRIPTION_LENGTH + " characters or fewer");
 
         verify(goalRepository, never()).save(any(Goal.class));
     }
@@ -573,7 +573,7 @@ class GoalServiceTest {
     }
 
     @Test
-    @DisplayName("update: rejects description longer than 5000 characters")
+    @DisplayName("update: rejects description longer than the maximum length")
     void rejectsGoalDescriptionOverMaxLengthOnUpdate() {
         Goal goal = goal(1L);
         when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
@@ -581,7 +581,7 @@ class GoalServiceTest {
         assertThatThrownBy(() -> goalService.update(1L,
                 new UpdateGoalInput(null, "A".repeat(GoalService.MAX_GOAL_DESCRIPTION_LENGTH + 1), null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Goal description must be 5000 characters or fewer");
+                .hasMessageContaining("Goal description must be " + GoalService.MAX_GOAL_DESCRIPTION_LENGTH + " characters or fewer");
 
         verify(goalRepository, never()).save(any(Goal.class));
     }

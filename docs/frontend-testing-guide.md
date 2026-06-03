@@ -188,6 +188,13 @@ Add these only after component tests exist, and keep them to a handful. They are
 
 Same golden rule as the backend (`docs/unit-vs-integration-tests.md` §6): **test the detail at the lowest level that can see it; smoke the wiring once higher up.** Don't re-prove the progress formula in a component test or an E2E test — prove it once in `progress.test.ts`.
 
+**And the same no-magic-numbers rule applies here.** When a test touches a length/size
+limit (e.g. the resource label cap, `MAX_RESOURCE_LABEL_LENGTH` in `Resources.tsx`),
+import or derive that shared constant instead of re-typing `200` in the assertion. If the
+limit changes in one place, the test should follow — never hardcode the number on the
+frontend either. Full rationale: `docs/testing-guide.md` → *Convention: bind boundary tests
+to the production constant*.
+
 ---
 
 ## 7. A realistic first task for you

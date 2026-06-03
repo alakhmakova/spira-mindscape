@@ -39,6 +39,7 @@ Spira is a structured goal-setting workspace. For each goal, a user can manage:
   - numeric target (e.g. current/total)
   - checklist target (sub-items)
 - **Resources** — notes, links, files, email/contact resources
+- **AI coach** — a goal-scoped chat assistant that can read the goal's data and resources, run web search, and propose changes (new targets, edits, option selection, notes) that the user approves before they are applied. See [AI Coaching Assistant](#ai-coaching-assistant).
 
 Goal progress is calculated from targets and exposed both in frontend and backend.
 
@@ -54,7 +55,8 @@ Goal progress is calculated from targets and exposed both in frontend and backen
 - Database: **PostgreSQL 16** (Docker) + **Flyway** migrations
 - ORM: **Spring Data JPA / Hibernate**
 - Build tool: **Maven Wrapper** (`backend/mvnw`)
-- Tests: **Spring Boot Test + Spring GraphQL Test + H2 (test profile)**
+- Tests: **Spring Boot Test + Spring GraphQL Test + H2 (test profile)**, plus **Python E2E** (`pytest`) against a real PostgreSQL
+- AI: **multi-provider, bring-your-own-key** (Anthropic / OpenAI / Mistral / Ollama Cloud + Tavily web search), SSE streaming, native tool calling. Keys are encrypted at rest (AES-256).
 
 ### Frontend
 
@@ -313,6 +315,53 @@ Flyway runs these in order on backend startup.
 
 ---
 
+## AI Coaching Assistant
+
+Spira ships with an AI chat scoped to a single goal. Create a goal manually, open the goal, click "ai coach" in the header. AI can read the goal's
+data and attached resources, run web search, and **propose** changes (edit goal name, description, create actions and obstacles, options, set active option, set new target and change its progress, read and write resources). Nothing is applied until the user approves
+the proposal — this is a core safety rule.
+
+The design is **bring-your-own-key (BYOK)**: you paste your own provider API key in
+the AI panel. Keys are encrypted at rest (AES-256) and never returned to the frontend
+after saving (only a masked hint is shown). You can store keys for several providers
+and switch the active one; your selection is remembered between sessions.
+
+### Choosing a provider
+
+| Provider | Status | Notes |
+|---|---|---|
+| **Anthropic (Claude)** | ✅ Recommended | Best user experience — the most reliable tool calling and multilingual conversation. |
+| **Ollama Cloud** | ✅ Works (free option) | Good for testing without paying for an API. See the setup note below. |
+| **Mistral** | ✅ Works | Free with Mistral Studio. Free mode. You can create API keys and use the free tier within the limits described on the limits page https://admin.mistral.ai/plateforme/limits. This free usage is included in your Vibe subscription, if you have one, or available by default. |
+| **OpenAI** | ⚠️ Untested | The integration exists but has **not** been tested. |
+| **Tavily** | 🔍 Web search only | Not a chat model. Add a free Tavily https://www.tavily.com/ key to give the coach web-search capability. |
+
+### Using Ollama (free testing)
+
+Ollama is the recommended free way to try the coach. Two requirements — **both** are needed:
+
+1. **Install Ollama on your computer** — download it from <https://ollama.com/download>.
+
+2. **Create an API key** at <https://ollama.com/settings/keys> and paste it into the AI panel.
+
+**Pick a model that supports tool calling and multiple languages** — the ai coach relies on
+both. Recommended models:
+
+- `nemotron-3-super`
+- `qwen3-coder-next`
+
+Avoid tiny/instruct-only models (e.g. small Gemma variants): they tend to ignore tool calls, so proposals won't appear.
+
+### Web search
+
+Web search is optional and provided by **Tavily**. Add a Tavily https://www.tavily.com/ key in the AI panel to
+let the coach look things up; without it the coach still works but cannot browse the web.
+
+For implementation details (provider abstraction, streaming, proposal lifecycle, prompts)
+see `docs/ai-integration.md`, `docs/ai-configuration.md`, and `docs/ai-testing.md`.
+
+---
+
 ## Tests: how to run and what exists
 
 ### Run tests locally
@@ -329,6 +378,13 @@ From `backend/` (backend tests):
 ```bash
 cd backend
 sh ./mvnw test
+```
+
+Python E2E tests (run against a running backend + real PostgreSQL):
+
+```bash
+pip install -r tests-e2e/requirements.txt
+SPIRA_BASE_URL=http://localhost:8080 pytest tests-e2e/ -v
 ```
 
 Windows equivalents:
@@ -355,16 +411,36 @@ cd backend
 - `backend/src/test/java/com/spiramindscape/backend/goal/GoalServiceTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/goal/RealityServiceTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/goal/EntityTimestampTest.java`
+- `backend/src/test/java/com/spiramindscape/backend/ai/crypto/EncryptionServiceTest.java` — AI key encryption (AES-256)
+- `backend/src/test/java/com/spiramindscape/backend/ai/safety/SafetyServiceTest.java` — AI safety/boundary checks
 
 ### Backend GraphQL integration/contract test files (current)
 
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalCreationIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalWorkspaceIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalConfidenceIntegrationTest.java`
+- `backend/src/test/java/com/spiramindscape/backend/graphql/GoalListIntegrationTest.java`
+- `backend/src/test/java/com/spiramindscape/backend/graphql/GoalIsolationIntegrationTest.java`
+- `backend/src/test/java/com/spiramindscape/backend/graphql/GoalCascadeDeleteIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/RealityIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/OptionIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/TargetIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/ResourceIntegrationTest.java`
+
+### Python E2E test files (current)
+
+Black-box tests that drive a running backend over GraphQL against a real PostgreSQL
+(no test profile / H2) — this is what production actually runs, so Flyway migrations
+execute end-to-end.
+
+- `tests-e2e/test_health.py`
+- `tests-e2e/test_goals_e2e.py`
+- `tests-e2e/test_targets_e2e.py`
+- `tests-e2e/test_progress_e2e.py`
+- `tests-e2e/test_reality_e2e.py`
+- `tests-e2e/test_options_e2e.py`
+- `tests-e2e/test_resources_e2e.py`
+- `tests-e2e/test_error_envelope.py`
 
 ### Test structure and conventions 
 
@@ -372,6 +448,12 @@ cd backend
 - Integration tests run with Spring Boot + GraphQL tester and test the full flow (GraphQL -> service -> persistence -> response).
 - Many integration tests use AAA comments (`Arrange / Act / Assert`) and `@DisplayName`.
 - Many error-path tests verify both message and error classification (for example `ValidationError` or `NOT_FOUND`).
+- **Boundary tests bind to the production constant — no magic numbers.** A test for a
+  length/size limit never hardcodes the number; it derives the boundary values and the
+  expected message from the single source of truth (e.g. `GoalService.MAX_GOAL_TITLE_LENGTH`,
+  `ResourceService.MAX_RESOURCE_LABEL_LENGTH`). If the limit changes, the tests follow
+  automatically and can never silently disagree with production. Full rationale and the
+  do/don't example are in `docs/testing-guide.md` → *Convention: bind boundary tests to the production constant*.
 
 - `@DisplayName` and parameterized tests are both first-class patterns in this suite.
   - Parameterized tests (`@ParameterizedTest`) are used when one behavior must be validated across multiple inputs without duplicating test code.
@@ -402,6 +484,9 @@ cd backend
 - Jakarta Bean Validation (`jakarta.validation`)
 - Mockito (for unit/service tests, e.g. `TargetServiceTest`)
 - Vitest (frontend tests)
+- pytest + requests (Python E2E tests in `tests-e2e/`)
+- JaCoCo (backend line-coverage report, summarized in CI)
+- Allure (aggregated HTML report across backend + E2E)
 
 ### CI (GitHub Actions) for tests
 
@@ -416,7 +501,7 @@ When it runs:
 - manually via `workflow_dispatch`
 - every night by schedule (`0 3 * * *`, UTC)
 
-What it runs:
+What it runs (four jobs):
 
 1. **Frontend tests and build**
    - `npm ci`
@@ -424,10 +509,20 @@ What it runs:
    - `npm run build`
 2. **Backend tests**
    - `cd backend && sh ./mvnw test`
-3. **Artifacts**
+   - prints a JaCoCo line-coverage summary
+3. **Python E2E tests** (`needs: backend`)
+   - spins up a real **PostgreSQL 16** service container
+   - builds and starts the backend JAR against it (Flyway migrations run end-to-end)
+   - waits for `/graphql` to respond, then runs `pytest tests-e2e/`
+4. **Allure report** (`needs: backend, e2e`, runs `always`)
+   - merges backend + E2E Allure results into one HTML report
+
+Artifacts produced:
+
+   - `backend-jacoco-report` (HTML/CSV line-coverage report)
    - `backend-surefire-reports` (raw Maven test reports)
-   - `backend-allure-results` (raw Allure input files)
-   - `allure-report` (generated HTML Allure report)
+   - `backend-allure-results` / `e2e-allure-results` (raw Allure input files)
+   - `allure-report` (generated HTML Allure report covering backend + E2E)
 
 Allure generation:
 
@@ -439,6 +534,7 @@ How to know tests passed even if Allure HTML report is unavailable:
 1. Open the workflow run and check job conclusions:
    - `Frontend tests and build` must be **success**
    - `Backend tests` must be **success**
+   - `Python E2E tests` must be **success**
 2. Open backend job steps and verify `Run backend tests` is **success**.
 3. Download `backend-surefire-reports` artifact and inspect XML results (`failures=\"0\"`, `errors=\"0\"`).
 
@@ -464,12 +560,25 @@ If Allure report job fails but frontend/backend jobs are green, test execution s
 
 ### `docs/` currently contains
 
+Testing & tooling:
+
 - `docs/testing-guide.md`
+- `docs/frontend-testing-guide.md`
 - `docs/unit-vs-integration-tests.md`
+- `docs/test-coverage-report.md`
+- `docs/test-audit-report.md`
+- `docs/github-actions-ci.md`
 - `docs/flyway-guide.md`
 - `docs/graphiql-guide.md`
-- `docs/test-coverage-report.md`
 - `docs/linting-guide.md`
+- `docs/deploy-oracle-vm.md`
+
+AI:
+
+- `docs/ai-configuration.md`
+- `docs/ai-integration.md`
+- `docs/ai-testing.md`
+- `docs/ai-mini-apps-plan.md`
 
 ### `specs/` currently contains
 
@@ -481,7 +590,4 @@ If Allure report job fails but frontend/backend jobs are green, test execution s
 - `specs/2026-05-08-backend-test-coverage/{requirements.md,plan.md,validation.md}`
 - `specs/2026-05-08-frontend-backend-integration/{requirements.md,plan.md,validation.md}`
 
-Also, GROW source documents are in `grow/`:
 
-- `grow/Coaching for Performance.docx`
-- `grow/Coach the Person.docx`

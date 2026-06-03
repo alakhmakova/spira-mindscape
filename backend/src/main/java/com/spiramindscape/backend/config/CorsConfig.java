@@ -32,10 +32,34 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins(allowedOrigins)
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+        // allowedOriginPatterns (not allowedOrigins) so values may contain
+        // wildcards — e.g. http://192.168.*:* lets a phone on the LAN reach the
+        // Vite dev proxy, which forwards the device's Origin header to us.
+        // allowCredentials(true) is required for the OAuth session cookie + CSRF
+        // header, and is only legal alongside patterns (never with a bare "*").
+        registry.addMapping("/graphql")
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "OPTIONS")
                 .allowedHeaders("*")
-                .allowCredentials(true);   // required for session cookies + CSRF header
+                .allowCredentials(true);
+
+        registry.addMapping("/api/**")
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+
+        // OAuth2 login + redirect endpoints (Authorization Code flow).
+        registry.addMapping("/oauth2/**")
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+
+        registry.addMapping("/login/**")
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
     }
 }

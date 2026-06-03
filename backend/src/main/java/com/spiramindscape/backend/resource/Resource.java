@@ -24,8 +24,8 @@ public class Resource {
     @Column(nullable = false, length = 20)
     private String type;
 
-    @Size(max = 20)
-    @Column(length = 20)
+    @Size(max = 200)
+    @Column(length = 200)
     private String title;
 
     @Size(max = 50000)
@@ -39,12 +39,15 @@ public class Resource {
     @Column(length = 100)
     private String mime;
 
-    @Size(max = 50000)
+    // Base64 data URL for file/image resources. Size is enforced in
+    // ResourceService (5 MB on the decoded bytes) — the authoritative, byte-based
+    // check. No @Size here: a char-count bound can't express a byte limit and the
+    // column is TEXT (unbounded in Postgres).
     @Column(name = "data_url", columnDefinition = "TEXT")
     private String dataUrl;
 
-    @Size(max = 20)
-    @Column(length = 20)
+    @Size(max = 200)
+    @Column(length = 200)
     private String name;
 
     @Column(length = 200)
