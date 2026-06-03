@@ -611,12 +611,12 @@ function PreviewBody({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
-                    const copied = await openInGoogleDocs(resource.body);
-                    toast(
-                      copied
-                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
-                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
-                    );
+                    try {
+                      await openInGoogleDocs(resource.body, resource.title);
+                      toast.success("Created in Google Docs — opening it now");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Couldn't create the Google Doc");
+                    }
                   }}
                 >
                   Open in Google Docs
@@ -951,12 +951,12 @@ function MobileNoteBody({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
-                    const ok = await openInGoogleDocs(body);
-                    toast(
-                      ok
-                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
-                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
-                    );
+                    try {
+                      await openInGoogleDocs(body, title);
+                      toast.success("Created in Google Docs — opening it now");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Couldn't create the Google Doc");
+                    }
                   }}
                 >
                   Open in Google Docs

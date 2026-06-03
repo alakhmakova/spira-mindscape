@@ -8,7 +8,12 @@
  *          format is legacy Word-HTML (.doc) rather than OOXML (.docx) so we
  *          avoid bundling a heavyweight docx generator.
  * - pdf  — printed via the browser (Save as PDF) for crisp, selectable text.
+ *
+ * Google Docs export is different: it calls the backend Drive integration to
+ * create a real document (see {@link openInGoogleDocs}).
  */
+
+import { getCsrfToken } from "@/lib/spira/auth";
 
 function escapeHtml(s: string): string {
   const d = document.createElement("div");
@@ -249,38 +254,56 @@ export function printNotePdf(title: string, html: string): void {
   }, 250);
 }
 
-const GOOGLE_DOCS_CREATE_URL = "https://docs.google.com/document/create";
-
 /**
- * Copies the note's formatted HTML to the clipboard and opens a new blank
- * Google Doc, so the user pastes it (Ctrl/Cmd+V) with formatting preserved.
+ * Creates a real Google Doc from the note via the backend Drive integration and
+ * opens it in a new tab. The backend ({@code POST /api/notes/google-doc}) uses
+ * the user's stored Google refresh token to call the Drive API and convert the
+ * note's HTML into an editable document; it returns the document's `webViewLink`.
  *
- * There is no Google URL that accepts document content, and true auto-creation
- * would need the Drive API + OAuth — so this "copy + open + paste" flow is the
- * practical zero-integration option. Returns whether the clipboard copy
- * succeeded (it needs a secure context — localhost/https; it will not work over
- * a plain-http LAN address).
+ * Requires the user to be signed in with Google and to have granted Drive access
+ * (the `drive.file` scope). On failure the promise rejects so the caller can show
+ * an error toast.
+ *
+ * @returns the created document's shareable link
  */
-export async function openInGoogleDocs(html: string): Promise<boolean> {
-  const prepared = prepareExportHtml(html);
-  let copied = false;
-  try {
-    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          "text/html": new Blob([prepared], { type: "text/html" }),
-          "text/plain": new Blob([htmlToPlainText(html)], { type: "text/plain" }),
-        }),
-      ]);
-      copied = true;
-    } else if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(htmlToPlainText(html));
-      copied = true;
-    }
-  } catch {
-    copied = false;
+/**
+ * Network call only (no DOM): POST the note to the backend Drive integration and
+ * return the created document's link. Sends the session cookie (`credentials`) and
+ * the CSRF token, as every mutating `/api` call must. Extracted from
+ * {@link openInGoogleDocs} so it can be unit-tested without a browser DOM.
+ */
+export async function createGoogleDocFromHtml(title: string, preparedHtml: string): Promise<string> {
+  const res = await fetch("/api/notes/google-doc", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken(),
+    },
+    body: JSON.stringify({ title, html: preparedHtml }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(body || `Failed to create Google Doc (${res.status})`);
   }
-  // Open after copying so the document is still focused while we write the clipboard.
-  window.open(GOOGLE_DOCS_CREATE_URL, "_blank", "noopener,noreferrer");
-  return copied;
+  const { webViewLink } = (await res.json()) as { webViewLink: string };
+  return webViewLink;
+}
+
+export async function openInGoogleDocs(html: string, title?: string): Promise<string> {
+  const prepared = prepareExportHtml(html);
+
+  // Reserve a tab synchronously inside the user-gesture so the browser doesn't
+  // block the popup after the async request resolves; we set its URL afterwards.
+  const reserved = window.open("", "_blank");
+
+  try {
+    const webViewLink = await createGoogleDocFromHtml(title ?? "Spira note", prepared);
+    if (reserved) reserved.location.href = webViewLink;
+    else window.open(webViewLink, "_blank", "noopener,noreferrer");
+    return webViewLink;
+  } catch (e) {
+    reserved?.close();
+    throw e;
+  }
 }
