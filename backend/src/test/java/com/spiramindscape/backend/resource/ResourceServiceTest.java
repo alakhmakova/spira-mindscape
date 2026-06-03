@@ -664,7 +664,7 @@ class ResourceServiceTest {
     }
 
     @Test
-    void rejectsResourceTitleLongerThanTwentyCharacters() {
+    void rejectsResourceTitleLongerThanLabelLimit() {
         Goal goal = goal(1L);
         when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
 
@@ -681,13 +681,14 @@ class ResourceServiceTest {
                 null
         )))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Note resource title must be 20 characters or fewer");
+                .hasMessageContaining("Note resource title must be "
+                        + ResourceService.MAX_RESOURCE_LABEL_LENGTH + " characters or fewer");
 
         verify(resourceRepository, never()).save(any(Resource.class));
     }
 
     @Test
-    void rejectsEmailNameLongerThanTwentyCharacters() {
+    void rejectsEmailNameLongerThanLabelLimit() {
         Goal goal = goal(1L);
         when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
 
@@ -704,7 +705,8 @@ class ResourceServiceTest {
                 null
         )))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Email resource name must be 20 characters or fewer");
+                .hasMessageContaining("Email resource name must be "
+                        + ResourceService.MAX_RESOURCE_LABEL_LENGTH + " characters or fewer");
 
         verify(resourceRepository, never()).save(any(Resource.class));
     }

@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.graphql;
 
 import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.RealityItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -595,7 +596,7 @@ class RealityIntegrationTest {
     @DisplayName("Returns ValidationError when creating action with oversized text")
     void returnsErrorWhenCreatingActionWithOversizedText() {
         // Arrange
-        String oversizedText = "A".repeat(501);
+        String oversizedText = "A".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + 1);
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
@@ -613,7 +614,7 @@ class RealityIntegrationTest {
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                error.getMessage().contains("Reality item text must be " + RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + " characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
     }
 
@@ -621,7 +622,7 @@ class RealityIntegrationTest {
     @DisplayName("Returns ValidationError when creating obstacle with oversized text")
     void returnsErrorWhenCreatingObstacleWithOversizedText() {
         // Arrange
-        String oversizedText = "B".repeat(501);
+        String oversizedText = "B".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + 1);
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
@@ -639,7 +640,7 @@ class RealityIntegrationTest {
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                error.getMessage().contains("Reality item text must be " + RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + " characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
     }
 
@@ -647,7 +648,7 @@ class RealityIntegrationTest {
     @DisplayName("Accepts action text at maximum length")
     void acceptsActionTextAtMaximumLength() {
         // Arrange
-        String maxLengthText = "C".repeat(500);
+        String maxLengthText = "C".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH);
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
@@ -670,7 +671,7 @@ class RealityIntegrationTest {
     @DisplayName("Accepts obstacle text at maximum length")
     void acceptsObstacleTextAtMaximumLength() {
         // Arrange
-        String maxLengthText = "D".repeat(500);
+        String maxLengthText = "D".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH);
 
         // Act
         GraphQlTester.Response response = graphQlTester.document("""
@@ -828,7 +829,7 @@ class RealityIntegrationTest {
     @Test
     @DisplayName("Accepts action text at maximum length on update")
     void acceptsActionTextAtMaximumLengthOnUpdate() {
-        String maxText = "E".repeat(500);
+        String maxText = "E".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH);
         String actionId = graphQlTester.document("""
                         mutation($goalId: ID!, $text: String!) {
                           addRealityItem(goalId: $goalId, kind: "actions", text: $text) {
@@ -858,7 +859,7 @@ class RealityIntegrationTest {
     @Test
     @DisplayName("Accepts obstacle text at maximum length on update")
     void acceptsObstacleTextAtMaximumLengthOnUpdate() {
-        String maxText = "F".repeat(500);
+        String maxText = "F".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH);
         String obstacleId = graphQlTester.document("""
                         mutation($goalId: ID!, $text: String!) {
                           addRealityItem(goalId: $goalId, kind: "obstacles", text: $text) {
@@ -909,13 +910,13 @@ class RealityIntegrationTest {
                         """)
                 .variable("goalId", goalId)
                 .variable("itemId", actionId)
-                .variable("text", "A".repeat(501))
+                .variable("text", "A".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + 1))
                 .execute();
 
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                error.getMessage().contains("Reality item text must be " + RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + " characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
 
         graphQlTester.document("""
@@ -952,13 +953,13 @@ class RealityIntegrationTest {
                         """)
                 .variable("goalId", goalId)
                 .variable("itemId", obstacleId)
-                .variable("text", "B".repeat(501))
+                .variable("text", "B".repeat(RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + 1))
                 .execute();
 
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Reality item text must be 500 characters or fewer") &&
+                                error.getMessage().contains("Reality item text must be " + RealityItem.MAX_REALITY_ITEM_TEXT_LENGTH + " characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
 
         graphQlTester.document("""

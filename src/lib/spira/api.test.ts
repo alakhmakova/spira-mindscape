@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SpiraApiError, spiraApi } from "./api";
 
+/** Extract the parsed request body from the first call of a fetch mock. */
+function callBody(mock: ReturnType<typeof vi.fn>) {
+  return JSON.parse(
+    (mock.mock.calls[0] as [unknown, { body: string }])[1].body,
+  ) as { variables: { input: Record<string, unknown> } };
+}
+
 describe("spiraApi errors", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -115,7 +122,7 @@ describe("spiraApi errors", () => {
       achievedAt: null,
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body = callBody(fetchMock);
     expect(body.variables.input).toMatchObject({
       title: "Goal",
       deadline: null,
@@ -160,7 +167,7 @@ describe("spiraApi errors", () => {
       achievedAt: undefined,
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body = callBody(fetchMock);
     expect(body.variables.input).toMatchObject({
       title: "Book session",
       deadline: null,

@@ -392,14 +392,187 @@ For example, the AI can generate a tool from approved primitives:
 
 This keeps the system flexible while preserving safety, testability, and maintainability.
 
+## AI Provider System: Bring Your Own Key (BYOK)
+
+Spira does not manage AI costs centrally. Users bring their own API keys. Supported providers at launch:
+
+- **Anthropic** — claude-sonnet-4, claude-opus-4
+- **OpenAI** — gpt-4o, o1
+- **Mistral** — mistral-large, mistral-medium
+
+### Key Storage
+
+API keys must be:
+
+- encrypted at rest in the database (AES-256 or equivalent)
+- never logged, never returned to the frontend after initial save
+- masked in the UI (e.g. `sk-ant-••••••1234`)
+- associated with the user account, not individual goals
+
+Users may store keys for multiple providers simultaneously and switch the active provider in account settings. Only one provider is active at a time for AI calls.
+
+### Provider Abstraction Layer
+
+The AI orchestration layer must abstract over all providers. GROW sessions, chat, and proposals must not depend on which provider is active.
+
+```
+AIProvider (interface)
+  ├── AnthropicProvider
+  ├── OpenAIProvider
+  └── MistralProvider
+```
+
+Each implementation handles authentication headers, request format, response parsing, streaming, and error normalization into a common `AIError` type.
+
+### Streaming
+
+AI responses must stream token-by-token to the frontend. Waiting for a complete response breaks the coaching atmosphere. Use server-sent events (SSE) or WebSocket streaming from the provider through the Spring Boot backend to the frontend.
+
+### Context Window
+
+Design to the lowest common denominator: 128 000 tokens (OpenAI and Mistral limit). Claude supports 200 000 but the system must work across all providers.
+
+---
+
+## Coaching Knowledge Retrieval (RAG)
+
+The coaching source books (`grow/Coaching for Performance.docx` and `grow/Coach the Person.docx`) must be indexed and made retrievable at query time. Including the full text in every AI request would exceed the context window of OpenAI and Mistral and waste context on irrelevant material.
+
+### Storage: pgvector
+
+Use the `pgvector` PostgreSQL extension — no separate vector database is needed.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE coaching_chunks (
+    id          BIGSERIAL PRIMARY KEY,
+    source      TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    content     TEXT NOT NULL,
+    embedding   vector(1536)
+);
+
+CREATE INDEX ON coaching_chunks USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 50);
+```
+
+### Chunking
+
+Split the books into chunks of 400–600 tokens with 50–80 token overlap. Prefer paragraph boundaries. Index once at setup time.
+
+### Embedding Model
+
+Use OpenAI `text-embedding-3-small` (1536 dimensions) for indexing. If the user has no OpenAI key, use Mistral `mistral-embed` (1024 dimensions). Embeddings are computed once at index time.
+
+### Query-Time Retrieval
+
+At each AI request, embed the user's message, retrieve the 3–5 most similar chunks from `coaching_chunks`, and inject them into the system prompt. This grounds coaching responses in real source material without bloating every request.
+
+---
+
+## AI Memory (Goal-Level)
+
+Each goal stores a single `ai_memory TEXT` field. This is a living document that represents what the AI knows about this goal and the user's progress on it.
+
+### How it is used
+
+The `ai_memory` block is included in the context of every AI request for that goal — both regular chat and GROW sessions. The AI always starts with this context rather than re-deriving it from conversation history.
+
+### How it grows
+
+When a GROW session ends and the user approves saving, the AI merges the previous memory block with new insights and writes an updated version. Meaningful exchanges in regular chat may also update the memory block, either explicitly (user asks to save something) or automatically for clear factual goal details.
+
+### Memory compression
+
+The memory block must not grow unboundedly. Every few updates the AI performs a compression pass — removing stale context and retaining the essence. This is invisible to the user.
+
+### Schema addition
+
+```sql
+ALTER TABLE goals ADD COLUMN ai_memory TEXT;
+```
+
+---
+
+## AI Chat Surfaces
+
+Spira has two distinct AI chat surfaces. They share the same provider and streaming infrastructure but differ in context and capabilities.
+
+### Global Chat (All Goals page)
+
+The global chat has no active goal. The AI sees all goals belonging to the user.
+
+Appropriate use cases: daily prioritization, cross-goal overview, deciding what to focus on, reflecting on overall progress.
+
+The global chat AI can:
+
+- discuss and compare all goals
+- help the user prioritize
+- propose creating a new goal (requires user approval)
+- propose creating a global personal tool not attached to any goal (requires user approval)
+- suggest navigating to a specific goal
+
+The global chat AI cannot:
+
+- start a GROW session (GROW is always goal-scoped)
+- propose changes to existing goal data (those must happen inside the goal page)
+- attach proposals to a goal without the user opening that goal
+
+### Goal-Scoped Chat (Goal page)
+
+The goal chat has one active goal. The AI sees the full goal context: title, description, reality, options, targets, resources, and `ai_memory`.
+
+The goal chat AI can do everything the global chat can, plus:
+
+- propose targets, options, resource notes, and goal edits for the active goal
+- start a GROW session on this goal
+- create goal-specific mini tools attached to this goal
+
+All proposals are attached to the active goal and go through the approval workflow.
+
+---
+
+## Personal Tools (AI-Created Widgets)
+
+Spira supports two kinds of AI-created tools:
+
+**Goal-scoped tools** are created in the context of a specific goal when the standard goal interface is not enough.
+
+**Global personal tools** are not tied to any goal. They are created for personal life management needs that exist outside the goal model (e.g. a period tracker, a habit log, a trash collection reminder).
+
+### Placement — user controlled
+
+The user decides where each tool appears. Options:
+
+- **Goal page** — shown on the specific goal's page (goal-scoped tools only)
+- **All Goals page** — pinned as a persistent widget for things the user wants to keep visible at all times
+- **Tools page** — a dedicated page collecting all created tools; the default for tools needed occasionally
+
+A tool may appear in more than one location. Placement is a per-tool user setting.
+
+### Tool generation
+
+Tools are assembled from approved UI primitives (numeric input, date input, checkbox, table, chart, progress display, text note, calendar log). The AI proposes a schema; the user approves before the tool is created. The frontend renders all tools through a single generic renderer.
+
+### Data storage
+
+```
+tool_definitions   — schema, primitive config, placement settings, goal association (nullable)
+tool_records       — user-entered data rows per tool instance
+```
+
+No tool data lives only in generated frontend code.
+
+---
+
 ## AI Agent Integration
 
-The AI must be seamless. The user should not manually switch between coach and execution modes.
+Spira's AI has two clearly separated modes. There is no automatic posture switching by context.
 
-The AI chooses the right posture based on context:
+**Regular goal chat** is the default mode. The AI acts as an execution assistant — helping the user move the goal forward through research, drafts, target proposals, option analysis, next steps, and resource creation. Regular chat is always on. The user never selects it.
 
-- coaching posture for clarity, reflection, prioritization, blockers, confidence, and GROW questions
-- execution posture for research, drafts, target proposals, resource creation, comparisons, and next actions
+**GROW sessions** are a separate mode, explicitly started by the user via a dedicated "Start GROW session" button on the goal page. In a GROW session, the AI stays in coaching mode for the entire duration. If the user asks for execution work during a session, the AI acknowledges the request and offers to note it as a next action to pursue after the session ends.
 
 The AI has access to:
 
@@ -465,100 +638,44 @@ It should persist:
 - user id
 - selected duration: 15, 30, 45, or 60 minutes
 - started at
+- closing_starts_at (started_at + duration × 0.80)
 - scheduled end time
 - ended at
-- current phase
+- status: ACTIVE | CLOSING | COMPLETE | ABANDONED
 - transcript
-- phase summaries
-- insights
-- decisions
-- proposed next actions
-- proposed target changes
-- completion state
+- ai_memory (nullable — compressed context block, saved only if user approves at end)
+- proposals (approval-required changes to goal data)
 
-Session phases:
+The backend tracks time state, not coaching phases. At 80% of session duration, the backend transitions status to CLOSING and signals the AI to begin guiding the conversation toward a natural conclusion. The AI does not announce this transition to the user.
 
-- Goal
-- Reality
-- Options
-- Will
-- Summary
-- Complete
+### Session Opening and Closing
 
-The backend should store and advance the phase. The AI should receive phase-specific instructions.
+At the start of a GROW session:
 
-### Phase Behavior
+- The AI acknowledges that the user has chosen to spend time on this goal
+- It opens with an open question about where the user would like to start
+- It does not announce the GROW framework or any phase names
 
-### Timeboxing
+During the session:
 
-When starting a GROW session, the user chooses a duration:
+- The AI conducts a real coaching conversation
+- GROW structure (Goal, Reality, Options, Will) may naturally emerge from the conversation
+- The AI never announces phases or leads the user through a checklist
+- The AI asks one good question at a time and follows the user's thinking
 
-- 15 minutes
-- 30 minutes
-- 45 minutes
-- 60 minutes
+At 80% of session duration, the backend transitions to CLOSING status:
 
-The AI must treat this as a real session boundary.
+- The AI shifts toward integrative, action-oriented questioning without announcing it
+- It guides the conversation toward a natural conclusion: consolidating what has been clarified, naming decisions, identifying next steps
+- It does not cut off the user abruptly
 
-At the beginning, the AI should:
+At session end:
 
-- acknowledge the selected duration
-- set a clear focus for the session
-- explain that the session will end with a concise summary and next steps
-
-During the session, the AI should:
-
-- pace the depth of questions according to the selected duration
-- avoid opening too many threads late in the session
-- move toward Will and Summary as time runs out
-
-At the end, the AI should:
-
-- close gracefully
-- summarize what was clarified
-- name decisions and insights
-- list proposed next steps
-- create approval-ready proposals where useful
-- avoid abruptly cutting off the user
-
-The backend should track session start, scheduled end, and actual end. The frontend should show enough timing context for the user to understand the session boundary without making the experience feel stressful.
-
-Goal phase:
-
-- clarify the desired outcome
-- improve specificity
-- check ownership and importance
-- avoid premature advice
-
-Reality phase:
-
-- explore current situation
-- identify actions already taken
-- identify obstacles
-- surface assumptions and blockers
-- check confidence where useful
-
-Options phase:
-
-- help generate possible strategies
-- avoid judging too early
-- compare tradeoffs
-- support creative alternatives
-
-Will phase:
-
-- convert insight into commitment
-- define next actions
-- suggest targets or checklist items
-- confirm deadlines where useful
-- check confidence in the plan
-
-Summary phase:
-
-- summarize what was clarified
-- list decisions
-- list proposed next actions
-- create approval-ready proposals for goal updates
+- The AI wraps up gracefully
+- It asks the user whether to save the session memory
+- If yes: the AI memory block and any proposals are persisted
+- If no: memory is discarded
+- Proposed changes to goal data go through the standard approval workflow
 
 ### Response Rules
 
@@ -567,9 +684,8 @@ During a GROW session, the AI should:
 - ask focused coaching questions
 - keep the conversation tied to the selected goal
 - avoid generic motivational monologues
-- avoid solving too early before Reality and Options are explored
-- avoid creating targets before the Will phase unless the user explicitly exits the session
-- offer to pause or exit the session if the user asks for execution work instead
+- avoid giving unsolicited advice or solving problems for the user
+- offer to note execution requests as next actions to pursue after the session ends
 - maintain safety and professional-boundary disclaimers where needed
 
 ### Approval Rules
@@ -591,12 +707,13 @@ The user must approve before changes are applied.
 GROW session implementation must be tested with deterministic scenarios:
 
 - session starts from a specific goal
-- phase order is preserved
-- AI does not skip directly to advice
-- target proposals appear in the Will or Summary phase
-- user can pause or exit the session
+- status transitions from ACTIVE to CLOSING at 80% of duration
+- status transitions to COMPLETE when session ends
+- AI does not give unsolicited advice or jump directly to solutions
+- session memory is saved only when user approves
+- memory is discarded when user declines
+- proposed changes to goal data go through the approval workflow
 - unsafe goals or unsafe requests are refused or redirected
-- summaries and proposals are persisted
 - approved proposals mutate goal data correctly
 
 ## Backend Responsibilities
@@ -610,10 +727,19 @@ The backend must provide:
 - object storage integration
 - file upload/download flow
 - text extraction pipeline for readable resources
+- BYOK API key storage (encrypted)
+- provider abstraction layer (Anthropic, OpenAI, Mistral)
+- streaming AI responses (SSE or WebSocket)
+- coaching knowledge index (pgvector, one-time setup)
+- coaching chunk retrieval at query time
+- goal-level ai_memory field persistence and compression
+- global AI sessions (All Goals chat)
 - goal-scoped AI sessions
 - GROW session state and phase persistence
 - AI proposal and approval workflow
-- AI-created mini tool definitions and tool data
+- AI-created mini tool definitions and tool data (goal-scoped and global)
+- tool placement settings per tool
+- web search capability for execution-mode AI requests
 - audit log for important AI actions
 - notification/reminder system
 - safety checks for AI-assisted actions
@@ -628,13 +754,16 @@ GraphQL should expose structured operations for:
 - options
 - targets
 - confidence updates
-- AI sessions
+- AI sessions (global and goal-scoped)
 - GROW sessions
 - AI messages
 - AI proposals
 - approvals/rejections
 - goal-specific mini tools
+- global personal tools
 - mini tool data records
+- tool placement settings
+- BYOK provider key management
 - notifications
 
 GraphQL should not be used to upload large files directly as base64 payloads.
