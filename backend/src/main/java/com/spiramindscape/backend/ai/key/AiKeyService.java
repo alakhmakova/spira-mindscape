@@ -4,6 +4,7 @@ import com.spiramindscape.backend.ai.crypto.EncryptionService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
 import com.spiramindscape.backend.ai.provider.ProviderType;
+import com.spiramindscape.backend.auth.CurrentUserProvider;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,25 +20,22 @@ import java.util.Optional;
  * decrypted form through the public API — only the {@link #getKey} method
  * (used internally by the AI chat service) decrypts them.
  *
- * <p>TODO: Replace {@code currentUserId()} stub with real authenticated user
- * lookup once Google OAuth is merged from the {@code testing/e2e} branch.
+ * <p>All keys are scoped to the authenticated user resolved from the Spring
+ * Security context via {@link CurrentUserProvider}.
  */
 @Service
 @Transactional
 public class AiKeyService {
 
-    /**
-     * Development stub user ID used until authentication is available.
-     * All stored keys belong to this user in the {@code feature/ai} branch.
-     */
-    public static final Long DEV_USER_ID = 1L;
-
     private final AiApiKeyRepository repo;
     private final EncryptionService encryption;
+    private final CurrentUserProvider currentUserProvider;
 
-    public AiKeyService(AiApiKeyRepository repo, EncryptionService encryption) {
+    public AiKeyService(AiApiKeyRepository repo, EncryptionService encryption,
+                        CurrentUserProvider currentUserProvider) {
         this.repo = repo;
         this.encryption = encryption;
+        this.currentUserProvider = currentUserProvider;
     }
 
     /** Save or update the API key for a provider. Existing key is overwritten. */
@@ -103,11 +101,9 @@ public class AiKeyService {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
-    /**
-     * TODO: Replace with {@code SecurityContextHolder} lookup once auth is merged.
-     */
+    /** The id of the authenticated user, used to scope every key operation. */
     private Long currentUserId() {
-        return DEV_USER_ID;
+        return currentUserProvider.getCurrentUser().getId();
     }
 
     private static String buildHint(String apiKey) {

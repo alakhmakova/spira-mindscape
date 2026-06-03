@@ -1,4 +1,15 @@
+import { getCsrfToken } from "../../lib/spira/auth";
+
 const AI_BASE = "/api/ai";
+
+/**
+ * Headers for a mutating request (POST/PATCH/DELETE). The backend enforces CSRF
+ * via the double-submit cookie pattern: echo the readable XSRF-TOKEN cookie in
+ * the X-XSRF-TOKEN header, or Spring Security rejects the request with 403.
+ */
+function mutationHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { "X-XSRF-TOKEN": getCsrfToken(), ...extra };
+}
 
 export type HistoryEntry = { role: "user" | "assistant"; content: string };
 
@@ -21,7 +32,8 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
   try {
     response = await fetch(`${AI_BASE}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         goalId: goalId ? parseInt(goalId, 10) : null,
         message,
@@ -123,7 +135,8 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
 export async function saveApiKey(provider: string, apiKey: string, model?: string) {
   const res = await fetch(`${AI_BASE}/keys`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: mutationHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ provider, apiKey, model: model ?? null }),
   });
   if (!res.ok) {
@@ -134,13 +147,13 @@ export async function saveApiKey(provider: string, apiKey: string, model?: strin
 }
 
 export async function listApiKeys() {
-  const res = await fetch(`${AI_BASE}/keys`);
+  const res = await fetch(`${AI_BASE}/keys`, { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to list keys: ${res.status}`);
   return res.json();
 }
 
 export async function fetchProviderModels(provider: string): Promise<string[]> {
-  const res = await fetch(`${AI_BASE}/keys/${provider}/models`);
+  const res = await fetch(`${AI_BASE}/keys/${provider}/models`, { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
   return res.json();
 }
@@ -148,7 +161,8 @@ export async function fetchProviderModels(provider: string): Promise<string[]> {
 export async function updateKeyModel(provider: string, model: string) {
   const res = await fetch(`${AI_BASE}/keys/${provider}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: mutationHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ model }),
   });
   if (!res.ok) {
@@ -172,17 +186,25 @@ export type ServerProposal = {
 
 /** Fetch pending proposals for a goal (used to restore cards after a reload). */
 export async function listGoalProposals(goalId: string): Promise<ServerProposal[]> {
-  const res = await fetch(`${AI_BASE}/proposals/goal/${goalId}`);
+  const res = await fetch(`${AI_BASE}/proposals/goal/${goalId}`, { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to load proposals: ${res.status}`);
   return res.json();
 }
 
 /** Mark a proposal approved on the server. Best-effort: caller ignores failures. */
 export async function approveProposal(id: number): Promise<void> {
-  await fetch(`${AI_BASE}/proposals/${id}/approve`, { method: "POST" });
+  await fetch(`${AI_BASE}/proposals/${id}/approve`, {
+    method: "POST",
+    credentials: "include",
+    headers: mutationHeaders(),
+  });
 }
 
 /** Mark a proposal rejected on the server. Best-effort: caller ignores failures. */
 export async function rejectProposal(id: number): Promise<void> {
-  await fetch(`${AI_BASE}/proposals/${id}/reject`, { method: "POST" });
+  await fetch(`${AI_BASE}/proposals/${id}/reject`, {
+    method: "POST",
+    credentials: "include",
+    headers: mutationHeaders(),
+  });
 }
