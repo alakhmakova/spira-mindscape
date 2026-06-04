@@ -125,23 +125,25 @@ jobs:
           sh ./mvnw package -DskipTests -q
 
       # Start against a real PostgreSQL so Flyway migrations run end-to-end,
-      # matching production. The bundled jar has no test profile, so we pass the
-      # database connection through the same env vars production uses.
+      # matching production. Run under the CI-only 'e2e' profile: it enables the
+      # X-E2E-Auth test login (the app requires Google auth + is user-scoped) and
+      # disables CSRF. Dummy OAuth creds satisfy the (unused) Google client config.
       - name: Start backend against PostgreSQL
         run: |
           java -jar backend/target/*.jar &
           echo $! > backend.pid
         env:
+          SPRING_PROFILES_ACTIVE: e2e
           DATABASE_URL: jdbc:postgresql://localhost:5432/spira
           DATABASE_USERNAME: spira
           DATABASE_PASSWORD: spira
+          GOOGLE_CLIENT_ID: ci-e2e-dummy
+          GOOGLE_CLIENT_SECRET: ci-e2e-dummy
 
       - name: Wait for backend to be ready
         run: |
           for i in $(seq 1 30); do
-            if curl -sf -X POST http://localhost:8080/graphql \
-              -H 'Content-Type: application/json' \
-              -d '{"query":"{ __typename }"}' > /dev/null 2>&1; then
+            if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
               echo "Backend ready"
               exit 0
             fi

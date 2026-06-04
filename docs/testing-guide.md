@@ -88,12 +88,25 @@ cd backend
 
 ### E2E
 
-The E2E suite runs against a live backend. Start the backend first, then:
+The E2E suite runs against a live backend. Because the app is now **auth-gated and
+user-scoped** (see [Why the E2E tests had to be rewritten](#why-the-e2e-tests-had-to-be-rewritten)),
+the backend must run under the `e2e` Spring profile so the suite can authenticate.
+Start the backend first, then run pytest:
 
 ```powershell
+# 1. start the backend under the e2e profile (enables X-E2E-Auth test login, disables CSRF)
+cd backend
+$env:SPRING_PROFILES_ACTIVE = "e2e"
+.\mvnw.cmd spring-boot:run
+
+# 2. in a second terminal, run the suite
 cd tests-e2e
 pytest
 ```
+
+`conftest.py` sends an `X-E2E-Auth: <email>` header on every request; under the `e2e`
+profile the backend trusts it and authenticates the call as a single seeded test user.
+Without that profile every request returns `401` and the whole suite fails.
 
 By default tests target `http://localhost:8080`. Override with the environment variable:
 
@@ -542,9 +555,54 @@ They intentionally keep important user-facing contract checks at the integration
 
 The E2E suite in `tests-e2e/` fires real HTTP requests at a running backend using Python + `httpx` + `pytest`. Unlike integration tests that boot Spring in-process, these tests validate the full stack end-to-end: Docker networking, Spring Boot startup, GraphQL parsing, service logic, JPA persistence, and HTTP response encoding.
 
-**Prerequisite**: the backend must be running and reachable at `SPIRA_BASE_URL` (default: `http://localhost:8080`).
+**Prerequisite**: the backend must be running under the `e2e` Spring profile and reachable at `SPIRA_BASE_URL` (default: `http://localhost:8080`).
 
 Each test that mutates data uses the `created_goal` fixture (defined in `conftest.py`), which creates a goal before the test and deletes it after. Tests that need multiple goals create and clean up their own data.
+
+### Why the E2E tests had to be rewritten
+
+**The problem.** When Google OAuth authentication landed (the `feature/e2e-and-auth`
+branch merged the auth work in), the API stopped being anonymous. Two things changed at
+once:
+
+1. **The app became auth-gated.** Every `/graphql` and `/api/**` request now requires an
+   authenticated session, and a CSRF token is required on mutations. The existing E2E
+   tests sent plain anonymous requests, so every single one started coming back `401
+   Unauthorized` — the suite went fully red and **no Allure reports were produced**.
+2. **The app became user-scoped.** Data is now owned per `AppUser`
+   (`CurrentUserProvider.getCurrentUser()`). Even if a request somehow got through, there
+   was no user to attribute the created goals/targets to, so persistence and read-back
+   couldn't work.
+
+The catch: the authentication is **Google OAuth**, an interactive browser redirect to
+Google's consent screen. That can't run headlessly in CI (or in a plain `pytest` run) —
+there's no human to click "Allow", and we can't ship Google credentials into the test
+pipeline. So the tests couldn't just "log in".
+
+On top of that, the backend jar **wouldn't even boot** in CI anymore: Spring Security's
+Google client config requires `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, and without
+them startup failed before the E2E job could send a single request.
+
+**The fix — a CI-only `e2e` Spring profile** that swaps real OAuth for a trusted test
+header. Nothing about it is active in production (the profile is never set there):
+
+| Piece | What it does | Why it's needed |
+|---|---|---|
+| `E2eTestAuthFilter` (`@Profile("e2e")`) | Trusts an `X-E2E-Auth: <email>` header and authenticates the request as a single seeded test user (`googleSub = "e2e-test-user"`, created on first use) | Gives the suite a real authenticated, user-scoped session **without** the interactive Google redirect |
+| `SecurityConfig` (conditional) | Under `e2e`: registers the filter and **disables CSRF**; otherwise: normal cookie double-submit CSRF | The header auth is stateless per request, so CSRF tokens would only get in the way — but only in this profile |
+| `conftest.py` (`client` fixture) | Sends `X-E2E-Auth` (email from `SPIRA_E2E_AUTH`, default `e2e@test.local`) on every request | Makes every test request authenticated, transparently |
+| `ci.yml` (e2e job) | Runs the jar with `SPRING_PROFILES_ACTIVE=e2e` plus **dummy** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; waits on `/api/health` | The dummy creds let Spring Security's Google client initialize so the jar boots; the app never actually calls Google in this profile |
+
+**Guardrails proving the mechanism is safe.** `E2eProfileAuthIntegrationTest` boots Spring
+with both `test` + `e2e` profiles and asserts two things:
+
+- An **anonymous** `POST /graphql` (no header) still returns `401` — auth is genuinely
+  enforced even under the test profile; the header is the *only* way in.
+- A request carrying `X-E2E-Auth` returns `200` with CSRF disabled — the test-auth path
+  works as intended.
+
+Because the filter is `@Profile("e2e")` and production never sets that profile, the bean
+doesn't exist in prod and the `X-E2E-Auth` header is completely ignored there.
 
 ### Health
 

@@ -1,9 +1,11 @@
 package com.spiramindscape.backend.config;
 
 import com.spiramindscape.backend.auth.AppUserOidcUserService;
+import com.spiramindscape.backend.auth.E2eTestAuthFilter;
 import com.spiramindscape.backend.auth.OAuth2LoginSuccessHandler;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +16,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -39,6 +42,8 @@ public class SecurityConfig {
 
     private final AppUserOidcUserService appUserOidcUserService;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
+    /** Present only under the CI-only {@code e2e} profile (otherwise empty). */
+    private final ObjectProvider<E2eTestAuthFilter> e2eTestAuthFilter;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -71,14 +76,6 @@ public class SecurityConfig {
                 // production, single-origin). It must load for anonymous users so the
                 // React app can render the login page and then call /api/auth/me.
                 .anyRequest().permitAll()
-            )
-
-            // ----- CSRF -----
-            .csrf(csrf -> csrf
-                .csrfTokenRepository(csrfRepo)
-                .csrfTokenRequestHandler(requestHandler)
-                // Health check and OAuth2 endpoints don't need CSRF
-                .ignoringRequestMatchers("/api/health", "/oauth2/**", "/login/**")
             )
 
             // ----- OAuth2 login -----
@@ -117,6 +114,22 @@ public class SecurityConfig {
                     }
                 )
             );
+
+        // ----- CSRF (+ CI-only e2e test auth) -----
+        E2eTestAuthFilter e2eFilter = e2eTestAuthFilter.getIfAvailable();
+        if (e2eFilter != null) {
+            // CI-only 'e2e' profile: the E2E suite authenticates via the X-E2E-Auth
+            // header (stateless per request), so CSRF is unnecessary and disabled.
+            http.addFilterBefore(e2eFilter, AuthorizationFilter.class);
+            http.csrf(csrf -> csrf.disable());
+        } else {
+            // Double-submit cookie: a readable XSRF-TOKEN cookie is issued; mutations
+            // must echo it in the X-XSRF-TOKEN header.
+            http.csrf(csrf -> csrf
+                .csrfTokenRepository(csrfRepo)
+                .csrfTokenRequestHandler(requestHandler)
+                .ignoringRequestMatchers("/api/health", "/oauth2/**", "/login/**"));
+        }
 
         return http.build();
     }

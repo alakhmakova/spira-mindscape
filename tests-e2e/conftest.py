@@ -8,10 +8,17 @@ from graphql import queries
 BASE_URL = os.environ.get("SPIRA_BASE_URL", "http://localhost:8080")
 GRAPHQL_URL = f"{BASE_URL}/graphql"
 
+# The app requires a Google login and is user-scoped. Real OAuth can't run in CI,
+# so the backend runs under the 'e2e' Spring profile, which authenticates requests
+# carrying this header as a seeded test user (see E2eTestAuthFilter); CSRF is
+# disabled there. Locally, run the jar with SPRING_PROFILES_ACTIVE=e2e to use these.
+E2E_AUTH_EMAIL = os.environ.get("SPIRA_E2E_AUTH", "e2e@test.local")
+
 
 @pytest.fixture(scope="session")
 def client():
-    with httpx.Client(base_url=BASE_URL, timeout=10.0) as c:
+    headers = {"X-E2E-Auth": E2E_AUTH_EMAIL}
+    with httpx.Client(base_url=BASE_URL, timeout=10.0, headers=headers) as c:
         yield c
 
 
