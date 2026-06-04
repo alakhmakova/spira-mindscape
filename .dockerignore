@@ -1,0 +1,16 @@
+# Keep the build context small and reproducible
+node_modules
+dist
+.git
+.github
+backend/target
+target
+*.log
+.vscode
+.idea
+.DS_Store
+tests-e2e
+grow
+docs
+specs
+**/*.md
