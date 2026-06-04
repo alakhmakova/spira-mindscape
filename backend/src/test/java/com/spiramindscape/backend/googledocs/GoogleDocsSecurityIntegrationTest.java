@@ -2,8 +2,8 @@ package com.spiramindscape.backend.googledocs;
 
 import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.auth.AppUserOidcUser;
-import com.spiramindscape.backend.auth.AppUserRepository;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.resource.Resource;
+import com.spiramindscape.backend.resource.ResourceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,16 +33,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * HTTP-layer security tests for {@code POST /api/notes/google-doc}: the endpoint
- * is auth + CSRF protected like every other mutation. The Drive service is mocked
- * (the real Google call can't run in a test) so the 200 path exercises the
- * controller + security, not Google itself.
+ * HTTP-layer tests for the note ↔ Google Doc endpoints. Both services are mocked
+ * (the real Google call can't run in a test), so these verify the security
+ * contract (auth + CSRF) and the controller wiring, not Google itself.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class GoogleDocsSecurityIntegrationTest {
 
+    private static final long RESOURCE_ID = 5L;
     private static final String REQUEST_JSON = """
             {"title":"My note","html":"<p>hello</p>"}
             """;
@@ -50,29 +50,23 @@ class GoogleDocsSecurityIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private AppUserRepository appUserRepository;
-
     @MockitoBean
     private GoogleDriveService driveService;
+
+    @MockitoBean
+    private ResourceService resourceService;
 
     private OAuth2AuthenticationToken testAuth;
 
     @BeforeEach
     void setUp() {
-        AppUser user = appUserRepository.save(buildTestUser());
-        testAuth = buildAuth(user);
-    }
-
-    @AfterEach
-    void tearDown() {
-        appUserRepository.deleteAll();
+        testAuth = buildAuth(buildTestUser());
     }
 
     @Test
-    @DisplayName("Anonymous POST /api/notes/google-doc returns 401")
+    @DisplayName("Anonymous POST /api/notes/{id}/google-doc returns 401")
     void anonymousReturns401() throws Exception {
-        mockMvc.perform(post("/api/notes/google-doc")
+        mockMvc.perform(post("/api/notes/{id}/google-doc", RESOURCE_ID)
                         .with(anonymous())
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -83,7 +77,7 @@ class GoogleDocsSecurityIntegrationTest {
     @Test
     @DisplayName("Authenticated POST without CSRF token returns 403")
     void authenticatedWithoutCsrfReturns403() throws Exception {
-        mockMvc.perform(post("/api/notes/google-doc")
+        mockMvc.perform(post("/api/notes/{id}/google-doc", RESOURCE_ID)
                         .with(authentication(testAuth))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REQUEST_JSON))
@@ -91,12 +85,15 @@ class GoogleDocsSecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("Authenticated POST with CSRF returns the created doc link (200)")
-    void authenticatedWithCsrfReturnsLink() throws Exception {
-        when(driveService.createGoogleDoc(any(AppUser.class), eq("My note"), eq("<p>hello</p>")))
-                .thenReturn("https://docs.google.com/document/d/abc/edit");
+    @DisplayName("Open/create: creates + links a doc when the note has none, returns the link")
+    void openOrCreateReturnsLink() throws Exception {
+        Resource note = new Resource();
+        note.setType("note"); // driveWebViewLink == null → create path
+        when(resourceService.findOwned(RESOURCE_ID)).thenReturn(note);
+        when(driveService.createDoc(any(AppUser.class), eq("My note"), eq("<p>hello</p>")))
+                .thenReturn(new GoogleDriveService.CreatedDoc("file-1", "https://docs.google.com/document/d/abc/edit"));
 
-        mockMvc.perform(post("/api/notes/google-doc")
+        mockMvc.perform(post("/api/notes/{id}/google-doc", RESOURCE_ID)
                         .with(authentication(testAuth))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -105,10 +102,49 @@ class GoogleDocsSecurityIntegrationTest {
                 .andExpect(jsonPath("$.webViewLink").value("https://docs.google.com/document/d/abc/edit"));
     }
 
-    // ─── helpers (mirror SecurityIntegrationTest) ──────────────────────────────
+    @Test
+    @DisplayName("Open: reopens the already-linked doc without creating a new one")
+    void openReturnsExistingLink() throws Exception {
+        Resource note = new Resource();
+        note.setType("note");
+        note.setDriveFileId("file-1");
+        note.setDriveWebViewLink("https://docs.google.com/document/d/existing/edit");
+        when(resourceService.findOwned(RESOURCE_ID)).thenReturn(note);
+
+        mockMvc.perform(post("/api/notes/{id}/google-doc", RESOURCE_ID)
+                        .with(authentication(testAuth))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webViewLink").value("https://docs.google.com/document/d/existing/edit"));
+    }
+
+    @Test
+    @DisplayName("Sync: pushes the note to the linked doc and returns the link")
+    void syncUpdatesLinkedDoc() throws Exception {
+        Resource note = new Resource();
+        note.setType("note");
+        note.setDriveFileId("file-1");
+        note.setDriveWebViewLink("https://docs.google.com/document/d/abc/edit");
+        when(resourceService.findOwned(RESOURCE_ID)).thenReturn(note);
+        when(driveService.updateDoc(any(AppUser.class), eq("file-1"), eq("My note"), eq("<p>hello</p>")))
+                .thenReturn("https://docs.google.com/document/d/abc/edit");
+
+        mockMvc.perform(post("/api/notes/{id}/google-doc/sync", RESOURCE_ID)
+                        .with(authentication(testAuth))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webViewLink").value("https://docs.google.com/document/d/abc/edit"));
+    }
+
+    // ─── helpers ───────────────────────────────────────────────────────────────
 
     private AppUser buildTestUser() {
         AppUser user = new AppUser();
+        user.setId(1L);
         user.setGoogleSub("gdocs-test-sub");
         user.setEmail("gdocs-test@example.com");
         user.setName("GDocs Test User");

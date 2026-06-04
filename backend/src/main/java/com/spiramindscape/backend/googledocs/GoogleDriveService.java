@@ -61,19 +61,37 @@ public class GoogleDriveService {
         this.httpClient = httpClient;
     }
 
+    /** A created or updated Google Doc: its Drive file id and shareable link. */
+    public record CreatedDoc(String fileId, String webViewLink) {}
+
     /**
-     * Creates a Google Doc from the given HTML in the user's Drive.
+     * Creates a NEW Google Doc from the given HTML in the user's Drive.
+     *
+     * @return the new document's file id + shareable {@code webViewLink}
+     */
+    public CreatedDoc createDoc(AppUser user, String title, String html) {
+        String accessToken = requireAccessToken(user);
+        return uploadNewDoc(accessToken, safeTitle(title), html == null ? "" : html);
+    }
+
+    /**
+     * Overwrites an EXISTING linked Google Doc with the note's current HTML.
+     * Note: this replaces the document content — edits made in Google Docs are lost.
      *
      * @return the document's shareable {@code webViewLink}
      */
-    public String createGoogleDoc(AppUser user, String title, String html) {
+    public String updateDoc(AppUser user, String fileId, String title, String html) {
+        String accessToken = requireAccessToken(user);
+        return overwriteDoc(accessToken, fileId, safeTitle(title), html == null ? "" : html).webViewLink();
+    }
+
+    /** Decrypts the stored refresh token and exchanges it for a fresh access token. */
+    private String requireAccessToken(AppUser user) {
         if (user.getEncRefreshToken() == null || user.getEncRefreshToken().isBlank()) {
             throw new ResponseStatusException(HttpStatus.PRECONDITION_REQUIRED,
                     "Google Drive access not granted. Sign out and sign in again to enable Google Docs export.");
         }
-        String refreshToken = encryptionService.decrypt(user.getEncRefreshToken());
-        String accessToken = exchangeRefreshTokenForAccessToken(refreshToken);
-        return uploadAsGoogleDoc(accessToken, safeTitle(title), html == null ? "" : html);
+        return exchangeRefreshTokenForAccessToken(encryptionService.decrypt(user.getEncRefreshToken()));
     }
 
     // ── Step 1: refresh token → access token ──────────────────────────────────
@@ -111,7 +129,7 @@ public class GoogleDriveService {
 
     // ── Step 2: multipart upload → Google Doc ─────────────────────────────────
 
-    private String uploadAsGoogleDoc(String accessToken, String title, String html) {
+    private CreatedDoc uploadNewDoc(String accessToken, String title, String html) {
         String boundary = "spira-" + UUID.randomUUID();
         String body = buildMultipartBody(boundary, metadataJson(title), html);
 
@@ -121,17 +139,36 @@ public class GoogleDriveService {
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> response = send(request);
+        return parseDoc(send(request));
+    }
+
+    private CreatedDoc overwriteDoc(String accessToken, String fileId, String title, String html) {
+        String boundary = "spira-" + UUID.randomUUID();
+        String body = buildMultipartBody(boundary, metadataJson(title), html);
+        String url = "https://www.googleapis.com/upload/drive/v3/files/" + fileId
+                + "?uploadType=multipart&fields=id,webViewLink";
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "multipart/related; boundary=" + boundary)
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        return parseDoc(send(request));
+    }
+
+    private CreatedDoc parseDoc(HttpResponse<String> response) {
         if (response.statusCode() / 100 != 2) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Google Drive API error " + response.statusCode() + ": " + response.body());
         }
-        String webViewLink = readJson(response.body()).path("webViewLink").asText(null);
+        JsonNode node = readJson(response.body());
+        String webViewLink = node.path("webViewLink").asText(null);
         if (webViewLink == null || webViewLink.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Google Drive did not return a document link");
         }
-        return webViewLink;
+        return new CreatedDoc(node.path("id").asText(null), webViewLink);
     }
 
     /**

@@ -30,7 +30,7 @@ class GoogleDriveServiceTest {
         GoogleDriveService service = new GoogleDriveService(clientRegistrationRepository, encryptionService);
         AppUser user = new AppUser(); // encRefreshToken == null
 
-        assertThatThrownBy(() -> service.createGoogleDoc(user, "Note", "<p>hi</p>"))
+        assertThatThrownBy(() -> service.createDoc(user, "Note", "<p>hi</p>"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Google Drive access not granted");
     }

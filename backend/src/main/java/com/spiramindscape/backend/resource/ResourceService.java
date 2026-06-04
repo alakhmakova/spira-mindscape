@@ -59,6 +59,23 @@ public class ResourceService {
                 .orElseThrow(() -> new IllegalArgumentException("Resource not found: " + id));
     }
 
+    /** Loads a resource and verifies the current user owns its goal (throws otherwise). */
+    @Transactional(readOnly = true)
+    public Resource findOwned(Long id) {
+        Resource resource = findById(id);
+        goalService.findById(resource.getGoal().getId()); // owner-scoped check
+        return resource;
+    }
+
+    /** Records the Google Doc a note is linked to (owner-scoped). */
+    @Transactional
+    public Resource linkGoogleDoc(Long resourceId, String fileId, String webViewLink) {
+        Resource resource = findOwned(resourceId);
+        resource.setDriveFileId(fileId);
+        resource.setDriveWebViewLink(webViewLink);
+        return resourceRepository.save(resource);
+    }
+
     @Transactional
     public Resource create(Long goalId, CreateResourceInput input) {
         return create(goalId, input, Map.of());

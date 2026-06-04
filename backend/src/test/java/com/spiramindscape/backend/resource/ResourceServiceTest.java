@@ -1082,6 +1082,24 @@ class ResourceServiceTest {
         verify(resourceRepository).delete(resource);
     }
 
+    @Test
+    void linkGoogleDocStoresFileIdAndLinkOnOwnedResource() {
+        Goal goal = goal(1L);
+        Resource note = new Resource();
+        note.setId(7L);
+        note.setType("note");
+        note.setGoal(goal);
+        when(resourceRepository.findById(7L)).thenReturn(Optional.of(note));
+        when(goalService.findById(1L)).thenReturn(goal); // owner-scoped check passes
+        when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Resource result = resourceService.linkGoogleDoc(7L, "file-1", "https://docs.google.com/document/d/abc/edit");
+
+        assertThat(result.getDriveFileId()).isEqualTo("file-1");
+        assertThat(result.getDriveWebViewLink()).isEqualTo("https://docs.google.com/document/d/abc/edit");
+        verify(resourceRepository).save(note);
+    }
+
     private static Goal goal(Long id) {
         Goal goal = new Goal();
         goal.setId(id);

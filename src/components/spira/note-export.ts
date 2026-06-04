@@ -255,25 +255,23 @@ export function printNotePdf(title: string, html: string): void {
 }
 
 /**
- * Creates a real Google Doc from the note via the backend Drive integration and
- * opens it in a new tab. The backend ({@code POST /api/notes/google-doc}) uses
- * the user's stored Google refresh token to call the Drive API and convert the
- * note's HTML into an editable document; it returns the document's `webViewLink`.
- *
- * Requires the user to be signed in with Google and to have granted Drive access
- * (the `drive.file` scope). On failure the promise rejects so the caller can show
- * an error toast.
- *
- * @returns the created document's shareable link
- */
-/**
  * Network call only (no DOM): POST the note to the backend Drive integration and
- * return the created document's link. Sends the session cookie (`credentials`) and
- * the CSRF token, as every mutating `/api` call must. Extracted from
- * {@link openInGoogleDocs} so it can be unit-tested without a browser DOM.
+ * return the linked document's `webViewLink`. Sends the session cookie
+ * (`credentials`) and the CSRF token, as every mutating `/api` call must.
+ * Extracted from {@link openInGoogleDocs} so it can be unit-tested without a DOM.
+ *
+ * @param resourceId the note resource's id (the doc is linked to it server-side)
+ * @param sync       false = open the linked doc or create+link it (never overwrites);
+ *                   true  = push the note's current content to the linked doc.
  */
-export async function createGoogleDocFromHtml(title: string, preparedHtml: string): Promise<string> {
-  const res = await fetch("/api/notes/google-doc", {
+export async function postGoogleDoc(
+  resourceId: string,
+  title: string,
+  preparedHtml: string,
+  sync = false,
+): Promise<string> {
+  const url = `/api/notes/${resourceId}/google-doc${sync ? "/sync" : ""}`;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -284,13 +282,18 @@ export async function createGoogleDocFromHtml(title: string, preparedHtml: strin
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(body || `Failed to create Google Doc (${res.status})`);
+    throw new Error(body || `Google Docs request failed (${res.status})`);
   }
   const { webViewLink } = (await res.json()) as { webViewLink: string };
   return webViewLink;
 }
 
-export async function openInGoogleDocs(html: string, title?: string): Promise<string> {
+/**
+ * Opens the note's linked Google Doc in a new tab — creating and linking one the
+ * first time. Never overwrites an existing doc (use {@link syncGoogleDoc} for that).
+ * Requires Google sign-in with Drive access (`drive.file`). Rejects on failure.
+ */
+export async function openInGoogleDocs(resourceId: string, html: string, title?: string): Promise<string> {
   const prepared = prepareExportHtml(html);
 
   // Reserve a tab synchronously inside the user-gesture so the browser doesn't
@@ -298,7 +301,7 @@ export async function openInGoogleDocs(html: string, title?: string): Promise<st
   const reserved = window.open("", "_blank");
 
   try {
-    const webViewLink = await createGoogleDocFromHtml(title ?? "Spira note", prepared);
+    const webViewLink = await postGoogleDoc(resourceId, title ?? "Spira note", prepared, false);
     if (reserved) reserved.location.href = webViewLink;
     else window.open(webViewLink, "_blank", "noopener,noreferrer");
     return webViewLink;
@@ -306,4 +309,12 @@ export async function openInGoogleDocs(html: string, title?: string): Promise<st
     reserved?.close();
     throw e;
   }
+}
+
+/**
+ * Pushes the note's current content to its linked Google Doc (overwriting it),
+ * creating + linking one if none exists yet. Does not open a tab. Rejects on failure.
+ */
+export async function syncGoogleDoc(resourceId: string, html: string, title?: string): Promise<string> {
+  return postGoogleDoc(resourceId, title ?? "Spira note", prepareExportHtml(html), true);
 }
