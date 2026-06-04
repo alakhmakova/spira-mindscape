@@ -65,8 +65,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/health").permitAll()
                 // Public: /api/auth/me returns 401 itself when anonymous (not a security rule)
                 .requestMatchers("/api/auth/me").permitAll()
-                // Everything else (especially /graphql) requires authentication
-                .anyRequest().authenticated()
+                // Data endpoints require authentication
+                .requestMatchers("/graphql", "/api/**").authenticated()
+                // Everything else is the SPA shell + static assets (served by Spring in
+                // production, single-origin). It must load for anonymous users so the
+                // React app can render the login page and then call /api/auth/me.
+                .anyRequest().permitAll()
             )
 
             // ----- CSRF -----
