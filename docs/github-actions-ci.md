@@ -46,11 +46,20 @@ end-to-end, exactly as in production (the unit/integration tests use H2 instead)
 
 1. Start a `postgres:16` service container (database `spira`, user/password `spira`).
 2. Install Java 17 and build the backend jar (`mvnw package -DskipTests`).
-3. Start the jar, passing `DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD`
-   so it connects to the Postgres service and runs Flyway on startup.
-4. Wait until `POST /graphql` responds.
+3. Start the jar under `SPRING_PROFILES_ACTIVE=e2e`, passing `DATABASE_URL` /
+   `DATABASE_USERNAME` / `DATABASE_PASSWORD` (so it connects to Postgres and runs Flyway
+   on startup) plus **dummy** `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+4. Wait until `GET /api/health` responds.
 5. Install Python deps (`pip install -r tests-e2e/requirements.txt`) and run `pytest`.
 6. Upload E2E Allure results and stop the backend.
+
+> **Why the `e2e` profile?** Once the app gained Google OAuth, every request became
+> auth-gated and user-scoped, so the previously-anonymous E2E tests all returned `401`
+> and produced no reports. Real OAuth can't run headlessly in CI, so the `e2e` profile
+> enables a test-only `X-E2E-Auth` header login (`E2eTestAuthFilter`) and disables CSRF.
+> The dummy Google creds exist only so Spring Security's client config initializes and
+> the jar boots — the app never calls Google in this profile. Full background:
+> [testing-guide.md → Why the E2E tests had to be rewritten](testing-guide.md#why-the-e2e-tests-had-to-be-rewritten).
 
 > Note: the bundled jar does **not** contain the H2 test profile (that lives under
 > `src/test/resources`), so the E2E job deliberately uses real PostgreSQL via the
