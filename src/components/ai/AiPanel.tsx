@@ -8,7 +8,9 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { useNavigate } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
@@ -34,7 +36,9 @@ type ProposalKind =
   // edit existing
   | "edit_target" | "edit_option" | "edit_obstacle" | "edit_action" | "edit_note" | "edit_link" | "edit_email"
   // state changes
-  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item";
+  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item"
+  // goal-level by id (All-Goals page) + deletion (opens a confirmation dialog)
+  | "edit_goal" | "open_goal" | "delete_goal" | "delete_target";
 
 type Proposal = {
   id: string;
@@ -57,6 +61,7 @@ type Proposal = {
   unit?: string;        // numeric unit
   items?: { text: string; done?: boolean; deadline?: string }[]; // checklist items
   patch?: Record<string, string>; // resource fields to update (edit_link / edit_email)
+  goalId?: string; // target goal id for goal-level ops from All-Goals (edit_goal/open_goal/delete_goal)
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -342,6 +347,26 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         title = value || name;
         detail = deadlineVal ? `New sub-task · due ${deadlineVal}` : "New sub-task";
         break;
+      // ── goal-level by id (All-Goals) + deletion ──
+      case "edit_goal": {
+        const f = data.field;
+        if (f === "confidence") { title = `Confidence → ${value}/10`; detail = "Edit goal"; }
+        else if (f === "deadline") { title = value; detail = "Goal deadline"; }
+        else { title = value; detail = "Rename goal"; }
+        break;
+      }
+      case "open_goal":
+        title = "Open this goal";
+        detail = "Open goal";
+        break;
+      case "delete_goal":
+        title = "Delete this goal";
+        detail = "Opens a confirmation";
+        break;
+      case "delete_target":
+        title = "Delete this target";
+        detail = "Opens a confirmation";
+        break;
     }
 
     return {
@@ -363,6 +388,9 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
       unit,
       items,
       patch,
+      goalId: (kind === "edit_goal" || kind === "open_goal" || kind === "delete_goal")
+        ? itemId
+        : undefined,
       serverId: typeof data.proposalId === "number" ? data.proposalId : undefined,
     };
   } catch {
@@ -507,8 +535,16 @@ function Wordmark() {
 
 function PanelContent({ onClose }: { onClose: () => void }) {
   const { context } = useAi();
+  const navigate = useNavigate();
+  const goals = useSpira((s) => s.goals);
   const goal = useSpira((s) => s.goals.find((g) => g.id === context.goalId));
+  const deleteGoal = useSpira((s) => s.deleteGoal);
+  const removeTarget = useSpira((s) => s.removeTarget);
   const addGoal = useSpira((s) => s.addGoal);
+  // AI-initiated deletion never deletes directly — it opens this confirmation dialog.
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: "goal" | "target"; id: string; goalId?: string } | null
+  >(null);
   const addTarget = useSpira((s) => s.addTarget);
   const updateGoal = useSpira((s) => s.updateGoal);
   const addOption = useSpira((s) => s.addOption);
@@ -541,6 +577,37 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       const title = (p.title ?? "").trim().slice(0, 200) || "New goal";
       addGoal({ title, description: p.body ?? "", ...(iso ? { deadline: iso } : {}) });
       toast.success("Goal created");
+      return;
+    }
+    // ── Goal-level ops by id (work from the All-Goals page, no current goal) ──
+    if (p.kind === "edit_goal") {
+      if (!p.goalId) return;
+      const v = p.rawValue ?? p.title;
+      if (p.field === "confidence") {
+        const c = parseInt(v);
+        if (c >= 1 && c <= 10) { updateGoal(p.goalId, { confidence: c as import("@/lib/spira/types").Confidence }); toast.success("Goal confidence updated"); }
+      } else if (p.field === "deadline") {
+        updateGoal(p.goalId, { deadline: normalizeDeadline(v) });
+        toast.success("Goal deadline updated");
+      } else {
+        updateGoal(p.goalId, { title: (v ?? "").trim().slice(0, 200) });
+        toast.success("Goal renamed");
+      }
+      return;
+    }
+    if (p.kind === "open_goal") {
+      if (p.goalId) navigate({ to: "/goals/$goalId", params: { goalId: p.goalId } });
+      return;
+    }
+    if (p.kind === "delete_goal") {
+      const gid = p.goalId ?? context.goalId;
+      if (gid) setPendingDelete({ kind: "goal", id: gid });
+      return;
+    }
+    if (p.kind === "delete_target") {
+      // Targets live inside a goal; use the explicit goal or the current one.
+      const gid = p.goalId ?? context.goalId;
+      if (p.itemId && gid) setPendingDelete({ kind: "target", id: p.itemId, goalId: gid });
       return;
     }
     if (!goal) return;
@@ -737,7 +804,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       }
     }
   }, [goal, addGoal, updateGoal, addTarget, addOption, addReality, addResource,
-      updateTarget, updateOption, updateReality, updateResource, selectOption]);
+      updateTarget, updateOption, updateReality, updateResource, selectOption,
+      navigate, context.goalId]);
 
   const scopeKey = chatScopeKey(context.goalId);
 
@@ -1359,6 +1427,38 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           onCancel={() => setConfirmEnd(false)}
         />
       )}
+
+      {/* AI-initiated deletion: the AI only opens this dialog — the user decides. */}
+      {pendingDelete && (() => {
+        const isGoal = pendingDelete.kind === "goal";
+        const g = goals.find((x) => x.id === (isGoal ? pendingDelete.id : pendingDelete.goalId));
+        const targetTitle = !isGoal
+          ? g?.targets.find((t) => t.id === pendingDelete.id)?.title
+          : undefined;
+        const name = isGoal ? (g?.title ?? "this goal") : (targetTitle ?? "this target");
+        return (
+          <ConfirmDialog
+            open
+            onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+            title={isGoal ? "Delete this goal?" : "Delete this target?"}
+            description={isGoal
+              ? `“${name}” and all its targets, options, notes and history will be permanently deleted. This can't be undone.`
+              : `“${name}” will be permanently removed from this goal. This can't be undone.`}
+            confirmLabel="Yes, delete"
+            onConfirm={() => {
+              if (isGoal) {
+                deleteGoal(pendingDelete.id);
+                if (context.goalId === pendingDelete.id) navigate({ to: "/" });
+                toast.success("Goal deleted");
+              } else if (pendingDelete.goalId) {
+                removeTarget(pendingDelete.goalId, pendingDelete.id);
+                toast.success("Target deleted");
+              }
+              setPendingDelete(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1483,6 +1583,10 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
   select_option:   { icon: PATHS.sparkles, label: "Select option" },
   checklist_item:  { icon: PATHS.check,    label: "Checklist item" },
   add_checklist_item: { icon: PATHS.plus,  label: "New sub-task" },
+  edit_goal:       { icon: PATHS.pencil,   label: "Edit goal" },
+  open_goal:       { icon: PATHS.switch_,  label: "Open goal" },
+  delete_goal:     { icon: PATHS.x,        label: "Delete goal" },
+  delete_target:   { icon: PATHS.x,        label: "Delete target" },
 };
 
 const PROPOSAL_INPUT_CLS =

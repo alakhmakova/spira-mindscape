@@ -309,6 +309,20 @@ There is a single tool with a `kind` discriminator rather than many tools. One t
 
 So "one tool" does **not** mean "only create" — one entry point can create data, **edit existing items**, and change their state. Every change still requires explicit user approval (per the spec's Proposal & Approval System).
 
+**Goal-level by id + deletion** — used mainly from the **All-Goals page** (no goal is open). The global context (`GoalContextBuilder.build(null)`) lists the user's goals with their ids so the model can target one:
+
+| `kind` | Required args | Applied by (frontend) |
+|---|---|---|
+| `new_goal` | `title`, opt. `value` (description), `deadline_value` | `addGoal({ title, description?, deadline? })` |
+| `edit_goal` | `id` (goal id), `field` (`title`\|`confidence`\|`deadline`), `value` | `updateGoal(id, { … })` — edits a goal's **card field** |
+| `open_goal` | `id` (goal id) | `navigate("/goals/:id")` — open a goal to work inside it |
+| `delete_goal` | `id` (goal id; defaults to current goal on a goal page) | opens a **confirmation dialog**; on confirm → `deleteGoal(id)` |
+| `delete_target` | `id` (target id) | opens a **confirmation dialog**; on confirm → `removeTarget(goalId, id)` |
+| `link` / `email` | `value` (URL / email), opt. `title`/`role`/`phone` | `addResource(id, { type, … })` |
+| `edit_link` / `edit_email` | `id`, changed fields | `updateResource(goalId, id, patch)` |
+
+**Deletion is never automatic.** `delete_goal` / `delete_target` only *open the app's confirmation dialog* (`ConfirmDialog`, rendered inside `AiPanel`); the user decides. The AI cannot delete data directly. To work with items **inside** a goal from the All-Goals page, the model can't edit them there — it either tells the user to open the goal or proposes `open_goal` (which they confirm).
+
 ### Referencing existing items: ids in the context
 
 To edit or change an existing item, the model needs its id. [`GoalContextBuilder`](../backend/src/main/java/com/spiramindscape/backend/ai/chat/GoalContextBuilder.java) therefore prints each item's id inline, e.g. `- [binary id=42] …`, `- [x] (id=7) …`, `- (id=12) obstacle text`, checklist items as `- (id=88) [ ] …`. The model copies that number into the tool's `id` argument; the frontend (`proposalFromToolArgs` → `itemId`) then routes the approved change to the right store action. Ids are the DB ids, which match the frontend store ids after a goal is loaded.
@@ -799,7 +813,8 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | Edit existing items & state | ✅ Done | Same tool, edit/state kinds (`edit_target`, `edit_option`, `edit_obstacle`, `edit_action`, `edit_note`, `complete_target`, `target_progress`, `select_option`, `checklist_item`, `add_checklist_item`) referencing item `id` from the context. See §4a. |
 | Checklist sub-tasks | ✅ Done | A checklist target holds sub-tasks (items). The AI can add one (`add_checklist_item`), edit its text, check/uncheck it, and set its **due date** (`checklist_item` with `deadline_value`). Items exist only on checklist targets. |
 | Reading resources | ✅ Done (text, on demand) | `read_resource` tool loads a note/PDF/link/contact's text only when needed (not embedded in every request). PDF via PDFBox. Provider-agnostic. Images / scanned PDFs aren't readable (no text layer). Rewrites are proposed as a new note. |
-| Deletion | ⛔ By design | No delete tool; the AI explains where to delete in the UI instead. |
+| Deletion | ✅ Done (confirmation only) | `delete_goal` / `delete_target` open a confirmation dialog in `AiPanel`; the AI never deletes directly — the user confirms. |
+| All-Goals goal ops | ✅ Done | From the All-Goals page the AI can `new_goal`, `edit_goal` (name/confidence/deadline by id), `open_goal`, and start `delete_goal`. Context lists the user's goals with ids. |
 | Web search (Tavily) | ✅ Done (needs live testing) | `web_search` tool via Tavily (BYOK key). Agentic loop in `AiChatService.runAgenticLoop`. Offered only in chat when a Tavily key exists. See section 4b. |
 | Proposal persistence | ✅ Done | Goal-scoped proposals are stored in `ai_proposals` (PENDING), the id is streamed to the client, approve/reject hit the server, and pending cards are restored on reload. See section 4a. |
 | Chat transcript persistence | ✅ Done (client-side) | Regular chat cached in `localStorage` per goal/global scope. GROW sessions are not persisted (ephemeral). See section 9. |

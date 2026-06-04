@@ -134,6 +134,23 @@ public class AiChatService {
             created you may offer help with ONE short optional question — never an unsolicited
             wall of text. If the request is too vague to even name a goal, ask ONE short
             question and nothing more.
+
+            ON THE ALL-GOALS PAGE (no goal open — the context lists the user's goals):
+            • Editing a goal's card fields (NAME, CONFIDENCE 1-10, DEADLINE) — use
+              kind='edit_goal' with that goal's 'id' + 'field' + 'value'. Pick the right goal
+              by matching the user's words to the listed goal titles; if it's ambiguous which
+              goal they mean, ask one short question.
+            • If the user wants to work with something INSIDE a goal (targets, options, reality,
+              notes), it can't be done from here — the goal must be open. Tell them to open it,
+              or offer to open it (kind='open_goal' with the goal's id); they confirm.
+            • If the user asks to delete a goal, use kind='delete_goal' with its id. This opens
+              a confirmation dialog — you NEVER delete it yourself.
+
+            DELETION (from anywhere): you never delete data directly. kind='delete_goal'
+            (a goal) and kind='delete_target' (a target, by its id) each open a confirmation
+            dialog the user decides on. On a goal page, 'delete_goal' without an id targets the
+            current goal. Only propose a deletion when the user clearly asks to delete.
+
             You can: add items; rename/edit existing targets, options, obstacles, actions,
             notes, links (edit_link), and email/contact resources (edit_email);
             complete a target; set a numeric target's progress; select an option;
@@ -232,8 +249,8 @@ public class AiChatService {
                     + "state (complete a target, set progress, select an option). "
                     + "To change or complete an EXISTING item, pass its 'id' exactly as shown "
                     + "in the goal context (e.g. 'id=42'). "
-                    + "You cannot delete anything — if the user wants to delete, explain in chat "
-                    + "where to do it in the UI instead. "
+                    + "For deletion (delete_goal / delete_target) you never delete anything "
+                    + "yourself — the proposal just opens a confirmation dialog the user decides on. "
                     + "The change is NOT applied until the user approves, so never claim it is done.",
             proposalInputSchema()));
 
@@ -246,7 +263,8 @@ public class AiChatService {
                         "option", "obstacle", "action", "note", "link", "email",
                         "edit_target", "edit_option", "edit_obstacle", "edit_action",
                         "edit_note", "edit_link", "edit_email", "complete_target", "target_progress",
-                        "select_option", "checklist_item", "add_checklist_item"),
+                        "select_option", "checklist_item", "add_checklist_item",
+                        "edit_goal", "open_goal", "delete_goal", "delete_target"),
                 "description", "What to propose. CREATE (no id):\n"
                         + "'new_goal' — create a BRAND-NEW goal (use 'title' for the goal name, "
                         + "optional 'value' for a short description, optional 'deadline_value'). "
@@ -284,7 +302,17 @@ public class AiChatService {
                         + "'value' (new text), 'done', 'deadline_value' (its due date);\n"
                         + "'add_checklist_item' — add a sub-task to a CHECKLIST target: 'id' = "
                         + "that target's id, 'value' = item text, optionally 'deadline_value' and 'done'. "
-                        + "(Only checklist targets hold items.)"));
+                        + "(Only checklist targets hold items.)\n"
+                        + "GOAL-LEVEL by id (use on the All-Goals page; 'id' = the goal id):\n"
+                        + "'edit_goal' — edit a goal's card field: 'id' (goal id), 'field' "
+                        + "('title'|'confidence'|'deadline'), 'value' (new value);\n"
+                        + "'open_goal' — propose opening a goal so the user can work inside it: "
+                        + "'id' (goal id). Use this when they ask to change something INSIDE a goal "
+                        + "from the All-Goals page;\n"
+                        + "'delete_goal' — start deleting a goal: 'id' (goal id; on a goal page it "
+                        + "defaults to the current goal). Opens a confirmation dialog — you never delete;\n"
+                        + "'delete_target' — start deleting a target: 'id' (target id). Opens a "
+                        + "confirmation dialog — you never delete."));
         props.put("id", Map.of(
                 "type", "string",
                 "description", "Id of the existing item to edit or change, taken "
@@ -292,8 +320,10 @@ public class AiChatService {
                         + "Required for every edit_*/state kind and 'checklist_item'."));
         props.put("field", Map.of(
                 "type", "string",
-                "enum", List.of("title", "description"),
-                "description", "Which goal field to edit. Required only when kind='edit'."));
+                "enum", List.of("title", "description", "confidence", "deadline"),
+                "description", "Which field to edit. For kind='edit' (current goal): 'title' or "
+                        + "'description'. For kind='edit_goal' (a goal by id): 'title', 'confidence', "
+                        + "or 'deadline'."));
         props.put("value", Map.of(
                 "type", "string",
                 "description", "Main text or value: new field content (edit/edit_*), "
