@@ -107,6 +107,7 @@ type GraphqlResource = {
   role?: string | null;
   email?: string | null;
   phone?: string | null;
+  driveWebViewLink?: string | null;
 };
 
 type GraphqlGoal = {
@@ -173,6 +174,7 @@ const GOAL_FIELDS = `
     role
     email
     phone
+    driveWebViewLink
   }
   targets {
     id
@@ -374,6 +376,7 @@ function toResource(resource: GraphqlResource): Resource {
     type: "note",
     title: resource.title ?? "",
     body: resource.body ?? "",
+    driveWebViewLink: resource.driveWebViewLink ?? null,
   };
 }
 

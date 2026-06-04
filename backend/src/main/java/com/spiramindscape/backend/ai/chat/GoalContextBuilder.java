@@ -35,14 +35,32 @@ public class GoalContextBuilder {
     }
 
     /**
-     * Loads the goal and returns its context block, or an empty string if
-     * the goal is not found.
+     * Context used when no goal is open (the All-Goals overview / global chat).
+     * Spells out that targets/options/etc. cannot exist here, so a "create"
+     * request — including the Russian «цель», which can mean either Goal or
+     * Target — can only be a NEW Goal.
+     */
+    static final String NO_GOAL_CONTEXT = """
+            ## No goal is open
+
+            The user is on the All-Goals overview, not inside a specific goal. There is
+            no "current goal" to read or modify, so you CANNOT add or edit targets,
+            options, reality items, or notes — those exist only inside an open goal.
+
+            The only data action available here is creating a NEW goal (kind='new_goal').
+            If the user asks to create a goal in any language — e.g. Russian «цель»,
+            «новая цель» — that always means a new Goal, never a target.
+            """;
+
+    /**
+     * Loads the goal and returns its context block. When no goal is open, returns
+     * {@link #NO_GOAL_CONTEXT} so the AI knows only goal creation is possible.
      */
     @Transactional(readOnly = true)
     public String build(Long goalId) {
-        if (goalId == null) return "";
+        if (goalId == null) return NO_GOAL_CONTEXT;
         Optional<Goal> opt = goalRepository.findById(goalId);
-        return opt.map(this::buildContext).orElse("");
+        return opt.map(this::buildContext).orElse(NO_GOAL_CONTEXT);
     }
 
     private String buildContext(Goal goal) {
