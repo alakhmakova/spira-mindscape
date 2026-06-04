@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.ai.chat;
 
 import com.spiramindscape.backend.goal.Goal;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.goal.Option;
 import com.spiramindscape.backend.goal.RealityItem;
 import com.spiramindscape.backend.goal.GoalRepository;
@@ -10,6 +11,7 @@ import com.spiramindscape.backend.target.Target;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -29,44 +31,66 @@ import java.util.Optional;
 public class GoalContextBuilder {
 
     private final GoalRepository goalRepository;
+    private final GoalService goalService;
 
-    public GoalContextBuilder(GoalRepository goalRepository) {
+    public GoalContextBuilder(GoalRepository goalRepository, GoalService goalService) {
         this.goalRepository = goalRepository;
+        this.goalService = goalService;
     }
 
-    /**
-     * Context used when no goal is open (the All-Goals overview / global chat).
-     * Spells out that targets/options/etc. cannot exist here, so a "create"
-     * request — including the Russian «цель», which can mean either Goal or
-     * Target — can only be a NEW Goal.
-     */
-    static final String NO_GOAL_CONTEXT = """
-            ## No goal is open
-
-            The user is on the All-Goals overview, not inside a specific goal. There is
-            no "current goal" to read or modify, so you CANNOT add or edit targets,
-            options, reality items, or notes — those exist only inside an open goal.
-
-            The only data action available here is creating a NEW goal (kind='new_goal').
-            If the user asks to create a goal in any language — e.g. Russian «цель»,
-            «новая цель» — that always means a new Goal, never a target.
-            """;
+    /** Header used for the All-Goals overview (no goal open). */
+    static final String NO_GOAL_HEADER = "## All Goals (no goal open)";
 
     /**
-     * Loads the goal and returns its context block. When no goal is open, returns
-     * {@link #NO_GOAL_CONTEXT} so the AI knows only goal creation is possible.
+     * Builds the AI context. With a goal id → that goal's full block. With no id
+     * (the All-Goals overview) → a list of the user's goals plus the actions
+     * available there (edit a goal's card fields, open a goal, start deletion,
+     * create a new goal).
      */
     @Transactional(readOnly = true)
     public String build(Long goalId) {
-        if (goalId == null) return NO_GOAL_CONTEXT;
-        Optional<Goal> opt = goalRepository.findById(goalId);
-        return opt.map(this::buildContext).orElse(NO_GOAL_CONTEXT);
+        if (goalId == null) return buildGlobalContext();
+        return goalRepository.findById(goalId).map(this::buildContext).orElse(buildGlobalContext());
+    }
+
+    /** Overview context for the All-Goals page: the user's goals + allowed actions. */
+    private String buildGlobalContext() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(NO_GOAL_HEADER).append("\n\n");
+        sb.append("The user is on the All-Goals overview — no goal is open. These are the goals "
+                + "they see on their cards. You can edit each goal's card fields (NAME, "
+                + "CONFIDENCE, DEADLINE) here with kind='edit_goal' (the goal's id + 'field').\n\n");
+
+        List<Goal> goals = goalService.findAll();
+        if (goals.isEmpty()) {
+            sb.append("The user has no goals yet. Create one with kind='new_goal'.\n\n");
+        } else {
+            sb.append("Your goals:\n");
+            for (Goal g : goals) {
+                sb.append("- [goal id=").append(g.getId()).append("] \"")
+                  .append(g.getTitle()).append("\" · confidence ")
+                  .append(g.getConfidence()).append("/10 · ")
+                  .append(g.getDeadline() != null ? "deadline " + g.getDeadline() : "no deadline")
+                  .append(" · ").append(g.getTargets().size()).append(" target(s)\n");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("To work with anything INSIDE a goal (targets, options, reality, notes), the "
+                + "goal must be open. Either tell the user to open it, or propose opening it "
+                + "(kind='open_goal' with its id) — they confirm.\n");
+        sb.append("To delete a goal, use kind='delete_goal' with its id: this opens a "
+                + "confirmation dialog for the user — you NEVER delete anything yourself.\n");
+        sb.append("To create a new goal use kind='new_goal'. A request to \"create a goal\" in "
+                + "any language — e.g. Russian «цель» — always means a new Goal, never a target.\n");
+        return sb.toString();
     }
 
     private String buildContext(Goal goal) {
         StringBuilder sb = new StringBuilder();
         sb.append("## Current Goal\n\n");
 
+        sb.append("**Goal id:** ").append(goal.getId()).append('\n');
         sb.append("**Title:** ").append(goal.getTitle()).append('\n');
         sb.append("**Confidence:** ").append(goal.getConfidence()).append("/10\n");
 
