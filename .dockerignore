@@ -3,8 +3,9 @@ node_modules
 dist
 .git
 .github
+# Maven output only — NOT a bare "target" (the source package
+# com.spiramindscape.backend.target must stay in the build context).
 backend/target
-target
 *.log
 .vscode
 .idea

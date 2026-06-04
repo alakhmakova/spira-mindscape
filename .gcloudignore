@@ -1,0 +1,15 @@
+# What NOT to upload to Cloud Build for `gcloud run deploy --source .`
+# (the Docker build installs deps and builds fresh inside the image)
+.git
+.github
+node_modules
+dist
+# Maven output only — anchored, NOT a bare "target" (which would also match the
+# source package com.spiramindscape.backend.target and break the build).
+/backend/target
+*.log
+.vscode
+.idea
+.DS_Store
+tests-e2e
+grow
