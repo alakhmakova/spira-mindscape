@@ -2,13 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SpiraApiError, spiraApi } from "./api";
 
-/** Extract the parsed request body from the first call of a fetch mock. */
-function callBody(mock: ReturnType<typeof vi.fn>) {
-  return JSON.parse(
-    (mock.mock.calls[0] as [unknown, { body: string }])[1].body,
-  ) as { variables: { input: Record<string, unknown> } };
-}
-
 describe("spiraApi errors", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -175,6 +168,17 @@ describe("spiraApi errors", () => {
     });
   });
 });
+
+/**
+ * Parse the body of the first fetch call made to the mock.
+ * Typed as `ReturnType<typeof vi.fn>` so `mock.calls` is `any[][]` and
+ * TypeScript does not complain about argument tuple length.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function callBody(mock: ReturnType<typeof vi.fn>): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return JSON.parse(mock.mock.calls[0][1].body as string);
+}
 
 function goalResponse(
   overrides: Partial<{

@@ -1,3 +1,4 @@
+import { getCsrfToken } from "./auth";
 import type {
   ChecklistItem,
   Confidence,
@@ -106,6 +107,7 @@ type GraphqlResource = {
   role?: string | null;
   email?: string | null;
   phone?: string | null;
+  driveWebViewLink?: string | null;
 };
 
 type GraphqlGoal = {
@@ -172,6 +174,7 @@ const GOAL_FIELDS = `
     role
     email
     phone
+    driveWebViewLink
   }
   targets {
     id
@@ -238,7 +241,13 @@ async function graphql<T>(
   try {
     response = await fetch(GRAPHQL_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // Include session cookie and echo the CSRF token so Spring Security
+      // accepts the request.
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        "X-XSRF-TOKEN": getCsrfToken(),
+      },
       body: JSON.stringify({ query, variables }),
     });
   } catch (error) {
@@ -367,6 +376,7 @@ function toResource(resource: GraphqlResource): Resource {
     type: "note",
     title: resource.title ?? "",
     body: resource.body ?? "",
+    driveWebViewLink: resource.driveWebViewLink ?? null,
   };
 }
 

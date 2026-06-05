@@ -172,6 +172,12 @@ export const useSpira = create<State>()((set, get) => ({
         syncErrorKind: undefined,
       });
     } catch (error) {
+      // Session expired mid-use — do a hard redirect so auth state is fully
+      // reset (no partial React state to clean up).
+      if (error instanceof SpiraApiError && error.status === 401) {
+        window.location.replace("/login");
+        return;
+      }
       console.error("Spira sync failed", error);
       const kind = error instanceof SpiraApiError ? error.kind : "service";
       set({

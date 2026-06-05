@@ -1,39 +1,20 @@
 package com.spiramindscape.backend.graphql;
 
-import com.spiramindscape.backend.goal.GoalRepository;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.support.BaseGraphQlIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest
-@AutoConfigureGraphQlTester
-@ActiveProfiles("test")
-class GoalIsolationIntegrationTest {
-
-    @Autowired
-    private GraphQlTester graphQlTester;
-
-    @Autowired
-    private GoalRepository goalRepository;
+class GoalIsolationIntegrationTest extends BaseGraphQlIntegrationTest {
 
     private String goalA;
     private String goalB;
 
     @BeforeEach
     void createTwoGoals() {
+        // Note: setUpTestUser() from BaseGraphQlIntegrationTest runs first (JUnit 5 @BeforeEach ordering)
         goalA = createGoal("Goal A", 5);
         goalB = createGoal("Goal B", 7);
-    }
-
-    @AfterEach
-    void cleanDatabase() {
-        goalRepository.deleteAll();
     }
 
     @Test

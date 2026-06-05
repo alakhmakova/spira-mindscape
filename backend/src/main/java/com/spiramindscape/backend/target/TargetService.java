@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.target;
 
 import com.spiramindscape.backend.goal.Goal;
-import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.ChecklistItemInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
 import com.spiramindscape.backend.graphql.input.UpdateTargetInput;
@@ -27,12 +27,11 @@ public class TargetService {
 
     private final TargetRepository targetRepository;
     private final ChecklistItemRepository checklistItemRepository;
-    private final GoalRepository goalRepository;
+    private final GoalService goalService;
 
     @Transactional(readOnly = true)
     public List<Target> findByGoal(Long goalId) {
-        goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        goalService.findById(goalId); // owner-scoped check
         return targetRepository.findByGoalIdOrderByCreatedAtAsc(goalId);
     }
 
@@ -106,8 +105,7 @@ public class TargetService {
 
     @Transactional
     public Target create(Long goalId, CreateTargetInput input, Map<String, Object> rawInput) {
-        Goal goal = goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        Goal goal = goalService.findById(goalId); // owner-scoped
         if ("binary".equalsIgnoreCase(input.type()) && Boolean.TRUE.equals(input.done())) {
             throw new IllegalArgumentException(
                     "Cannot create binary target as already done - use update to mark as done");

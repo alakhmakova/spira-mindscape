@@ -55,6 +55,7 @@ describe("spiraApi goal mapping", () => {
         type: "note",
         title: "Plan",
         body: "<p>Keep the launch checklist updated.</p>",
+        driveWebViewLink: null,
       },
       {
         id: "resource-link",

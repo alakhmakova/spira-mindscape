@@ -2,6 +2,14 @@
 
 A full-stack goal-tracking web application built as a personal learning project. Spira helps users set, structure, and track long-term personal goals using the GROW coaching model — Goal, Reality, Options, Will.
 
+**🌐 Live:** https://spira-952567559986.europe-west1.run.app
+
+## Deployment
+
+Spira runs on **Google Cloud Run** as a single container that serves both the Spring Boot API and the built React SPA on **one origin** (so the Google-OAuth session cookies + CSRF work), backed by a **Neon** serverless PostgreSQL — both on free tiers. The image is a multi-stage `Dockerfile` (build SPA → embed it in the jar → slim JRE); Flyway applies the DB migrations on startup. Secrets (DB password, Google client secret, AI encryption key) live in **Secret Manager**.
+
+Redeploy from the repo root with `.\deploy.ps1`. Full step-by-step runbook (including the gotchas hit along the way) is in [`docs/deploy-gcp-cloud-run.md`](docs/deploy-gcp-cloud-run.md).
+
 Detailed project documentation is in the repository root folders:
 
 - `docs/` — practical guides and testing/linting docs
@@ -380,12 +388,21 @@ cd backend
 sh ./mvnw test
 ```
 
-Python E2E tests (run against a running backend + real PostgreSQL):
+Python E2E tests (run against a running backend + real PostgreSQL). The app is
+auth-gated, so the backend must run under the `e2e` profile, which enables a test-only
+`X-E2E-Auth` header login and disables CSRF (real Google OAuth can't run headlessly):
 
 ```bash
+# start the backend under the e2e profile first
+SPRING_PROFILES_ACTIVE=e2e ./mvnw -f backend spring-boot:run
+
+# then, in another terminal
 pip install -r tests-e2e/requirements.txt
 SPIRA_BASE_URL=http://localhost:8080 pytest tests-e2e/ -v
 ```
+
+> Background on why these tests were rewritten when auth landed:
+> [docs/testing-guide.md → Why the E2E tests had to be rewritten](docs/testing-guide.md#why-the-e2e-tests-had-to-be-rewritten).
 
 Windows equivalents:
 
@@ -512,8 +529,10 @@ What it runs (four jobs):
    - prints a JaCoCo line-coverage summary
 3. **Python E2E tests** (`needs: backend`)
    - spins up a real **PostgreSQL 16** service container
-   - builds and starts the backend JAR against it (Flyway migrations run end-to-end)
-   - waits for `/graphql` to respond, then runs `pytest tests-e2e/`
+   - builds and starts the backend JAR against it under the `e2e` profile (Flyway
+     migrations run end-to-end; the `e2e` profile enables the `X-E2E-Auth` test login so
+     the auth-gated API is reachable without real Google OAuth)
+   - waits for `/health` to respond, then runs `pytest tests-e2e/`
 4. **Allure report** (`needs: backend, e2e`, runs `always`)
    - merges backend + E2E Allure results into one HTML report
 
@@ -572,6 +591,8 @@ Testing & tooling:
 - `docs/graphiql-guide.md`
 - `docs/linting-guide.md`
 - `docs/deploy-oracle-vm.md`
+- `docs/deploy-gcp-cloud-run.md`
+- `docs/google-drive-integration-guide.md`
 
 AI:
 

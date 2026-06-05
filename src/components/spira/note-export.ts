@@ -8,7 +8,12 @@
  *          format is legacy Word-HTML (.doc) rather than OOXML (.docx) so we
  *          avoid bundling a heavyweight docx generator.
  * - pdf  — printed via the browser (Save as PDF) for crisp, selectable text.
+ *
+ * Google Docs export is different: it calls the backend Drive integration to
+ * create a real document (see {@link openInGoogleDocs}).
  */
+
+import { getCsrfToken } from "@/lib/spira/auth";
 
 function escapeHtml(s: string): string {
   const d = document.createElement("div");
@@ -249,38 +254,67 @@ export function printNotePdf(title: string, html: string): void {
   }, 250);
 }
 
-const GOOGLE_DOCS_CREATE_URL = "https://docs.google.com/document/create";
+/**
+ * Network call only (no DOM): POST the note to the backend Drive integration and
+ * return the linked document's `webViewLink`. Sends the session cookie
+ * (`credentials`) and the CSRF token, as every mutating `/api` call must.
+ * Extracted from {@link openInGoogleDocs} so it can be unit-tested without a DOM.
+ *
+ * @param resourceId the note resource's id (the doc is linked to it server-side)
+ * @param sync       false = open the linked doc or create+link it (never overwrites);
+ *                   true  = push the note's current content to the linked doc.
+ */
+export async function postGoogleDoc(
+  resourceId: string,
+  title: string,
+  preparedHtml: string,
+  sync = false,
+): Promise<string> {
+  const url = `/api/notes/${resourceId}/google-doc${sync ? "/sync" : ""}`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken(),
+    },
+    body: JSON.stringify({ title, html: preparedHtml }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(body || `Google Docs request failed (${res.status})`);
+  }
+  const { webViewLink } = (await res.json()) as { webViewLink: string };
+  return webViewLink;
+}
 
 /**
- * Copies the note's formatted HTML to the clipboard and opens a new blank
- * Google Doc, so the user pastes it (Ctrl/Cmd+V) with formatting preserved.
- *
- * There is no Google URL that accepts document content, and true auto-creation
- * would need the Drive API + OAuth — so this "copy + open + paste" flow is the
- * practical zero-integration option. Returns whether the clipboard copy
- * succeeded (it needs a secure context — localhost/https; it will not work over
- * a plain-http LAN address).
+ * Opens the note's linked Google Doc in a new tab — creating and linking one the
+ * first time. Never overwrites an existing doc (use {@link syncGoogleDoc} for that).
+ * Requires Google sign-in with Drive access (`drive.file`). Rejects on failure.
  */
-export async function openInGoogleDocs(html: string): Promise<boolean> {
+export async function openInGoogleDocs(resourceId: string, html: string, title?: string): Promise<string> {
   const prepared = prepareExportHtml(html);
-  let copied = false;
+
+  // Reserve a tab synchronously inside the user-gesture so the browser doesn't
+  // block the popup after the async request resolves; we set its URL afterwards.
+  const reserved = window.open("", "_blank");
+
   try {
-    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          "text/html": new Blob([prepared], { type: "text/html" }),
-          "text/plain": new Blob([htmlToPlainText(html)], { type: "text/plain" }),
-        }),
-      ]);
-      copied = true;
-    } else if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(htmlToPlainText(html));
-      copied = true;
-    }
-  } catch {
-    copied = false;
+    const webViewLink = await postGoogleDoc(resourceId, title ?? "Spira note", prepared, false);
+    if (reserved) reserved.location.href = webViewLink;
+    else window.open(webViewLink, "_blank", "noopener,noreferrer");
+    return webViewLink;
+  } catch (e) {
+    reserved?.close();
+    throw e;
   }
-  // Open after copying so the document is still focused while we write the clipboard.
-  window.open(GOOGLE_DOCS_CREATE_URL, "_blank", "noopener,noreferrer");
-  return copied;
+}
+
+/**
+ * Pushes the note's current content to its linked Google Doc (overwriting it),
+ * creating + linking one if none exists yet. Does not open a tab. Rejects on failure.
+ */
+export async function syncGoogleDoc(resourceId: string, html: string, title?: string): Promise<string> {
+  return postGoogleDoc(resourceId, title ?? "Spira note", prepareExportHtml(html), true);
 }

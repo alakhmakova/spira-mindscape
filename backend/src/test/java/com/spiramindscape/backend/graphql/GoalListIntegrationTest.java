@@ -1,32 +1,12 @@
 package com.spiramindscape.backend.graphql;
 
-import com.spiramindscape.backend.goal.GoalRepository;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.support.BaseGraphQlIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@AutoConfigureGraphQlTester
-@ActiveProfiles("test")
-class GoalListIntegrationTest {
-
-    @Autowired
-    private GraphQlTester graphQlTester;
-
-    @Autowired
-    private GoalRepository goalRepository;
-
-    @AfterEach
-    void cleanDatabase() {
-        goalRepository.deleteAll();
-    }
+class GoalListIntegrationTest extends BaseGraphQlIntegrationTest {
 
     @Test
     @DisplayName("goals query returns empty list when no goals exist")

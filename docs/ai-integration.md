@@ -42,7 +42,7 @@ The AI system adds three things to the database, defined in [`backend/src/main/r
 -- Stores per-user, per-provider API keys (encrypted at rest)
 CREATE TABLE ai_api_keys (
     id          BIGSERIAL    PRIMARY KEY,
-    app_user_id BIGINT,                     -- null until auth is merged
+    app_user_id BIGINT,                     -- the owning user (from CurrentUserProvider)
     provider    VARCHAR(32)  NOT NULL,       -- 'ANTHROPIC' | 'OPENAI' | 'MISTRAL'
     model       VARCHAR(64),                 -- optional model override
     enc_key     TEXT         NOT NULL,       -- AES-256-GCM ciphertext, Base64
@@ -308,6 +308,20 @@ There is a single tool with a `kind` discriminator rather than many tools. One t
 | `add_checklist_item` | `id` (checklist **target** id), `value`, opt. `deadline_value`/`done` | `updateTarget(goalId, id, { items:[…, newItem] })` — adds a sub-task |
 
 So "one tool" does **not** mean "only create" — one entry point can create data, **edit existing items**, and change their state. Every change still requires explicit user approval (per the spec's Proposal & Approval System).
+
+**Goal-level by id + deletion** — used mainly from the **All-Goals page** (no goal is open). The global context (`GoalContextBuilder.build(null)`) lists the user's goals with their ids so the model can target one:
+
+| `kind` | Required args | Applied by (frontend) |
+|---|---|---|
+| `new_goal` | `title`, opt. `value` (description), `deadline_value` | `addGoal({ title, description?, deadline? })` |
+| `edit_goal` | `id` (goal id), `field` (`title`\|`confidence`\|`deadline`), `value` | `updateGoal(id, { … })` — edits a goal's **card field** |
+| `open_goal` | `id` (goal id) | `navigate("/goals/:id")` — open a goal to work inside it |
+| `delete_goal` | `id` (goal id; defaults to current goal on a goal page) | opens a **confirmation dialog**; on confirm → `deleteGoal(id)` |
+| `delete_target` | `id` (target id) | opens a **confirmation dialog**; on confirm → `removeTarget(goalId, id)` |
+| `link` / `email` | `value` (URL / email), opt. `title`/`role`/`phone` | `addResource(id, { type, … })` |
+| `edit_link` / `edit_email` | `id`, changed fields | `updateResource(goalId, id, patch)` |
+
+**Deletion is never automatic.** `delete_goal` / `delete_target` only *open the app's confirmation dialog* (`ConfirmDialog`, rendered inside `AiPanel`); the user decides. The AI cannot delete data directly. To work with items **inside** a goal from the All-Goals page, the model can't edit them there — it either tells the user to open the goal or proposes `open_goal` (which they confirm).
 
 ### Referencing existing items: ids in the context
 
@@ -626,6 +640,60 @@ Error mapping:
 - Network failure → `onError("NETWORK")` → toast shown
 - Any other error → `onError("Server error: 500")` → toast shown
 
+### Authentication & CSRF (every AI request)
+
+All `/api/ai/**` endpoints require an authenticated session and — for mutating
+requests — a CSRF token. This is enforced by `SecurityConfig` (Google OAuth login,
+session cookie, CSRF via the double-submit cookie pattern). The AI client therefore
+**must** mirror the main GraphQL client:
+
+```typescript
+// mutating requests (POST /chat, POST /keys, PATCH /keys/:p, POST /proposals/:id/...)
+fetch(url, {
+  method: "POST",
+  credentials: "include",                          // send the session cookie
+  headers: { "X-XSRF-TOKEN": getCsrfToken(), ... } // echo the XSRF-TOKEN cookie
+});
+// reads (GET) only need credentials: "include"
+```
+
+`getCsrfToken()` (in [`src/lib/spira/auth.ts`](../src/lib/spira/auth.ts)) reads the
+non-HttpOnly `XSRF-TOKEN` cookie that Spring Security writes.
+
+> ### 🐞 Bug & fix: "can't save the Mistral key" (and any AI mutation)
+>
+> **Symptom:** after Google auth was merged in, saving *any* provider key failed
+> (it surfaced first on Mistral). The same broke every AI mutation and would have
+> broken chat itself.
+>
+> **Root cause — two parts:**
+> 1. **Frontend:** `ai-api.ts` predated auth and sent plain `fetch` calls with no
+>    `credentials` and no `X-XSRF-TOKEN`. Spring Security rejected the `POST` with
+>    **403 (missing CSRF token)** — or **401** if no session existed. It was never
+>    a Mistral-specific problem; every provider and every mutation was affected.
+> 2. **Backend:** `AiKeyService` / `AiProposalService` still used a hard-coded
+>    `DEV_USER_ID = 1L` stub instead of the authenticated user, a leftover from
+>    before auth existed.
+>
+> **Fix:**
+> - `ai-api.ts` now adds `credentials: "include"` to every request and
+>   `X-XSRF-TOKEN: getCsrfToken()` to every mutation (`mutationHeaders()` helper).
+> - `AiKeyService` and `AiProposalService` resolve the real user via
+>   `CurrentUserProvider.getCurrentUser().getId()`.
+> - **Threading gotcha:** the chat SSE loop runs on a background thread pool, but
+>   `CurrentUserProvider` reads the Spring Security context from a `ThreadLocal`.
+>   The executor is therefore wrapped in `DelegatingSecurityContextExecutorService`
+>   so the caller's security context propagates to the worker thread — otherwise
+>   creating a proposal mid-stream throws `IllegalStateException: No authenticated
+>   AppUser`.
+>
+> **Regression tests:** `AiKeySecurityIntegrationTest` (anonymous→401, no-CSRF→403,
+> auth+CSRF→200), `AiKeyServiceTest` / `AiProposalServiceTest` (user scoping),
+> and `ai-api.test.ts` (client sends the CSRF header + credentials).
+>
+> **Reminder:** you must be **logged in** (visit `/oauth2/authorization/google`,
+> or the SPA login page) before saving a key — otherwise you get a 401.
+
 ---
 
 ## 9. Frontend: State Machine
@@ -745,7 +813,8 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | Edit existing items & state | ✅ Done | Same tool, edit/state kinds (`edit_target`, `edit_option`, `edit_obstacle`, `edit_action`, `edit_note`, `complete_target`, `target_progress`, `select_option`, `checklist_item`, `add_checklist_item`) referencing item `id` from the context. See §4a. |
 | Checklist sub-tasks | ✅ Done | A checklist target holds sub-tasks (items). The AI can add one (`add_checklist_item`), edit its text, check/uncheck it, and set its **due date** (`checklist_item` with `deadline_value`). Items exist only on checklist targets. |
 | Reading resources | ✅ Done (text, on demand) | `read_resource` tool loads a note/PDF/link/contact's text only when needed (not embedded in every request). PDF via PDFBox. Provider-agnostic. Images / scanned PDFs aren't readable (no text layer). Rewrites are proposed as a new note. |
-| Deletion | ⛔ By design | No delete tool; the AI explains where to delete in the UI instead. |
+| Deletion | ✅ Done (confirmation only) | `delete_goal` / `delete_target` open a confirmation dialog in `AiPanel`; the AI never deletes directly — the user confirms. |
+| All-Goals goal ops | ✅ Done | From the All-Goals page the AI can `new_goal`, `edit_goal` (name/confidence/deadline by id), `open_goal`, and start `delete_goal`. Context lists the user's goals with ids. |
 | Web search (Tavily) | ✅ Done (needs live testing) | `web_search` tool via Tavily (BYOK key). Agentic loop in `AiChatService.runAgenticLoop`. Offered only in chat when a Tavily key exists. See section 4b. |
 | Proposal persistence | ✅ Done | Goal-scoped proposals are stored in `ai_proposals` (PENDING), the id is streamed to the client, approve/reject hit the server, and pending cards are restored on reload. See section 4a. |
 | Chat transcript persistence | ✅ Done (client-side) | Regular chat cached in `localStorage` per goal/global scope. GROW sessions are not persisted (ephemeral). See section 9. |
@@ -755,7 +824,7 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | GROW session backend state | ❌ Not started | `GROWSession` entity, timing fields not in DB; timer is currently frontend-only |
 | AI memory persistence (GROW) | ❌ Not started | `ai_memory` column exists, nothing writes to it; the GROW "Save memory" card is a stub |
 | Chat transcript on the server | ❌ Not started | Transcript is `localStorage`-only — not synced across devices and lost if storage is cleared (pending proposals are still recoverable from the server) |
-| Google OAuth user binding | Stub | `AiKeyService` hardcodes `DEV_USER_ID = 1L` |
+| Google OAuth user binding | ✅ Done | `AiKeyService` / `AiProposalService` resolve the user via `CurrentUserProvider`; the frontend sends the session cookie + CSRF token (see §8). |
 | AI-based safety check | Planned | Currently keyword-only in `SafetyService` |
 
 The current implementation supports a real, goal-aware conversation with an Anthropic or Mistral key, and lets the AI propose concrete goal changes (which the user approves) in both chat and GROW modes.

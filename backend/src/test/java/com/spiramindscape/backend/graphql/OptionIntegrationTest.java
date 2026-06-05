@@ -1,33 +1,18 @@
 package com.spiramindscape.backend.graphql;
 
-import com.spiramindscape.backend.goal.GoalRepository;
-import com.spiramindscape.backend.goal.GoalService;
-import org.junit.jupiter.api.AfterEach;
+import com.spiramindscape.backend.support.BaseGraphQlIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.graphql.tester.AutoConfigureGraphQlTester;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.graphql.test.tester.GraphQlTester;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@AutoConfigureGraphQlTester
-@ActiveProfiles("test")
-class OptionIntegrationTest {
+class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
 
     private static final String NON_EXISTENT_ID = String.valueOf(Long.MAX_VALUE);
-
-    @Autowired
-    private GraphQlTester graphQlTester;
-
-    @Autowired
-    private GoalRepository goalRepository;
 
     private String goalId;
 
@@ -42,11 +27,6 @@ class OptionIntegrationTest {
                         """)
                 .execute()
                 .path("createGoal.id").entity(String.class).get();
-    }
-
-    @AfterEach
-    void cleanDatabase() {
-        goalRepository.deleteAll();
     }
 
     // --- add option ----------------------------------------------------------
@@ -763,9 +743,9 @@ class OptionIntegrationTest {
     }
 
     @Test
-    @DisplayName("Accepts option text at maximum length on add")
+    @DisplayName("Accepts option text at maximum length (500 chars) on add")
     void acceptsOptionTextAtMaxLengthOnAdd() {
-        String maxText = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH);
+        String maxText = "A".repeat(500);
 
         graphQlTester.document("""
                         mutation($goalId: ID!, $text: String!) {
@@ -781,10 +761,10 @@ class OptionIntegrationTest {
     }
 
     @Test
-    @DisplayName("Accepts option text at maximum length on update")
+    @DisplayName("Accepts option text at maximum length (500 chars) on update")
     void acceptsOptionTextAtMaxLengthOnUpdate() {
         String optionId = addOption(goalId, "Original text");
-        String maxText = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH);
+        String maxText = "A".repeat(500);
 
         graphQlTester.document("""
                         mutation($goalId: ID!, $optionId: ID!, $text: String!) {
@@ -801,9 +781,9 @@ class OptionIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when adding option with text over the maximum length - no option created")
+    @DisplayName("Returns ValidationError when adding option with text over 500 chars - no option created")
     void returnsErrorWhenAddingOptionWithOversizedText() {
-        String oversized = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1);
+        String oversized = "A".repeat(501);
 
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($goalId: ID!, $text: String!) {
@@ -817,7 +797,7 @@ class OptionIntegrationTest {
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Option text must be " + GoalService.MAX_OPTION_TEXT_LENGTH + " characters or fewer") &&
+                                error.getMessage().contains("Option text must be 500 characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
 
         graphQlTester.document("""
@@ -829,10 +809,10 @@ class OptionIntegrationTest {
     }
 
     @Test
-    @DisplayName("Returns ValidationError when updating option with text over the maximum length - original text preserved")
+    @DisplayName("Returns ValidationError when updating option with text over 500 chars - original text preserved")
     void returnsErrorWhenUpdatingOptionWithOversizedText() {
         String optionId = addOption(goalId, "Original option text");
-        String oversized = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1);
+        String oversized = "A".repeat(501);
 
         GraphQlTester.Response response = graphQlTester.document("""
                         mutation($goalId: ID!, $optionId: ID!, $text: String!) {
@@ -849,7 +829,7 @@ class OptionIntegrationTest {
         response.errors()
                 .satisfy(errors -> assertThat(errors)
                         .anyMatch(error ->
-                                error.getMessage().contains("Option text must be " + GoalService.MAX_OPTION_TEXT_LENGTH + " characters or fewer") &&
+                                error.getMessage().contains("Option text must be 500 characters or fewer") &&
                                 "ValidationError".equals(error.getExtensions().get("classification"))));
 
         graphQlTester.document("""

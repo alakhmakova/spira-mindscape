@@ -1,0 +1,17 @@
+# Keep the build context small and reproducible
+node_modules
+dist
+.git
+.github
+# Maven output only — NOT a bare "target" (the source package
+# com.spiramindscape.backend.target must stay in the build context).
+backend/target
+*.log
+.vscode
+.idea
+.DS_Store
+tests-e2e
+grow
+docs
+specs
+**/*.md

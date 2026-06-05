@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.goal;
 
+import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.resource.Resource;
 import com.spiramindscape.backend.target.Target;
 import jakarta.persistence.*;
@@ -24,6 +25,11 @@ public class Goal {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Owner — every goal belongs to exactly one signed-in user. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private AppUser user;
 
     @NotBlank
     @Size(max = GoalService.MAX_GOAL_TITLE_LENGTH)

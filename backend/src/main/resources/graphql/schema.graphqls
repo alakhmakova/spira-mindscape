@@ -121,6 +121,7 @@ type Resource {
     role: String
     email: String
     phone: String
+    driveWebViewLink: String
     createdAt: String!
     updatedAt: String!
 }

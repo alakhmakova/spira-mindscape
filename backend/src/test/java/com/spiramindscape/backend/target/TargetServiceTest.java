@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.target;
 
 import com.spiramindscape.backend.goal.Goal;
-import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.ChecklistItemInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
 import com.spiramindscape.backend.graphql.input.UpdateTargetInput;
@@ -33,7 +33,7 @@ class TargetServiceTest {
     private ChecklistItemRepository checklistItemRepository;
 
     @Mock
-    private GoalRepository goalRepository;
+    private GoalService goalService;
 
     @InjectMocks
     private TargetService targetService;
@@ -311,7 +311,7 @@ class TargetServiceTest {
     @Test
     void createsNumericTargetWithCurrentSetToStart() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Target target = targetService.create(1L, new CreateTargetInput(
@@ -338,7 +338,7 @@ class TargetServiceTest {
     @DisplayName("create numeric: descending range (start > total) — current initialised to start")
     void createsNumericTargetWithDescendingRange() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Target target = targetService.create(1L, new CreateTargetInput(
@@ -353,7 +353,7 @@ class TargetServiceTest {
 
     @Test
     void rejectsNumericTargetCurrentOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages",
@@ -375,7 +375,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: missing start throws 'Numeric target requires start'")
     void rejectsNumericTargetWithoutStartOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages", "numeric", null, null, null, 10d, null, null, null
@@ -389,7 +389,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: missing total throws 'Numeric target requires total'")
     void rejectsNumericTargetWithoutTotalOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages", "numeric", null, 0d, null, null, null, null, null
@@ -403,7 +403,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: negative start throws 'Numeric target start cannot be negative'")
     void rejectsNumericTargetWithNegativeStartOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages", "numeric", null, -1d, null, 10d, null, null, null
@@ -417,7 +417,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: negative total throws 'Numeric target target cannot be negative'")
     void rejectsNumericTargetWithNegativeTotalOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages", "numeric", null, 0d, null, -10d, null, null, null
@@ -431,7 +431,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: start == total throws 'Numeric target start and target must be different'")
     void rejectsNumericTargetWithEqualStartAndTotalOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Read pages", "numeric", null, 10d, null, 10d, null, null, null
@@ -445,7 +445,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: explicit start:null in rawInput throws 'Numeric target start cannot be null'")
     void rejectsExplicitNullStartOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
         Map<String, Object> rawInput = new HashMap<>();
         rawInput.put("start", null);
 
@@ -461,7 +461,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: explicit total:null in rawInput throws 'Numeric target target cannot be null'")
     void rejectsExplicitNullTotalOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
         Map<String, Object> rawInput = new HashMap<>();
         rawInput.put("total", null);
 
@@ -477,7 +477,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create numeric: explicit current:null in rawInput throws 'Numeric target current cannot be null'")
     void rejectsExplicitNullCurrentOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
         Map<String, Object> rawInput = new HashMap<>();
         rawInput.put("current", null);
 
@@ -702,7 +702,7 @@ class TargetServiceTest {
     @DisplayName("create binary: target saved with done=false and type 'binary'")
     void createsBinaryTargetWithDoneFalse() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Target target = targetService.create(1L, new CreateTargetInput(
@@ -746,7 +746,7 @@ class TargetServiceTest {
 
     @Test
     void rejectsBinaryTargetCreatedAlreadyDone() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Send email",
@@ -769,7 +769,7 @@ class TargetServiceTest {
     @DisplayName("create checklist: items are saved and attached to the target")
     void createsChecklistTargetWithItems() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Target target = targetService.create(1L, new CreateTargetInput(
@@ -794,7 +794,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create checklist: null items throws 'Checklist target requires at least one item'")
     void rejectsChecklistTargetWithNullItemsOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Prepare launch", "checklist", null, null, null, null, null, null, null
@@ -808,7 +808,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create checklist: empty items list throws 'Checklist target requires at least one item'")
     void rejectsChecklistTargetWithEmptyItemsOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Prepare launch", "checklist", null, null, null, null, null, null, List.of()
@@ -822,7 +822,7 @@ class TargetServiceTest {
     @Test
     @DisplayName("create binary/numeric with items throws 'Only checklist targets can have items'")
     void rejectsItemsOnNonChecklistTypeOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Send email", "binary", null, null, null, null, null, null,
@@ -836,7 +836,7 @@ class TargetServiceTest {
 
     @Test
     void rejectsChecklistTargetWithBlankItemTextOnCreate() {
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal(1L)));
+        when(goalService.findById(1L)).thenReturn(goal(1L));
 
         assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
                 "Prepare launch",

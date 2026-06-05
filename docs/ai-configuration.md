@@ -1,4 +1,4 @@
-﻿# AI Configuration Plan
+# AI Configuration Plan
 
 This document is the planning and implementation guide for Spira's AI system. It is a living document — updated as decisions are made and implementation progresses.
 

@@ -8,7 +8,9 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { useNavigate } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
@@ -27,12 +29,16 @@ type Msg = {
 };
 
 type ProposalKind =
+  // create a brand-new goal (used from the global / All-Goals chat)
+  | "new_goal"
   // create / goal-level
-  | "target" | "task" | "option" | "note" | "edit" | "obstacle" | "action" | "confidence" | "deadline"
+  | "target" | "task" | "option" | "note" | "link" | "email" | "edit" | "obstacle" | "action" | "confidence" | "deadline"
   // edit existing
-  | "edit_target" | "edit_option" | "edit_obstacle" | "edit_action" | "edit_note"
+  | "edit_target" | "edit_option" | "edit_obstacle" | "edit_action" | "edit_note" | "edit_link" | "edit_email"
   // state changes
-  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item";
+  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item"
+  // goal-level by id (All-Goals page) + deletion (opens a confirmation dialog)
+  | "edit_goal" | "open_goal" | "delete_goal" | "delete_target";
 
 type Proposal = {
   id: string;
@@ -54,6 +60,8 @@ type Proposal = {
   current?: string;     // numeric starting progress
   unit?: string;        // numeric unit
   items?: { text: string; done?: boolean; deadline?: string }[]; // checklist items
+  patch?: Record<string, string>; // resource fields to update (edit_link / edit_email)
+  goalId?: string; // target goal id for goal-level ops from All-Goals (edit_goal/open_goal/delete_goal)
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -140,6 +148,7 @@ function saveTranscript(scopeKey: string, msgs: Msg[]) {
 type Suggestion = { id: string; icon: string; text: string };
 
 const SUGGESTIONS_GLOBAL: Suggestion[] = [
+  { id: "new-goal", icon: "✨", text: "Help me create a new goal" },
   { id: "overview", icon: "🗺️", text: "Help me get a sense of where things stand" },
   { id: "focus",    icon: "🎯", text: "Which goal should I focus on today?" },
   { id: "stuck",    icon: "💭", text: "I'm feeling stuck — where do I begin?" },
@@ -216,8 +225,19 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
     let title = value || name;
     let detail: string | undefined;
     let body: string | undefined;
+    let patch: Record<string, string> | undefined;
 
     switch (kind) {
+      case "new_goal":
+        // goal title in `title`; optional description in `value`
+        title = name || value;
+        body = name && value ? value : undefined; // description (only if distinct from title)
+        // The "NEW GOAL" badge already names the kind; show description/deadline
+        // here when present, otherwise nothing (an empty goal needs no detail line).
+        detail = body
+          ? (body.length > 60 ? body.slice(0, 60) + "…" : body)
+          : deadlineVal ? `Due ${deadlineVal}` : undefined;
+        break;
       case "edit":
         title = value;
         detail = data.field === "description" ? "New description" : "New title";
@@ -253,6 +273,27 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         body = value;
         detail = value.length > 60 ? value.slice(0, 60) + "…" : value;
         break;
+      case "link": {
+        // value = URL, title = optional label
+        const next: Record<string, string> = { url: value };
+        if (name) next.title = name;
+        patch = next;
+        title = name || value || "New link";
+        detail = "New link";
+        break;
+      }
+      case "email": {
+        // value = email address, title = name, plus optional role / phone
+        const next: Record<string, string> = {};
+        if (name) next.name = name;
+        if (value) next.email = value;
+        if (data.role) next.role = data.role;
+        if (data.phone) next.phone = data.phone;
+        patch = next;
+        title = name || value || "New contact";
+        detail = "New contact";
+        break;
+      }
       // ── edit existing ──
       case "edit_target":   title = value || name; detail = deadlineVal ? `Edit target · due ${deadlineVal}` : "Edit target"; break;
       case "edit_option":   title = value || name; detail = "Edit option"; break;
@@ -263,6 +304,28 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         body = value;
         detail = "Edit note";
         break;
+      case "edit_link": {
+        // value = new URL, title = new label (either or both)
+        const next: Record<string, string> = {};
+        if (name) next.title = name;
+        if (value) next.url = value;
+        patch = next;
+        title = name || value || "Update link";
+        detail = "Edit link";
+        break;
+      }
+      case "edit_email": {
+        // title = new name, value = new email, plus optional role / phone
+        const next: Record<string, string> = {};
+        if (name) next.name = name;
+        if (value) next.email = value;
+        if (data.role) next.role = data.role;
+        if (data.phone) next.phone = data.phone;
+        patch = next;
+        title = name || value || "Update contact";
+        detail = "Edit contact";
+        break;
+      }
       // ── state changes ──
       case "complete_target":
         title = done === false ? "Mark target not done" : "Mark target done";
@@ -284,6 +347,26 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         title = value || name;
         detail = deadlineVal ? `New sub-task · due ${deadlineVal}` : "New sub-task";
         break;
+      // ── goal-level by id (All-Goals) + deletion ──
+      case "edit_goal": {
+        const f = data.field;
+        if (f === "confidence") { title = `Confidence → ${value}/10`; detail = "Edit goal"; }
+        else if (f === "deadline") { title = value; detail = "Goal deadline"; }
+        else { title = value; detail = "Rename goal"; }
+        break;
+      }
+      case "open_goal":
+        title = "Open this goal";
+        detail = "Open goal";
+        break;
+      case "delete_goal":
+        title = "Delete this goal";
+        detail = "Opens a confirmation";
+        break;
+      case "delete_target":
+        title = "Delete this target";
+        detail = "Opens a confirmation";
+        break;
     }
 
     return {
@@ -304,6 +387,10 @@ function proposalFromToolArgs(argsJson: string): Proposal | undefined {
       current,
       unit,
       items,
+      patch,
+      goalId: (kind === "edit_goal" || kind === "open_goal" || kind === "delete_goal")
+        ? itemId
+        : undefined,
       serverId: typeof data.proposalId === "number" ? data.proposalId : undefined,
     };
   } catch {
@@ -448,7 +535,16 @@ function Wordmark() {
 
 function PanelContent({ onClose }: { onClose: () => void }) {
   const { context } = useAi();
+  const navigate = useNavigate();
+  const goals = useSpira((s) => s.goals);
   const goal = useSpira((s) => s.goals.find((g) => g.id === context.goalId));
+  const deleteGoal = useSpira((s) => s.deleteGoal);
+  const removeTarget = useSpira((s) => s.removeTarget);
+  const addGoal = useSpira((s) => s.addGoal);
+  // AI-initiated deletion never deletes directly — it opens this confirmation dialog.
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: "goal" | "target"; id: string; goalId?: string } | null
+  >(null);
   const addTarget = useSpira((s) => s.addTarget);
   const updateGoal = useSpira((s) => s.updateGoal);
   const addOption = useSpira((s) => s.addOption);
@@ -474,6 +570,46 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   }, [syncError]);
 
   const applyProposal = useCallback((p: Proposal) => {
+    // Creating a new goal works without a "current goal" — it's the primary
+    // action of the global / All-Goals chat. Handle it before the guard below.
+    if (p.kind === "new_goal") {
+      const iso = normalizeDeadline(p.deadline);
+      const title = (p.title ?? "").trim().slice(0, 200) || "New goal";
+      addGoal({ title, description: p.body ?? "", ...(iso ? { deadline: iso } : {}) });
+      toast.success("Goal created");
+      return;
+    }
+    // ── Goal-level ops by id (work from the All-Goals page, no current goal) ──
+    if (p.kind === "edit_goal") {
+      if (!p.goalId) return;
+      const v = p.rawValue ?? p.title;
+      if (p.field === "confidence") {
+        const c = parseInt(v);
+        if (c >= 1 && c <= 10) { updateGoal(p.goalId, { confidence: c as import("@/lib/spira/types").Confidence }); toast.success("Goal confidence updated"); }
+      } else if (p.field === "deadline") {
+        updateGoal(p.goalId, { deadline: normalizeDeadline(v) });
+        toast.success("Goal deadline updated");
+      } else {
+        updateGoal(p.goalId, { title: (v ?? "").trim().slice(0, 200) });
+        toast.success("Goal renamed");
+      }
+      return;
+    }
+    if (p.kind === "open_goal") {
+      if (p.goalId) navigate({ to: "/goals/$goalId", params: { goalId: p.goalId } });
+      return;
+    }
+    if (p.kind === "delete_goal") {
+      const gid = p.goalId ?? context.goalId;
+      if (gid) setPendingDelete({ kind: "goal", id: gid });
+      return;
+    }
+    if (p.kind === "delete_target") {
+      // Targets live inside a goal; use the explicit goal or the current one.
+      const gid = p.goalId ?? context.goalId;
+      if (p.itemId && gid) setPendingDelete({ kind: "target", id: p.itemId, goalId: gid });
+      return;
+    }
     if (!goal) return;
     // Resource titles are labels — the backend rejects > 200 chars (which
     // silently rolled back AI-created notes whose title was long). Clamp to fit.
@@ -556,6 +692,29 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         addResource(goal.id, { type: "note", title: label(p.title), body: p.body ?? "" });
         toast.success("Note saved");
         break;
+      case "link": {
+        const url = (p.patch?.url ?? "").trim();
+        if (!url) break;
+        // Empty title is intentional — the backend derives a label from the domain.
+        const linkTitle = (p.patch?.title ?? "").trim().slice(0, 200);
+        addResource(goal.id, { type: "link", title: linkTitle, url });
+        toast.success("Link added");
+        break;
+      }
+      case "email": {
+        const email = p.patch?.email?.trim();
+        // Empty name is intentional — the backend derives it from the email address.
+        const contactName = (p.patch?.name ?? "").trim().slice(0, 200);
+        addResource(goal.id, {
+          type: "email",
+          name: contactName,
+          ...(email ? { email } : {}),
+          ...(p.patch?.role ? { role: p.patch.role } : {}),
+          ...(p.patch?.phone ? { phone: p.patch.phone } : {}),
+        });
+        toast.success("Contact added");
+        break;
+      }
 
       // ── edit existing items ──
       case "edit_target": {
@@ -576,6 +735,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         break;
       case "edit_note":
         if (p.itemId) { updateResource(goal.id, p.itemId, { title: label(p.title), body: p.body ?? "" }); toast.success("Note updated"); }
+        break;
+      case "edit_link":
+        if (p.itemId && p.patch && Object.keys(p.patch).length) {
+          updateResource(goal.id, p.itemId, p.patch as Partial<import("@/lib/spira/types").Resource>);
+          toast.success("Link updated");
+        }
+        break;
+      case "edit_email":
+        if (p.itemId && p.patch && Object.keys(p.patch).length) {
+          updateResource(goal.id, p.itemId, p.patch as Partial<import("@/lib/spira/types").Resource>);
+          toast.success("Contact updated");
+        }
         break;
 
       // ── state changes ──
@@ -632,8 +803,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         break;
       }
     }
-  }, [goal, updateGoal, addTarget, addOption, addReality, addResource,
-      updateTarget, updateOption, updateReality, updateResource, selectOption]);
+  }, [goal, addGoal, updateGoal, addTarget, addOption, addReality, addResource,
+      updateTarget, updateOption, updateReality, updateResource, selectOption,
+      navigate, context.goalId]);
 
   const scopeKey = chatScopeKey(context.goalId);
 
@@ -787,13 +959,27 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         if (p) pendingProposals.push(p);
       },
       onDone: () => {
+        // Keep at most one "create goal" card per turn (the last), so a revision
+        // never stacks a second one.
+        let lastNewGoal = -1;
+        pendingProposals.forEach((pp, i) => { if (pp.kind === "new_goal") lastNewGoal = i; });
+        const finalProposals = pendingProposals.filter(
+          (pp, i) => pp.kind !== "new_goal" || i === lastNewGoal,
+        );
         const content = accumulated.trim() ||
-          (pendingProposals.length ? "I've prepared this change for your review." : "");
-        setMsgs((p) => p.map((m) =>
-          m.id === id
-            ? { ...m, streaming: false, content, ...(pendingProposals.length ? { proposals: pendingProposals } : {}) }
-            : m,
-        ));
+          (finalProposals.length ? "I've prepared this change for your review." : "");
+        // A new "create goal" proposal also replaces any earlier still-pending one,
+        // so the user only ever approves a single goal card (edits revise it in place).
+        const supersedesNewGoal = finalProposals.some((pp) => pp.kind === "new_goal");
+        setMsgs((p) => p.map((m) => {
+          if (m.id === id) {
+            return { ...m, streaming: false, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) };
+          }
+          if (supersedesNewGoal && m.proposals?.some((pr) => pr.kind === "new_goal" && pr.status === "pending")) {
+            return { ...m, proposals: m.proposals.filter((pr) => !(pr.kind === "new_goal" && pr.status === "pending")) };
+          }
+          return m;
+        }));
         setBusy(false);
       },
       onError: (err) => {
@@ -1102,7 +1288,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             <p className="text-[14px] leading-[1.6] text-white/74 max-w-[30ch] mx-auto mb-5">
               {goal
                 ? `I'm here to help with "${goal.title}". Ask anything or start a GROW session.`
-                : "I'm here to help you think. Ask anything or open a goal for a focused session."}
+                : "I'm here to help you think. Ask me anything, or just say what you want to achieve and I'll help you create a new goal."}
             </p>
             <div className="flex flex-col gap-2">
               {(goal ? buildGoalSuggestions(goal) : SUGGESTIONS_GLOBAL).map((s) => (
@@ -1241,6 +1427,38 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           onCancel={() => setConfirmEnd(false)}
         />
       )}
+
+      {/* AI-initiated deletion: the AI only opens this dialog — the user decides. */}
+      {pendingDelete && (() => {
+        const isGoal = pendingDelete.kind === "goal";
+        const g = goals.find((x) => x.id === (isGoal ? pendingDelete.id : pendingDelete.goalId));
+        const targetTitle = !isGoal
+          ? g?.targets.find((t) => t.id === pendingDelete.id)?.title
+          : undefined;
+        const name = isGoal ? (g?.title ?? "this goal") : (targetTitle ?? "this target");
+        return (
+          <ConfirmDialog
+            open
+            onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+            title={isGoal ? "Delete this goal?" : "Delete this target?"}
+            description={isGoal
+              ? `“${name}” and all its targets, options, notes and history will be permanently deleted. This can't be undone.`
+              : `“${name}” will be permanently removed from this goal. This can't be undone.`}
+            confirmLabel="Yes, delete"
+            onConfirm={() => {
+              if (isGoal) {
+                deleteGoal(pendingDelete.id);
+                if (context.goalId === pendingDelete.id) navigate({ to: "/" });
+                toast.success("Goal deleted");
+              } else if (pendingDelete.goalId) {
+                removeTarget(pendingDelete.goalId, pendingDelete.id);
+                toast.success("Target deleted");
+              }
+              setPendingDelete(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1341,10 +1559,13 @@ function TimerPill({ frac, closing, label, onSkip }: {
 // ── Proposal card ──────────────────────────────────────────────────────────
 
 const KIND_META: Record<string, { icon: string; label: string }> = {
+  new_goal:        { icon: PATHS.sparkles, label: "New goal" },
   target:          { icon: PATHS.target,   label: "New target" },
   task:            { icon: PATHS.check,    label: "New task" },
   option:          { icon: PATHS.sparkles, label: "Strategy option" },
   note:            { icon: PATHS.pencil,   label: "Resource note" },
+  link:            { icon: PATHS.sparkles, label: "New link" },
+  email:           { icon: PATHS.sparkles, label: "New contact" },
   edit:            { icon: PATHS.pencil,   label: "Goal edit" },
   obstacle:        { icon: PATHS.shield,   label: "New obstacle" },
   action:          { icon: PATHS.leaf,     label: "Current action" },
@@ -1355,11 +1576,17 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
   edit_obstacle:   { icon: PATHS.shield,   label: "Edit obstacle" },
   edit_action:     { icon: PATHS.leaf,     label: "Edit action" },
   edit_note:       { icon: PATHS.pencil,   label: "Edit note" },
+  edit_link:       { icon: PATHS.pencil,   label: "Edit link" },
+  edit_email:      { icon: PATHS.pencil,   label: "Edit contact" },
   complete_target: { icon: PATHS.check,    label: "Target status" },
   target_progress: { icon: PATHS.target,   label: "Target progress" },
   select_option:   { icon: PATHS.sparkles, label: "Select option" },
   checklist_item:  { icon: PATHS.check,    label: "Checklist item" },
   add_checklist_item: { icon: PATHS.plus,  label: "New sub-task" },
+  edit_goal:       { icon: PATHS.pencil,   label: "Edit goal" },
+  open_goal:       { icon: PATHS.switch_,  label: "Open goal" },
+  delete_goal:     { icon: PATHS.x,        label: "Delete goal" },
+  delete_target:   { icon: PATHS.x,        label: "Delete target" },
 };
 
 const PROPOSAL_INPUT_CLS =

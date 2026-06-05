@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
@@ -65,6 +66,12 @@ public class AiChatService {
             answer questions, analyse the user's goal, draft text, give concrete
             recommendations, and suggest next steps. Be direct and practical.
 
+            DO WHAT'S ASKED, BRIEFLY. When the user asks for a CONCRETE action
+            (e.g. "create a goal called X"), just do it — call the right tool and reply
+            in ONE short sentence. Do not pad it with suggestions, plans, or explanations
+            they didn't ask for. Never send a wall of unsolicited text: default to short;
+            offer further help as a brief optional question, and elaborate only when asked.
+
             You have full access to the current goal's data provided below.
             Use it to give relevant, specific answers. Reference it naturally when useful.
 
@@ -90,7 +97,7 @@ public class AiChatService {
             When the user asks you to rewrite or improve a document such as a CV, do NOT
             overwrite their original file — draft the new version and propose saving it as a
             NEW note (`kind:"note"`), so the original is preserved and the rewrite is theirs
-            to approve. A note 'title' is a SHORT label — keep it to 20 characters or fewer
+            to approve. A note 'title' is a SHORT label — keep it to 200 characters or fewer
             (e.g. "CV" or "Resume"); the document itself goes in 'value'. Format that body
             as simple HTML (`<h2>`, `<p>`, `<ul><li>`, `<strong>`, `<a href>`) so it renders
             formatted in the note — do not send Markdown.
@@ -100,8 +107,53 @@ public class AiChatService {
             describe the change in plain text and never claim it is done. Calling the tool
             creates a proposal card the user must approve. After calling it, briefly tell
             the user you've prepared the change for review.
+
+            VOCABULARY — Goal vs Target (important for non-English):
+            A "Goal" is the top-level GROW objective; a "target" is a small measurable item
+            INSIDE a goal. In some languages one word covers both — e.g. Russian «цель» can
+            mean either. Disambiguate by CONTEXT, not the literal word:
+            • If no goal is open (the All-Goals overview — see context above), a "create"
+              request can ONLY be a new Goal (kind='new_goal'); a target is impossible without
+              an open goal, so never interpret it as a target there.
+            • If a goal IS open, "add a цель/target/step/measurable item" means a target inside
+              that goal. If the user clearly means a separate, broader objective, it's a new Goal.
+            When unsure which they mean, ask one short clarifying question.
+
+            CREATING A NEW GOAL (no current goal — All-Goals page):
+            When the user names a goal to create, JUST DO IT: call the tool with
+            kind='new_goal' and 'title' = exactly what they said. Add 'value' (description)
+            or 'deadline_value' ONLY if the user explicitly gave one — otherwise create an
+            EMPTY goal with just the title. After the tool call, reply with ONE short
+            sentence (e.g. "Created — review it below 👇").
+            Before the goal exists, DO NOT:
+            • suggest or list a description, targets, options, obstacles, deadlines or a plan;
+            • ask what should go inside it, or walk through GROW;
+            • produce long text of any kind.
+            There is nothing to plan until the goal exists. Help with its contents happens
+            LATER, inside that goal's own chat, and only if the user asks. Once the goal is
+            created you may offer help with ONE short optional question — never an unsolicited
+            wall of text. If the request is too vague to even name a goal, ask ONE short
+            question and nothing more.
+
+            ON THE ALL-GOALS PAGE (no goal open — the context lists the user's goals):
+            • Editing a goal's card fields (NAME, CONFIDENCE 1-10, DEADLINE) — use
+              kind='edit_goal' with that goal's 'id' + 'field' + 'value'. Pick the right goal
+              by matching the user's words to the listed goal titles; if it's ambiguous which
+              goal they mean, ask one short question.
+            • If the user wants to work with something INSIDE a goal (targets, options, reality,
+              notes), it can't be done from here — the goal must be open. Tell them to open it,
+              or offer to open it (kind='open_goal' with the goal's id); they confirm.
+            • If the user asks to delete a goal, use kind='delete_goal' with its id. This opens
+              a confirmation dialog — you NEVER delete it yourself.
+
+            DELETION (from anywhere): you never delete data directly. kind='delete_goal'
+            (a goal) and kind='delete_target' (a target, by its id) each open a confirmation
+            dialog the user decides on. On a goal page, 'delete_goal' without an id targets the
+            current goal. Only propose a deletion when the user clearly asks to delete.
+
             You can: add items; rename/edit existing targets, options, obstacles, actions,
-            and notes; complete a target; set a numeric target's progress; select an option;
+            notes, links (edit_link), and email/contact resources (edit_email);
+            complete a target; set a numeric target's progress; select an option;
             and manage a checklist target's sub-tasks — add a new item, edit an item's text,
             check/uncheck it, and set its due date. To change an EXISTING item, pass its
             'id' exactly as shown in the goal context above (the number after 'id=').
@@ -197,8 +249,8 @@ public class AiChatService {
                     + "state (complete a target, set progress, select an option). "
                     + "To change or complete an EXISTING item, pass its 'id' exactly as shown "
                     + "in the goal context (e.g. 'id=42'). "
-                    + "You cannot delete anything — if the user wants to delete, explain in chat "
-                    + "where to do it in the UI instead. "
+                    + "For deletion (delete_goal / delete_target) you never delete anything "
+                    + "yourself — the proposal just opens a confirmation dialog the user decides on. "
                     + "The change is NOT applied until the user approves, so never claim it is done.",
             proposalInputSchema()));
 
@@ -207,12 +259,17 @@ public class AiChatService {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("kind", Map.of(
                 "type", "string",
-                "enum", List.of("edit", "confidence", "deadline", "target", "task",
-                        "option", "obstacle", "action", "note",
+                "enum", List.of("new_goal", "edit", "confidence", "deadline", "target", "task",
+                        "option", "obstacle", "action", "note", "link", "email",
                         "edit_target", "edit_option", "edit_obstacle", "edit_action",
-                        "edit_note", "complete_target", "target_progress",
-                        "select_option", "checklist_item", "add_checklist_item"),
+                        "edit_note", "edit_link", "edit_email", "complete_target", "target_progress",
+                        "select_option", "checklist_item", "add_checklist_item",
+                        "edit_goal", "open_goal", "delete_goal", "delete_target"),
                 "description", "What to propose. CREATE (no id):\n"
+                        + "'new_goal' — create a BRAND-NEW goal (use 'title' for the goal name, "
+                        + "optional 'value' for a short description, optional 'deadline_value'). "
+                        + "Use this when there is no current goal (the user is on the All-Goals page) "
+                        + "and asks to create/start a goal;\n"
                         + "'edit' — change goal title or description (use 'field' + 'value');\n"
                         + "'confidence' — set goal confidence 1-10 (use 'value');\n"
                         + "'deadline' — set goal deadline YYYY-MM-DD (use 'value');\n"
@@ -224,11 +281,19 @@ public class AiChatService {
                         + "'option' — add a strategy option (use 'value');\n"
                         + "'obstacle'/'action' — add a reality item (use 'value');\n"
                         + "'note' — save a resource note (use 'title' + 'value' for body).\n"
+                        + "'link' — save a link resource (use 'value' for the URL; optional 'title' "
+                        + "label, otherwise it's derived from the domain);\n"
+                        + "'email' — save a contact resource (use 'value' for the email address; "
+                        + "optional 'title' for the name, 'role', 'phone').\n"
                         + "EDIT EXISTING (always use 'id' from the context):\n"
                         + "'edit_target' — rename a target (use 'id', 'value'; optional 'deadline_value');\n"
                         + "'edit_option' — change option text (use 'id', 'value');\n"
                         + "'edit_obstacle'/'edit_action' — change reality text (use 'id', 'value');\n"
                         + "'edit_note' — change a note (use 'id', 'title', 'value' for body).\n"
+                        + "'edit_link' — change a link resource: 'id' plus 'value' (new URL) and/or "
+                        + "'title' (new label);\n"
+                        + "'edit_email' — change a contact/email resource: 'id' plus any of 'title' "
+                        + "(new name), 'value' (new email address), 'role', 'phone';\n"
                         + "STATE (always use 'id'):\n"
                         + "'complete_target' — mark a binary target done/undone (use 'id', 'done');\n"
                         + "'target_progress' — set a numeric target's current value (use 'id', 'value');\n"
@@ -237,7 +302,17 @@ public class AiChatService {
                         + "'value' (new text), 'done', 'deadline_value' (its due date);\n"
                         + "'add_checklist_item' — add a sub-task to a CHECKLIST target: 'id' = "
                         + "that target's id, 'value' = item text, optionally 'deadline_value' and 'done'. "
-                        + "(Only checklist targets hold items.)"));
+                        + "(Only checklist targets hold items.)\n"
+                        + "GOAL-LEVEL by id (use on the All-Goals page; 'id' = the goal id):\n"
+                        + "'edit_goal' — edit a goal's card field: 'id' (goal id), 'field' "
+                        + "('title'|'confidence'|'deadline'), 'value' (new value);\n"
+                        + "'open_goal' — propose opening a goal so the user can work inside it: "
+                        + "'id' (goal id). Use this when they ask to change something INSIDE a goal "
+                        + "from the All-Goals page;\n"
+                        + "'delete_goal' — start deleting a goal: 'id' (goal id; on a goal page it "
+                        + "defaults to the current goal). Opens a confirmation dialog — you never delete;\n"
+                        + "'delete_target' — start deleting a target: 'id' (target id). Opens a "
+                        + "confirmation dialog — you never delete."));
         props.put("id", Map.of(
                 "type", "string",
                 "description", "Id of the existing item to edit or change, taken "
@@ -245,8 +320,10 @@ public class AiChatService {
                         + "Required for every edit_*/state kind and 'checklist_item'."));
         props.put("field", Map.of(
                 "type", "string",
-                "enum", List.of("title", "description"),
-                "description", "Which goal field to edit. Required only when kind='edit'."));
+                "enum", List.of("title", "description", "confidence", "deadline"),
+                "description", "Which field to edit. For kind='edit' (current goal): 'title' or "
+                        + "'description'. For kind='edit_goal' (a goal by id): 'title', 'confidence', "
+                        + "or 'deadline'."));
         props.put("value", Map.of(
                 "type", "string",
                 "description", "Main text or value: new field content (edit/edit_*), "
@@ -254,9 +331,16 @@ public class AiChatService {
                         + "value (target_progress), option/obstacle/action text, or note/checklist body."));
         props.put("title", Map.of(
                 "type", "string",
-                "description", "Display name. Required for kind='target', 'task', 'note', 'edit_note'. "
-                        + "For notes it is a SHORT label — keep it to 20 characters or fewer; "
+                "description", "Display name. Required for kind='new_goal' (the goal title), "
+                        + "'target', 'task', 'note', 'edit_note'. "
+                        + "For notes it is a SHORT label — keep it to 200 characters or fewer; "
                         + "the note's content goes in 'value' (as simple HTML)."));
+        props.put("role", Map.of(
+                "type", "string",
+                "description", "Contact's role/title. Optional, only for kind='email' or 'edit_email'."));
+        props.put("phone", Map.of(
+                "type", "string",
+                "description", "Contact's phone number. Optional, only for kind='email' or 'edit_email'."));
         props.put("deadline_value", Map.of(
                 "type", "string",
                 "description", "Optional ISO date YYYY-MM-DD: a target/task deadline "
@@ -364,7 +448,11 @@ public class AiChatService {
     private final UrlReadService urlReadService;
 
     // Cached thread pool for blocking SSE I/O. Threads are reused between requests.
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    // Wrapped so the caller's Spring Security context propagates to the worker
+    // thread — the agentic loop creates proposals via AiProposalService, which
+    // resolves the authenticated user from the security context.
+    private final ExecutorService executor =
+            new DelegatingSecurityContextExecutorService(Executors.newCachedThreadPool());
 
     public AiChatService(
             SafetyService safety,
