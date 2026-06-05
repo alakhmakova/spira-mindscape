@@ -350,34 +350,65 @@ difference is the trigger.
 > these build/config errors. So: **iterate with `--source` until it deploys cleanly,
 > then set up CD** (below) so future pushes auto-deploy a build you already know works.
 
-**How it works:** Cloud Run sets up a **Cloud Build trigger** that watches a branch of
-your GitHub repo. On each push to that branch → Cloud Build builds the `Dockerfile` →
-deploys a new revision automatically.
+There are two ways to do CD. **We use Option A** (GitHub Actions), because the repo
+already runs its tests there — so the deploy can be *gated on those tests passing*.
+Option B (a Cloud Build trigger) is kept below as an alternative.
 
-**Roles you need** (ask your project admin if you're not the owner): Artifact Registry
-Admin, Cloud Build Editor, Cloud Run Developer, Service Account User, Service Usage
-Admin. The build's service account needs: Cloud Build Service Account, Cloud Run Admin,
-Service Account User. (For a personal project where you're Owner, you already have these.)
+### Option A — GitHub Actions deploy job (what this repo uses)
 
-**Set up (Console):**
-1. Enable the Cloud Build API (done in §4).
-2. Push the repo to GitHub (branch you want to deploy — e.g. `main`, or whichever holds
-   the deploy code).
-3. Console → **Cloud Run** → your `spira` service → **Set up continuous deployment**
-   (or **Connect repo** on a new service).
-4. Choose **Cloud Build** → authenticate the **Cloud Build GitHub app** → pick the
-   `spira-mindscape` repo (use **Manage connected repositories** if it's not listed).
-5. **Build configuration:**
-   - **Branch:** the branch to deploy (e.g. `^main$`).
-   - **Build type:** **Dockerfile**.
-   - **Source location:** `/Dockerfile` (repo root — the one we added).
-6. Save → finish the service config → the trigger is created and runs on the next push.
+**How it works:** the `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+runs **only on a push to `main`** and **only after the `frontend`, `backend`, and `e2e`
+jobs pass** (`needs: [frontend, backend, e2e]`). It then runs `gcloud run deploy spira
+--source .`, building the same root `Dockerfile`. A red build never ships.
 
-**Important — env vars & secrets still apply.** The trigger only builds + deploys; it
-does **not** re-enter the `--set-env-vars` / `--set-secrets` from §5. Those are stored on
-the **service** and persist across revisions, so set them once (via the first manual
-deploy in §5, or in the Console service config). After that, pushes redeploy with the
-same env/secrets.
+**Authentication is keyless** via **Workload Identity Federation (WIF)**: GitHub Actions
+presents its short-lived OIDC token, GCP exchanges it for temporary credentials. There is
+**no service-account key** stored in GitHub — nothing long-lived to leak or rotate.
+
+**One-time GCP setup** — run [`deploy/setup-github-cd.ps1`](../deploy/setup-github-cd.ps1)
+once, as a project Owner, with gcloud authenticated:
+
+```powershell
+gcloud config set project YOUR_PROJECT_ID
+.\deploy\setup-github-cd.ps1
+```
+
+It creates a Workload Identity Pool + a GitHub OIDC provider **locked to this repo only**
+(`attribute.repository == 'alakhmakova/spira-mindscape'`), a dedicated `github-deployer`
+service account with the deploy roles (`run.admin`, `cloudbuild.builds.editor`,
+`storage.admin`, `artifactregistry.writer`, plus `iam.serviceAccountUser` on the Compute
+Engine SA), and the binding that lets the repo impersonate it. At the end it prints three
+values to add as **GitHub repo Variables** (Settings → Secrets and variables → Actions →
+**Variables** tab — these are *not* secrets):
+
+| Variable | Example |
+|---|---|
+| `GCP_PROJECT_ID` | your project id |
+| `GCP_WIF_PROVIDER` | `projects/952567559986/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_DEPLOY_SA` | `github-deployer@<project-id>.iam.gserviceaccount.com` |
+
+The script also prints ready-to-paste `gh variable set …` commands. Once the three
+variables are set, **push to `main`** → tests run → on success the `Deploy to Cloud Run`
+job rolls out a new revision and prints the live URL.
+
+> **Security boundary:** the OIDC provider's `attribute-condition` means *only* tokens
+> issued to this exact repository can impersonate the deployer SA. A fork or another repo
+> cannot use it.
+
+### Option B — Cloud Build trigger (alternative, Console)
+
+A Cloud Build trigger watches a branch and builds+deploys on push, **without** gating on
+the GitHub Actions tests (it fires regardless of whether CI is green). Set up in the
+Console: **Cloud Run → `spira` → Set up continuous deployment → Cloud Build →** authenticate
+the GitHub app → pick the repo → **Branch** `^main$`, **Build type** Dockerfile, **Source
+location** `/Dockerfile` → Save.
+
+### Env vars & secrets are preserved (both options)
+
+Neither option re-enters `--set-env-vars` / `--set-secrets`. Those live on the **service**
+and persist across revisions, so set them once (the first manual deploy in §5). The
+GitHub Actions job deliberately omits them so a deploy never clobbers `FRONTEND_URL`,
+`CORS_ALLOWED_ORIGINS`, or the Secret Manager bindings.
 
 > Tip: keep secrets in Secret Manager (§4) and reference them in the service — never put
 > the DB password / client secret / encryption key into the repo or the Dockerfile.
