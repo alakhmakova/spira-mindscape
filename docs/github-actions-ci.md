@@ -19,8 +19,9 @@ The workflow runs on:
 
 ## What CI Runs
 
-The pipeline has four jobs: `frontend`, `backend`, `e2e` (runs after `backend`),
-and `allure-report` (aggregates results).
+The pipeline has five jobs: `frontend`, `backend`, `e2e` (runs after `backend`),
+`allure-report` (aggregates results), and `deploy` (continuous deployment to Cloud Run,
+push-to-`main` only). The first three are the test gate; `deploy` runs only if they pass.
 
 ### Frontend Job
 
@@ -64,6 +65,31 @@ end-to-end, exactly as in production (the unit/integration tests use H2 instead)
 > Note: the bundled jar does **not** contain the H2 test profile (that lives under
 > `src/test/resources`), so the E2E job deliberately uses real PostgreSQL via the
 > production env vars rather than `SPRING_PROFILES_ACTIVE=test`.
+
+### Deploy Job (`needs: frontend, backend, e2e`)
+
+Continuous deployment to Google Cloud Run. It is tightly gated:
+
+- `if: github.ref == 'refs/heads/main' && github.event_name == 'push'` — runs **only on a
+  push to `main`** (never on PRs, the nightly schedule, or feature branches).
+- `needs: [frontend, backend, e2e]` — runs **only after all three test jobs pass**, so a
+  red build never ships.
+
+Steps:
+
+1. Authenticate to GCP with `google-github-actions/auth@v2` using **Workload Identity
+   Federation** (keyless): the job requests an OIDC token (`permissions: id-token: write`)
+   and GCP exchanges it for short-lived credentials. No service-account key is stored.
+2. `gcloud run deploy spira --source . --region europe-west1` — builds the root
+   `Dockerfile` and rolls out a new revision.
+3. Print the live service URL.
+
+The job reads three non-secret repo **Variables** — `GCP_PROJECT_ID`, `GCP_WIF_PROVIDER`,
+`GCP_DEPLOY_SA` — created by the one-time setup script `deploy/setup-github-cd.ps1`. It
+deliberately does **not** pass `--set-env-vars` / `--set-secrets`: those live on the
+service and persist across revisions, so a deploy can't clobber `FRONTEND_URL`, CORS, or
+the Secret Manager bindings. Full setup:
+[deploy-gcp-cloud-run.md §11](deploy-gcp-cloud-run.md#11-continuous-deployment-from-github-auto-deploy-on-push).
 
 ## Allure Report Integration
 

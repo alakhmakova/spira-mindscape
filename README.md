@@ -8,7 +8,43 @@ A full-stack goal-tracking web application built as a personal learning project.
 
 Spira runs on **Google Cloud Run** as a single container that serves both the Spring Boot API and the built React SPA on **one origin** (so the Google-OAuth session cookies + CSRF work), backed by a **Neon** serverless PostgreSQL — both on free tiers. The image is a multi-stage `Dockerfile` (build SPA → embed it in the jar → slim JRE); Flyway applies the DB migrations on startup. Secrets (DB password, Google client secret, AI encryption key) live in **Secret Manager**.
 
-Redeploy from the repo root with `.\deploy.ps1`. Full step-by-step runbook (including the gotchas hit along the way) is in [`docs/deploy-gcp-cloud-run.md`](docs/deploy-gcp-cloud-run.md).
+### Continuous deployment (CI/CD)
+
+Pushes to `main` **auto-deploy** once the test suite is green. The `deploy` job in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs **only on push to `main`** and
+**only after the `frontend`, `backend`, and `e2e` jobs pass** (`needs: [...]`) — so a
+failing build never ships. It then builds the same root `Dockerfile` and rolls out a new
+Cloud Run revision with `gcloud run deploy spira --source .`.
+
+GitHub authenticates to GCP **keylessly** via **Workload Identity Federation** — GitHub's
+short-lived OIDC token is exchanged for temporary GCP credentials, so there is **no
+service-account key stored in the repo**. The provider is locked to this repository only.
+
+**One-time setup** (run once by a project Owner):
+
+1. Provision WIF + the deployer service account:
+   ```powershell
+   gcloud config set project YOUR_PROJECT_ID
+   .\deploy\setup-github-cd.ps1
+   ```
+   The script ([`deploy/setup-github-cd.ps1`](deploy/setup-github-cd.ps1)) creates a
+   Workload Identity Pool, a GitHub OIDC provider restricted to `alakhmakova/spira-mindscape`,
+   a `github-deployer` service account with the deploy roles, and the impersonation binding.
+2. Add the three values it prints as **GitHub repo Variables** (Settings → Secrets and
+   variables → Actions → **Variables**): `GCP_PROJECT_ID`, `GCP_WIF_PROVIDER`,
+   `GCP_DEPLOY_SA`. (Not secrets — none are sensitive.)
+3. Push to `main`. Tests run; on success the **Deploy to Cloud Run** job ships the revision.
+
+Env vars and Secret Manager bindings live on the **service** and persist across revisions,
+so the deploy job never re-sets them (it can't clobber `FRONTEND_URL`/CORS/secrets).
+
+Full runbook (initial setup + every gotcha hit along the way, incl. the CD section §11) is
+in [`docs/deploy-gcp-cloud-run.md`](docs/deploy-gcp-cloud-run.md).
+
+### Manual deploy
+
+For a one-off deploy outside CI, run `.\deploy.ps1` from the repo root (it applies env +
+secrets and can do a full `--source` rebuild). Useful for hotfixes or before CD is set up.
 
 Detailed project documentation is in the repository root folders:
 
@@ -518,7 +554,7 @@ When it runs:
 - manually via `workflow_dispatch`
 - every night by schedule (`0 3 * * *`, UTC)
 
-What it runs (four jobs):
+What it runs (five jobs — the last, `deploy`, only on push to `main`):
 
 1. **Frontend tests and build**
    - `npm ci`
@@ -535,6 +571,11 @@ What it runs (four jobs):
    - waits for `/health` to respond, then runs `pytest tests-e2e/`
 4. **Allure report** (`needs: backend, e2e`, runs `always`)
    - merges backend + E2E Allure results into one HTML report
+5. **Deploy to Cloud Run** (`needs: frontend, backend, e2e`)
+   - runs **only on push to `main`, only after all tests pass** — a red build never ships
+   - authenticates to GCP keylessly via **Workload Identity Federation** (no stored key)
+   - `gcloud run deploy spira --source .` rolls out a new revision (env vars + secrets
+     persist on the service). Setup: [docs/deploy-gcp-cloud-run.md §11](docs/deploy-gcp-cloud-run.md#11-continuous-deployment-from-github-auto-deploy-on-push)
 
 Artifacts produced:
 
