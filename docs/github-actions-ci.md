@@ -49,7 +49,7 @@ end-to-end, exactly as in production (the unit/integration tests use H2 instead)
 3. Start the jar under `SPRING_PROFILES_ACTIVE=e2e`, passing `DATABASE_URL` /
    `DATABASE_USERNAME` / `DATABASE_PASSWORD` (so it connects to Postgres and runs Flyway
    on startup) plus **dummy** `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-4. Wait until `GET /api/health` responds.
+4. Wait until `GET /health` responds (the health endpoint is served at `/health`).
 5. Install Python deps (`pip install -r tests-e2e/requirements.txt`) and run `pytest`.
 6. Upload E2E Allure results and stop the backend.
 
