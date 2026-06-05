@@ -591,7 +591,7 @@ header. Nothing about it is active in production (the profile is never set there
 | `E2eTestAuthFilter` (`@Profile("e2e")`) | Trusts an `X-E2E-Auth: <email>` header and authenticates the request as a single seeded test user (`googleSub = "e2e-test-user"`, created on first use) | Gives the suite a real authenticated, user-scoped session **without** the interactive Google redirect |
 | `SecurityConfig` (conditional) | Under `e2e`: registers the filter and **disables CSRF**; otherwise: normal cookie double-submit CSRF | The header auth is stateless per request, so CSRF tokens would only get in the way — but only in this profile |
 | `conftest.py` (`client` fixture) | Sends `X-E2E-Auth` (email from `SPIRA_E2E_AUTH`, default `e2e@test.local`) on every request | Makes every test request authenticated, transparently |
-| `ci.yml` (e2e job) | Runs the jar with `SPRING_PROFILES_ACTIVE=e2e` plus **dummy** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; waits on `/api/health` | The dummy creds let Spring Security's Google client initialize so the jar boots; the app never actually calls Google in this profile |
+| `ci.yml` (e2e job) | Runs the jar with `SPRING_PROFILES_ACTIVE=e2e` plus **dummy** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; waits on `/health` | The dummy creds let Spring Security's Google client initialize so the jar boots; the app never actually calls Google in this profile |
 
 **Guardrails proving the mechanism is safe.** `E2eProfileAuthIntegrationTest` boots Spring
 with both `test` + `e2e` profiles and asserts two things:

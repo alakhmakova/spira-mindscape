@@ -532,7 +532,7 @@ What it runs (four jobs):
    - builds and starts the backend JAR against it under the `e2e` profile (Flyway
      migrations run end-to-end; the `e2e` profile enables the `X-E2E-Auth` test login so
      the auth-gated API is reachable without real Google OAuth)
-   - waits for `/api/health` to respond, then runs `pytest tests-e2e/`
+   - waits for `/health` to respond, then runs `pytest tests-e2e/`
 4. **Allure report** (`needs: backend, e2e`, runs `always`)
    - merges backend + E2E Allure results into one HTML report
 

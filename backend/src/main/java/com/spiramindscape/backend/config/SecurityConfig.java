@@ -66,8 +66,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public: OAuth2 / OIDC dance
                 .requestMatchers("/oauth2/**", "/login/**").permitAll()
-                // Public: health check
-                .requestMatchers("/api/health").permitAll()
+                // Public: health check (HealthController serves this at /health)
+                .requestMatchers("/health").permitAll()
                 // Public: /api/auth/me returns 401 itself when anonymous (not a security rule)
                 .requestMatchers("/api/auth/me").permitAll()
                 // Data endpoints require authentication
@@ -128,7 +128,7 @@ public class SecurityConfig {
             http.csrf(csrf -> csrf
                 .csrfTokenRepository(csrfRepo)
                 .csrfTokenRequestHandler(requestHandler)
-                .ignoringRequestMatchers("/api/health", "/oauth2/**", "/login/**"));
+                .ignoringRequestMatchers("/health", "/oauth2/**", "/login/**"));
         }
 
         return http.build();

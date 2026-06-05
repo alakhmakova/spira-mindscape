@@ -130,7 +130,10 @@ jobs:
       # disables CSRF. Dummy OAuth creds satisfy the (unused) Google client config.
       - name: Start backend against PostgreSQL
         run: |
-          java -jar backend/target/*.jar &
+          # Capture stdout+stderr to a file: the process is backgrounded, so without
+          # this any startup crash is invisible (the step boundary truncates console
+          # output). The "Wait" step prints this log if readiness ever times out.
+          java -jar backend/target/*.jar > backend.log 2>&1 &
           echo $! > backend.pid
         env:
           SPRING_PROFILES_ACTIVE: e2e
@@ -142,15 +145,19 @@ jobs:
 
       - name: Wait for backend to be ready
         run: |
+          # The health endpoint is served at /health (HealthController @GetMapping("/health")),
+          # NOT /api/health — curl -sf treats any non-2xx (e.g. a 404) as failure, so the
+          # wrong path makes readiness time out even when the app is fully up.
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
               echo "Backend ready"
               exit 0
             fi
             echo "Waiting... ($i/30)"
             sleep 2
           done
-          echo "Backend did not start in time"
+          echo "Backend did not start in time. Last 200 lines of backend.log:"
+          tail -n 200 backend.log || echo "(no backend.log found)"
           exit 1
 
       - name: Setup Python

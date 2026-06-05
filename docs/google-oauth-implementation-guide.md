@@ -396,7 +396,7 @@ public class SecurityConfig {
             // ── URL authorization rules ──────────────────────────────────────
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/oauth2/**", "/login/**").permitAll()  // OAuth2 handshake
-                .requestMatchers("/api/health").permitAll()               // health probe
+                .requestMatchers("/health").permitAll()                   // health probe
                 .requestMatchers("/api/auth/me").permitAll()              // returns 401 itself
                 .anyRequest().authenticated()                              // everything else: login required
             )
@@ -405,7 +405,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf
                 .csrfTokenRepository(csrfRepo)
                 .csrfTokenRequestHandler(requestHandler)
-                .ignoringRequestMatchers("/api/health", "/oauth2/**", "/login/**")
+                .ignoringRequestMatchers("/health", "/oauth2/**", "/login/**")
             )
 
             // ── OAuth2 login ──────────────────────────────────────────────────
@@ -709,7 +709,7 @@ const navigate  = useNavigate();
 | `GET /api/auth/me` | Public | Returns 401 itself when no session |
 | `POST /api/auth/logout` | Authenticated + CSRF | 204 after session is invalidated |
 | `/oauth2/**`, `/login/**` | Public | OAuth2 handshake; no session needed |
-| `/api/health` | Public | Health probe for load balancers |
+| `/health` | Public | Health probe for load balancers |
 
 ### CSRF — double-submit cookie pattern
 
