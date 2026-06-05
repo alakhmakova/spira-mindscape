@@ -59,6 +59,14 @@ public class Resource {
     @Column(length = 50)
     private String phone;
 
+    /** Drive file id of the Google Doc created from this note (null until exported). */
+    @Column(name = "drive_file_id", columnDefinition = "TEXT")
+    private String driveFileId;
+
+    /** Shareable link of the linked Google Doc (shown to the user / opened in a tab). */
+    @Column(name = "drive_web_view_link", columnDefinition = "TEXT")
+    private String driveWebViewLink;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "goal_id", nullable = false)
     private Goal goal;

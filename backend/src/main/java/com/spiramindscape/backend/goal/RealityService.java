@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.goal;
 
 import com.spiramindscape.backend.graphql.model.RealityPayload;
+// Note: GoalService (not GoalRepository) is used for owner-scoped goal lookups
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 public class RealityService {
 
     private final RealityRepository realityRepository;
-    private final GoalRepository goalRepository;
+    private final GoalService goalService;
 
     @Transactional(readOnly = true)
     public RealityItem findItemById(Long id) {
@@ -26,15 +27,13 @@ public class RealityService {
 
     @Transactional(readOnly = true)
     public RealityPayload findByGoal(Long goalId) {
-        goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        goalService.findById(goalId); // owner-scoped check
         return buildReality(goalId);
     }
 
     @Transactional
     public RealityPayload addItem(Long goalId, String kind, String text) {
-        Goal goal = goalRepository.findById(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + goalId));
+        Goal goal = goalService.findById(goalId); // owner-scoped
         String normalizedText = normalizeRequiredText(text, "Reality item text is required");
         validateRealityItemText(normalizedText);
         RealityItem item = new RealityItem();

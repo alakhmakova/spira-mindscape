@@ -1,5 +1,7 @@
 package com.spiramindscape.backend.goal;
 
+import com.spiramindscape.backend.auth.AppUser;
+import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
@@ -22,21 +24,31 @@ public class GoalService {
     private final GoalRepository goalRepository;
     private final OptionRepository optionRepository;
     private final ConfidenceHistoryRepository confidenceHistoryRepository;
+    private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
     public List<Goal> findAll() {
-        return goalRepository.findAllByOrderByCreatedAtAsc();
+        Long userId = currentUserProvider.getCurrentUser().getId();
+        return goalRepository.findByUserIdOrderByCreatedAtAsc(userId);
     }
 
+    /**
+     * Finds a goal by id scoped to the current user.
+     * Returns a NOT_FOUND error if the goal does not exist OR belongs to another user —
+     * the caller cannot distinguish the two cases (defense in depth).
+     */
     @Transactional(readOnly = true)
     public Goal findById(Long id) {
-        return goalRepository.findById(id)
+        Long userId = currentUserProvider.getCurrentUser().getId();
+        return goalRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + id));
     }
 
     @Transactional
     public Goal create(CreateGoalInput input) {
+        AppUser currentUser = currentUserProvider.getCurrentUser();
         Goal goal = new Goal();
+        goal.setUser(currentUser);
         goal.setTitle(normalizeRequiredText(input.title(), "Goal title is required"));
         goal.setDescription(normalizeOptionalText(input.description()));
         goal.setConfidence(input.confidence());

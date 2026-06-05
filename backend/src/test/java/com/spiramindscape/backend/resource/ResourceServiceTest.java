@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.resource;
 
 import com.spiramindscape.backend.goal.Goal;
-import com.spiramindscape.backend.goal.GoalRepository;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ class ResourceServiceTest {
     private ResourceRepository resourceRepository;
 
     @Mock
-    private GoalRepository goalRepository;
+    private GoalService goalService;
 
     @InjectMocks
     private ResourceService resourceService;
@@ -37,7 +37,7 @@ class ResourceServiceTest {
     @Test
     void createsNoteResourceWithRequiredFieldsOnly() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -61,7 +61,7 @@ class ResourceServiceTest {
     @Test
     void createsNoteResourceWithRequiredAndOptionalFields() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -85,7 +85,7 @@ class ResourceServiceTest {
     @Test
     void createsNoteResourceWithBodyAtMaximumLength() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String body = noteBodyAtLimit();
 
@@ -108,7 +108,7 @@ class ResourceServiceTest {
     @Test
     void rejectsNoteResourceWithOversizedBody() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Research notes",
@@ -131,7 +131,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromNoteTitleOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -154,7 +154,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromNoteTitleWithOnlySpacesOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "   ",
@@ -177,7 +177,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromNoteTitleWithEmptyStringOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "",
@@ -200,7 +200,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromNoteTitleWithNewlineOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "\n",
@@ -223,7 +223,7 @@ class ResourceServiceTest {
     @Test
     void rejectsNoteResourceWithoutTitle() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -246,7 +246,7 @@ class ResourceServiceTest {
     @Test
     void createsLinkResourceWithRequiredFieldsOnly() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -270,7 +270,7 @@ class ResourceServiceTest {
     @Test
     void createsLinkResourceWithGeneratedTitleFromDomain() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -292,7 +292,7 @@ class ResourceServiceTest {
     @Test
     void createsLinkResourceWithRequiredAndOptionalFields() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -316,7 +316,7 @@ class ResourceServiceTest {
     @Test
     void rejectsLinkResourceWithoutUrl() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Docs",
@@ -339,7 +339,7 @@ class ResourceServiceTest {
     @Test
     void rejectsLinkResourceWithInvalidUrl() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Docs",
@@ -362,7 +362,7 @@ class ResourceServiceTest {
     @Test
     void createsImageFileResourceWithRequiredFields() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -387,7 +387,7 @@ class ResourceServiceTest {
     @Test
     void rejectsImageFileResourceWithoutTitle() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -410,7 +410,7 @@ class ResourceServiceTest {
     @Test
     void rejectsImageFileResourceWithoutMime() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Screenshot",
@@ -433,7 +433,7 @@ class ResourceServiceTest {
     @Test
     void rejectsImageFileResourceWithoutDataUrl() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Screenshot",
@@ -456,7 +456,7 @@ class ResourceServiceTest {
     @Test
     void createsDocumentFileResourceWithRequiredFields() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -481,7 +481,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWithoutTitle() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -504,7 +504,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWithoutMime() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Brief",
@@ -527,7 +527,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWithoutDataUrl() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Brief",
@@ -550,7 +550,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWithUnsupportedMime() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Archive",
@@ -573,7 +573,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWhenDataUrlMimeDoesNotMatch() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Screenshot",
@@ -596,7 +596,7 @@ class ResourceServiceTest {
     @Test
     void rejectsFileResourceWhenFileIsTooLarge() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "Huge image",
@@ -619,7 +619,7 @@ class ResourceServiceTest {
     @Test
     void createsEmailResourceWithLowercaseType() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -643,7 +643,7 @@ class ResourceServiceTest {
     @Test
     void createsEmailResourceWithGeneratedNameFromEmail() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -666,7 +666,7 @@ class ResourceServiceTest {
     @Test
     void rejectsResourceTitleLongerThanLabelLimit() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 "A".repeat(ResourceService.MAX_RESOURCE_LABEL_LENGTH + 1),
@@ -690,7 +690,7 @@ class ResourceServiceTest {
     @Test
     void rejectsEmailNameLongerThanLabelLimit() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -714,7 +714,7 @@ class ResourceServiceTest {
     @Test
     void rejectsEmailResourceWithoutEmail() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -737,7 +737,7 @@ class ResourceServiceTest {
     @Test
     void rejectsEmailResourceWithInvalidEmail() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -760,7 +760,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromEmailNameOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -783,7 +783,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromEmailEmailOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -805,7 +805,7 @@ class ResourceServiceTest {
     @Test
     void trimsWhitespaceFromEmailPhoneOnCreate() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Resource resource = resourceService.create(1L, new CreateResourceInput(
@@ -1002,7 +1002,7 @@ class ResourceServiceTest {
     @Test
     void rejectsOldContactAliasBecauseBackendModelUsesEmail() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
                 null,
@@ -1025,7 +1025,7 @@ class ResourceServiceTest {
     @Test
     void createsLinkResourceWithUrlAtMaximumLength() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String url = "https://example.com/" + "a".repeat(ResourceService.MAX_LINK_URL_LENGTH - "https://example.com/".length());
 
@@ -1048,7 +1048,7 @@ class ResourceServiceTest {
     @Test
     void rejectsLinkResourceWithUrlExceedingMaximumLength() {
         Goal goal = goal(1L);
-        when(goalRepository.findById(1L)).thenReturn(Optional.of(goal));
+        when(goalService.findById(1L)).thenReturn(goal);
         String url = "https://example.com/" + "a".repeat(ResourceService.MAX_LINK_URL_LENGTH);
 
         assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
@@ -1080,6 +1080,24 @@ class ResourceServiceTest {
         resourceService.delete(42L);
 
         verify(resourceRepository).delete(resource);
+    }
+
+    @Test
+    void linkGoogleDocStoresFileIdAndLinkOnOwnedResource() {
+        Goal goal = goal(1L);
+        Resource note = new Resource();
+        note.setId(7L);
+        note.setType("note");
+        note.setGoal(goal);
+        when(resourceRepository.findById(7L)).thenReturn(Optional.of(note));
+        when(goalService.findById(1L)).thenReturn(goal); // owner-scoped check passes
+        when(resourceRepository.save(any(Resource.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Resource result = resourceService.linkGoogleDoc(7L, "file-1", "https://docs.google.com/document/d/abc/edit");
+
+        assertThat(result.getDriveFileId()).isEqualTo("file-1");
+        assertThat(result.getDriveWebViewLink()).isEqualTo("https://docs.google.com/document/d/abc/edit");
+        verify(resourceRepository).save(note);
     }
 
     private static Goal goal(Long id) {

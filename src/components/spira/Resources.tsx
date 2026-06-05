@@ -21,7 +21,6 @@ import { useSpira } from "@/lib/spira/store";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
@@ -32,7 +31,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { downloadNoteTxt, downloadNoteDoc, printNotePdf, openInGoogleDocs } from "@/components/spira/note-export";
+import { downloadNoteTxt, downloadNoteDoc, printNotePdf, openInGoogleDocs, syncGoogleDoc } from "@/components/spira/note-export";
 import { toast } from "sonner";
 
 const typeMeta = {
@@ -611,16 +610,30 @@ function PreviewBody({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
-                    const copied = await openInGoogleDocs(resource.body);
-                    toast(
-                      copied
-                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
-                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
-                    );
+                    try {
+                      await openInGoogleDocs(resource.id, resource.body, resource.title);
+                      toast.success(resource.driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
+                    }
                   }}
                 >
-                  Open in Google Docs
+                  {resource.driveWebViewLink ? "Open in Google Docs" : "Create in Google Docs"}
                 </DropdownMenuItem>
+                {resource.driveWebViewLink && (
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      try {
+                        await syncGoogleDoc(resource.id, resource.body, resource.title);
+                        toast.success("Google Doc updated from this note");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Couldn't update the Google Doc");
+                      }
+                    }}
+                  >
+                    Update Google Doc from note
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
@@ -845,6 +858,8 @@ function ResourcePreview({
             <MobileNoteBody
               title={resource.title}
               body={resource.body || ""}
+              resourceId={resource.id}
+              driveWebViewLink={resource.driveWebViewLink ?? null}
               onTitleChange={(v) =>
                 updateResource(goalId, resource.id, { title: v })
               }
@@ -891,12 +906,16 @@ function ResourcePreview({
 function MobileNoteBody({
   title,
   body,
+  resourceId,
+  driveWebViewLink,
   onTitleChange,
   onBodyChange,
   onClose,
 }: {
   title: string;
   body: string;
+  resourceId: string;
+  driveWebViewLink?: string | null;
   onTitleChange: (value: string) => void;
   onBodyChange: (html: string) => void;
   onClose: () => void;
@@ -951,16 +970,30 @@ function MobileNoteBody({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
-                    const ok = await openInGoogleDocs(body);
-                    toast(
-                      ok
-                        ? "Google Docs opened — press Ctrl/Cmd+V to paste your note"
-                        : "Google Docs opened — copy the note and paste it (auto-copy needs https/localhost)",
-                    );
+                    try {
+                      await openInGoogleDocs(resourceId, body, title);
+                      toast.success(driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
+                    }
                   }}
                 >
-                  Open in Google Docs
+                  {driveWebViewLink ? "Open in Google Docs" : "Create in Google Docs"}
                 </DropdownMenuItem>
+                {driveWebViewLink && (
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      try {
+                        await syncGoogleDoc(resourceId, body, title);
+                        toast.success("Google Doc updated from this note");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Couldn't update the Google Doc");
+                      }
+                    }}
+                  >
+                    Update Google Doc from note
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <button
@@ -1368,10 +1401,12 @@ function Form({
         {type === "note" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Note</label>
-            <Textarea
+            {/* Rich editor (same as editing an existing note) so pasted
+                formatting is preserved as HTML on creation, not flattened. */}
+            <RichTextEditor
               value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="min-h-32"
+              onChange={(html) => setBody(html)}
+              placeholder="Write your note here..."
             />
           </div>
         )}

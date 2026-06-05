@@ -38,7 +38,7 @@ export type Target =
     };
 
 export type Resource =
-  | { id: string; type: "note"; title: string; body: string }
+  | { id: string; type: "note"; title: string; body: string; driveWebViewLink?: string | null }
   | { id: string; type: "link"; title: string; url: string }
   | { id: string; type: "file"; title: string; mime: string; dataUrl: string }
   | {
@@ -51,8 +51,12 @@ export type Resource =
     };
 
 /**
- * Resource without the server-assigned `id` — used when creating a new resource.
- * Defined as an explicit union so TypeScript distributes Omit correctly over each variant.
+ * Resource fields for creation: same union as {@link Resource} but without
+ * `id` (assigned by the server).
+ *
+ * Plain `Omit<Resource, "id">` does NOT distribute over union members in
+ * TypeScript — it collapses to only the keys common to every variant.
+ * This explicit form gives each discriminant its full set of fields.
  */
 export type ResourceInput =
   | Omit<Extract<Resource, { type: "note" }>, "id">

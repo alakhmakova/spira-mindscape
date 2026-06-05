@@ -1,6 +1,13 @@
-import { Outlet, Link, createRootRoute } from "@tanstack/react-router";
+import {
+  Outlet,
+  Link,
+  createRootRoute,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router";
 import { AppShell } from "@/components/shell/AppShell";
 import { Toaster } from "@/components/ui/sonner";
+import { useAuth } from "@/lib/spira/auth";
 
 function NotFoundComponent() {
   return (
@@ -25,11 +32,45 @@ function NotFoundComponent() {
 }
 
 export const Route = createRootRoute({
+  /**
+   * Auth guard: runs before any child route renders.
+   *
+   * - /login is public — skip the check.
+   * - All other routes require an active session. We call fetchMe() only once
+   *   (status starts as "loading"); subsequent navigations reuse the cached
+   *   status. If the backend says the user is anonymous we redirect to /login.
+   */
+  beforeLoad: async ({ location }) => {
+    if (location.pathname === "/login") return;
+
+    const auth = useAuth.getState();
+    if (auth.status === "loading") {
+      await auth.fetchMe();
+    }
+    if (useAuth.getState().status === "anonymous") {
+      throw redirect({ to: "/login" });
+    }
+  },
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
 });
 
+/**
+ * The login page is rendered without the AppShell (no nav bar, no goal list).
+ * Every other route is wrapped in AppShell.
+ */
 function RootComponent() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  if (pathname === "/login") {
+    return (
+      <>
+        <Outlet />
+        <Toaster />
+      </>
+    );
+  }
+
   return (
     <AppShell>
       <Outlet />
