@@ -33,7 +33,7 @@ export function ConfirmDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="bg-surface border-0 rounded-lg shadow-2xl max-w-[640px] p-6">
+      <AlertDialogContent className="bg-surface border-0 rounded-lg shadow-2xl w-[calc(100%-2rem)] max-w-[440px] p-6">
         <button
           onClick={() => onOpenChange(false)}
           className="absolute right-5 top-5 text-muted-foreground/70 hover:text-foreground transition-colors"

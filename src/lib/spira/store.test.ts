@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SpiraApiError, spiraApi } from "./api";
 import { useSpira } from "./store";
-import type { Goal } from "./types";
+import type { Goal, Resource } from "./types";
 
 const BODY_LIMIT_MESSAGE =
   "Note resource body must be 50000 characters or fewer";
@@ -102,6 +102,91 @@ describe("useSpira resource sync errors", () => {
 
     expect(useSpira.getState().syncError).toBe(BODY_LIMIT_MESSAGE);
     expect(useSpira.getState().syncErrorKind).toBe("service");
+  });
+
+  it("keeps every reality item when several are added at once (concurrent reconcile)", async () => {
+    // Regression: the AI can create several actions/obstacles in one go (a stepper
+    // "Save all"). Each add fires its own server call; previously the response REPLACED
+    // the whole reality list, so 3 concurrent responses clobbered each other and only the
+    // last item survived. addReality must now reconcile only ITS OWN item.
+    //
+    // We simulate the worst case: each call's response contains ONLY its own item (a stale
+    // full-list snapshot that omits the siblings). The fix must still end with all three.
+    vi.spyOn(spiraApi, "addRealityItem").mockImplementation(
+      async (_goalId: string, kind: "actions" | "obstacles", text: string) => ({
+        actions: kind === "actions" ? [{ id: "srv-" + text, text }] : [],
+        obstacles: kind === "obstacles" ? [{ id: "srv-" + text, text }] : [],
+      }),
+    );
+
+    const addReality = useSpira.getState().addReality;
+    addReality("goal-1", "actions", "update cv");
+    addReality("goal-1", "actions", "got my diploma");
+    addReality("goal-1", "actions", "finished my personal project");
+
+    await vi.waitFor(() => {
+      expect(useSpira.getState().goals[0].reality.actions).toHaveLength(3);
+    });
+
+    const actions = useSpira.getState().goals[0].reality.actions;
+    expect(actions.map((a) => a.text).sort()).toEqual(
+      ["finished my personal project", "got my diploma", "update cv"].sort(),
+    );
+    // Every item reconciled to its real server id (no temp "local-" ids left behind).
+    expect(actions.every((a) => a.id.startsWith("srv-"))).toBe(true);
+  });
+
+  it("keeps every resource when several are created at once", async () => {
+    // Same family of bug as reality items: creating several resources (notes/links/emails)
+    // in one go fires concurrent server calls. addResource must reconcile each by its own
+    // temp id (it does) so none is lost.
+    vi.spyOn(spiraApi, "createResource").mockImplementation(
+      async (_goalId: string, input) =>
+        ({ ...input, id: "srv-" + (input as { title?: string }).title }) as Resource,
+    );
+
+    const addResource = useSpira.getState().addResource;
+    addResource("goal-1", { type: "note", title: "CV", body: "<p>a</p>" });
+    addResource("goal-1", { type: "note", title: "Diploma", body: "<p>b</p>" });
+    addResource("goal-1", { type: "note", title: "Project", body: "<p>c</p>" });
+
+    await vi.waitFor(() => {
+      const synced = useSpira
+        .getState()
+        .goals[0].resources.filter((r) => r.id.startsWith("srv-"));
+      expect(synced).toHaveLength(3);
+    });
+
+    const titles = useSpira
+      .getState()
+      .goals[0].resources.map((r) => (r.type === "note" ? r.title : ""))
+      .filter(Boolean);
+    expect(titles).toEqual(expect.arrayContaining(["CV", "Diploma", "Project"]));
+  });
+
+  it("rolls back only the failed resource, keeping siblings created at the same time", async () => {
+    // Regression: a failed add used to restore a whole-list snapshot, wiping siblings added
+    // alongside it. Now only the failed item is removed.
+    vi.spyOn(spiraApi, "createResource").mockImplementation(async (_goalId: string, input) => {
+      const title = (input as { title?: string }).title;
+      if (title === "Bad") throw new SpiraApiError("boom");
+      return { ...input, id: "srv-" + title } as Resource;
+    });
+
+    const addResource = useSpira.getState().addResource;
+    addResource("goal-1", { type: "note", title: "Good1", body: "" });
+    addResource("goal-1", { type: "note", title: "Bad", body: "" });
+    addResource("goal-1", { type: "note", title: "Good2", body: "" });
+
+    await vi.waitFor(() => {
+      const titles = useSpira
+        .getState()
+        .goals[0].resources.map((r) => (r.type === "note" ? r.title : ""))
+        .filter(Boolean);
+      expect(titles).toContain("Good1");
+      expect(titles).toContain("Good2");
+      expect(titles).not.toContain("Bad");
+    });
   });
 
   it("stamps target and goal achieved dates when the last target completes", () => {

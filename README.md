@@ -4,6 +4,24 @@ A full-stack goal-tracking web application built as a personal learning project.
 
 **🌐 Live:** https://spira-952567559986.europe-west1.run.app
 
+> ⏳ **First load takes a few seconds — this is expected, not a bug.** The app runs on
+> Cloud Run's free tier, which **scales to zero**: when no one has used it for a while,
+> the container is shut down to stay free. Your first visit triggers a **cold start** —
+> Cloud Run spins a container back up and Spring Boot boots (JVM start, DB connection,
+> Flyway check). That takes roughly **5–15 seconds the first time**; every request after
+> that is instant until it goes idle again. So please give it a moment to wake up rather
+> than assuming it's broken.
+
+### Two ways to use Spira
+
+- **Just use it / show someone** → open the **live URL** above. It's the production
+  deployment with real **Google sign-in** and per-user data — each person signs in with
+  their own Google account and sees only their own goals.
+- **Develop or test locally without signing in** → run it on your machine under the
+  **`local` Spring profile**, which auto-logs-in a throwaway dev user (no Google, no login
+  screen). Full instructions: [Skip Google login for quick local checks](#skip-google-login-for-quick-local-checks--the-local-profile).
+  This profile is **dev-only** — production never uses it.
+
 ## Deployment
 
 Spira runs on **Google Cloud Run** as a single container that serves both the Spring Boot API and the built React SPA on **one origin** (so the Google-OAuth session cookies + CSRF work), backed by a **Neon** serverless PostgreSQL — both on free tiers. The image is a multi-stage `Dockerfile` (build SPA → embed it in the jar → slim JRE); Flyway applies the DB migrations on startup. Secrets (DB password, Google client secret, AI encryption key) live in **Secret Manager**.
@@ -148,6 +166,58 @@ Backend URLs:
 
 - GraphQL endpoint: `http://localhost:8080/graphql`
 - GraphiQL UI: `http://localhost:8080/graphiql.html`
+
+#### Skip Google login for quick local checks — the `local` profile
+
+The app is auth-gated and user-scoped, so normally you'd sign in with Google every
+time (and configure a `localhost` redirect URI in the Google Console). For fast UI
+checks that's friction. Start the backend under the **`local` Spring profile** instead:
+it auto-logs-in a fixed dev user (`dev@local`) on every request, so you open
+`http://localhost:5173` and land straight inside — **no login screen**.
+
+Pass the profile **as a Maven argument** (recommended — it can't be lost between shells):
+
+```powershell
+# Windows PowerShell
+cd backend
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+```
+
+```bash
+# macOS / Linux
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+> Prefer the `-D…` argument over the `SPRING_PROFILES_ACTIVE` env var: the env var only
+> works if it's exported **in the same terminal** that then runs `mvnw`. Setting it in one
+> command and running the backend in another (separate shell) silently starts **without**
+> the profile — you'd still see the login page.
+
+**Verify it's active.** On startup the backend logs:
+
+```
+The following 1 profile is active: "local"
+```
+
+and an anonymous request returns the dev user instead of `401`:
+
+```bash
+curl -i http://localhost:8080/api/auth/me   # → 200 with dev@local
+```
+
+Then open `http://localhost:5173` (use a fresh/incognito tab if you previously signed in
+with a real account, so an old session cookie doesn't mask the auto-login).
+
+Notes:
+
+- The dev user is found-or-created, so AI keys and data you save persist across restarts
+  (add your AI key once in the AI panel; it stays for that user).
+- `local` also disables CSRF (the auto-login is stateless), mirroring the CI-only `e2e`
+  profile. See [`LocalDevAuthFilter`](backend/src/main/java/com/spiramindscape/backend/auth/LocalDevAuthFilter.java).
+- **Dev-only and safe:** production never activates `local`, so the bean doesn't exist
+  there and full Google OAuth + CSRF are enforced. Never run a deployed instance with
+  this profile.
 
 ### 4) Start frontend
 

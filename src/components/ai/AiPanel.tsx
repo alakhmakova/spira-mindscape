@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { X } from "lucide-react";
@@ -14,9 +14,22 @@ import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
-import type { AiAction } from "@/lib/spira/types";
+import type { AiAction, Goal } from "@/lib/spira/types";
 import { toast } from "sonner";
-import { streamChat, saveApiKey, listApiKeys, updateKeyModel, fetchProviderModels, listGoalProposals, approveProposal, rejectProposal, type HistoryEntry } from "./ai-api";
+import { streamChat, saveApiKey, listApiKeys, updateKeyModel, fetchProviderModels, approveProposal, rejectProposal, type HistoryEntry } from "./ai-api";
+import {
+  type ProposalKind,
+  type Proposal,
+  uid,
+  stripHtml,
+  fmtDeadline,
+  dedupCreates,
+  isOptionActivate,
+  createAspects,
+  createSummary,
+  applyExcludedAspects,
+  proposalFromToolArgs,
+} from "./proposal-logic";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -26,42 +39,7 @@ type Msg = {
   content: string;
   streaming?: boolean;
   proposals?: Proposal[];
-};
-
-type ProposalKind =
-  // create a brand-new goal (used from the global / All-Goals chat)
-  | "new_goal"
-  // create / goal-level
-  | "target" | "task" | "option" | "note" | "link" | "email" | "edit" | "obstacle" | "action" | "confidence" | "deadline"
-  // edit existing
-  | "edit_target" | "edit_option" | "edit_obstacle" | "edit_action" | "edit_note" | "edit_link" | "edit_email"
-  // state changes
-  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item"
-  // goal-level by id (All-Goals page) + deletion (opens a confirmation dialog)
-  | "edit_goal" | "open_goal" | "delete_goal" | "delete_target";
-
-type Proposal = {
-  id: string;
-  kind: ProposalKind;
-  title: string;
-  detail?: string;
-  reasoning?: string;
-  status: "pending" | "approved" | "rejected";
-  field?: string;       // for "edit": "title" | "description"
-  body?: string;        // for "note" / "edit_note"
-  deadline?: string;    // ISO date for target/task
-  rawValue?: string;    // raw tool argument value (number for confidence/progress, ISO date for deadline)
-  serverId?: number;    // persisted ai_proposals row id (absent for global chat)
-  itemId?: string;      // id of the existing item to edit/change (edit_*/state kinds)
-  done?: boolean;       // for complete_target / checklist_item / binary create
-  // Target creation in a final state:
-  targetType?: "binary" | "numeric" | "checklist";
-  total?: string;       // numeric goal amount
-  current?: string;     // numeric starting progress
-  unit?: string;        // numeric unit
-  items?: { text: string; done?: boolean; deadline?: string }[]; // checklist items
-  patch?: Record<string, string>; // resource fields to update (edit_link / edit_email)
-  goalId?: string; // target goal id for goal-level ops from All-Goals (edit_goal/open_goal/delete_goal)
+  error?: boolean; // an error bubble — rendered with a warning icon, excluded from history
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -84,7 +62,17 @@ const PROVIDERS_DEFAULT: ProviderInfo[] = [
   { id: "OLLAMA",    vendor: "Ollama Cloud", context: "cloud", connected: false, keyPrefix: "", activeModel: "gpt-oss:120b", models: ["gpt-oss:120b", "gpt-oss:20b", "qwen3-coder:480b", "deepseek-v3.1:671b"] },
 ];
 
-const uid = () => Math.random().toString(36).slice(2, 9);
+// Scroll a goal-page section into view after navigation/panel-close settles. Retries
+// briefly in case the page is still mounting (e.g. navigating to a different goal).
+function scrollToSection(sectionId: string) {
+  let tries = 0;
+  const attempt = () => {
+    const el = document.getElementById(sectionId);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    else if (tries++ < 12) setTimeout(attempt, 100);
+  };
+  setTimeout(attempt, 120);
+}
 
 // ── Chat transcript persistence ─────────────────────────────────────────────
 // Regular chat survives reloads / closing the panel by caching per-scope
@@ -115,6 +103,25 @@ function saveActiveProvider(id: string) {
 }
 
 const chatScopeKey = (goalId?: string) => `${CHAT_STORE_PREFIX}${goalId ?? "global"}`;
+
+// When the All-Goals chat sends the user to a goal (because the change can only be made
+// inside it), we stash their original request here, keyed by goal id. The goal's chat
+// picks it up on open and re-sends it — so a card appears immediately instead of an empty
+// chat. Read-once: cleared as soon as it's consumed.
+const pendingInstrKey = (goalId: string) => `spira.ai.handoff.${goalId}`;
+function stashHandoff(goalId: string, text: string) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(pendingInstrKey(goalId), text); } catch { /* ignore */ }
+}
+function takeHandoff(goalId: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const k = pendingInstrKey(goalId);
+    const v = window.localStorage.getItem(k);
+    if (v) window.localStorage.removeItem(k);
+    return v || undefined;
+  } catch { return undefined; }
+}
 
 function loadTranscript(scopeKey: string): Msg[] {
   if (typeof window === "undefined") return [];
@@ -148,10 +155,9 @@ function saveTranscript(scopeKey: string, msgs: Msg[]) {
 type Suggestion = { id: string; icon: string; text: string };
 
 const SUGGESTIONS_GLOBAL: Suggestion[] = [
-  { id: "new-goal", icon: "✨", text: "Help me create a new goal" },
-  { id: "overview", icon: "🗺️", text: "Help me get a sense of where things stand" },
-  { id: "focus",    icon: "🎯", text: "Which goal should I focus on today?" },
-  { id: "stuck",    icon: "💭", text: "I'm feeling stuck — where do I begin?" },
+  { id: "new-goal", icon: "trophy", text: "Help me create a new goal" },
+  { id: "edit",     icon: "pencil", text: "Change a goal's confidence or deadline" },
+  { id: "delete",   icon: "trash",  text: "Delete a goal" },
 ];
 
 function buildGoalSuggestions(goal: import("@/lib/spira/types").Goal): Suggestion[] {
@@ -166,236 +172,34 @@ function buildGoalSuggestions(goal: import("@/lib/spira/types").Goal): Suggestio
   ).length;
 
   if (goal.confidence <= 3)
-    s.push({ id: "confidence", icon: "⚡", text: "My confidence is low — help me identify what's blocking me" });
+    s.push({ id: "confidence", icon: "brain", text: "My confidence is low — help me identify what's blocking me" });
 
   if (deadlineDays !== null && deadlineDays > 0 && deadlineDays <= 14)
-    s.push({ id: "deadline", icon: "⏰", text: `${deadlineDays} day${deadlineDays === 1 ? "" : "s"} left — let's decide what still matters` });
+    s.push({ id: "deadline", icon: "clock", text: `${deadlineDays} day${deadlineDays === 1 ? "" : "s"} left — let's decide what still matters` });
 
   if (goal.reality.obstacles.length > 0)
-    s.push({ id: "obstacles", icon: "🚧", text: `I'm facing ${goal.reality.obstacles.length} obstacle${goal.reality.obstacles.length > 1 ? "s" : ""} — help me think through them` });
+    s.push({ id: "obstacles", icon: "shield", text: `I'm facing ${goal.reality.obstacles.length} obstacle${goal.reality.obstacles.length > 1 ? "s" : ""} — help me think through them` });
 
   if (doneTargets > 0 && doneTargets < totalTargets)
-    s.push({ id: "progress", icon: "📊", text: `${doneTargets}/${totalTargets} targets done — what should I focus on next?` });
+    s.push({ id: "progress", icon: "trending", text: `${doneTargets}/${totalTargets} targets done — what should I focus on next?` });
 
   if (totalTargets === 0)
-    s.push({ id: "targets", icon: "🎯", text: "Help me define concrete targets for this goal" });
+    s.push({ id: "targets", icon: "target", text: "Help me define concrete targets for this goal" });
 
   if (goal.options.length === 0 && s.length < 3)
-    s.push({ id: "options", icon: "🔀", text: "What are my strategic options?" });
+    s.push({ id: "options", icon: "switch_", text: "What are my strategic options?" });
 
   if (goal.reality.actions.length === 0 && s.length < 3)
-    s.push({ id: "action", icon: "⚡", text: "What's the best next action I can take today?" });
+    s.push({ id: "action", icon: "zap", text: "What's the best next action I can take today?" });
 
   if (s.length === 0)
     s.push(
-      { id: "reflect", icon: "💭", text: "Help me think through where I'm stuck" },
-      { id: "reality", icon: "🌱", text: "What's actually true about this goal right now?" },
-      { id: "options", icon: "🔀", text: "What are my options from here?" },
+      { id: "reflect", icon: "brain", text: "Help me think through where I'm stuck" },
+      { id: "reality", icon: "leaf", text: "What's actually true about this goal right now?" },
+      { id: "options", icon: "switch_", text: "What are my options from here?" },
     );
 
   return s.slice(0, 3);
-}
-
-/** Builds a Proposal from the `propose_goal_change` tool-call arguments JSON. */
-function proposalFromToolArgs(argsJson: string): Proposal | undefined {
-  try {
-    const data = JSON.parse(argsJson) as Record<string, string> & {
-      proposalId?: number;
-      items?: { text?: string; done?: boolean; deadline?: string }[];
-    };
-    const kind = (data.kind || "edit") as Proposal["kind"];
-    const value = data.value ?? "";
-    const name = data.title ?? "";
-    const deadlineVal = data.deadline_value;
-    const itemId = data.id != null ? String(data.id) : undefined;
-    const done = data.done === "true" ? true : data.done === "false" ? false : undefined;
-
-    // Target-creation extras (binary done / numeric / checklist).
-    const total = data.total || undefined;
-    const current = data.current || undefined;
-    const unit = data.unit || undefined;
-    const items = Array.isArray(data.items)
-      ? data.items
-          .filter((i) => i && typeof i.text === "string" && i.text.trim())
-          .map((i) => ({ text: i.text!.trim(), done: i.done === true, deadline: i.deadline }))
-      : undefined;
-    const targetType: Proposal["targetType"] =
-      items && items.length ? "checklist" : total ? "numeric" : "binary";
-
-    let title = value || name;
-    let detail: string | undefined;
-    let body: string | undefined;
-    let patch: Record<string, string> | undefined;
-
-    switch (kind) {
-      case "new_goal":
-        // goal title in `title`; optional description in `value`
-        title = name || value;
-        body = name && value ? value : undefined; // description (only if distinct from title)
-        // The "NEW GOAL" badge already names the kind; show description/deadline
-        // here when present, otherwise nothing (an empty goal needs no detail line).
-        detail = body
-          ? (body.length > 60 ? body.slice(0, 60) + "…" : body)
-          : deadlineVal ? `Due ${deadlineVal}` : undefined;
-        break;
-      case "edit":
-        title = value;
-        detail = data.field === "description" ? "New description" : "New title";
-        break;
-      case "confidence":
-        title = `Confidence → ${value}/10`;
-        detail = "Goal confidence";
-        break;
-      case "deadline":
-        title = value; // ISO date
-        detail = "Goal deadline";
-        break;
-      case "target":
-      case "task": {
-        title = name || value;
-        const noun = kind === "task" ? "task" : "target";
-        if (targetType === "checklist") {
-          const total = items?.length ?? 0;
-          const checked = items?.filter((i) => i.done).length ?? 0;
-          detail = `New checklist · ${checked}/${total} done`;
-        } else if (targetType === "numeric") {
-          detail = `New target · ${current ?? 0}/${total}${unit ? " " + unit : ""}`;
-        } else {
-          detail = done ? `New ${noun} · done` : deadlineVal ? `New ${noun} · due ${deadlineVal}` : `New ${noun}`;
-        }
-        break;
-      }
-      case "option":    title = value || name; detail = "Strategy option"; break;
-      case "obstacle":  title = value || name; detail = "New obstacle"; break;
-      case "action":    title = value || name; detail = "Current action"; break;
-      case "note":
-        title = name || "Note";
-        body = value;
-        detail = value.length > 60 ? value.slice(0, 60) + "…" : value;
-        break;
-      case "link": {
-        // value = URL, title = optional label
-        const next: Record<string, string> = { url: value };
-        if (name) next.title = name;
-        patch = next;
-        title = name || value || "New link";
-        detail = "New link";
-        break;
-      }
-      case "email": {
-        // value = email address, title = name, plus optional role / phone
-        const next: Record<string, string> = {};
-        if (name) next.name = name;
-        if (value) next.email = value;
-        if (data.role) next.role = data.role;
-        if (data.phone) next.phone = data.phone;
-        patch = next;
-        title = name || value || "New contact";
-        detail = "New contact";
-        break;
-      }
-      // ── edit existing ──
-      case "edit_target":   title = value || name; detail = deadlineVal ? `Edit target · due ${deadlineVal}` : "Edit target"; break;
-      case "edit_option":   title = value || name; detail = "Edit option"; break;
-      case "edit_obstacle": title = value || name; detail = "Edit obstacle"; break;
-      case "edit_action":   title = value || name; detail = "Edit action"; break;
-      case "edit_note":
-        title = name || "Note";
-        body = value;
-        detail = "Edit note";
-        break;
-      case "edit_link": {
-        // value = new URL, title = new label (either or both)
-        const next: Record<string, string> = {};
-        if (name) next.title = name;
-        if (value) next.url = value;
-        patch = next;
-        title = name || value || "Update link";
-        detail = "Edit link";
-        break;
-      }
-      case "edit_email": {
-        // title = new name, value = new email, plus optional role / phone
-        const next: Record<string, string> = {};
-        if (name) next.name = name;
-        if (value) next.email = value;
-        if (data.role) next.role = data.role;
-        if (data.phone) next.phone = data.phone;
-        patch = next;
-        title = name || value || "Update contact";
-        detail = "Edit contact";
-        break;
-      }
-      // ── state changes ──
-      case "complete_target":
-        title = done === false ? "Mark target not done" : "Mark target done";
-        detail = "Target status";
-        break;
-      case "target_progress":
-        title = `Progress → ${value}`;
-        detail = "Target progress";
-        break;
-      case "select_option":
-        title = "Select this option";
-        detail = "Strategy option";
-        break;
-      case "checklist_item":
-        title = value || (done === true ? "Check item" : done === false ? "Uncheck item" : "Update item");
-        detail = deadlineVal ? `Checklist item · due ${deadlineVal}` : "Checklist item";
-        break;
-      case "add_checklist_item":
-        title = value || name;
-        detail = deadlineVal ? `New sub-task · due ${deadlineVal}` : "New sub-task";
-        break;
-      // ── goal-level by id (All-Goals) + deletion ──
-      case "edit_goal": {
-        const f = data.field;
-        if (f === "confidence") { title = `Confidence → ${value}/10`; detail = "Edit goal"; }
-        else if (f === "deadline") { title = value; detail = "Goal deadline"; }
-        else { title = value; detail = "Rename goal"; }
-        break;
-      }
-      case "open_goal":
-        title = "Open this goal";
-        detail = "Open goal";
-        break;
-      case "delete_goal":
-        title = "Delete this goal";
-        detail = "Opens a confirmation";
-        break;
-      case "delete_target":
-        title = "Delete this target";
-        detail = "Opens a confirmation";
-        break;
-    }
-
-    return {
-      id: uid(),
-      kind,
-      title,
-      detail,
-      reasoning: data.reasoning,
-      status: "pending",
-      field: data.field,
-      body,
-      deadline: deadlineVal,
-      rawValue: value || undefined,
-      itemId,
-      done,
-      targetType,
-      total,
-      current,
-      unit,
-      items,
-      patch,
-      goalId: (kind === "edit_goal" || kind === "open_goal" || kind === "delete_goal")
-        ? itemId
-        : undefined,
-      serverId: typeof data.proposalId === "number" ? data.proposalId : undefined,
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -540,11 +344,16 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const goal = useSpira((s) => s.goals.find((g) => g.id === context.goalId));
   const deleteGoal = useSpira((s) => s.deleteGoal);
   const removeTarget = useSpira((s) => s.removeTarget);
+  const removeOption = useSpira((s) => s.removeOption);
+  const removeReality = useSpira((s) => s.removeReality);
   const addGoal = useSpira((s) => s.addGoal);
   // AI-initiated deletion never deletes directly — it opens this confirmation dialog.
   const [pendingDelete, setPendingDelete] = useState<
     { kind: "goal" | "target"; id: string; goalId?: string } | null
   >(null);
+  // Long proposal content (note text / goal description) is shown in this modal so
+  // the user can read all of it — the card only has room for a title.
+  const [contentModal, setContentModal] = useState<{ title: string; body: string; html?: boolean } | null>(null);
   const addTarget = useSpira((s) => s.addTarget);
   const updateGoal = useSpira((s) => s.updateGoal);
   const addOption = useSpira((s) => s.addOption);
@@ -575,7 +384,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (p.kind === "new_goal") {
       const iso = normalizeDeadline(p.deadline);
       const title = (p.title ?? "").trim().slice(0, 200) || "New goal";
-      addGoal({ title, description: p.body ?? "", ...(iso ? { deadline: iso } : {}) });
+      const conf = p.confidence != null && p.confidence >= 1 && p.confidence <= 10
+        ? (p.confidence as import("@/lib/spira/types").Confidence)
+        : undefined;
+      addGoal({
+        title,
+        description: p.body ?? "",
+        ...(conf ? { confidence: conf } : {}),
+        ...(iso ? { deadline: iso } : {}),
+      });
       toast.success("Goal created");
       return;
     }
@@ -601,13 +418,21 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     }
     if (p.kind === "delete_goal") {
       const gid = p.goalId ?? context.goalId;
-      if (gid) setPendingDelete({ kind: "goal", id: gid });
+      if (gid && goals.some((x) => x.id === gid)) setPendingDelete({ kind: "goal", id: gid });
+      else toast.error("I couldn't find that goal to delete.");
       return;
     }
     if (p.kind === "delete_target") {
-      // Targets live inside a goal; use the explicit goal or the current one.
+      // Only a REAL target can be deleted. The model sometimes fires delete_target for an
+      // option / obstacle / action / checklist item (which it can't delete) with an id that
+      // matches no target — guard against that so we never open a phantom dialog or no-op.
       const gid = p.goalId ?? context.goalId;
-      if (p.itemId && gid) setPendingDelete({ kind: "target", id: p.itemId, goalId: gid });
+      const g = goals.find((x) => x.id === gid);
+      if (gid && p.itemId && g?.targets.some((t) => t.id === p.itemId)) {
+        setPendingDelete({ kind: "target", id: p.itemId, goalId: gid });
+      } else {
+        toast.error("I can only delete a whole target. Options, obstacles, actions and checklist items are removed with the × next to the item.");
+      }
       return;
     }
     if (!goal) return;
@@ -677,8 +502,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         break;
       }
       case "option":
-        addOption(goal.id, p.title);
-        toast.success("Option added");
+        // `done` here means "make it the selected option on create" — a new option
+        // has no id yet, so we select it once the server returns the real one.
+        addOption(goal.id, p.title, p.done ? (created) => selectOption(goal.id, created.id) : undefined);
+        toast.success(p.done ? "Option added & selected" : "Option added");
         break;
       case "obstacle":
         addReality(goal.id, "obstacles", p.title);
@@ -694,7 +521,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         break;
       case "link": {
         const url = (p.patch?.url ?? "").trim();
-        if (!url) break;
+        // A link resource needs a web address. Don't fail silently (which looked like
+        // "the card did nothing") — tell the user. To rename an existing link the AI must
+        // use edit_link with its id, not create a new one.
+        if (!url) {
+          toast.error("A link needs a web address (URL). To rename an existing link, ask me to edit it.");
+          break;
+        }
         // Empty title is intentional — the backend derives a label from the domain.
         const linkTitle = (p.patch?.title ?? "").trim().slice(0, 200);
         addResource(goal.id, { type: "link", title: linkTitle, url });
@@ -719,19 +552,28 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       // ── edit existing items ──
       case "edit_target": {
         if (!p.itemId) break;
+        // Text is required — never let an "edit" blank it out (the AI must use delete_* to
+        // remove things, not erase the text).
+        if (!p.title.trim()) { toast.error("A target needs a name — use delete to remove it."); break; }
         const iso = normalizeDeadline(p.deadline);
         updateTarget(goal.id, p.itemId, { title: p.title, ...(iso ? { deadline: iso } : {}) });
         toast.success("Target updated");
         break;
       }
       case "edit_option":
-        if (p.itemId) { updateOption(goal.id, p.itemId, { text: p.title }); toast.success("Option updated"); }
+        if (!p.itemId) break;
+        if (!p.title.trim()) { toast.error("An option needs text — use delete to remove it."); break; }
+        updateOption(goal.id, p.itemId, { text: p.title }); toast.success("Option updated");
         break;
       case "edit_obstacle":
-        if (p.itemId) { updateReality(goal.id, "obstacles", p.itemId, p.title); toast.success("Obstacle updated"); }
+        if (!p.itemId) break;
+        if (!p.title.trim()) { toast.error("An obstacle needs text — use delete to remove it."); break; }
+        updateReality(goal.id, "obstacles", p.itemId, p.title); toast.success("Obstacle updated");
         break;
       case "edit_action":
-        if (p.itemId) { updateReality(goal.id, "actions", p.itemId, p.title); toast.success("Action updated"); }
+        if (!p.itemId) break;
+        if (!p.title.trim()) { toast.error("An action needs text — use delete to remove it."); break; }
+        updateReality(goal.id, "actions", p.itemId, p.title); toast.success("Action updated");
         break;
       case "edit_note":
         if (p.itemId) { updateResource(goal.id, p.itemId, { title: label(p.title), body: p.body ?? "" }); toast.success("Note updated"); }
@@ -802,10 +644,87 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         toast.success("Sub-task added");
         break;
       }
+
+      // ── delete smaller items (the card's Accept is the confirmation) ──
+      case "delete_option":
+        if (p.itemId && goal.options.some((o) => o.id === p.itemId)) {
+          removeOption(goal.id, p.itemId); toast.success("Option deleted");
+        } else toast.error("I couldn't find that option to delete.");
+        break;
+      case "delete_obstacle":
+        if (p.itemId && goal.reality.obstacles.some((o) => o.id === p.itemId)) {
+          removeReality(goal.id, "obstacles", p.itemId); toast.success("Obstacle deleted");
+        } else toast.error("I couldn't find that obstacle to delete.");
+        break;
+      case "delete_action":
+        if (p.itemId && goal.reality.actions.some((a) => a.id === p.itemId)) {
+          removeReality(goal.id, "actions", p.itemId); toast.success("Action deleted");
+        } else toast.error("I couldn't find that action to delete.");
+        break;
+      case "delete_checklist_item": {
+        if (!p.itemId) break;
+        const parent = goal.targets.find(
+          (t) => t.type === "checklist" && t.items.some((i) => i.id === p.itemId),
+        );
+        if (parent && parent.type === "checklist") {
+          updateTarget(goal.id, parent.id, { items: parent.items.filter((i) => i.id !== p.itemId) });
+          toast.success("Sub-task deleted");
+        } else toast.error("I couldn't find that checklist item to delete.");
+        break;
+      }
     }
-  }, [goal, addGoal, updateGoal, addTarget, addOption, addReality, addResource,
+  }, [goal, goals, addGoal, updateGoal, addTarget, addOption, addReality, addResource,
       updateTarget, updateOption, updateReality, updateResource, selectOption,
-      navigate, context.goalId]);
+      removeOption, removeReality, navigate, context.goalId]);
+
+  // Deletion is destructive, so we don't render a confirmation card for it — the
+  // proper delete dialog already shows exactly what will be removed. As soon as the
+  // AI proposes a delete we open that dialog and drop the proposal from the chat,
+  // returning only the proposals that should appear as cards.
+  const openDeletesAndFilter = useCallback((proposals: Proposal[]): Proposal[] => {
+    // applyProposal validates the goal/target exists: it opens the confirm dialog only for a
+    // real one, otherwise it shows an explanatory toast (the model sometimes fires
+    // delete_target for an option/obstacle/action it can't actually delete).
+    const del = proposals.find((p) => p.kind === "delete_goal" || p.kind === "delete_target");
+    if (del) applyProposal(del);
+    return proposals.filter((p) => p.kind !== "delete_goal" && p.kind !== "delete_target");
+  }, [applyProposal]);
+
+  // Creates the goal/target and reports a createdRef (kind + goal id) via onRef so the
+  // caller can stamp it on the proposal — that persists the "Open …" shortcut.
+  const onCreateProposal = useCallback((
+    edited: Proposal,
+    onRef: (ref: { kind: "goal" | "target"; goalId: string }) => void,
+  ) => {
+    if (edited.kind === "new_goal") {
+      const iso = normalizeDeadline(edited.deadline);
+      const title = (edited.title ?? "").trim().slice(0, 200) || "New goal";
+      const conf = edited.confidence != null && edited.confidence >= 1 && edited.confidence <= 10
+        ? (edited.confidence as import("@/lib/spira/types").Confidence) : undefined;
+      // The real id only exists after the server sync, so report it from onCreated
+      // (a failed save simply never reports → no button).
+      addGoal(
+        { title, description: edited.body ?? "", ...(conf ? { confidence: conf } : {}), ...(iso ? { deadline: iso } : {}) },
+        (created) => onRef({ kind: "goal", goalId: created.id }),
+      );
+      toast.success("Goal created");
+      return;
+    }
+    // target / task — applyProposal handles all three target shapes; the target lives
+    // on the current goal's page, so the shortcut opens it there.
+    applyProposal(edited);
+    const gid = context.goalId;
+    if (gid) onRef({ kind: "target", goalId: gid });
+  }, [addGoal, applyProposal, context.goalId]);
+
+  // Open just-created content: close the chat, go to the goal page, and scroll to the
+  // relevant section (targets → "Will do", resources → "Resources").
+  const onOpenCreated = useCallback((ref: { kind: "goal" | "target" | "resource"; goalId: string }) => {
+    onClose();
+    navigate({ to: "/goals/$goalId", params: { goalId: ref.goalId } });
+    if (ref.kind === "target") scrollToSection("targets-section");
+    else if (ref.kind === "resource") scrollToSection("resources-section");
+  }, [onClose, navigate]);
 
   const scopeKey = chatScopeKey(context.goalId);
 
@@ -823,9 +742,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const stopRef = useRef(false);
   const endedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // In-place card revision ("Type a change for the AI…"): shows a cancellable "Revising…"
+  // state in the footer so a stalled revise is never a dead-end (no Stop button otherwise).
+  const reviseTokenRef = useRef(0);
+  const [revising, setRevising] = useState<{ token: number; label: string } | null>(null);
+  const cancelRevise = () => { reviseTokenRef.current++; setRevising(null); setBusy(false); };
 
   const inGrow = mode === "grow-active" || mode === "grow-closing" || mode === "grow-end";
   const list = inGrow ? gmsgs : msgs;
+
+  // A pending proposal card IS the input — it renders in the footer (where the
+  // composer would be) instead of inline, so it sits right above the keyboard.
+  const pendingMsg = list.find((m) => m.proposals?.some((pr) => pr.status === "pending"));
 
   // Load saved keys on mount
   useEffect(() => {
@@ -879,39 +807,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     saveTranscript(scopeKey, msgs);
   }, [msgs, busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Restore still-pending proposals from the server for this goal. Surfaces any
-  // that aren't already in the (locally cached) transcript — e.g. localStorage
-  // was cleared, or the proposal was made on another device.
-  useEffect(() => {
-    const goalId = context.goalId;
-    if (!goalId) return;
-    let cancelled = false;
-    listGoalProposals(goalId)
-      .then((rows) => {
-        if (cancelled || rows.length === 0) return;
-        setMsgs((prev) => {
-          const known = new Set<number>();
-          for (const m of prev)
-            for (const pr of m.proposals ?? [])
-              if (pr.serverId != null) known.add(pr.serverId);
-
-          const restored: Proposal[] = [];
-          for (const r of rows) {
-            if (known.has(r.id)) continue;
-            const p = proposalFromToolArgs(r.payload);
-            if (p) restored.push({ ...p, serverId: r.id });
-          }
-
-          if (restored.length === 0) return prev;
-          return [
-            ...prev,
-            { id: uid(), role: "assistant" as const, content: "Here are suggestions still waiting for your review:", proposals: restored },
-          ];
-        });
-      })
-      .catch(() => {/* backend not running / no proposals – ignore */});
-    return () => { cancelled = true; };
-  }, [context.goalId]);
+  // (We deliberately do NOT re-surface still-pending server proposals on open: the
+  // local transcript already restores the cards, and pulling every unresolved row
+  // from past turns resurfaced stale/irrelevant cards.)
 
   // Clears the visible chat AND its saved transcript for this scope, so the
   // next message is sent with NO history — context comes only from the goal's
@@ -934,7 +832,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // Only real conversation turns belong in history — drop system notices,
     // GROW end-cards, and empty placeholders (Anthropic rejects empty content).
     const history: HistoryEntry[] = msgs
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim() && !m.content.startsWith("⚠️"))
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim() && !m.error)
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
     const id = uid();
@@ -956,30 +854,37 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       },
       onProposal: (argsJson) => {
         const p = proposalFromToolArgs(argsJson);
-        if (p) pendingProposals.push(p);
+        if (!p) return;
+        // Goal-level ops (edit/open/delete) carry only the goal id — resolve its name so
+        // the card can show WHICH goal is being changed.
+        if (p.goalId && !p.goalTitle) {
+          const g = goals.find((x) => x.id === p.goalId);
+          if (g) p.goalTitle = g.title;
+        }
+        // An edit/open that names no real goal is unusable — it can't be applied and has no
+        // name to show. Drop it so no misleading "This goal" card appears; the AI should
+        // have asked which goal instead.
+        if ((p.kind === "edit_goal" || p.kind === "open_goal") && !p.goalTitle) return;
+        pendingProposals.push(p);
       },
       onDone: () => {
-        // Keep at most one "create goal" card per turn (the last), so a revision
-        // never stacks a second one.
-        let lastNewGoal = -1;
-        pendingProposals.forEach((pp, i) => { if (pp.kind === "new_goal") lastNewGoal = i; });
-        const finalProposals = pendingProposals.filter(
-          (pp, i) => pp.kind !== "new_goal" || i === lastNewGoal,
-        );
+        // Deletes open the confirm dialog immediately and never become cards.
+        const afterDeletes = openDeletesAndFilter(pendingProposals);
+        // Creations are surfaced as cards the user confirms (NOT auto-applied), so they
+        // can review each one. Honour every distinct create the model proposes — the user
+        // can ask for several at once — dropping only exact duplicates; reject those
+        // duplicates server-side so they don't resurface.
+        const allCreates = afterDeletes.filter((pp) => CREATE_KINDS.has(pp.kind));
+        const creates = dedupCreates(allCreates);
+        allCreates.filter((pp) => !creates.includes(pp))
+          .forEach((pp) => { if (pp.serverId != null) rejectProposal(pp.serverId).catch(() => {}); });
+        const others = afterDeletes.filter((pp) => !CREATE_KINDS.has(pp.kind));
+        const finalProposals = [...others, ...creates];
         const content = accumulated.trim() ||
-          (finalProposals.length ? "I've prepared this change for your review." : "");
-        // A new "create goal" proposal also replaces any earlier still-pending one,
-        // so the user only ever approves a single goal card (edits revise it in place).
-        const supersedesNewGoal = finalProposals.some((pp) => pp.kind === "new_goal");
-        setMsgs((p) => p.map((m) => {
-          if (m.id === id) {
-            return { ...m, streaming: false, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) };
-          }
-          if (supersedesNewGoal && m.proposals?.some((pr) => pr.kind === "new_goal" && pr.status === "pending")) {
-            return { ...m, proposals: m.proposals.filter((pr) => !(pr.kind === "new_goal" && pr.status === "pending")) };
-          }
-          return m;
-        }));
+          (finalProposals.length ? "I've prepared this for your review." : "");
+        setMsgs((p) => p.map((m) => m.id === id
+          ? { ...m, streaming: false, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) }
+          : m));
         setBusy(false);
       },
       onError: (err) => {
@@ -988,13 +893,129 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const msg = err === "NETWORK" ? "Backend unreachable — is it running?" : (err || "AI error. Try again.");
         // Show the error in place of the empty streaming bubble — visible and
         // persistent (a transient toast is easy to miss for long messages).
-        setMsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, content: "⚠️ " + msg } : m)));
+        setMsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, content: msg, error: true } : m)));
         toast.error(msg);
       },
     });
   };
 
   const stopStream = () => { stopRef.current = true; setBusy(false); };
+
+  // Revise a proposal "in place": when the user types a change on a card ("Type a change for
+  // the AI…"), DON'T spawn a new chat turn / new card. Re-ask the model, then swap the new
+  // proposal into the SAME message slot (keeping its id) so the original card simply updates.
+  // No visible "Revise your proposed…" user bubble, no pile of duplicate cards.
+  const reviseInPlace = (targetMsgId: string, targetProposalId: string, p: Proposal, instruction: string) => {
+    if (busy) return;
+    setBusy(true);
+    stopRef.current = false;
+    const grow = inGrow;
+    const setList = grow ? setGmsgs : setMsgs;
+    const curList = grow ? gmsgs : msgs;
+
+    // A token guards against a stalled/late stream mutating the card after the user cancels
+    // (or a safety timeout fires). Only the currently-active revise may finish or update.
+    const token = ++reviseTokenRef.current;
+    const { headline } = proposalDisplay(p, goal);
+    setRevising({ token, label: headline });
+    const finish = () => { setRevising((r) => (r && r.token === token ? null : r)); setBusy(false); };
+    // Safety net: a revise must never leave the card frozen with no way out. If the stream
+    // never completes, recover automatically.
+    const timer = setTimeout(() => {
+      if (reviseTokenRef.current !== token) return;
+      reviseTokenRef.current++;
+      finish();
+      toast.error("The AI took too long — the card is unchanged. Try again.");
+    }, 90_000);
+    const stillActive = () => reviseTokenRef.current === token && !stopRef.current;
+
+    // The old server-side proposal row is superseded — drop it (the new one gets its own id).
+    if (p.serverId != null) rejectProposal(p.serverId).catch(() => {});
+
+    const history: HistoryEntry[] = curList
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim() && !m.error)
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    const label = (KIND_META[p.kind]?.label ?? "change").toLowerCase();
+    const disp = proposalDisplay(p, goal);
+    const ctx = disp.detail ? `${disp.headline} (${disp.detail})` : disp.headline;
+    const message = `Revise your proposed ${label} "${ctx}": ${instruction}. Re-propose it with the change applied — one proposal.`;
+
+    let accumulated = "";
+    const pendingProposals: Proposal[] = [];
+
+    streamChat({
+      goalId: context.goalId,
+      message,
+      history,
+      provider: activeProv,
+      sessionType: grow ? "grow" : "chat",
+      onToken: (tok) => { if (stillActive()) accumulated += tok; },
+      onProposal: (argsJson) => {
+        if (!stillActive()) return;
+        const np = proposalFromToolArgs(argsJson);
+        if (!np) return;
+        if (np.goalId && !np.goalTitle) {
+          const g = goals.find((x) => x.id === np.goalId);
+          if (g) np.goalTitle = g.title;
+        }
+        if ((np.kind === "edit_goal" || np.kind === "open_goal") && !np.goalTitle) return;
+        pendingProposals.push(np);
+      },
+      onDone: () => {
+        clearTimeout(timer);
+        if (!stillActive()) return; // cancelled / superseded — don't touch the card
+        const afterDeletes = openDeletesAndFilter(pendingProposals);
+        if (afterDeletes.length === 0) {
+          // The model answered with text (e.g. a clarifying question) instead of a revised
+          // proposal — surface that so it isn't lost, and leave the original card untouched.
+          if (accumulated.trim()) {
+            setList((ms) => [...ms, { id: uid(), role: "assistant" as const, content: accumulated.trim() }]);
+          }
+          finish();
+          return;
+        }
+        // First revised proposal takes over the original card's slot (same id); any extras
+        // join the SAME message so everything stays on one card group, never a new one.
+        const [first, ...rest] = afterDeletes;
+        const replaced: Proposal = { ...first, id: targetProposalId, status: "pending" };
+        const extras = rest.map((r) => ({ ...r, status: "pending" as const }));
+        setList((ms) => ms.map((m) => {
+          if (m.id !== targetMsgId) return m;
+          const nextProposals = (m.proposals ?? []).flatMap((pr) =>
+            pr.id === targetProposalId ? [replaced, ...extras] : [pr],
+          );
+          return { ...m, proposals: nextProposals };
+        }));
+        finish();
+      },
+      onError: (err) => {
+        clearTimeout(timer);
+        if (reviseTokenRef.current !== token) return;
+        finish();
+        const msg = err === "NETWORK" ? "Backend unreachable — is it running?" : (err || "AI error. Try again.");
+        toast.error(msg);
+      },
+    });
+  };
+
+  // Keep a live ref to sendChat so the handoff effect can call the latest one without
+  // re-firing on every render.
+  const sendChatRef = useRef(sendChat);
+  useEffect(() => { sendChatRef.current = sendChat; });
+
+  // When this chat scopes to a goal that was opened from the All-Goals chat with a pending
+  // request, re-send that request here so the edit card appears straight away (not an empty
+  // chat). Runs once per arrival — takeHandoff clears it.
+  useEffect(() => {
+    const gid = context.goalId;
+    if (!gid) return;
+    const instr = takeHandoff(gid);
+    if (!instr) return;
+    // Let the re-scoped transcript settle first, then send.
+    const t = setTimeout(() => sendChatRef.current(instr), 80);
+    return () => clearTimeout(t);
+  }, [context.goalId]);
 
   // ── GROW ──────────────────────────────────────────────────────────────────
 
@@ -1056,7 +1077,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     stopRef.current = false;
 
     const history: HistoryEntry[] = gmsgs
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim() && !m.content.startsWith("⚠️"))
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim() && !m.error)
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
     const id = uid();
@@ -1078,14 +1099,32 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       },
       onProposal: (argsJson) => {
         const p = proposalFromToolArgs(argsJson);
-        if (p) pendingProposals.push(p);
+        if (!p) return;
+        // Goal-level ops (edit/open/delete) carry only the goal id — resolve its name so
+        // the card can show WHICH goal is being changed.
+        if (p.goalId && !p.goalTitle) {
+          const g = goals.find((x) => x.id === p.goalId);
+          if (g) p.goalTitle = g.title;
+        }
+        // An edit/open that names no real goal is unusable — it can't be applied and has no
+        // name to show. Drop it so no misleading "This goal" card appears; the AI should
+        // have asked which goal instead.
+        if ((p.kind === "edit_goal" || p.kind === "open_goal") && !p.goalTitle) return;
+        pendingProposals.push(p);
       },
       onDone: () => {
+        const afterDeletes = openDeletesAndFilter(pendingProposals);
+        const allCreates = afterDeletes.filter((pp) => CREATE_KINDS.has(pp.kind));
+        const creates = dedupCreates(allCreates);
+        allCreates.filter((pp) => !creates.includes(pp))
+          .forEach((pp) => { if (pp.serverId != null) rejectProposal(pp.serverId).catch(() => {}); });
+        const others = afterDeletes.filter((pp) => !CREATE_KINDS.has(pp.kind));
+        const finalProposals = [...others, ...creates];
         const content = accumulated.trim() ||
-          (pendingProposals.length ? "I've prepared this for your review." : "");
+          (finalProposals.length ? "I've prepared this for your review." : "");
         setGmsgs((p) => p.map((m) =>
           m.id === id
-            ? { ...m, streaming: false, content, ...(pendingProposals.length ? { proposals: pendingProposals } : {}) }
+            ? { ...m, streaming: false, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) }
             : m,
         ));
         setBusy(false);
@@ -1094,7 +1133,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         setBusy(false);
         if (err === "NO_KEY") { setGmsgs((p) => p.filter((m) => m.id !== id)); setShowProvider(true); return; }
         const msg = err === "NETWORK" ? "Backend unreachable — is it running?" : (err || "AI error.");
-        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, content: "⚠️ " + msg } : m)));
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, content: msg, error: true } : m)));
         toast.error(msg);
       },
     });
@@ -1204,6 +1243,55 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const activeProvider = providers.find((p) => p.id === activeProv) || providers[0];
   const activeLabel = activeProvider.connected ? activeProvider.activeModel : "No key";
 
+  // The pending card (rendered in the footer). All callbacks are bound to its message.
+  const proposalGroupFor = (m: Msg) => (
+    <ProposalGroup
+      proposals={m.proposals ?? []}
+      goal={goal}
+      onApprove={(pp) => {
+        // Opening a goal because the change can't be made here: carry the user's original
+        // request into that goal's chat so a card appears on arrival, not an empty chat.
+        if (pp.kind === "open_goal" && pp.goalId) {
+          const list = inGrow ? gmsgs : msgs;
+          const i = list.findIndex((x) => x.id === m.id);
+          const userMsg = i >= 0 ? [...list.slice(0, i)].reverse().find((x) => x.role === "user") : undefined;
+          const instr = pp.followup || userMsg?.content;
+          if (instr) stashHandoff(pp.goalId, instr);
+        }
+        applyProposal(pp);
+        if (RESOURCE_CREATE_KINDS.has(pp.kind) && context.goalId) {
+          const gid = context.goalId;
+          (inGrow ? setGmsgs : setMsgs)((msgs) => msgs.map((msg) =>
+            msg.id === m.id
+              ? { ...msg, proposals: msg.proposals?.map((pr) => pr.id === pp.id ? { ...pr, createdRef: { kind: "resource" as const, goalId: gid } } : pr) }
+              : msg,
+          ));
+        }
+      }}
+      onOpenCreated={onOpenCreated}
+      onCreateProposal={(pp) => onCreateProposal(pp, (ref) => {
+        (inGrow ? setGmsgs : setMsgs)((msgs) => msgs.map((msg) =>
+          msg.id === m.id
+            ? { ...msg, proposals: msg.proposals?.map((pr) => pr.id === pp.id ? { ...pr, createdRef: ref } : pr) }
+            : msg,
+        ));
+      })}
+      onResolveOne={(proposalId, status) => {
+        (inGrow ? setGmsgs : setMsgs)((msgs) => msgs.map((msg) =>
+          msg.id === m.id
+            ? { ...msg, proposals: msg.proposals?.map((pr) => pr.id === proposalId ? { ...pr, status } : pr) }
+            : msg,
+        ));
+        const pr = m.proposals?.find((x) => x.id === proposalId);
+        if (pr?.serverId != null) {
+          (status === "approved" ? approveProposal : rejectProposal)(pr.serverId).catch(() => {});
+        }
+      }}
+      onExpand={setContentModal}
+      onInstructOne={(p, instruction) => reviseInPlace(m.id, p.id, p, instruction)}
+    />
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1295,8 +1383,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 <button key={s.id}
                   onClick={() => sendChat(s.text)}
                   className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl bg-white/10 border border-white/20 text-white text-[13.5px] text-left hover:border-white/35 hover:-translate-y-px transition-all">
-                  <span className="text-base">{s.icon}</span>
-                  {s.text}
+                  <Ic path={PATHS[s.icon as IconKey] ?? PATHS.sparkles} size={15} className="shrink-0 text-white/80" />
+                  <span className="flex-1">{s.text}</span>
                 </button>
               ))}
             </div>
@@ -1308,7 +1396,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           if (m.role === "user") {
             return (
               <div key={m.id} className="group flex flex-col items-end gap-1">
-                <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#083f3a] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text">
+                <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#083f3a] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#006d67]/25 selection:text-[#083f3a]">
                   {m.content}
                 </div>
                 <CopyButton text={m.content} />
@@ -1329,53 +1417,53 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 onDiscard={() => closeSession(false)} />
             );
           }
-          // assistant
+          // assistant — error bubbles render with a warning icon (never an emoji)
+          if (m.error) {
+            return (
+              <div key={m.id} className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#f0b860] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]">
+                <Ic path={PATHS.alert} size={15} className="shrink-0 mt-[3px]" />
+                <span className="select-text">{m.content}</span>
+              </div>
+            );
+          }
           return (
             <div key={m.id} className="group flex flex-col gap-2.5">
-              <div className="text-[14.5px] leading-[1.62] text-white max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere] select-text">
+              <div className="text-[14.5px] leading-[1.62] text-white max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere] select-text selection:bg-white/30 selection:text-white">
                 <Markdown text={m.content} />
                 {m.streaming && <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-white rounded-sm animate-pulse" />}
               </div>
               {!m.streaming && m.content && <CopyButton text={m.content} />}
-              {!m.streaming && m.proposals?.map((p) => (
-                <ProposalCard key={p.id} p={p}
-                  onResolve={(status) => {
-                    (inGrow ? setGmsgs : setMsgs)((msgs) => msgs.map((msg) =>
-                      msg.id === m.id
-                        ? { ...msg, proposals: msg.proposals?.map((pr) => pr.id === p.id ? { ...pr, status } : pr) }
-                        : msg,
-                    ));
-                    // Record the decision server-side (best-effort) so it survives reload.
-                    if (p.serverId != null) {
-                      (status === "approved" ? approveProposal : rejectProposal)(p.serverId).catch(() => {});
-                    }
-                  }}
-                  onApprove={applyProposal}
-                  onInstruct={(instruction) => {
-                    // The user wants the AI to revise this proposal. Mark the current
-                    // one superseded (dismissed), then send their instruction back so
-                    // the AI re-proposes.
-                    (inGrow ? setGmsgs : setMsgs)((msgs) => msgs.map((msg) =>
-                      msg.id === m.id
-                        ? { ...msg, proposals: msg.proposals?.map((pr) => pr.id === p.id ? { ...pr, status: "rejected" as const } : pr) }
-                        : msg,
-                    ));
-                    if (p.serverId != null) rejectProposal(p.serverId).catch(() => {});
-                    const label = (KIND_META[p.kind]?.label ?? "change").toLowerCase();
-                    const ctx = p.detail ? `${p.title} (${p.detail})` : p.title;
-                    (inGrow ? sendGrow : sendChat)(
-                      `Revise your proposed ${label} "${ctx}": ${instruction}. Re-propose it with the change applied.`,
-                    );
-                  }}
-                />
-              ))}
+              {/* A pending card lives in the footer (the card is the input). Once it's
+                  resolved we only keep a compact result line here, not the full card. */}
+              {!m.streaming && m.proposals && m.proposals.length > 0
+                && !m.proposals.some((pr) => pr.status === "pending") && (
+                <ResultSummary proposals={m.proposals} goal={goal} onOpen={onOpenCreated} />
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Footer */}
-      {mode !== "grow-end" && (
+      {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
+          pending card renders here (the card IS the input); otherwise the composer. */}
+      {mode !== "grow-end" && revising && (
+        <div className="px-3 pb-3 pt-1 shrink-0">
+          <div className="flex items-center gap-2.5 rounded-[14px] border border-white/20 bg-white px-4 py-3 text-[#083f3a] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+            <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#006d67]/30 border-t-[#006d67] animate-spin" />
+            <span className="flex-1 min-w-0 text-[13.5px] truncate">Revising «{revising.label}»…</span>
+            <button onClick={cancelRevise}
+              className="shrink-0 text-[13px] font-medium text-[#083f3a]/55 hover:text-red-600 transition-colors px-1.5 py-1">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {mode !== "grow-end" && !revising && pendingMsg && (
+        <div className="px-3 pb-3 pt-1 shrink-0">
+          {proposalGroupFor(pendingMsg)}
+        </div>
+      )}
+      {mode !== "grow-end" && !revising && !pendingMsg && (
         <>
           {!inGrow && goal && (
             <div className="px-4 pb-1">
@@ -1459,6 +1547,53 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           />
         );
       })()}
+
+      {/* Full proposal content (long note / goal description) the card can't fit. */}
+      {contentModal && (
+        <ContentModal
+          title={contentModal.title}
+          body={contentModal.body}
+          html={contentModal.html}
+          onClose={() => setContentModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Proposal content modal ───────────────────────────────────────────────────
+
+function ContentModal({ title, body, html, onClose }: { title: string; body: string; html?: boolean; onClose: () => void }) {
+  // Close on Escape, like the other overlays.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(8,40,38,0.45)] backdrop-blur-[2px]"
+      onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#083f3a] rounded-[18px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
+        style={{ animation: "slideUp 0.25s cubic-bezier(0.2,0.8,0.2,1) both" }}>
+        <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-[#eef1f0]">
+          <h3 className="font-['Playfair_Display'] text-[18px] font-semibold leading-[1.25] flex-1 break-words [overflow-wrap:anywhere]">
+            {title}
+          </h3>
+          <button onClick={onClose} aria-label="Close"
+            className="shrink-0 text-[#083f3a]/40 hover:text-[#083f3a] transition-colors p-1 -mr-1">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto text-[14px] leading-[1.6] text-[#083f3a]/85 [overflow-wrap:anywhere]">
+          {/* Notes are stored as HTML (TipTap) — render them formatted, like the app's
+              note view; goal descriptions are plain text → Markdown. */}
+          {html
+            ? <div className="tiptap-content prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: body }} />
+            : <Markdown text={body} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1480,7 +1615,18 @@ const PATHS = {
   pencil:  '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
   target:  '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   copy:    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  expand:  '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
+  zap:     '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  trending:'<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+  compass: '<path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/><circle cx="12" cy="12" r="10"/>',
+  alert:   '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  trophy:  '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+  trash:   '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
 };
+
+/** Maps a suggestion's icon key to a lucide path (we use lucide icons everywhere — never
+ *  emoji). Falls back to the sparkles icon if a key is ever unmapped. */
+type IconKey = keyof typeof PATHS;
 
 function Ic({ path, size, className }: { path: string; size: number; className?: string }) {
   return (
@@ -1585,90 +1731,262 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
   add_checklist_item: { icon: PATHS.plus,  label: "New sub-task" },
   edit_goal:       { icon: PATHS.pencil,   label: "Edit goal" },
   open_goal:       { icon: PATHS.switch_,  label: "Open goal" },
-  delete_goal:     { icon: PATHS.x,        label: "Delete goal" },
-  delete_target:   { icon: PATHS.x,        label: "Delete target" },
+  delete_goal:     { icon: PATHS.trash,    label: "Delete goal" },
+  delete_target:   { icon: PATHS.trash,    label: "Delete target" },
+  delete_option:   { icon: PATHS.trash,    label: "Delete option" },
+  delete_obstacle: { icon: PATHS.trash,    label: "Delete obstacle" },
+  delete_action:   { icon: PATHS.trash,    label: "Delete action" },
+  delete_checklist_item: { icon: PATHS.trash, label: "Delete sub-task" },
 };
 
 const PROPOSAL_INPUT_CLS =
   "w-full border border-[#d9dddc] rounded-lg px-3 py-2 text-[14px] text-[#083f3a] bg-white outline-none focus:border-[#006d67] focus:ring-2 focus:ring-[#006d67]/12 transition";
 
-function ProposalCard({ p, onResolve, onApprove, onInstruct }: {
-  p: Proposal;
-  onResolve: (status: "approved" | "rejected") => void;
-  onApprove: (p: Proposal) => void;
-  /** User wants the AI to revise this proposal — sends their instruction back to the AI. */
-  onInstruct: (instruction: string) => void;
-}) {
-  const [whyOpen, setWhyOpen] = useState(false);
-  const [instructing, setInstructing] = useState(false);
-  const [instruction, setInstruction] = useState("");
-  const meta = KIND_META[p.kind] || KIND_META.target;
-  const settled = p.status !== "pending";
+// Truncate long strings for one-line card display (full text lives behind the
+// "Read full content" modal).
+const truncate = (s: string, n = 64) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-  const sendInstruction = () => {
-    const t = instruction.trim();
-    if (!t) return;
-    onInstruct(t);
-    setInstruction("");
-    setInstructing(false);
-  };
+/**
+ * Turns a Proposal into the exact text shown on its card — the point of the card
+ * is that the user knows precisely what will be saved. For kinds that reference
+ * an existing item (select an option, complete a target, edit a checklist item…)
+ * we resolve the id against the live goal so the card names the actual item
+ * ("Select «Find a mentor»") instead of a vague label ("Select this option").
+ * `body` is the long content (note text / goal description) shown in a modal.
+ */
+function proposalDisplay(p: Proposal, goal?: Goal): { headline: string; detail?: string; body?: string } {
+  let headline = p.title;
+  let detail = p.detail;
+  const body =
+    p.kind === "note" || p.kind === "edit_note" || p.kind === "new_goal" ? p.body : undefined;
+
+  const targetOf = (id?: string) => goal?.targets.find((t) => t.id === id);
+
+  switch (p.kind) {
+    // (option's "make it active" is shown as its own checkbox — don't repeat it in the detail)
+    case "select_option": {
+      const opt = goal?.options.find((o) => o.id === p.itemId);
+      if (opt) { headline = `Select «${truncate(opt.text, 48)}»`; detail = "Make this the chosen strategy"; }
+      break;
+    }
+    case "complete_target": {
+      const t = targetOf(p.itemId)?.title;
+      if (t) { headline = `${p.done === false ? "Reopen" : "Complete"} «${truncate(t, 48)}»`; detail = "Target status"; }
+      break;
+    }
+    case "target_progress": {
+      const t = targetOf(p.itemId)?.title;
+      const val = (p.rawValue ?? p.title).replace(/^Progress → /, "");
+      if (t) { headline = `«${truncate(t, 40)}» → ${val}`; detail = "Update progress"; }
+      break;
+    }
+    case "checklist_item": {
+      let itemText: string | undefined;
+      let parentTitle: string | undefined;
+      goal?.targets.forEach((t) => {
+        if (t.type === "checklist") {
+          const it = t.items.find((i) => i.id === p.itemId);
+          if (it) { itemText = it.text; parentTitle = t.title; }
+        }
+      });
+      if (itemText) {
+        const newText = p.rawValue;
+        headline = newText
+          ? `“${truncate(itemText, 32)}” → “${truncate(newText, 32)}”`
+          : p.done === true ? `Check “${truncate(itemText, 48)}”`
+          : p.done === false ? `Uncheck “${truncate(itemText, 48)}”`
+          : `Update “${truncate(itemText, 48)}”`;
+        detail = parentTitle ? `in ${truncate(parentTitle, 40)}` : "Checklist item";
+      }
+      break;
+    }
+    case "edit_target": {
+      const t = targetOf(p.itemId)?.title;
+      if (t) detail = `was «${truncate(t, 40)}»${p.deadline ? ` · due ${p.deadline}` : ""}`;
+      break;
+    }
+    case "edit_option": {
+      const old = goal?.options.find((o) => o.id === p.itemId)?.text;
+      if (old) detail = `was «${truncate(old, 48)}»`;
+      break;
+    }
+    case "edit_obstacle":
+    case "edit_action": {
+      const list = p.kind === "edit_obstacle" ? goal?.reality.obstacles : goal?.reality.actions;
+      const old = list?.find((i) => i.id === p.itemId)?.text;
+      if (old) detail = `was «${truncate(old, 48)}»`;
+      break;
+    }
+    // Goal-level ops from the All-Goals chat: lead with WHICH goal, then the change.
+    case "edit_goal": {
+      headline = p.goalTitle ? `«${truncate(p.goalTitle, 48)}»` : "This goal";
+      detail = p.field === "confidence" ? `Confidence → ${(p.rawValue ?? "").replace(/\D/g, "")}/10`
+        : p.field === "deadline" ? `Deadline → ${fmtDeadline(p.rawValue)}`
+        : `Rename → «${truncate(p.rawValue ?? p.title, 40)}»`;
+      break;
+    }
+    case "open_goal": {
+      const name = p.goalTitle ? `«${truncate(p.goalTitle, 48)}»` : "this goal";
+      headline = `Open ${name}`;
+      detail = p.openSubject
+        ? `You can't edit ${p.openSubject} from the goals overview — open ${name} to continue.`
+        : `Open ${name} to work inside it.`;
+      break;
+    }
+    case "delete_option": {
+      const t = goal?.options.find((o) => o.id === p.itemId)?.text;
+      headline = t ? `Delete «${truncate(t, 48)}»` : "Delete this option";
+      detail = "This strategy option will be removed.";
+      break;
+    }
+    case "delete_obstacle":
+    case "delete_action": {
+      const list = p.kind === "delete_obstacle" ? goal?.reality.obstacles : goal?.reality.actions;
+      const t = list?.find((i) => i.id === p.itemId)?.text;
+      const noun = p.kind === "delete_obstacle" ? "obstacle" : "action";
+      headline = t ? `Delete «${truncate(t, 48)}»` : `Delete this ${noun}`;
+      detail = `This ${noun} will be removed.`;
+      break;
+    }
+    case "delete_checklist_item": {
+      let itemText: string | undefined;
+      goal?.targets.forEach((t) => {
+        if (t.type === "checklist") {
+          const it = t.items.find((i) => i.id === p.itemId);
+          if (it) itemText = it.text;
+        }
+      });
+      headline = itemText ? `Delete “${truncate(itemText, 48)}”` : "Delete this checklist item";
+      detail = "This sub-task will be removed.";
+      break;
+    }
+  }
+  return { headline, detail, body };
+}
+
+/** Shared visual body of a proposal: kind chip, headline, detail, an optional
+ *  "Read full content" button (opens a modal). */
+function ProposalBody({ p, goal, onExpand, compact }: {
+  p: Proposal;
+  goal?: Goal;
+  onExpand: (content: { title: string; body: string; html?: boolean }) => void;
+  compact?: boolean;
+}) {
+  const meta = KIND_META[p.kind] || KIND_META.target;
+  const { headline, detail, body } = proposalDisplay(p, goal);
+  // The kind badge already names the action — never repeat it in the detail line (e.g.
+  // badge "Current action" + detail "Current action"). Only show detail when it adds info.
+  const showDetail = !!detail && detail.trim().toLowerCase() !== meta.label.trim().toLowerCase();
 
   return (
-    <div className="rounded-[14px] border border-white/20 bg-white text-[#083f3a] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full">
+    <>
       <div className="mb-2">
         <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
           <Ic path={meta.icon} size={12} className="text-[#006d67]" />
           {meta.label}
         </span>
       </div>
+      <div className={cn("font-['Playfair_Display'] font-semibold leading-[1.25]", compact ? "text-[16px]" : "text-[17px]")}>
+        {headline}
+      </div>
+      {showDetail && <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#083f3a]/60 break-words [overflow-wrap:anywhere]">{detail}</p>}
 
+      {body && body.trim() && (
+        <button
+          onClick={() => onExpand({ title: headline, body, html: p.kind === "note" || p.kind === "edit_note" })}
+          className="inline-flex items-center gap-1.5 mt-2.5 text-[12.5px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors"
+        >
+          <Ic path={PATHS.expand} size={13} /> Read full content
+        </button>
+      )}
+    </>
+  );
+}
+
+/** Inline "tell the AI how to change this" editor, shared by single + stepped cards. */
+function InstructBox({ headline, onSend, onCancel }: {
+  headline: string;
+  onSend: (instruction: string) => void;
+  onCancel: () => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const send = () => { const t = instruction.trim(); if (t) onSend(t); };
+  // The textarea autofocuses → keyboard opens; scroll it into view so it isn't
+  // hidden behind the keyboard (the chat panel doesn't reposition it on its own).
+  useEffect(() => {
+    const t = setTimeout(() => taRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 320);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">{headline}</div>
+      <p className="text-[12px] text-[#083f3a]/55">Tell the AI how to change this — it will re-propose.</p>
+      <textarea
+        ref={taRef}
+        value={instruction}
+        onChange={(e) => setInstruction(e.target.value)}
+        rows={2}
+        autoFocus
+        placeholder="e.g. “in English”, “make it shorter”, “due next Friday”"
+        className={cn(PROPOSAL_INPUT_CLS, "resize-none")}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+      />
+      <div className="mt-1 flex items-center gap-2">
+        <button onClick={send} disabled={!instruction.trim()}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#005b56] transition-colors">
+          <Ic path={PATHS.sparkles} size={14} /> Send to AI
+        </button>
+        <button onClick={onCancel}
+          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] transition-colors px-1.5 py-2">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const CARD_CLS =
+  "rounded-[14px] border border-white/20 bg-white text-[#083f3a] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
+
+/** A single proposed change (the common case): polished card, Accept / Edit / Dismiss. */
+function ProposalCard({ p, goal, onResolve, onApprove, onInstruct, onExpand, onOpen }: {
+  p: Proposal;
+  goal?: Goal;
+  onResolve: (status: "approved" | "rejected") => void;
+  onApprove: (p: Proposal) => void;
+  onInstruct: (instruction: string) => void;
+  onExpand: (content: { title: string; body: string; html?: boolean }) => void;
+  onOpen: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+}) {
+  const [instructing, setInstructing] = useState(false);
+  const settled = p.status !== "pending";
+  const { headline } = proposalDisplay(p, goal);
+
+  return (
+    <div className={CARD_CLS}>
       {instructing ? (
-        <div className="flex flex-col gap-2">
-          <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">{p.title}</div>
-          <p className="text-[12px] text-[#083f3a]/55">Tell the AI how to change this — it will re-propose.</p>
-          <textarea
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            rows={2}
-            autoFocus
-            placeholder="e.g. “in English”, “make it shorter”, “due next Friday”"
-            className={cn(PROPOSAL_INPUT_CLS, "resize-none")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendInstruction(); }
-            }}
-          />
-          <div className="mt-1 flex items-center gap-2">
-            <button onClick={sendInstruction} disabled={!instruction.trim()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#005b56] transition-colors">
-              <Ic path={PATHS.sparkles} size={14} /> Send to AI
-            </button>
-            <button onClick={() => setInstructing(false)}
-              className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] transition-colors px-1.5 py-2">
-              Cancel
-            </button>
-          </div>
-        </div>
+        <InstructBox headline={headline}
+          onSend={(t) => { setInstructing(false); onInstruct(t); }}
+          onCancel={() => setInstructing(false)} />
       ) : (
         <>
-          <div className="font-['Playfair_Display'] text-[17px] font-semibold leading-[1.25]">{p.title}</div>
-          {p.detail && <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#083f3a]/60">{p.detail}</p>}
-          {p.reasoning && (
-            <button onClick={() => setWhyOpen((o) => !o)}
-              className="inline-flex items-center gap-1.5 mt-2.5 text-[12.5px] text-[#083f3a]/60 hover:text-[#083f3a] transition-colors">
-              <Ic path={PATHS.chevron} size={12}
-                className={cn("transition-transform duration-150", whyOpen && "rotate-180")} />
-              Why this
-            </button>
-          )}
-          {whyOpen && <p className="mt-1.5 text-[12.5px] leading-[1.55] text-[#083f3a]/60">{p.reasoning}</p>}
-
+          <ProposalBody p={p} goal={goal} onExpand={onExpand} />
           {settled ? (
-            <div className={cn(
-              "mt-3 inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
-              p.status === "approved" ? "bg-[#006d67]/10 text-[#006d67]" : "bg-black/6 text-[#083f3a]/50",
-            )}>
-              <Ic path={p.status === "approved" ? PATHS.check : PATHS.x} size={12} />
-              {p.status === "approved" ? "Added to goal" : "Dismissed"}
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <div className={cn(
+                "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
+                p.status === "approved" ? "bg-[#006d67]/10 text-[#006d67]" : "bg-black/6 text-[#083f3a]/50",
+              )}>
+                <Ic path={p.status === "approved" ? PATHS.check : PATHS.x} size={12} />
+                {p.status === "approved" ? "Added to goal" : "Dismissed"}
+              </div>
+              {p.status === "approved" && p.createdRef && (
+                <button onClick={() => onOpen(p.createdRef!)}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#006d67] text-white text-[12.5px] font-semibold hover:bg-[#005b56] transition-colors">
+                  <Ic path={PATHS.switch_} size={13} /> Open
+                </button>
+              )}
             </div>
           ) : (
             <div className="mt-3.5 flex items-center gap-2">
@@ -1681,8 +1999,7 @@ function ProposalCard({ p, onResolve, onApprove, onInstruct }: {
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[9px] border border-[#d9dddc] text-[#083f3a] text-[13px] font-medium hover:border-[#006d67]/40 transition-colors">
                 <Ic path={PATHS.pencil} size={13} /> Edit
               </button>
-              <button
-                onClick={() => onResolve("rejected")}
+              <button onClick={() => onResolve("rejected")}
                 className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2">
                 Dismiss
               </button>
@@ -1691,6 +2008,631 @@ function ProposalCard({ p, onResolve, onApprove, onInstruct }: {
         </>
       )}
     </div>
+  );
+}
+
+/** Custom Spira-styled checkbox — a VISUAL element only (the enclosing row is the
+ *  clickable control). Native checkboxes aren't allowed by the design spec, and a
+ *  nested <button> inside the row button wouldn't toggle. */
+function CheckBox({ checked }: { checked: boolean }) {
+  return (
+    <span aria-hidden
+      className={cn(
+        "mt-0.5 h-5 w-5 shrink-0 rounded-[6px] border grid place-items-center transition-colors",
+        checked ? "bg-[#006d67] border-[#006d67] text-white"
+          : "border-[#cfd6d4] bg-white text-transparent",
+      )}>
+      <Ic path={PATHS.check} size={12} />
+    </span>
+  );
+}
+
+/**
+ * One option that should ALSO be made active → a single card with TWO checkboxes:
+ * "Create «X»" and "Make it the active option". Untick "active" to just create it.
+ */
+function OptionAspectCard({ p, goal, onResolve, onApprove, onInstruct }: {
+  p: Proposal;
+  goal?: Goal;
+  onResolve: (status: "approved" | "rejected") => void;
+  onApprove: (p: Proposal) => void;
+  onInstruct: (instruction: string) => void;
+}) {
+  const [createOpt, setCreateOpt] = useState(true);
+  const [makeActive, setMakeActive] = useState(true);
+  const [instructing, setInstructing] = useState(false);
+  const settled = p.status !== "pending";
+  const { headline } = proposalDisplay(p, goal);
+
+  if (settled) {
+    return (
+      <div className={CARD_CLS}>
+        <div className={cn(
+          "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
+          p.status === "approved" ? "bg-[#006d67]/10 text-[#006d67]" : "bg-black/6 text-[#083f3a]/50",
+        )}>
+          <Ic path={p.status === "approved" ? PATHS.check : PATHS.x} size={12} />
+          {p.status === "approved" ? "Added to goal" : "Dismissed"}
+        </div>
+      </div>
+    );
+  }
+
+  if (instructing) {
+    return (
+      <div className={CARD_CLS}>
+        <InstructBox headline={headline}
+          onSend={(t) => { setInstructing(false); onInstruct(t); }}
+          onCancel={() => setInstructing(false)} />
+      </div>
+    );
+  }
+
+  const confirm = () => {
+    if (!createOpt) { onResolve("rejected"); return; }
+    onResolve("approved");
+    onApprove({ ...p, done: makeActive });
+  };
+
+  return (
+    <div className={CARD_CLS}>
+      <div className="mb-3">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+          <Ic path={KIND_META.option.icon} size={12} /> Strategy option
+        </span>
+      </div>
+      <div className="flex flex-col gap-2.5">
+        <button type="button" role="checkbox" aria-checked={createOpt}
+          onClick={() => setCreateOpt((v) => !v)} className="flex items-start gap-2.5 text-left">
+          <CheckBox checked={createOpt} />
+          <span className={cn("text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]", !createOpt && "opacity-45")}>
+            Create «{headline}»
+          </span>
+        </button>
+        <button type="button" role="checkbox" aria-checked={makeActive && createOpt} disabled={!createOpt}
+          onClick={() => setMakeActive((v) => !v)}
+          className="flex items-start gap-2.5 text-left disabled:opacity-45">
+          <CheckBox checked={makeActive && createOpt} />
+          <span className="text-[14px] font-semibold text-[#083f3a] leading-[1.3]">Make it the active option</span>
+        </button>
+      </div>
+      <button onClick={() => setInstructing(true)}
+        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors">
+        <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
+      </button>
+      <div className="mt-3.5 flex items-center gap-2 border-t border-[#eef1f0] pt-3">
+        <button onClick={confirm}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors">
+          <Ic path={PATHS.check} size={14} /> Confirm
+        </button>
+        <button onClick={() => onResolve("rejected")}
+          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Several SEPARATE things proposed in one turn (e.g. two options) → a stepper, one
+ * per step (Back / Next). Each step has a checkbox to include/skip the change, plus
+ * an extra checkbox for any secondary aspect (e.g. "make it the active option"); the
+ * final "Save" commits everything still checked.
+ */
+function SteppedProposalCard({ proposals, goal, onResolveOne, onApprove, onInstructOne, onExpand }: {
+  proposals: Proposal[];
+  goal?: Goal;
+  onResolveOne: (id: string, status: "approved" | "rejected") => void;
+  onApprove: (p: Proposal) => void;
+  onInstructOne: (p: Proposal, instruction: string) => void;
+  onExpand: (content: { title: string; body: string; html?: boolean }) => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [instructing, setInstructing] = useState(false);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [noActive, setNoActive] = useState<Set<string>>(new Set());
+  // Per-step unticked optional fields, keyed "proposalId::aspectId".
+  const [aspectOff, setAspectOff] = useState<Set<string>>(new Set());
+  const aspectKey = (id: string, aid: string) => `${id}::${aid}`;
+  const toggleAspect = (key: string) => setAspectOff((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // Per-step unticked checklist items, keyed "proposalId#itemIndex".
+  const [itemOff, setItemOff] = useState<Set<string>>(new Set());
+  const itemKey = (id: string, i: number) => `${id}#${i}`;
+  const toggleItem = (key: string) => setItemOff((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+
+  const settled = proposals.every((p) => p.status !== "pending");
+  const total = proposals.length;
+  const idx = Math.min(step, total - 1);
+  const cur = proposals[idx];
+  const { headline, detail, body } = proposalDisplay(cur, goal);
+  const isCreate = CREATE_KINDS.has(cur.kind);
+  const aspects = createAspects(cur);
+  const summary = createSummary(cur);
+  const curItems = (cur.kind === "target" || cur.kind === "task") && cur.targetType === "checklist" ? cur.items : undefined;
+
+  const isOff = (p: Proposal) => excluded.has(p.id) || p.status === "rejected";
+  const includedCount = proposals.filter((p) => !isOff(p)).length;
+  const toggleOff = (id: string) => setExcluded((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleNoActive = (id: string) => setNoActive((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  // Strip any unticked optional fields and checklist items, then re-apply the option
+  // "make active" flag.
+  const buildFinal = (p: Proposal): Proposal => {
+    const ex = new Set(createAspects(p).map((a) => a.id).filter((aid) => aspectOff.has(aspectKey(p.id, aid))));
+    let out = applyExcludedAspects(p, ex);
+    if ((p.kind === "target" || p.kind === "task") && p.targetType === "checklist" && p.items?.length) {
+      out = { ...out, items: p.items.filter((_, i) => !itemOff.has(itemKey(p.id, i))) };
+    }
+    return isOptionActivate(p) ? { ...out, done: !noActive.has(p.id) } : out;
+  };
+  const saveAll = () => {
+    proposals.forEach((p) => {
+      if (p.status !== "pending") return;
+      if (isOff(p)) { onResolveOne(p.id, "rejected"); return; }
+      onResolveOne(p.id, "approved");
+      onApprove(buildFinal(p));
+    });
+  };
+  const dismissAll = () => proposals.forEach((p) => { if (p.status === "pending") onResolveOne(p.id, "rejected"); });
+
+  if (settled) {
+    const saved = proposals.filter((p) => p.status === "approved").length;
+    return (
+      <div className={CARD_CLS}>
+        <div className={cn(
+          "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
+          saved > 0 ? "bg-[#006d67]/10 text-[#006d67]" : "bg-black/6 text-[#083f3a]/50",
+        )}>
+          <Ic path={saved > 0 ? PATHS.check : PATHS.x} size={12} />
+          {saved > 0 ? `Saved ${saved} of ${total} change${total > 1 ? "s" : ""}` : "All dismissed"}
+        </div>
+      </div>
+    );
+  }
+
+  const pct = Math.round(((idx + 1) / total) * 100);
+
+  return (
+    <div className={CARD_CLS}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+          {total} change{total > 1 ? "s" : ""}
+        </span>
+        <span className="ml-auto text-[11px] font-medium text-[#083f3a]/45 tabular-nums">{idx + 1} / {total}</span>
+        <button onClick={dismissAll} aria-label="Dismiss all"
+          className="text-[#083f3a]/35 hover:text-red-600 transition-colors p-0.5 -mr-0.5">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="h-[5px] rounded-full bg-[#006d67]/12 overflow-hidden mb-3.5">
+        <div className="h-full rounded-full bg-[#006d67] transition-all duration-300" style={{ width: `${pct}%` }} />
+      </div>
+
+      {instructing ? (
+        <InstructBox headline={headline}
+          onSend={(t) => { setInstructing(false); onInstructOne(cur, t); }}
+          onCancel={() => setInstructing(false)} />
+      ) : (
+        <>
+          <div className="flex flex-col gap-2.5 min-h-[64px]">
+            <button type="button" role="checkbox" aria-checked={!isOff(cur)} onClick={() => toggleOff(cur.id)}
+              disabled={cur.status === "rejected"} className="flex items-start gap-2.5 text-left">
+              <CheckBox checked={!isOff(cur)} />
+              <div className={cn("flex-1 min-w-0", isOff(cur) && "opacity-45")}>
+                <div className="text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]">{headline}</div>
+                {/* For creates, fields live in their own checkboxes below — never restate
+                    them here. Non-create changes keep their summary line. */}
+                {detail && !isCreate && <div className="text-[12.5px] text-[#083f3a]/55 mt-0.5 break-words [overflow-wrap:anywhere]">{detail}</div>}
+                {/* Checklist shows its items as real checkboxes below — skip the count line. */}
+                {isCreate && summary && !curItems && <div className="text-[12.5px] text-[#083f3a]/55 mt-0.5 break-words [overflow-wrap:anywhere]">{summary}</div>}
+              </div>
+            </button>
+            {body && body.trim() && !isCreate && (
+              <button onClick={() => onExpand({ title: headline, body, html: cur.kind === "note" || cur.kind === "edit_note" })}
+                className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors">
+                <Ic path={PATHS.expand} size={12} /> Read full content
+              </button>
+            )}
+            {curItems?.length ? (
+              <ChecklistItems items={curItems} disabled={isOff(cur)}
+                excluded={new Set(curItems.map((_, i) => i).filter((i) => itemOff.has(itemKey(cur.id, i))))}
+                onToggle={(i) => toggleItem(itemKey(cur.id, i))} />
+            ) : null}
+            {aspects.map((a) => (
+              <AspectRow key={a.id} label={a.label} body={a.body} headline={headline}
+                checked={!aspectOff.has(aspectKey(cur.id, a.id)) && !isOff(cur)} disabled={isOff(cur)}
+                onToggle={() => toggleAspect(aspectKey(cur.id, a.id))} onExpand={onExpand} />
+            ))}
+            {isOptionActivate(cur) && (
+              <button type="button" role="checkbox" aria-checked={!noActive.has(cur.id) && !isOff(cur)}
+                onClick={() => toggleNoActive(cur.id)} disabled={isOff(cur)}
+                className="flex items-start gap-2.5 text-left disabled:opacity-45">
+                <CheckBox checked={!noActive.has(cur.id) && !isOff(cur)} />
+                <span className="text-[13.5px] font-semibold text-[#083f3a]">Make it the active option</span>
+              </button>
+            )}
+          </div>
+
+          <button onClick={() => setInstructing(true)}
+            className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors">
+            <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
+          </button>
+
+          <div className="mt-3.5 flex items-center justify-between border-t border-[#eef1f0] pt-3">
+            <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={idx === 0}
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-[#083f3a]/70 disabled:opacity-30 hover:text-[#083f3a] transition-colors">
+              <Ic path={PATHS.chevron} size={13} className="rotate-90" /> Back
+            </button>
+            {idx < total - 1 ? (
+              <button onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
+                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#006d67] hover:text-[#005b56] transition-colors">
+                Next <Ic path={PATHS.chevron} size={13} className="-rotate-90" />
+              </button>
+            ) : (
+              <span className="text-[12px] text-[#083f3a]/40">End of review</span>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-1.5">
+            <button onClick={saveAll} disabled={includedCount === 0}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-[10px] bg-[#006d67] text-white text-[13.5px] font-semibold hover:bg-[#005b56] disabled:opacity-40 transition-colors">
+              <Ic path={PATHS.check} size={15} />
+              {includedCount === total ? `Save all ${total}` : `Save ${includedCount} of ${total}`}
+            </button>
+            <button onClick={dismissAll}
+              className="text-[12.5px] text-[#083f3a]/45 hover:text-red-600 transition-colors py-1">
+              Dismiss all
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const CREATE_KINDS = new Set<ProposalKind>(["new_goal", "target", "task"]);
+// Resource creations go through the normal ProposalCard (Accept), but also get an
+// "Open" shortcut to the goal's Resources section once added.
+const RESOURCE_CREATE_KINDS = new Set<ProposalKind>(["note", "link", "email"]);
+
+/** A single aspect (optional field) checkbox row used by both the single-create card and
+ *  the stepper. Description-type aspects get a "Read full content" expander. */
+function AspectRow({ label, body, checked, disabled, onToggle, onExpand, headline }: {
+  label: string;
+  body?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+  onExpand?: (content: { title: string; body: string; html?: boolean }) => void;
+  headline: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" role="checkbox" aria-checked={checked} disabled={disabled}
+        onClick={onToggle} className="flex items-start gap-2.5 text-left disabled:opacity-45">
+        <CheckBox checked={checked} />
+        <span className="text-[13.5px] font-medium text-[#083f3a]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">{label}</span>
+      </button>
+      {body && body.trim() && onExpand && (
+        <button onClick={() => onExpand({ title: headline, body })}
+          className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors">
+          <Ic path={PATHS.expand} size={12} /> Read full content
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Real, interactive checkboxes for a checklist target's items (no markdown preview, no
+ *  bullets). A ticked item is created; unticking one drops it from the new target. */
+function ChecklistItems({ items, excluded, disabled, onToggle }: {
+  items: { text: string; done?: boolean; deadline?: string }[];
+  excluded: Set<number>;
+  disabled?: boolean;
+  onToggle: (i: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 ml-[30px]">
+      {items.map((it, i) => {
+        const on = !excluded.has(i) && !disabled;
+        return (
+          <button key={i} type="button" role="checkbox" aria-checked={on} disabled={disabled}
+            onClick={() => onToggle(i)} className="flex items-start gap-2.5 text-left disabled:opacity-45">
+            <CheckBox checked={on} />
+            <span className="text-[13px] text-[#083f3a]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">
+              {it.text}{it.deadline ? ` · due ${fmtDeadline(it.deadline)}` : ""}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The settled "Goal created / Target added / Dismissed" pill + Open shortcut, shared by
+ *  the one-tap and field-checklist create cards. */
+function CreateSettled({ p, isGoal, onOpen }: {
+  p: Proposal;
+  isGoal: boolean;
+  onOpen: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+}) {
+  return (
+    <div className="mt-3 flex items-center gap-2 flex-wrap">
+      <div className={cn(
+        "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
+        p.status === "approved" ? "bg-[#006d67]/10 text-[#006d67]" : "bg-black/6 text-[#083f3a]/50",
+      )}>
+        <Ic path={p.status === "approved" ? PATHS.check : PATHS.x} size={12} />
+        {p.status === "approved" ? (isGoal ? "Goal created" : "Target added") : "Dismissed"}
+      </div>
+      {p.status === "approved" && p.createdRef && (
+        <button onClick={() => onOpen(p.createdRef!)}
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#006d67] text-white text-[12.5px] font-semibold hover:bg-[#005b56] transition-colors">
+          <Ic path={PATHS.switch_} size={13} /> {p.createdRef.kind === "goal" ? "Open goal" : "Open target"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Creating one entity that carries several optional fields → a checklist: the first
+ * checkbox is the entity itself ("Create «Goal 1»"), then one checkbox per field
+ * (confidence, deadline, description). Unticking a field drops it from the save; unticking
+ * the entity dismisses the whole creation. Mirrors the option card's two-checkbox pattern.
+ */
+function CreateChecklistCard({ p, goal, aspects, onOpen, onResolve, onCreate, onInstruct, onExpand }: {
+  p: Proposal;
+  goal?: Goal;
+  aspects: { id: string; label: string; body?: string }[];
+  onOpen: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+  onResolve: (status: "approved" | "rejected") => void;
+  onCreate: (p: Proposal) => void;
+  onInstruct: (instruction: string) => void;
+  onExpand: (content: { title: string; body: string; html?: boolean }) => void;
+}) {
+  const isGoal = p.kind === "new_goal";
+  const meta = KIND_META[p.kind] || KIND_META.target;
+  const settled = p.status !== "pending";
+  const { headline } = proposalDisplay(p, goal);
+  const [createOn, setCreateOn] = useState(true);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [exItems, setExItems] = useState<Set<number>>(new Set());
+  const [instructing, setInstructing] = useState(false);
+  const items = (p.kind === "target" || p.kind === "task") && p.targetType === "checklist" ? p.items : undefined;
+
+  if (settled) {
+    return (
+      <div className={CARD_CLS}>
+        <div className="mb-2">
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+            <Ic path={meta.icon} size={12} /> {meta.label}
+          </span>
+        </div>
+        <div className="font-['Playfair_Display'] text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">{headline}</div>
+        <CreateSettled p={p} isGoal={isGoal} onOpen={onOpen} />
+      </div>
+    );
+  }
+
+  if (instructing) {
+    return (
+      <div className={CARD_CLS}>
+        <InstructBox headline={headline}
+          onSend={(t) => { setInstructing(false); onInstruct(t); }}
+          onCancel={() => setInstructing(false)} />
+      </div>
+    );
+  }
+
+  const toggle = (id: string) => setExcluded((prev) => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
+  });
+  const toggleItem = (i: number) => setExItems((prev) => {
+    const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n;
+  });
+  const confirm = () => {
+    if (!createOn) { onResolve("rejected"); return; }
+    onResolve("approved");
+    let out = applyExcludedAspects(p, excluded);
+    // Drop any checklist item the user unticked — it isn't created.
+    if (items?.length) out = { ...out, items: items.filter((_, i) => !exItems.has(i)) };
+    onCreate(out);
+  };
+
+  return (
+    <div className={CARD_CLS}>
+      <div className="mb-3">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+          <Ic path={meta.icon} size={12} /> {meta.label}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2.5">
+        <button type="button" role="checkbox" aria-checked={createOn}
+          onClick={() => setCreateOn((v) => !v)} className="flex items-start gap-2.5 text-left">
+          <CheckBox checked={createOn} />
+          <span className={cn("text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]", !createOn && "opacity-45")}>
+            {isGoal ? "Create" : "Add"} «{headline}»
+          </span>
+        </button>
+        {/* Numeric measure stays a one-line summary; a checklist shows its items as real,
+            tickable checkboxes instead (so the count line would be redundant). */}
+        {createSummary(p) && !items && (
+          <div className="ml-[30px] -mt-1 text-[12.5px] text-[#083f3a]/55">{createSummary(p)}</div>
+        )}
+        {items?.length ? (
+          <ChecklistItems items={items} excluded={exItems} disabled={!createOn} onToggle={toggleItem} />
+        ) : null}
+        {aspects.map((a) => (
+          <AspectRow key={a.id} label={a.label} body={a.body} headline={headline}
+            checked={!excluded.has(a.id) && createOn} disabled={!createOn}
+            onToggle={() => toggle(a.id)} onExpand={onExpand} />
+        ))}
+      </div>
+      <button onClick={() => setInstructing(true)}
+        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors">
+        <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
+      </button>
+      <div className="mt-3.5 flex items-center gap-2 border-t border-[#eef1f0] pt-3">
+        <button onClick={confirm}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors">
+          <Ic path={PATHS.check} size={14} /> {isGoal ? "Create goal" : "Add target"}
+        </button>
+        <button onClick={() => onResolve("rejected")}
+          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One-tap confirmation for creating a goal/target. Deliberately minimal — just the
+ * name + Create/Dismiss — NOT a multi-step wizard. Once created, an "Open goal/target"
+ * shortcut appears so the user can jump straight to it.
+ */
+function CreateConfirmCard({ p, goal, onOpen, onResolve, onCreate }: {
+  p: Proposal;
+  goal?: Goal;
+  onOpen: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+  onResolve: (status: "approved" | "rejected") => void;
+  onCreate: (p: Proposal) => void;
+}) {
+  const isGoal = p.kind === "new_goal";
+  const meta = KIND_META[p.kind] || KIND_META.target;
+  const settled = p.status !== "pending";
+  const { headline } = proposalDisplay(p, goal);
+  // The kind badge already says "New goal" / "New target", so don't repeat it under the
+  // title. For a target show its TYPE instead; a bare goal needs no second line.
+  const typeLine = isGoal ? undefined : "Done / not done";
+
+  return (
+    <div className={CARD_CLS}>
+      <div className="mb-2">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+          <Ic path={meta.icon} size={12} /> {meta.label}
+        </span>
+      </div>
+      <div className="font-['Playfair_Display'] text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">{headline}</div>
+      {typeLine && <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#083f3a]/60">{typeLine}</p>}
+
+      {settled ? (
+        <CreateSettled p={p} isGoal={isGoal} onOpen={onOpen} />
+      ) : (
+        <div className="mt-3.5 flex items-center gap-2">
+          <button onClick={() => { onResolve("approved"); onCreate(p); }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors">
+            <Ic path={PATHS.check} size={14} /> {isGoal ? "Create goal" : "Add target"}
+          </button>
+          <button onClick={() => onResolve("rejected")}
+            className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2">
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Once a proposal card is resolved, the full card is gone — only this compact result
+ * stays in the chat (a check + what was saved, with an "Open" link to the new item),
+ * like a collapsed action summary. Dismissed changes show a muted "Dismissed".
+ */
+function ResultSummary({ proposals, goal, onOpen }: {
+  proposals: Proposal[];
+  goal?: Goal;
+  onOpen: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+}) {
+  const approved = proposals.filter((p) => p.status === "approved");
+  if (approved.length === 0) {
+    return (
+      <div className="inline-flex items-center gap-1.5 self-start text-[12.5px] text-white/55 bg-white/8 px-3 py-1.5 rounded-full">
+        <Ic path={PATHS.x} size={12} /> Dismissed
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5 self-start max-w-full">
+      {approved.map((p) => {
+        const { headline } = proposalDisplay(p, goal);
+        return (
+          <div key={p.id} className="inline-flex items-center gap-2 self-start text-[12.5px] text-white/80 bg-white/10 px-3 py-1.5 rounded-full max-w-full">
+            <Ic path={PATHS.check} size={12} className="shrink-0" />
+            <span className="truncate">{headline}</span>
+            {p.createdRef && (
+              <button onClick={() => onOpen(p.createdRef!)}
+                className="shrink-0 inline-flex items-center gap-1 font-semibold text-white hover:underline">
+                <Ic path={PATHS.switch_} size={12} /> Open
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Renders the proposals attached to one assistant message: a single polished
+ *  card when there's one change, or one stepped card when there are several. */
+function ProposalGroup({ proposals, goal, onResolveOne, onApprove, onCreateProposal, onOpenCreated, onInstructOne, onExpand }: {
+  proposals: Proposal[];
+  goal?: Goal;
+  onResolveOne: (id: string, status: "approved" | "rejected") => void;
+  onApprove: (p: Proposal) => void;
+  onCreateProposal: (p: Proposal) => void;
+  onOpenCreated: (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => void;
+  onInstructOne: (p: Proposal, instruction: string) => void;
+  onExpand: (content: { title: string; body: string; html?: boolean }) => void;
+}) {
+  if (proposals.length === 0) return null;
+  if (proposals.length === 1) {
+    const p = proposals[0];
+    // One option that's also being made active → two checkboxes (create + activate).
+    if (isOptionActivate(p)) {
+      return (
+        <OptionAspectCard p={p} goal={goal}
+          onResolve={(status) => onResolveOne(p.id, status)}
+          onApprove={onApprove}
+          onInstruct={(t) => onInstructOne(p, t)} />
+      );
+    }
+    // Creating: if the entity carries optional fields (deadline, confidence, …) OR is a
+    // structured target (numeric/checklist, which need their measure + preview), show the
+    // checklist card; a bare name → a one-tap confirm card.
+    if (CREATE_KINDS.has(p.kind)) {
+      const aspects = createAspects(p);
+      const isStructured = (p.kind === "target" || p.kind === "task")
+        && (p.targetType === "numeric" || p.targetType === "checklist");
+      if (aspects.length > 0 || isStructured) {
+        return (
+          <CreateChecklistCard p={p} goal={goal} aspects={aspects} onOpen={onOpenCreated}
+            onResolve={(status) => onResolveOne(p.id, status)}
+            onCreate={onCreateProposal}
+            onInstruct={(t) => onInstructOne(p, t)}
+            onExpand={onExpand} />
+        );
+      }
+      return (
+        <CreateConfirmCard p={p} goal={goal} onOpen={onOpenCreated}
+          onResolve={(status) => onResolveOne(p.id, status)}
+          onCreate={onCreateProposal} />
+      );
+    }
+    return (
+      <ProposalCard p={p} goal={goal} onExpand={onExpand} onOpen={onOpenCreated}
+        onResolve={(status) => onResolveOne(p.id, status)}
+        onApprove={onApprove}
+        onInstruct={(t) => onInstructOne(p, t)} />
+    );
+  }
+  // Several separate things → stepper, one per step (each step may have checkboxes).
+  return (
+    <SteppedProposalCard proposals={proposals} goal={goal}
+      onResolveOne={onResolveOne} onApprove={onApprove}
+      onInstructOne={onInstructOne} onExpand={onExpand} />
   );
 }
 
@@ -2079,19 +3021,32 @@ function EndConfirmDialog({ remainingLabel, onConfirm, onCancel }: {
 
 // ── Copy button ────────────────────────────────────────────────────────────
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, tone = "light" }: { text: string; tone?: "light" | "dark" }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
+    let ok = false;
+    // navigator.clipboard needs a secure context (HTTPS) — unavailable over plain
+    // HTTP on the LAN, so fall back to a selection + execCommand that works on mobile.
     try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Fallback for non-secure contexts
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch { /* fall through */ }
+    if (!ok) {
       const ta = document.createElement("textarea");
       ta.value = text;
+      ta.setAttribute("readonly", "");
       ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.width = "1px";
+      ta.style.height = "1px";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
+      ta.focus();
       ta.select();
+      ta.setSelectionRange(0, text.length); // iOS needs an explicit range
       try { document.execCommand("copy"); } catch { /* ignore */ }
       document.body.removeChild(ta);
     }
@@ -2100,7 +3055,10 @@ function CopyButton({ text }: { text: string }) {
   };
   return (
     <button onClick={copy}
-      className="inline-flex items-center gap-1 self-start text-[11.5px] text-white/55 hover:text-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity -mt-1"
+      className={cn(
+        "inline-flex items-center gap-1 self-start text-[11.5px] transition-opacity -mt-1 opacity-70 hover:opacity-100",
+        tone === "dark" ? "text-[#083f3a]/55 hover:text-[#083f3a]" : "text-white/60 hover:text-white",
+      )}
       title="Copy message">
       <Ic path={copied ? PATHS.check : PATHS.copy} size={12} />
       {copied ? "Copied" : "Copy"}

@@ -121,10 +121,13 @@ public class AiChatService {
 
             CREATING A NEW GOAL (no current goal — All-Goals page):
             When the user names a goal to create, JUST DO IT: call the tool with
-            kind='new_goal' and 'title' = exactly what they said. Add 'value' (description)
-            or 'deadline_value' ONLY if the user explicitly gave one — otherwise create an
-            EMPTY goal with just the title. After the tool call, reply with ONE short
-            sentence (e.g. "Created — review it below 👇").
+            kind='new_goal'. 'title' = the goal NAME ONLY — extract the clean name; do NOT
+            stuff confidence or the deadline into the title. If the user states a confidence
+            (1-10) put it in 'confidence'; if they give a deadline put it in 'deadline_value'
+            (YYYY-MM-DD); an optional short description goes in 'value'. Omit any the user
+            didn't give. Example: "create goal 'Learn Spanish' with confidence 9, deadline
+            3 aug" → title='Learn Spanish', confidence='9', deadline_value='2026-08-03'. After the tool call, reply with ONE short
+            sentence (e.g. "Created — review it below."). Never use emoji anywhere in your replies.
             Before the goal exists, DO NOT:
             • suggest or list a description, targets, options, obstacles, deadlines or a plan;
             • ask what should go inside it, or walk through GROW;
@@ -135,21 +138,86 @@ public class AiChatService {
             wall of text. If the request is too vague to even name a goal, ask ONE short
             question and nothing more.
 
+            CREATE EXACTLY WHAT THE USER LISTED — NO MORE, NO LESS:
+            Make ONE propose_goal_change tool call PER DISTINCT item the user asked to
+            create, all in the same turn. If they name one thing, make one call. If they
+            list several — "create 3 goals: Goal 1 (confidence 3, deadline 5 aug),
+            Goal 2, Goal 3 (deadline 12 dec)" — make one separate new_goal call for EACH
+            listed goal, each carrying only that goal's own fields (so: three calls —
+            title='Goal 1' confidence='3' deadline_value='2026-08-05'; title='Goal 2';
+            title='Goal 3' deadline_value='2026-12-12'). Never DROP an item the user listed,
+            never MERGE several into one, and never SPLIT a single item into multiple calls.
+            Equally, never INVENT goals/targets the user did not name, even if the goal's
+            context mentions other things. "Create a target to X" → one call for X, nothing
+            else.
+
+            CREATE DIRECTLY — DON'T ASK FOR CONFIRMATION:
+            Creating is applied immediately; the user gets an "Open" button to refine it
+            afterwards. So when you have enough to name it, JUST CREATE IT — never produce a
+            step-by-step "confirm each field" flow. Fill only the fields the user gave;
+            default the rest SILENTLY (target → simple check-off; goal confidence → mid; no
+            deadline) — don't mention those defaults. Ask a SHORT clarifying question (plain
+            text, no tool call) ONLY when the request is genuinely ambiguous or missing
+            something essential you truly can't choose — e.g. "add a target to save money":
+            ask "Track this as done/not-done, or progress toward an amount?" and wait. If
+            it's clear enough, don't ask — create and move on.
+
             ON THE ALL-GOALS PAGE (no goal open — the context lists the user's goals):
             • Editing a goal's card fields (NAME, CONFIDENCE 1-10, DEADLINE) — use
-              kind='edit_goal' with that goal's 'id' + 'field' + 'value'. Pick the right goal
-              by matching the user's words to the listed goal titles; if it's ambiguous which
-              goal they mean, ask one short question.
-            • If the user wants to work with something INSIDE a goal (targets, options, reality,
-              notes), it can't be done from here — the goal must be open. Tell them to open it,
-              or offer to open it (kind='open_goal' with the goal's id); they confirm.
+              kind='edit_goal' with that goal's 'id' + 'field' + 'value'. The 'id' is
+              MANDATORY and MUST be the exact 'id=' of one of the goals listed in the context
+              above — NEVER invent an id, leave it blank, or guess.
+              WHICH GOAL: identify it by matching the user's words to a listed goal title.
+              If they did NOT name a goal (e.g. just "change the deadline to 5 Sep") and more
+              than one goal exists, you CANNOT know which — so do NOT call the tool. Instead
+              ask ONE short question naming the candidates ("Which goal — Goal 1, Goal 2 or
+              Goal 3?") and wait. Only skip the question when there is exactly one goal, or the
+              user clearly named/identified one. This holds for EVERY field (name, confidence,
+              deadline) — same rule for open_goal and delete_goal, which also require a real id.
+            WHAT THIS CHAT CAN CHANGE FROM HERE — STRICT LIMIT:
+            From the All-Goals overview you can ONLY change the three fields shown on a goal's
+            card: its NAME, CONFIDENCE, and DEADLINE. NOTHING else is editable here — not the
+            goal's DESCRIPTION, not its targets, options, reality, obstacles, actions, notes,
+            or resources. Those all live INSIDE the goal.
+            • If the user asks to change anything other than name/confidence/deadline (e.g.
+              "add a description to Goal 1", "add a target", "edit the reality"), do NOT
+              substitute a different action (NEVER offer to rename the goal when they asked for
+              a description, and never pretend a field exists here that doesn't). Instead call
+              kind='open_goal' with that goal's 'id' AND set 'value' to the CONCRETE thing they
+              wanted to change, as a short noun phrase in the user's language — e.g. "the
+              description", "a target", "the reality", "an obstacle". The card uses this to tell
+              them plainly: "You can't edit <value> from the goals overview — open <goal> to
+              continue." Opening the goal automatically re-runs their request inside it, so a
+              card to make the change appears there. Keep your own text reply to ONE short
+              sentence (e.g. "Editing the description has to happen inside the goal — open it
+              below.") — do NOT restate fields or apologise at length.
             • If the user asks to delete a goal, use kind='delete_goal' with its id. This opens
               a confirmation dialog — you NEVER delete it yourself.
 
-            DELETION (from anywhere): you never delete data directly. kind='delete_goal'
-            (a goal) and kind='delete_target' (a target, by its id) each open a confirmation
-            dialog the user decides on. On a goal page, 'delete_goal' without an id targets the
-            current goal. Only propose a deletion when the user clearly asks to delete.
+            DELETION — pick the kind that MATCHES the item's type:
+            You never delete data directly; each delete proposal opens a confirmation the user
+            decides on. The delete kinds are:
+            • kind='delete_goal' — a whole GOAL ('id'; on a goal page no id = the current goal).
+            • kind='delete_target' — a whole TARGET, by a target 'id' from the context.
+            • kind='delete_option' — a strategy OPTION, by its 'id'.
+            • kind='delete_obstacle' / 'delete_action' — a reality item, by its 'id'.
+            • kind='delete_checklist_item' — one checklist sub-task, by the item's 'id'.
+            Always read the goal context to see WHAT the named thing is, and use the matching
+            kind with its EXACT id — e.g. an option named "Ericsson" → delete_option with that
+            option's id, NEVER delete_target. Never invent an id you did not see in the context.
+            CRITICAL anti-patterns when the user says "delete <X>" / "remove <X>":
+            • DELETING IS NOT ADDING. Never answer a delete request with a create kind
+              ('action', 'obstacle', 'option', 'target', …) — that would ADD a new item, not
+              remove one. To delete an action use 'delete_action', an option 'delete_option',
+              a target 'delete_target', etc. — the delete_* kind, every time.
+            • Never use the WRONG type's delete kind (deleting an option is delete_option, not
+              delete_target).
+            • Never "remove" by editing text to empty — every item's text is REQUIRED, clearing
+              it is rejected and deletes nothing.
+            Only propose a deletion when the user clearly asks to delete.
+            What you still CANNOT delete (no tool): resources, notes, and a goal's deadline.
+            If asked to remove one of those, explain the user does it themselves with its
+            Remove (×)/trash/Clear control (see DELETING below) — make no tool call for them.
 
             You can: add items; rename/edit existing targets, options, obstacles, actions,
             notes, links (edit_link), and email/contact resources (edit_email);
@@ -159,6 +227,15 @@ public class AiChatService {
             'id' exactly as shown in the goal context above (the number after 'id=').
             Sub-tasks live only inside a checklist target; to add one, use 'add_checklist_item'
             with the checklist target's id.
+
+            EDITING AN EXISTING RESOURCE vs CREATING ONE — don't confuse them:
+            To rename a link, change its URL, or edit a note/contact that ALREADY exists, use
+            the edit_* kind with that resource's 'id' from the context — edit_link (rename =
+            'title', new address = 'value'/URL), edit_note, edit_email. NEVER create a new
+            resource to "rename" an existing one. A 'link' (create) REQUIRES a real URL in
+            'value'; never propose a link create without one (it cannot be saved). If the user
+            says "rename the link …" and a link with that name is in the context, that is
+            edit_link with its id — not 'link'.
 
             CREATE A TARGET IN ITS FINAL STATE — in ONE proposal, not two. You cannot
             reference a target you are creating in the same message (it has no id yet), so
@@ -172,15 +249,15 @@ public class AiChatService {
             one target 'Send 6 applications in May' with done=true, and one numeric target
             'Send applications in June' total=20, current=2, unit='applications'.
 
-            DELETING:
-            You cannot delete anything, and there is no delete tool. If the user wants to
-            remove something, explain where to do it in the interface instead:
-            • Goal — open the goal's menu / card and use Delete (it asks to confirm).
-            • Target — the trash icon on the target's row (asks to confirm).
+            DELETING — where each control is (for the things you CANNOT delete):
+            When you tell the user to remove something themselves, point them to the control:
             • Option / obstacle / action — the Remove (×) button next to the item.
-            • Resource/note — the remove control on the resource.
+            • Checklist item (sub-task) — the × / remove control on that item inside its target.
+            • Resource / note — the remove control on the resource.
             • Deadline — open the deadline picker and choose Clear.
-            Never pretend you deleted something.
+            (Whole goals and whole targets are the only deletions you may PROPOSE, via the
+            delete_goal / delete_target tools above.) Never pretend you deleted something, and
+            never substitute deleting a different item for one you can't delete.
 
             LANGUAGE:
             Respond in the language the user writes in.
@@ -264,10 +341,15 @@ public class AiChatService {
                         "edit_target", "edit_option", "edit_obstacle", "edit_action",
                         "edit_note", "edit_link", "edit_email", "complete_target", "target_progress",
                         "select_option", "checklist_item", "add_checklist_item",
-                        "edit_goal", "open_goal", "delete_goal", "delete_target"),
+                        "edit_goal", "open_goal", "delete_goal", "delete_target",
+                        "delete_option", "delete_obstacle", "delete_action", "delete_checklist_item"),
                 "description", "What to propose. CREATE (no id):\n"
-                        + "'new_goal' — create a BRAND-NEW goal (use 'title' for the goal name, "
-                        + "optional 'value' for a short description, optional 'deadline_value'). "
+                        + "'new_goal' — create a BRAND-NEW goal. 'title' = the goal NAME ONLY — a "
+                        + "clean short name, NOT a sentence repeating the confidence/deadline. Put any "
+                        + "confidence the user gave in 'confidence' (1-10), any deadline in "
+                        + "'deadline_value' (YYYY-MM-DD), and an optional short description in 'value'. "
+                        + "E.g. \"create a goal 'Learn Spanish' with confidence 9, deadline 3 aug\" → "
+                        + "title='Learn Spanish', confidence='9', deadline_value='2026-08-03'. "
                         + "Use this when there is no current goal (the user is on the All-Goals page) "
                         + "and asks to create/start a goal;\n"
                         + "'edit' — change goal title or description (use 'field' + 'value');\n"
@@ -278,7 +360,10 @@ public class AiChatService {
                         + "For a measurable target set 'target_type':'numeric' with 'total' (and optional "
                         + "'current' progress, 'unit'). For a checklist set 'target_type':'checklist' with "
                         + "'items' (each {text, done?, deadline?});\n"
-                        + "'option' — add a strategy option (use 'value');\n"
+                        + "'option' — add a strategy option (use 'value'). To ALSO make it the "
+                        + "selected/active option, add 'done':'true' on this SAME call — use that for "
+                        + "\"create an option and make it active\". Never use select_option for a "
+                        + "brand-new option (it has no id yet);\n"
                         + "'obstacle'/'action' — add a reality item (use 'value');\n"
                         + "'note' — save a resource note (use 'title' + 'value' for body).\n"
                         + "'link' — save a link resource (use 'value' for the URL; optional 'title' "
@@ -307,12 +392,23 @@ public class AiChatService {
                         + "'edit_goal' — edit a goal's card field: 'id' (goal id), 'field' "
                         + "('title'|'confidence'|'deadline'), 'value' (new value);\n"
                         + "'open_goal' — propose opening a goal so the user can work inside it: "
-                        + "'id' (goal id). Use this when they ask to change something INSIDE a goal "
-                        + "from the All-Goals page;\n"
+                        + "'id' (goal id) AND 'value' = the concrete thing they wanted to change "
+                        + "as a short noun phrase in their language (e.g. 'the description', 'a "
+                        + "target'). Use this when they ask to change something INSIDE a goal "
+                        + "from the All-Goals page (anything but name/confidence/deadline);\n"
                         + "'delete_goal' — start deleting a goal: 'id' (goal id; on a goal page it "
                         + "defaults to the current goal). Opens a confirmation dialog — you never delete;\n"
                         + "'delete_target' — start deleting a target: 'id' (target id). Opens a "
-                        + "confirmation dialog — you never delete."));
+                        + "confirmation dialog — you never delete.\n"
+                        + "DELETE A SMALLER ITEM (use 'id' from the context; opens a confirm card):\n"
+                        + "'delete_option' — delete a strategy option ('id' = the option's id);\n"
+                        + "'delete_obstacle' — delete a reality obstacle ('id' = its id);\n"
+                        + "'delete_action' — delete a reality action ('id' = its id);\n"
+                        + "'delete_checklist_item' — delete one checklist sub-task ('id' = the "
+                        + "item's id). Use the kind that MATCHES the item's type — e.g. to delete "
+                        + "an option use delete_option, NEVER delete_target. To delete, you ALWAYS "
+                        + "use a delete_* kind — NEVER 'erase' an item by editing its text to an "
+                        + "empty value (text is required and clearing it is rejected)."));
         props.put("id", Map.of(
                 "type", "string",
                 "description", "Id of the existing item to edit or change, taken "
@@ -341,6 +437,11 @@ public class AiChatService {
         props.put("phone", Map.of(
                 "type", "string",
                 "description", "Contact's phone number. Optional, only for kind='email' or 'edit_email'."));
+        props.put("confidence", Map.of(
+                "type", "string",
+                "description", "Optional confidence 1-10 for kind='new_goal' when the user states "
+                        + "one. Keep it OUT of 'title'. (To change an existing goal's confidence use "
+                        + "kind='confidence' or 'edit_goal' with 'value' instead.)"));
         props.put("deadline_value", Map.of(
                 "type", "string",
                 "description", "Optional ISO date YYYY-MM-DD: a target/task deadline "
@@ -350,7 +451,8 @@ public class AiChatService {
                 "type", "string",
                 "enum", List.of("true", "false"),
                 "description", "Completion state for kind='complete_target', 'checklist_item', "
-                        + "or to create a binary target already done (kind='target'/'task')."));
+                        + "to create a binary target already done (kind='target'/'task'), or — for "
+                        + "kind='option' — 'true' to select/activate the option as it's created."));
         props.put("target_type", Map.of(
                 "type", "string",
                 "enum", List.of("binary", "numeric", "checklist"),

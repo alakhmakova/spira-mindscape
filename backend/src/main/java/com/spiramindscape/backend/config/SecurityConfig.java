@@ -2,6 +2,7 @@ package com.spiramindscape.backend.config;
 
 import com.spiramindscape.backend.auth.AppUserOidcUserService;
 import com.spiramindscape.backend.auth.E2eTestAuthFilter;
+import com.spiramindscape.backend.auth.LocalDevAuthFilter;
 import com.spiramindscape.backend.auth.OAuth2LoginSuccessHandler;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Spring Security configuration for Spira.
@@ -44,6 +46,8 @@ public class SecurityConfig {
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     /** Present only under the CI-only {@code e2e} profile (otherwise empty). */
     private final ObjectProvider<E2eTestAuthFilter> e2eTestAuthFilter;
+    /** Present only under the local-dev {@code local} profile (otherwise empty). */
+    private final ObjectProvider<LocalDevAuthFilter> localDevAuthFilter;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -115,12 +119,16 @@ public class SecurityConfig {
                 )
             );
 
-        // ----- CSRF (+ CI-only e2e test auth) -----
-        E2eTestAuthFilter e2eFilter = e2eTestAuthFilter.getIfAvailable();
-        if (e2eFilter != null) {
-            // CI-only 'e2e' profile: the E2E suite authenticates via the X-E2E-Auth
-            // header (stateless per request), so CSRF is unnecessary and disabled.
-            http.addFilterBefore(e2eFilter, AuthorizationFilter.class);
+        // ----- CSRF (+ dev/test auto-auth) -----
+        // Two non-production profiles bypass Google OAuth with a request filter:
+        //   • e2e   — CI black-box suite, opts in per request via the X-E2E-Auth header
+        //   • local — local development, auto-logs-in a fixed dev user (no header)
+        // Either way the login is stateless per request, so CSRF is disabled. In
+        // production neither bean exists and full OAuth + CSRF apply.
+        OncePerRequestFilter devAuthFilter = e2eTestAuthFilter.getIfAvailable();
+        if (devAuthFilter == null) devAuthFilter = localDevAuthFilter.getIfAvailable();
+        if (devAuthFilter != null) {
+            http.addFilterBefore(devAuthFilter, AuthorizationFilter.class);
             http.csrf(csrf -> csrf.disable());
         } else {
             // Double-submit cookie: a readable XSRF-TOKEN cookie is issued; mutations
