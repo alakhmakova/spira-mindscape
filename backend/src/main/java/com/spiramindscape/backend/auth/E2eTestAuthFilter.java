@@ -62,6 +62,13 @@ public class E2eTestAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /** Re-run on the async dispatch too, so streaming (SSE) endpoints don't get denied on
+     *  completion — this per-request auth isn't stored in a session. */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     private OAuth2AuthenticationToken buildAuth(AppUser user) {
         OidcIdToken token = OidcIdToken.withTokenValue("e2e-token")
                 .subject(user.getGoogleSub())

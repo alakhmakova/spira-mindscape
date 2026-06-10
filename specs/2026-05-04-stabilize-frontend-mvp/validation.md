@@ -56,6 +56,8 @@ Note: Words such as "weight tracker" in `specs/` are unrelated to target weighti
 - [ ] Mobile and narrow container layouts remain composed, aligned, and readable.
 - [ ] Target table column gaps look even across all columns.
 - [ ] Side panels have no title/body or content/footer divider lines, while spacing remains balanced.
+- [ ] Mobile create/add drawers open to a fixed near-full height with a visible top gap (drag handle showing); they never touch the top edge or collapse to content height, and stay stable when the keyboard opens. The bottom action row (Cancel + create) is pinned, with no separator line above it.
+- [ ] No drawer or form sheet auto-focuses a field on open; opening a sheet never raises the keyboard by itself. (Confirm no `autoFocus` on first-rendered sheet fields, including no `autoFocus={!isMobile}`.)
 - [ ] Note preview text has comfortable left padding from the panel edge.
 - [ ] Email preview fields are visually grouped and action buttons remain clear.
 - [ ] The New goal `+` button remains in its established floating position and stays visible on All goals and Timeline views.

@@ -144,63 +144,81 @@ export function InlineText({
   placeholder,
   ariaLabel,
   className,
+  required = true,
+  requiredMessage = "This can't be empty — it was kept.",
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   ariaLabel: string;
   className?: string;
+  required?: boolean;
+  requiredMessage?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     if (ref.current && document.activeElement !== ref.current) {
       ref.current.textContent = value;
     }
+    setError(false);
   }, [value]);
 
   const commit = (el: HTMLSpanElement) => {
     const next = (el.textContent || "").trim();
+    // Required text must never be cleared: put the old text back and say so, right here.
     if (!next) {
       el.textContent = value;
+      if (required) setError(true);
       return;
     }
+    setError(false);
     if (next !== value) onChange(next);
   };
 
   return (
-    <span
-      ref={ref}
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
-      tabIndex={0}
-      aria-label={ariaLabel}
-      data-placeholder={placeholder}
-      onFocus={(e) => {
-        const range = document.createRange();
-        range.selectNodeContents(e.currentTarget);
-        range.collapse(false);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }}
-      onBlur={(e) => commit(e.currentTarget)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          e.currentTarget.blur();
-        }
-        if (e.key === "Escape") {
-          e.currentTarget.textContent = value;
-          e.currentTarget.blur();
-        }
-      }}
-      className={cn(
-        "min-w-[1ch] cursor-text whitespace-pre-wrap break-words outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75",
-        className,
+    <span className={cn("relative", className)}>
+      <span
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        tabIndex={0}
+        aria-label={ariaLabel}
+        data-placeholder={placeholder}
+        onFocus={(e) => {
+          setError(false);
+          const range = document.createRange();
+          range.selectNodeContents(e.currentTarget);
+          range.collapse(false);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        }}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            e.currentTarget.textContent = value;
+            setError(false);
+            e.currentTarget.blur();
+          }
+        }}
+        className="block min-w-[1ch] cursor-text whitespace-pre-wrap break-words outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/75"
+      />
+      {error && (
+        <span
+          role="alert"
+          className="absolute left-0 top-full z-20 mt-1 whitespace-nowrap rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground shadow-md"
+        >
+          {requiredMessage}
+        </span>
       )}
-    />
+    </span>
   );
 }
 
@@ -255,33 +273,59 @@ export function AutoTextarea({
   onChange,
   placeholder,
   className,
+  required = false,
+  requiredMessage = "This can't be empty — it was kept.",
   ...props
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  required?: boolean;
+  requiredMessage?: string;
 } & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange">) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [error, setError] = useState(false);
+  // Local buffer for required fields so the user can clear-and-retype without the empty
+  // value being pushed to the store (which would blank a required field / trigger a sync
+  // error). Non-required fields pass through unchanged.
+  const [draft, setDraft] = useState(value);
+  const shown = required ? draft : value;
+
+  useEffect(() => {
+    if (required && document.activeElement !== ref.current) setDraft(value);
+  }, [value, required]);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-
     const updateHeight = () => {
       el.style.height = "auto";
       el.style.height = el.scrollHeight + "px";
     };
-
     updateHeight();
-
     window.addEventListener("resize", updateHeight);
     return () => window.removeEventListener("resize", updateHeight);
-  }, [value]);
-  return (
+  }, [shown]);
+
+  const handleChange = (v: string) => {
+    if (!required) { onChange(v); return; }
+    setDraft(v);
+    setError(false);
+    if (v.trim()) onChange(v); // push only non-empty — never blank a required field
+  };
+
+  const handleBlur = () => {
+    if (required && !draft.trim()) { setDraft(value); setError(true); }
+  };
+
+  const textarea = (
     <textarea
       ref={ref}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      value={shown}
+      onChange={(e) => handleChange(e.target.value)}
+      onBlur={handleBlur}
+      onFocus={() => setError(false)}
       placeholder={placeholder}
       rows={1}
       {...props}
@@ -290,5 +334,20 @@ export function AutoTextarea({
         className,
       )}
     />
+  );
+
+  if (!required) return textarea;
+  return (
+    <div className="relative w-full">
+      {textarea}
+      {error && (
+        <span
+          role="alert"
+          className="absolute left-0 top-full z-20 mt-0.5 whitespace-nowrap rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground shadow-md"
+        >
+          {requiredMessage}
+        </span>
+      )}
+    </div>
   );
 }

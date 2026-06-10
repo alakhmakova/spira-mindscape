@@ -33,6 +33,7 @@ import {
   Eraser,
   Copy,
   Paintbrush,
+  Type,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,10 +41,14 @@ export function RichTextEditor({
   value,
   onChange,
   placeholder,
+  embedded = false,
 }: {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  // `embedded`: rendered as a bordered field inside a form (e.g. the create sheet)
+  // rather than a full-screen editor — keeps the toolbar inside the box.
+  embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
   const editor = useEditor({
@@ -69,7 +74,7 @@ export function RichTextEditor({
       attributes: {
         class: cn(
           "tiptap-content prose prose-sm max-w-none focus:outline-none text-[15px] leading-relaxed text-foreground/90",
-          isMobile ? "min-h-full" : "min-h-[40vh]",
+          embedded && isMobile ? "min-h-[110px]" : isMobile ? "min-h-full" : "min-h-[40vh]",
         ),
         "data-placeholder": placeholder ?? "",
       },
@@ -86,6 +91,23 @@ export function RichTextEditor({
   }, [editor, value]);
 
   if (!editor) return null;
+
+  if (isMobile && embedded) {
+    // A self-contained bordered field, matching the form's <Input> chrome exactly
+    // (border-input, shadow-none, the same focus border + ring) so the note field
+    // looks like the Title field, with the formatting toolbar tucked inside.
+    return (
+      <div className="rounded-md border border-input bg-surface shadow-none overflow-hidden transition-colors focus-within:border-primary focus-within:outline-none focus-within:ring-[3px] focus-within:ring-ring" data-vaul-no-drag>
+        {/* No inner scroll — the field grows with content and the sheet's body
+            scrolls, so the browser/vaul can scroll the cursor above the keyboard
+            (a nested scroll here makes the field overlap the footer buttons). */}
+        <div className="px-3.5 py-2">
+          <EditorContent editor={editor} />
+        </div>
+        <Toolbar editor={editor} variant="mobile" embedded />
+      </div>
+    );
+  }
 
   if (isMobile) {
     return (
@@ -109,14 +131,19 @@ export function RichTextEditor({
 function Toolbar({
   editor,
   variant = "desktop",
+  embedded = false,
 }: {
   editor: Editor;
   variant?: "desktop" | "mobile";
+  embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  // Mobile: keep the formatting controls hidden behind a "Format" toggle so the
+  // create sheet isn't crowded — most notes don't need them.
+  const [showFmt, setShowFmt] = useState(false);
 
   // @tiptap/react v3's useEditor does not re-render on selection changes, so the
   // toolbar's active states and the font/size/spacing/colour controls would show
@@ -508,16 +535,56 @@ function Toolbar({
   if (variant === "mobile") {
     return (
       <>
-        <div
-          onMouseDown={(e) => e.preventDefault()}
-          className="-mx-7 mt-4 flex shrink-0 items-center gap-0.5 overflow-x-auto border border-x-0 border-b-0 hairline bg-surface/95 px-2 py-1.5 backdrop-blur hide-scrollbar"
-          style={{
-            paddingBottom: "max(env(safe-area-inset-bottom), 0px)",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {toolbarItems}
-        </div>
+        {embedded ? (
+          // CREATE form: collapse the formatting behind a "Format" toggle so the
+          // bottom sheet isn't crowded.
+          <div onMouseDown={(e) => e.preventDefault()} className="shrink-0 border-t hairline bg-surface">
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              <button
+                type="button"
+                onClick={() => setShowFmt((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 h-9 px-2.5 rounded-md text-[13px] font-semibold transition-colors",
+                  showFmt ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <Type className="h-4 w-4" /> Format
+              </button>
+              {!showFmt && (
+                <>
+                  <Btn label="Bold" active={editor.isActive("bold")}
+                    onClick={() => editor.chain().focus().toggleBold().run()}>
+                    <Bold className="h-4 w-4" />
+                  </Btn>
+                  <Btn label="Bullet list" active={editor.isActive("bulletList")}
+                    onClick={() => editor.chain().focus().toggleBulletList().run()}>
+                    <List className="h-4 w-4" />
+                  </Btn>
+                </>
+              )}
+            </div>
+            {showFmt && (
+              <div
+                className="flex items-center gap-0.5 overflow-x-auto border-t hairline px-2 py-1.5 hide-scrollbar"
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
+                {toolbarItems}
+              </div>
+            )}
+          </div>
+        ) : (
+          // OPEN / edit a note: the full formatting bar (all icons, scrollable).
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className="-mx-7 mt-4 flex shrink-0 items-center gap-0.5 overflow-x-auto border border-x-0 border-b-0 hairline bg-surface px-2 py-1.5 hide-scrollbar"
+            style={{
+              paddingBottom: "max(env(safe-area-inset-bottom), 0px)",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {toolbarItems}
+          </div>
+        )}
         <LinkDialog
           isMobile={isMobile}
           open={linkDialogOpen}
@@ -538,7 +605,7 @@ function Toolbar({
     <>
       <div
         onMouseDown={(e) => e.preventDefault()}
-        className="sticky top-0 z-20 flex items-center gap-2 rounded-md border hairline bg-surface/95 px-2 py-1 backdrop-blur"
+        className="sticky top-0 z-20 flex items-center gap-2 rounded-md border hairline bg-surface px-2 py-1"
       >
         <button
           type="button"

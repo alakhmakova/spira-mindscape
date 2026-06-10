@@ -31,7 +31,7 @@ type State = {
   loadGoals: () => Promise<void>;
   refreshGoals: () => Promise<void>;
   clearSyncError: () => void;
-  addGoal: (g: Partial<Goal> & { title: string }) => string;
+  addGoal: (g: Partial<Goal> & { title: string }, onCreated?: (goal: Goal) => void) => string;
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
   setConfidence: (id: string, c: Confidence) => void;
@@ -43,7 +43,7 @@ type State = {
     text: string,
   ) => void;
   removeReality: (id: string, kind: RealityKind, itemId: string) => void;
-  addOption: (id: string, text: string) => void;
+  addOption: (id: string, text: string, onCreated?: (created: Option) => void) => void;
   updateOption: (id: string, optId: string, patch: Partial<Option>) => void;
   selectOption: (id: string, optId: string) => void;
   removeOption: (id: string, optId: string) => void;
@@ -51,7 +51,7 @@ type State = {
   addTarget: (id: string, t: CreateTargetInput) => Promise<Target | undefined>;
   updateTarget: (id: string, targetId: string, patch: Partial<Target>) => void;
   removeTarget: (id: string, targetId: string) => void;
-  addResource: (id: string, r: ResourceInput) => void;
+  addResource: (id: string, r: ResourceInput, onCreated?: (created: Resource) => void) => string;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
   removeResource: (id: string, rId: string) => void;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
@@ -220,7 +220,7 @@ export const useSpira = create<State>()((set, get) => ({
 
   clearSyncError: () => set({ syncError: undefined, syncErrorKind: undefined }),
 
-  addGoal: (g) => {
+  addGoal: (g, onCreated) => {
     const tempId = localId();
     const goal: Goal = {
       id: tempId,
@@ -245,11 +245,14 @@ export const useSpira = create<State>()((set, get) => ({
         confidence: goal.confidence,
         deadline: goal.deadline,
       })
-      .then((created) =>
+      .then((created) => {
         set((state) => ({
           goals: replaceGoal(state.goals, tempId, created),
-        })),
-      )
+        }));
+        // Hand back the persisted goal (with its real id) so callers can, e.g.,
+        // offer an "Open goal" shortcut that navigates to the right route.
+        onCreated?.(created);
+      })
       .catch((error) => {
         set((state) => ({
           goals: state.goals.filter((item) => item.id !== tempId),
@@ -329,11 +332,23 @@ export const useSpira = create<State>()((set, get) => ({
     void spiraApi
       .addRealityItem(id, kind, text)
       .then((reality) =>
+        // Reconcile ONLY the item we just added (swap our temp id for the server one),
+        // instead of replacing the whole list. Creating several items at once fires
+        // concurrent calls whose full-list responses would otherwise clobber each other
+        // and leave only the last — see addOption, which already reconciles by id.
         set((state) => ({
-          goals: updateGoalInList(state.goals, id, (goal) => ({
-            ...goal,
-            reality,
-          })),
+          goals: updateGoalInList(state.goals, id, (goal) => {
+            const known = new Set(
+              goal.reality[kind].filter((i) => !i.id.startsWith("local-")).map((i) => i.id),
+            );
+            const created = reality[kind].find((si) => si.text === text && !known.has(si.id));
+            let swapped = false;
+            const next = goal.reality[kind].map((i) => {
+              if (!swapped && i.id === item.id) { swapped = true; return created ?? i; }
+              return i;
+            });
+            return { ...goal, reality: { ...goal.reality, [kind]: next } };
+          }),
         })),
       )
       .catch((error) => setSyncError(set, error));
@@ -397,7 +412,7 @@ export const useSpira = create<State>()((set, get) => ({
       });
   },
 
-  addOption: (id, text) => {
+  addOption: (id, text, onCreated) => {
     const tempId = localId();
     const option: Option = { id: tempId, text, selected: false, position: 0 };
     set((state) => ({
@@ -408,10 +423,13 @@ export const useSpira = create<State>()((set, get) => ({
       syncError: undefined,
     }));
 
-    if (id.startsWith("local-")) return;
+    if (id.startsWith("local-")) {
+      onCreated?.(option);
+      return;
+    }
     void spiraApi
       .addOption(id, text)
-      .then((created) =>
+      .then((created) => {
         set((state) => ({
           goals: updateGoalInList(state.goals, id, (goal) => ({
             ...goal,
@@ -419,8 +437,11 @@ export const useSpira = create<State>()((set, get) => ({
               item.id === tempId ? created : item,
             ),
           })),
-        })),
-      )
+        }));
+        // Hand back the persisted option (with its real id) so callers can, e.g.,
+        // immediately select it ("create an option and make it active").
+        onCreated?.(created);
+      })
       .catch((error) => setSyncError(set, error));
   },
 
@@ -596,10 +617,9 @@ export const useSpira = create<State>()((set, get) => ({
     });
   },
 
-  addResource: (id, resourceInput) => {
+  addResource: (id, resourceInput, onCreated) => {
     const tempId = localId();
     const resource = { ...resourceInput, id: tempId } as Resource;
-    const previous = get().goals;
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -608,10 +628,13 @@ export const useSpira = create<State>()((set, get) => ({
       syncError: undefined,
     }));
 
-    if (id.startsWith("local-")) return;
+    if (id.startsWith("local-")) {
+      onCreated?.(resource);
+      return tempId;
+    }
     void spiraApi
       .createResource(id, resourceInput)
-      .then((created) =>
+      .then((created) => {
         set((state) => ({
           goals: updateGoalInList(state.goals, id, (goal) => ({
             ...goal,
@@ -619,12 +642,24 @@ export const useSpira = create<State>()((set, get) => ({
               item.id === tempId ? created : item,
             ),
           })),
-        })),
-      )
+        }));
+        // Hand back the persisted resource (with its real id) so callers can, e.g.,
+        // open a freshly created note in the full-screen editor.
+        onCreated?.(created);
+      })
       .catch((error) => {
-        set({ goals: previous });
+        // Roll back ONLY this failed item (by its temp id) — never a whole-list restore,
+        // which would wipe siblings created at the same time (e.g. adding several resources
+        // at once where just one fails).
+        set((state) => ({
+          goals: updateGoalInList(state.goals, id, (goal) => ({
+            ...goal,
+            resources: goal.resources.filter((item) => item.id !== tempId),
+          })),
+        }));
         setSyncError(set, error);
       });
+    return tempId;
   },
 
   updateResource: (id, resourceId, patch) => {

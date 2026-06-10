@@ -54,7 +54,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
       {/* Body */}
       <div
         id="new-goal-scroll-container"
-        className="px-7 pt-2 pb-[400px] space-y-6 overflow-y-auto flex-1"
+        className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0"
       >
         <Field label="Title" required>
           <Input
@@ -62,7 +62,6 @@ function FormBody({ onDone }: { onDone: () => void }) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Launch Spira to first 50 users"
             className="text-base"
-            autoFocus
           />
         </Field>
 
@@ -104,12 +103,15 @@ function FormBody({ onDone }: { onDone: () => void }) {
         </Field>
       </div>
 
-      {/* Footer — sticky */}
-      <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
+      {/* Footer — Cancel + Create, pinned to the bottom. */}
+      <div
+        className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+      >
         <button
           type="button"
           onClick={onDone}
-          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
+          className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
         >
           Cancel
         </button>
@@ -117,7 +119,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
           type="button"
           onClick={() => submit(true)}
           disabled={!title.trim()}
-          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
+          className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 disabled:opacity-40 transition-colors"
         >
           Create goal
         </button>
@@ -166,7 +168,7 @@ export function NewGoalSheet({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
+        <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
           <FormBody onDone={() => onOpenChange(false)} />
         </DrawerContent>
       </Drawer>

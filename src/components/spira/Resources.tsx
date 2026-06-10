@@ -611,7 +611,12 @@ function PreviewBody({
                 <DropdownMenuItem
                   onClick={async () => {
                     try {
-                      await openInGoogleDocs(resource.id, resource.body, resource.title);
+                      const link = await openInGoogleDocs(resource.id, resource.body, resource.title);
+                      // Reflect the link locally so the menu immediately offers "Open" +
+                      // "Update" (the backend has stored it; this avoids a reload).
+                      if (link && link !== resource.driveWebViewLink) {
+                        updateResource(goalId, resource.id, { driveWebViewLink: link });
+                      }
                       toast.success(resource.driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
                     } catch (e) {
                       toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
@@ -866,6 +871,9 @@ function ResourcePreview({
               onBodyChange={(html) =>
                 updateResource(goalId, resource.id, { body: html })
               }
+              onDocLinked={(link) =>
+                updateResource(goalId, resource.id, { driveWebViewLink: link })
+              }
               onClose={onClose}
             />
           </DrawerContent>
@@ -910,6 +918,7 @@ function MobileNoteBody({
   driveWebViewLink,
   onTitleChange,
   onBodyChange,
+  onDocLinked,
   onClose,
 }: {
   title: string;
@@ -918,6 +927,7 @@ function MobileNoteBody({
   driveWebViewLink?: string | null;
   onTitleChange: (value: string) => void;
   onBodyChange: (html: string) => void;
+  onDocLinked: (link: string) => void;
   onClose: () => void;
 }) {
   const { copied, run } = useCopied();
@@ -971,7 +981,8 @@ function MobileNoteBody({
                 <DropdownMenuItem
                   onClick={async () => {
                     try {
-                      await openInGoogleDocs(resourceId, body, title);
+                      const link = await openInGoogleDocs(resourceId, body, title);
+                      if (link && link !== driveWebViewLink) onDocLinked(link);
                       toast.success(driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
                     } catch (e) {
                       toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
@@ -1156,7 +1167,7 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-0 pb-safe max-h-[92vh] flex flex-col bg-surface">
+        <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col bg-surface">
           {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>
@@ -1348,7 +1359,7 @@ function Form({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="px-7 pt-2 pb-6 space-y-6 overflow-y-auto flex-1 min-h-0">
+      <div className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
         {!initialResource && (
           <div>
             <label className="text-sm font-semibold block mb-2">
@@ -1386,7 +1397,6 @@ function Form({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={MAX_RESOURCE_LABEL_LENGTH + 1}
-              autoFocus
             />
             {labelError && (
               <p
@@ -1401,12 +1411,13 @@ function Form({
         {type === "note" && (
           <div>
             <label className="text-sm font-semibold block mb-1.5">Note</label>
-            {/* Rich editor (same as editing an existing note) so pasted
-                formatting is preserved as HTML on creation, not flattened. */}
+            {/* `embedded` renders it as a bordered field (matching the inputs) on
+                mobile, with the formatting toolbar tucked behind "Format". */}
             <RichTextEditor
               value={body}
               onChange={(html) => setBody(html)}
               placeholder="Write your note here..."
+              embedded
             />
           </div>
         )}
@@ -1491,7 +1502,6 @@ function Form({
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
                 placeholder="name@example.com"
-                autoFocus
               />
               {emailError && (
                 <p
@@ -1523,17 +1533,20 @@ function Form({
           </div>
         )}
       </div>
-      <div className="px-7 py-4 flex items-center justify-end gap-3 bg-surface">
+      <div
+        className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+      >
         <button
           onClick={onDone}
-          className="h-11 px-5 rounded-md border-2 border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors"
+          className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={submit}
           disabled={!canSubmit}
-          className="h-11 px-5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-40"
+          className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 disabled:opacity-40 transition-colors"
         >
           {initialResource ? "Save changes" : "Add resource"}
         </button>
