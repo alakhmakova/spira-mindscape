@@ -91,7 +91,7 @@ export function TargetsList({ goal }: { goal: Goal }) {
   );
 }
 
-function DesktopTargetsTable({ goal }: { goal: Goal }) {
+export function DesktopTargetsTable({ goal }: { goal: Goal }) {
   const { updateTarget, removeTarget } = useSpira();
   const [sortField, setSortField] = useState<"title" | "deadline" | "progress">(
     "deadline",
@@ -222,17 +222,7 @@ function DesktopTargetsTable({ goal }: { goal: Goal }) {
               <TableRow
                 key={t.id}
                 id={`target-desktop-${t.id}`}
-                className="group/row scroll-mt-24 cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={(e) => {
-                  const targetEl = e.target as HTMLElement;
-                  if (
-                    targetEl.tagName === "INPUT" ||
-                    targetEl.closest("button")
-                  )
-                    return;
-                  if (t.type === "numeric") setEditingNumericFor(t.id);
-                  if (t.type === "checklist") setEditingTasksFor(t.id);
-                }}
+                className="scroll-mt-24 hover:bg-muted/50 transition-colors"
               >
                 <TableCell className="pl-6">
                   <InlineText
@@ -478,7 +468,7 @@ function TargetDeleteConfirm({
   );
 }
 
-function TargetRow({
+export function TargetRow({
   target,
   onUpdate,
   onRemove,
@@ -580,6 +570,22 @@ function TargetRow({
             compact
             hideCountdown
           />
+          <div className="mt-1">
+            <NewTaskInlineInput
+              onAdd={(text) =>
+                onUpdate({
+                  items: [
+                    ...target.items,
+                    {
+                      id: Math.random().toString(36).slice(2, 9),
+                      text,
+                      done: false,
+                    },
+                  ],
+                } as Partial<Target>)
+              }
+            />
+          </div>
           <div className="mt-4 flex items-center gap-3">
             <ProgressBar value={progress} className="flex-1" />
             <span className="num text-xs text-muted-foreground font-semibold">
