@@ -5,6 +5,7 @@ import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.OidcUserInfo;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Map;
 
@@ -14,8 +15,14 @@ import java.util.Map;
  *
  * <p>Stored in the session by Spring Security after a successful OAuth2 login.
  * Retrieved via {@link CurrentUserProvider} in every authenticated request.
+ *
+ * <p>Must stay {@link Serializable}: sessions are persisted to PostgreSQL by
+ * spring-session-jdbc, which JDK-serializes the whole SecurityContext. A
+ * non-serializable principal makes every login fail with a 500.
  */
-public class AppUserOidcUser implements OidcUser {
+public class AppUserOidcUser implements OidcUser, Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private final OidcUser delegate;
     private final AppUser appUser;

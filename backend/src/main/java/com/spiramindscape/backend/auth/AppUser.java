@@ -4,18 +4,25 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.io.Serializable;
 import java.time.Instant;
 
 /**
  * Persistent user account, created on first Google sign-in.
  * Identity key is {@code googleSub} (the stable Google OIDC {@code sub} claim),
  * not the email address (email can change/transfer across accounts).
+ *
+ * <p>{@link Serializable} because it travels inside the session principal
+ * ({@link AppUserOidcUser}), and sessions are JDK-serialized into PostgreSQL
+ * by spring-session-jdbc.
  */
 @Entity
 @Table(name = "app_user")
 @Getter
 @Setter
-public class AppUser {
+public class AppUser implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
