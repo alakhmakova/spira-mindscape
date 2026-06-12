@@ -12,4 +12,7 @@ dist
 .idea
 .DS_Store
 tests-e2e
-grow
+# The book .docx folder at the repo ROOT only. Anchored: gcloudignore follows
+# gitignore semantics, where a bare "grow" also matches the Java package
+# backend/.../ai/grow at any depth and silently breaks the Cloud Build compile.
+/grow

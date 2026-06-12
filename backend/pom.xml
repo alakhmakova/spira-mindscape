@@ -77,6 +77,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-client</artifactId>
         </dependency>
+        <!-- Sessions stored in PostgreSQL: Cloud Run scales to zero, and
+             in-memory JSESSIONID sessions die with the instance — every cold
+             start used to log everyone out and silently drop their saves. -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-jdbc</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -141,6 +141,14 @@ function updateGoalAchievementFromProgress(goal: Goal): Goal {
 
 function setSyncError(set: (state: Partial<State>) => void, error: unknown) {
   console.error("Spira sync failed", error);
+  // Session expired mid-use: a generic "sync failed" here would let the user
+  // keep editing while every save silently dies with 401. Hard-redirect to
+  // login instead (mirrors loadGoals) so they re-authenticate and lose at
+  // most the one change that just failed.
+  if (error instanceof SpiraApiError && error.status === 401) {
+    window.location.replace("/login");
+    return;
+  }
   const kind = error instanceof SpiraApiError ? error.kind : "service";
   set({
     syncError:
