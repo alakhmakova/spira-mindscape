@@ -19,14 +19,21 @@ export type StreamChatParams = {
   history: HistoryEntry[];
   provider?: string;
   sessionType?: "chat" | "grow";
+  /** GROW only: session length the user picked, in minutes. */
+  sessionTotalMinutes?: number;
+  /** GROW only: seconds left on the timer; <= 0 tells the coach to close now. */
+  sessionRemainingSeconds?: number;
   onToken: (token: string) => void;
   onProposal?: (argsJson: string) => void;
+  /** Progress lines (e.g. one-time coaching-library indexing in GROW).
+   *  Ephemeral UI only — never part of the transcript or history. */
+  onStatus?: (msg: string) => void;
   onDone: () => void;
   onError: (msg: string) => void;
 };
 
 export async function streamChat(params: StreamChatParams): Promise<void> {
-  const { goalId, message, history, provider = "ANTHROPIC", sessionType = "chat", onToken, onProposal, onDone, onError } = params;
+  const { goalId, message, history, provider = "ANTHROPIC", sessionType = "chat", sessionTotalMinutes, sessionRemainingSeconds, onToken, onProposal, onStatus, onDone, onError } = params;
 
   let response: Response;
   try {
@@ -40,6 +47,8 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         history,
         provider,
         sessionType,
+        sessionTotalMinutes: sessionTotalMinutes ?? null,
+        sessionRemainingSeconds: sessionRemainingSeconds ?? null,
       }),
     });
   } catch {
@@ -84,6 +93,9 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
       }
       case "proposal":
         onProposal?.(data.trim());
+        return false;
+      case "status":
+        onStatus?.(data.trim());
         return false;
       case "done":
         onDone();
@@ -170,6 +182,25 @@ export async function updateKeyModel(provider: string, model: string) {
     throw new Error(body || `Failed to update model: ${res.status}`);
   }
   return res.json();
+}
+
+// ── GROW session memory ─────────────────────────────────────────────────────
+
+/**
+ * Persist a GROW session summary on the goal ("Save memory" on the end card).
+ * Later GROW sessions read it back so the coach continues the thread.
+ */
+export async function saveSessionMemory(goalId: string, summary: string): Promise<void> {
+  const res = await fetch(`${AI_BASE}/goals/${parseInt(goalId, 10)}/memory`, {
+    method: "POST",
+    credentials: "include",
+    headers: mutationHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(body || `Failed to save session memory: ${res.status}`);
+  }
 }
 
 // ── Proposals ───────────────────────────────────────────────────────────────

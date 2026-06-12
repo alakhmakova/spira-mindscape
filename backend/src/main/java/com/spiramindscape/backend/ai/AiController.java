@@ -2,6 +2,7 @@ package com.spiramindscape.backend.ai;
 
 import com.spiramindscape.backend.ai.chat.AiChatService;
 import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
+import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
@@ -47,16 +48,19 @@ public class AiController {
     private final AiChatService chatService;
     private final AiModelService modelService;
     private final AiProposalService proposalService;
+    private final GoalMemoryService goalMemoryService;
 
     public AiController(
             AiKeyService keyService,
             AiChatService chatService,
             AiModelService modelService,
-            AiProposalService proposalService) {
+            AiProposalService proposalService,
+            GoalMemoryService goalMemoryService) {
         this.keyService = keyService;
         this.chatService = chatService;
         this.modelService = modelService;
         this.proposalService = proposalService;
+        this.goalMemoryService = goalMemoryService;
     }
 
     // ── Key management ────────────────────────────────────────────────────────
@@ -164,5 +168,21 @@ public class AiController {
     @PostMapping("/proposals/{id}/reject")
     public ProposalDto reject(@PathVariable Long id) {
         return proposalService.reject(id);
+    }
+
+    // ── GROW session memory ───────────────────────────────────────────────────
+
+    public record SaveMemoryRequest(String summary) {}
+
+    /**
+     * Append a GROW session summary to the goal's memory ("Save memory" on
+     * the session end card). Later GROW sessions read it back into the system
+     * prompt so the coach continues from where the last one ended.
+     */
+    @PostMapping("/goals/{goalId}/memory")
+    public ResponseEntity<Map<String, String>> saveGoalMemory(
+            @PathVariable Long goalId, @RequestBody SaveMemoryRequest request) {
+        goalMemoryService.append(goalId, request.summary());
+        return ResponseEntity.ok(Map.of("status", "saved"));
     }
 }

@@ -16,7 +16,7 @@ import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
 import type { AiAction, Goal } from "@/lib/spira/types";
 import { toast } from "sonner";
-import { streamChat, saveApiKey, listApiKeys, updateKeyModel, fetchProviderModels, approveProposal, rejectProposal, type HistoryEntry } from "./ai-api";
+import { streamChat, saveApiKey, listApiKeys, updateKeyModel, fetchProviderModels, approveProposal, rejectProposal, saveSessionMemory, listGoalProposals, type HistoryEntry } from "./ai-api";
 import {
   type ProposalKind,
   type Proposal,
@@ -40,6 +40,9 @@ type Msg = {
   streaming?: boolean;
   proposals?: Proposal[];
   error?: boolean; // an error bubble — rendered with a warning icon, excluded from history
+  /** Ephemeral progress line (GROW library indexing). Display-only: never part
+   *  of content, so it can't leak into the transcript or the model history. */
+  status?: string;
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -121,6 +124,75 @@ function takeHandoff(goalId: string): string | undefined {
     if (v) window.localStorage.removeItem(k);
     return v || undefined;
   } catch { return undefined; }
+}
+
+// ── Undecided session-end persistence ───────────────────────────────────────
+// GROW transcripts are ephemeral, but the END of a session is a decision the
+// user must make explicitly. If the page reloads (or the tab closes) before
+// they choose Save / Don't save, the pending decision — with the memory draft
+// — is restored from localStorage and the card stays until they decide.
+
+const GROW_END_PREFIX = "spira:ai:grow-pending-end:";
+const growEndKey = (goalId?: string) => `${GROW_END_PREFIX}${goalId ?? "global"}`;
+
+function loadPendingEnd(goalId?: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(growEndKey(goalId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { draft?: string };
+    return parsed.draft?.trim() ? parsed.draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingEnd(goalId: string | undefined, draft: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(growEndKey(goalId), JSON.stringify({ draft, ts: Date.now() }));
+  } catch { /* quota / unavailable — the in-memory card still works */ }
+}
+
+function clearPendingEnd(goalId?: string) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.removeItem(growEndKey(goalId)); } catch { /* ignore */ }
+}
+
+// ── Live GROW session persistence ───────────────────────────────────────────
+// An accidentally closed tab must not kill a running session: the transcript
+// and the session's real END TIME (wall clock — the timer keeps running while
+// the tab is closed) are cached per goal. On reopen, the session resumes if
+// time remains; if it ran out while away, the normal closing flow fires.
+
+const GROW_SESSION_PREFIX = "spira:ai:grow-session:";
+const growSessionKey = (goalId?: string) => `${GROW_SESSION_PREFIX}${goalId ?? "global"}`;
+
+type StoredGrowSession = { mins: number; total: number; endsAt: number; msgs: Msg[] };
+
+function loadGrowSession(goalId?: string): StoredGrowSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(growSessionKey(goalId));
+    if (!raw) return null;
+    const s = JSON.parse(raw) as StoredGrowSession;
+    if (typeof s.endsAt !== "number" || typeof s.total !== "number" || !Array.isArray(s.msgs)) {
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function saveGrowSession(goalId: string | undefined, data: StoredGrowSession) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(growSessionKey(goalId), JSON.stringify(data)); } catch { /* ignore */ }
+}
+
+function clearGrowSession(goalId?: string) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.removeItem(growSessionKey(goalId)); } catch { /* ignore */ }
 }
 
 function loadTranscript(scopeKey: string): Msg[] {
@@ -735,12 +807,24 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const [session, setSession] = useState<{ total: number; remaining: number; mins: number } | null>(null);
   const [showProvider, setShowProvider] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // What "Save memory" will persist — previewed and revisable on the end card.
+  // Initialised from localStorage: an undecided session end survives reloads.
+  const [memoryDraft, setMemoryDraft] = useState<string | null>(
+    () => loadPendingEnd(context.goalId),
+  );
+  const [memoryRevising, setMemoryRevising] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS_DEFAULT);
   const [activeProv, setActiveProv] = useState(() => readSavedProvider() || "ANTHROPIC");
   const [tavily, setTavily] = useState<{ connected: boolean; hint?: string }>({ connected: false });
 
   const stopRef = useRef(false);
   const endedRef = useRef(false);
+  // The timer ran out and the closing turn was requested — guards double-sends
+  // while the seconds keep ticking past zero.
+  const wrapUpRef = useRef(false);
+  // Composer draft survives unmounts (e.g. the end-of-session card replacing
+  // the input) — an unfinished message must never silently disappear.
+  const draftRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   // In-place card revision ("Type a change for the AI…"): shows a cancellable "Revising…"
   // state in the footer so a stalled revise is never a dead-end (no Stop button otherwise).
@@ -795,6 +879,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (prevScopeRef.current === scopeKey) return;
     prevScopeRef.current = scopeKey;
     setMsgs(loadTranscript(scopeKey));
+    // Each scope carries its own undecided session end (if any). Never clobber
+    // a live session's draft — scope switches don't happen mid-grow.
+    if (!inGrow) setMemoryDraft(loadPendingEnd(context.goalId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
   // Persist regular chat after each settled turn. Skipping while `busy` avoids
@@ -806,6 +894,54 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (busy) return;
     saveTranscript(scopeKey, msgs);
   }, [msgs, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── pending proposal restore ──────────────────────────────────────────────
+  // A card can vanish from the UI while its proposal is still PENDING on the
+  // server: GROW transcripts are ephemeral, chat history is capped, and
+  // localStorage can be cleared. On mount / goal switch, fetch the goal's
+  // pending proposals and re-surface any the restored transcript no longer
+  // carries. Once shown, the message persists like any other, so this never
+  // duplicates a card it already restored.
+  useEffect(() => {
+    const goalId = context.goalId;
+    if (!goalId) return;
+    let cancelled = false;
+    listGoalProposals(goalId)
+      .then((server) => {
+        if (cancelled || server.length === 0) return;
+        setMsgs((prev) => {
+          const known = new Set(
+            prev.flatMap((m) => (m.proposals ?? []).map((p) => p.serverId))
+              .filter((id): id is number => id != null),
+          );
+          const restored = server
+            .filter((sp) => sp.status === "PENDING" && !known.has(sp.id))
+            .flatMap((sp) => {
+              const p = proposalFromToolArgs(sp.payload);
+              if (!p) return [];
+              p.serverId = sp.id;
+              // Same enrichment as the live onProposal path: goal-level ops
+              // need the goal's name to render; unresolvable ones are dropped.
+              if (p.goalId && !p.goalTitle) {
+                const g = goals.find((x) => x.id === p.goalId);
+                if (g) p.goalTitle = g.title;
+              }
+              if ((p.kind === "edit_goal" || p.kind === "open_goal") && !p.goalTitle) return [];
+              return [p];
+            });
+          if (restored.length === 0) return prev;
+          return [...prev, {
+            id: uid(),
+            role: "assistant" as const,
+            content: "These proposals from an earlier session are still waiting for your review.",
+            proposals: restored,
+          }];
+        });
+      })
+      .catch(() => { /* restore is best-effort — the chat works without it */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context.goalId]);
 
   // (We deliberately do NOT re-surface still-pending server proposals on open: the
   // local transcript already restores the cards, and pulling every unresolved row
@@ -1020,11 +1156,23 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // ── GROW ──────────────────────────────────────────────────────────────────
 
   const startGrow = (mins: number, focus: string) => {
+    // An undecided previous session blocks a new one — its result must not be
+    // silently overwritten. The pending card is on screen; decide there first.
+    if (memoryDraft) {
+      setMode("chat");
+      toast.error("Finish the previous session first — save or discard its result below.");
+      return;
+    }
     setGmsgs([]);
     endedRef.current = false;
+    wrapUpRef.current = false;
+    setMemoryDraft(null);
     const total = mins * 60;
     setSession({ total, remaining: total, mins });
     setMode("grow-active");
+    // The session's real end moment — survives tab closes; the clock keeps
+    // running while away, like a real coaching appointment.
+    saveGrowSession(context.goalId, { mins, total, endsAt: Date.now() + total * 1000, msgs: [] });
 
     const opening = focus
       ? `I want to work on: ${focus}`
@@ -1050,14 +1198,20 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       history: [],
       provider: activeProv,
       sessionType: "grow",
+      sessionTotalMinutes: mins,
+      sessionRemainingSeconds: total,
+      onStatus: (status) => {
+        if (stopRef.current) return;
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, status } : m)));
+      },
       onToken: (tok) => {
         if (stopRef.current) return;
         accumulated += tok;
-        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, content: accumulated } : m)));
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, content: accumulated, status: undefined } : m)));
         scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
       },
       onDone: () => {
-        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false } : m)));
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, status: undefined } : m)));
         setBusy(false);
       },
       onError: (err) => {
@@ -1069,10 +1223,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     });
   };
 
-  const sendGrow = (text: string) => {
-    if (busy) return;
-    const userMsg = { id: uid(), role: "user" as const, content: text };
-    setGmsgs((p) => [...p, userMsg]);
+  /**
+   * One GROW turn. `wrapUp` is the timer-driven closing turn: the instruction
+   * is sent to the model but never shown or kept as a user bubble, and once
+   * the coach's goodbye lands the end card follows.
+   */
+  const sendGrow = (text: string, opts?: { wrapUp?: boolean }) => {
+    const wrapUp = opts?.wrapUp ?? false;
+    if (busy && !wrapUp) return;
+    if (!wrapUp) {
+      const userMsg = { id: uid(), role: "user" as const, content: text };
+      setGmsgs((p) => [...p, userMsg]);
+    }
     setBusy(true);
     stopRef.current = false;
 
@@ -1091,10 +1253,16 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       history,
       provider: activeProv,
       sessionType: "grow",
+      sessionTotalMinutes: session?.mins,
+      sessionRemainingSeconds: wrapUp ? 0 : Math.round(session?.remaining ?? 0),
+      onStatus: (status) => {
+        if (stopRef.current) return;
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, status } : m)));
+      },
       onToken: (tok) => {
         if (stopRef.current) return;
         accumulated += tok;
-        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, content: accumulated } : m)));
+        setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, content: accumulated, status: undefined } : m)));
         scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
       },
       onProposal: (argsJson) => {
@@ -1124,10 +1292,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           (finalProposals.length ? "I've prepared this for your review." : "");
         setGmsgs((p) => p.map((m) =>
           m.id === id
-            ? { ...m, streaming: false, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) }
+            ? { ...m, streaming: false, status: undefined, content, ...(finalProposals.length ? { proposals: finalProposals } : {}) }
             : m,
         ));
         setBusy(false);
+        // The coach has said its goodbye — now the end card may follow, with
+        // this very goodbye offered as the session memory draft.
+        if (wrapUp) finishGrow(content);
       },
       onError: (err) => {
         setBusy(false);
@@ -1135,28 +1306,159 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const msg = err === "NETWORK" ? "Backend unreachable — is it running?" : (err || "AI error.");
         setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, streaming: false, content: msg, error: true } : m)));
         toast.error(msg);
+        // Even if the goodbye failed, the session is over — don't strand the user.
+        if (wrapUp) finishGrow();
       },
     });
   };
 
-  const finishGrow = useCallback(() => {
+  /**
+   * Ends the session. The coach's closing reflection becomes the *draft* of
+   * the session memory — shown on the end card for review, revisable via the
+   * AI, and saved only when the user confirms. `closingText` is passed by the
+   * wrap-up turn (whose closure has the freshest reply); the manual path
+   * falls back to the last coach message in the transcript.
+   */
+  const finishGrow = (closingText?: string) => {
     if (endedRef.current) return;
     endedRef.current = true;
+    const lastCoach = closingText
+      ?? [...gmsgs].reverse().find((m) => m.role === "assistant" && m.content.trim() && !m.error)?.content
+      ?? null;
+    setMemoryDraft(lastCoach);
+    // The decision now exists — make it survive reloads until the user chooses.
+    // The live-session cache has served its purpose and yields to the pending-end card.
+    if (lastCoach) savePendingEnd(context.goalId, lastCoach);
+    clearGrowSession(context.goalId);
     setMode("grow-closing");
     setTimeout(() => {
       setGmsgs((p) => [...p, { id: uid(), role: "end", content: "" }]);
       setMode("grow-end");
     }, 800);
-  }, []);
+  };
+
+  /**
+   * "Edit by telling the AI": rewrites the memory draft per the user's
+   * instruction. A standalone request — it never touches the transcript;
+   * only the preview on the end card updates.
+   */
+  const reviseMemory = (instruction: string) => {
+    if (!memoryDraft || memoryRevising) return;
+    setMemoryRevising(true);
+    let revised = "";
+    streamChat({
+      goalId: context.goalId,
+      message:
+        "[The user wants to adjust the session summary that is about to be saved as " +
+        "session memory. Apply their request and reply with ONLY the revised summary " +
+        "text in the same language as the current summary — no preamble, no quotes, " +
+        "and do not call any tools.\nUser request: " + instruction +
+        "\nCurrent summary:\n" + memoryDraft + "]",
+      history: [],
+      provider: activeProv,
+      sessionType: "chat",
+      onToken: (tok) => { revised += tok; },
+      onDone: () => {
+        if (revised.trim()) {
+          setMemoryDraft(revised.trim());
+          savePendingEnd(context.goalId, revised.trim());
+        }
+        setMemoryRevising(false);
+      },
+      onError: (err) => {
+        setMemoryRevising(false);
+        toast.error(err === "NO_KEY" ? "No API key configured." : (err || "AI error."));
+      },
+    });
+  };
+
+  /**
+   * Timer-driven close. Instead of cutting the conversation off, ask the coach
+   * for a proper goodbye (the instruction itself is never shown); the end card
+   * appears only after that reply lands. English instruction — the prompt's
+   * language rule makes the coach answer in the user's language.
+   */
+  const WRAP_UP_INSTRUCTION =
+    "[The session timer has run out. Close the session now: in the language we have " +
+    "been speaking, briefly reflect the key insights of this conversation and confirm any " +
+    "commitments or next steps I named. For EACH commitment or next step I voiced, call " +
+    "the propose_goal_change tool (e.g. kind='target' or 'action') so I can accept it " +
+    "into my goal — do this in this same reply. Then say a warm goodbye. " +
+    "Do not ask a new question.]";
+  const sendGrowRef = useRef(sendGrow);
+  useEffect(() => { sendGrowRef.current = sendGrow; });
+
+  // Proposals from this session that still await a decision — accepted and
+  // rejected ones must not be counted, or the wrap-up claims phantom work.
+  const sessionProposals = gmsgs.reduce(
+    (n, m) => n + (m.proposals?.filter((pr) => pr.status === "pending").length ?? 0),
+    0,
+  );
 
   const closeSession = (save: boolean) => {
+    // "Save memory" persists exactly what the end card previewed (the coach's
+    // closing reflection, possibly revised by the user via the AI).
+    let saved = false;
+    if (save && context.goalId && memoryDraft?.trim()) {
+      saved = true;
+      saveSessionMemory(context.goalId, memoryDraft).catch(() =>
+        toast.error("Couldn't save the session memory — it won't carry over."),
+      );
+    }
     setMode("chat");
     setSession(null);
+    setMemoryDraft(null);
+    clearPendingEnd(context.goalId); // the user decided — the card may rest
+    clearGrowSession(context.goalId);
     const note = save
-      ? "Session memory saved. Proposals added to the goal for your review."
+      ? (saved ? "Session memory saved." : "Session ended — nothing to save yet.")
+        + (sessionProposals > 0
+          ? ` ${sessionProposals} proposal${sessionProposals === 1 ? "" : "s"} from the session await your review.`
+          : "")
       : "Session ended without saving memory.";
     setMsgs((p) => [...p, { id: uid(), role: "system", content: note }]);
   };
+
+  // ── Live session persistence & resume ─────────────────────────────────────
+
+  // Keep the cached session fresh: settled transcript + recomputed end moment.
+  // Skipped while streaming (one write per turn, not per token).
+  useEffect(() => {
+    if (!session || busy || endedRef.current) return;
+    if (mode !== "grow-active" && mode !== "grow-closing") return;
+    saveGrowSession(context.goalId, {
+      mins: session.mins,
+      total: session.total,
+      endsAt: Date.now() + session.remaining * 1000,
+      msgs: gmsgs.filter((m) => !m.streaming && m.role !== "end"),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gmsgs, busy, mode]);
+
+  // Resume an interrupted session on mount / goal switch. If its time ran out
+  // while the tab was closed, the restored zero on the clock triggers the
+  // normal wrap-up → end-card flow instead of losing the result.
+  useEffect(() => {
+    if (inGrow) return;
+    if (loadPendingEnd(context.goalId)) return; // an undecided end card wins
+    const stored = loadGrowSession(context.goalId);
+    if (!stored) return;
+    const remaining = Math.max(0, Math.round((stored.endsAt - Date.now()) / 1000));
+    const hasContent = stored.msgs.some(
+      (m) => m.role === "assistant" && m.content.trim() && !m.error,
+    );
+    if (remaining <= 0 && !hasContent) {
+      // Expired with nothing said — nothing worth closing ceremonially.
+      clearGrowSession(context.goalId);
+      return;
+    }
+    setGmsgs(stored.msgs);
+    endedRef.current = false;
+    wrapUpRef.current = false;
+    setSession({ total: stored.total, remaining, mins: stored.mins });
+    setMode("grow-active");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
 
   // ── GROW timer ────────────────────────────────────────────────────────────
 
@@ -1177,8 +1479,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (!session) return;
     const frac = 1 - session.remaining / session.total;
     if (frac >= 0.8 && mode === "grow-active") setMode("grow-closing");
-    if (session.remaining <= 0 && !endedRef.current) finishGrow();
-  }, [session, mode, finishGrow]);
+    // Time's up: request the coach's closing reply (once, and only between
+    // turns — a streaming reply finishes first; busy flipping re-runs this).
+    if (session.remaining <= 0 && !endedRef.current && !wrapUpRef.current && !busy) {
+      wrapUpRef.current = true;
+      sendGrowRef.current(WRAP_UP_INSTRUCTION, { wrapUp: true });
+    }
+  }, [session, mode, busy, WRAP_UP_INSTRUCTION]);
 
   // ── Provider sheet callbacks ──────────────────────────────────────────────
 
@@ -1304,8 +1611,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2">
           {inGrow ? (
             <>
-              <TimerPill frac={timerFrac} closing={closing} label={timerLabel}
-                onSkip={() => setSession((s) => s ? { ...s, remaining: Math.min(s.remaining, s.total * 0.18) } : s)} />
+              <TimerPill frac={timerFrac} closing={closing} label={timerLabel} />
               <button
                 onClick={() => mode !== "grow-end" && setConfirmEnd(true)}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 transition-colors"
@@ -1412,7 +1718,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           }
           if (m.role === "end") {
             return (
-              <GrowEndCard key={m.id} proposals={0}
+              <GrowEndCard key={m.id} proposals={sessionProposals}
+                memory={memoryDraft}
+                revising={memoryRevising}
+                onRevise={reviseMemory}
                 onSave={() => closeSession(true)}
                 onDiscard={() => closeSession(false)} />
             );
@@ -1429,6 +1738,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           return (
             <div key={m.id} className="group flex flex-col gap-2.5">
               <div className="text-[14.5px] leading-[1.62] text-white max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere] select-text selection:bg-white/30 selection:text-white">
+                {m.streaming && m.status && !m.content && (
+                  <p className="text-[12.5px] italic text-white/60 mb-1">{m.status}</p>
+                )}
                 <Markdown text={m.content} />
                 {m.streaming && <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-white rounded-sm animate-pulse" />}
               </div>
@@ -1442,6 +1754,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
+
+        {/* An undecided session end (restored after a reload): the card stays
+            until the user explicitly saves or discards — never a silent loss. */}
+        {!inGrow && memoryDraft && (
+          <GrowEndCard proposals={0}
+            memory={memoryDraft}
+            revising={memoryRevising}
+            onRevise={reviseMemory}
+            onSave={() => closeSession(true)}
+            onDiscard={() => closeSession(false)} />
+        )}
       </div>
 
       {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
@@ -1458,23 +1781,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       )}
-      {mode !== "grow-end" && !revising && pendingMsg && (
+      {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
+          the user's commitments, and those cards must stay actionable. */}
+      {!revising && pendingMsg && (
         <div className="px-3 pb-3 pt-1 shrink-0">
           {proposalGroupFor(pendingMsg)}
         </div>
       )}
       {mode !== "grow-end" && !revising && !pendingMsg && (
         <>
-          {!inGrow && goal && (
-            <div className="px-4 pb-1">
-              <button
-                onClick={() => setMode("grow-start")}
-                className="inline-flex items-center gap-[7px] px-3 py-1.5 rounded-full border border-dashed border-white/30 text-white/74 text-[12.5px] font-medium hover:text-white hover:border-white transition-colors"
-              >
-                <Ic path={PATHS.leaf} size={14} /> Start a GROW session
-              </button>
-            </div>
-          )}
           {inGrow && (
             <div className="px-4 pb-1">
               <button onClick={() => setConfirmEnd(true)}
@@ -1488,6 +1803,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             placeholder={inGrow ? "Answer in your own words…" : "Ask, plan, or request an action…"}
             busy={busy}
             onStop={stopStream}
+            initialValue={draftRef.current}
+            onDraftChange={(v) => { draftRef.current = v; }}
+            leftAction={!inGrow && goal ? (
+              <button
+                onClick={() => setMode("grow-start")}
+                title="Start a GROW session"
+                className="inline-flex items-center gap-1 px-2 h-8 shrink-0 rounded-lg text-[#006d67] text-[12.5px] font-semibold hover:bg-[#006d67]/10 transition-colors"
+              >
+                <Ic path={PATHS.leaf} size={14} /> GROW
+              </button>
+            ) : undefined}
           />
         </>
       )}
@@ -1676,13 +2002,15 @@ function Markdown({ text }: { text: string }) {
 
 // ── Timer pill ─────────────────────────────────────────────────────────────
 
-function TimerPill({ frac, closing, label, onSkip }: {
-  frac: number; closing: boolean; label: string; onSkip: () => void;
+function TimerPill({ frac, closing, label }: {
+  frac: number; closing: boolean; label: string;
 }) {
+  // Display-only: this used to be a "Skip (demo)" button that silently jumped
+  // the session to its closing stretch — a stray click made the time feel fake.
   return (
-    <button onClick={onSkip} title="Skip (demo)"
+    <span
       className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 border-none text-white font-sans",
+        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 text-white font-sans",
         closing && "text-[#f0b860]",
       )}>
       <Ic path={PATHS.clock} size={12} />
@@ -1698,7 +2026,7 @@ function TimerPill({ frac, closing, label, onSkip }: {
           }}
         />
       </span>
-    </button>
+    </span>
   );
 }
 
@@ -2694,25 +3022,71 @@ function GrowStartOverlay({ onStart, onCancel }: {
 
 // ── GROW end card ──────────────────────────────────────────────────────────
 
-function GrowEndCard({ proposals, onSave, onDiscard }: {
-  proposals: number; onSave: () => void; onDiscard: () => void;
+function GrowEndCard({ proposals, memory, revising, onRevise, onSave, onDiscard }: {
+  proposals: number;
+  memory: string | null;
+  revising: boolean;
+  onRevise: (instruction: string) => void;
+  onSave: () => void;
+  onDiscard: () => void;
 }) {
+  const [reviseDraft, setReviseDraft] = useState("");
+  const sendRevise = () => {
+    const t = reviseDraft.trim();
+    if (!t || revising) return;
+    onRevise(t);
+    setReviseDraft("");
+  };
+
   return (
     <div className="rounded-[14px] border border-white/20 bg-white text-[#083f3a] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
       <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
         <Ic path={PATHS.brain} size={12} className="text-[#006d67]" /> Session wrap-up
       </span>
       <p className="mt-2 text-[13.5px] leading-[1.5] text-[#083f3a]/60">
-        Save what I learned about this goal? Next time we'll continue instead of starting from scratch.
+        {memory
+          ? "This is what will be saved as the session memory — next time we'll continue from it."
+          : "Save what I learned about this goal? Next time we'll continue instead of starting from scratch."}
       </p>
+      {memory && (
+        <div className={cn(
+          "mt-2.5 rounded-[9px] border border-[#e6e4df] bg-[#fbf9f4] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] text-[#083f3a]/85 whitespace-pre-wrap select-text",
+          revising && "opacity-50",
+        )}>
+          {memory}
+        </div>
+      )}
+      {memory && (
+        <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#e6e4df] bg-white px-3 py-1.5 focus-within:border-[#006d67] transition-colors">
+          {revising ? (
+            <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#006d67]/30 border-t-[#006d67] animate-spin" />
+          ) : (
+            <Ic path={PATHS.pencil} size={13} className="shrink-0 text-[#083f3a]/40" />
+          )}
+          <input
+            value={reviseDraft}
+            onChange={(e) => setReviseDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") sendRevise(); }}
+            disabled={revising}
+            placeholder={revising ? "Revising…" : "Want changes? Tell the AI what to fix…"}
+            className="flex-1 bg-transparent outline-none text-[13px] text-[#083f3a] placeholder:text-[#083f3a]/35 min-h-[30px] disabled:opacity-60"
+          />
+          {reviseDraft.trim() && !revising && (
+            <button onClick={sendRevise}
+              className="shrink-0 text-[12.5px] font-semibold text-[#006d67] hover:text-[#005b56] px-1">
+              Revise
+            </button>
+          )}
+        </div>
+      )}
       {proposals > 0 && (
         <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[9px] bg-[#e7f3f1] text-[#006d67] text-[12.5px]">
-          <Ic path={PATHS.target} size={12} /> {proposals} proposal waiting in the goal
+          <Ic path={PATHS.target} size={12} /> {proposals} proposal{proposals === 1 ? "" : "s"} still awaiting your decision
         </div>
       )}
       <div className="mt-3.5 flex items-center gap-2">
-        <button onClick={onSave}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors">
+        <button onClick={onSave} disabled={revising}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors disabled:opacity-50">
           <Ic path={PATHS.check} size={14} /> Save memory
         </button>
         <button onClick={onDiscard}
@@ -3068,13 +3442,20 @@ function CopyButton({ text, tone = "light" }: { text: string; tone?: "light" | "
 
 // ── Composer ───────────────────────────────────────────────────────────────
 
-function Composer({ onSend, placeholder, busy, onStop }: {
+function Composer({ onSend, placeholder, busy, onStop, initialValue, onDraftChange, leftAction }: {
   onSend: (text: string) => void;
   placeholder: string;
   busy: boolean;
   onStop: () => void;
+  /** Restores an unsent draft after a remount (e.g. the session end card
+   *  temporarily replaces the composer). */
+  initialValue?: string;
+  onDraftChange?: (v: string) => void;
+  /** Rendered inside the input pill, left of the textarea (e.g. the GROW
+   *  session starter). */
+  leftAction?: ReactNode;
 }) {
-  const [v, setV] = useState("");
+  const [v, setV] = useState(initialValue ?? "");
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -3089,17 +3470,19 @@ function Composer({ onSend, placeholder, busy, onStop }: {
     if (!t) return;
     onSend(t);
     setV("");
+    onDraftChange?.("");
   };
 
   return (
     <div className="px-3 pb-3 pt-1 sm:px-4 sm:pb-4">
-      <div className="flex items-end gap-2 rounded-2xl border border-white/35 bg-white px-4 py-2.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
+      <div className="flex items-end gap-2 rounded-2xl border border-white/35 bg-white px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
+        {leftAction}
         <textarea
           ref={ref}
           value={v}
           rows={1}
           placeholder={placeholder}
-          onChange={(e) => setV(e.target.value)}
+          onChange={(e) => { setV(e.target.value); onDraftChange?.(e.target.value); }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); fire(); }
           }}

@@ -31,7 +31,20 @@ public record ChatRequest(
          * Optional conversation history to maintain context across messages.
          * Each entry has role ("user"|"assistant") and content.
          */
-        java.util.List<MessageEntry> history
+        java.util.List<MessageEntry> history,
+
+        /**
+         * GROW only: the session length the user chose, in minutes. Lets the
+         * coach pace the conversation instead of being cut off by the UI timer.
+         */
+        Integer sessionTotalMinutes,
+
+        /**
+         * GROW only: seconds left on the session timer when this message was
+         * sent. {@code <= 0} means time is up — the coach must close the
+         * session in this reply.
+         */
+        Integer sessionRemainingSeconds
 ) {
     public record MessageEntry(String role, String content) {}
 }
