@@ -102,7 +102,9 @@ public class SecurityConfig {
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
                 .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID")
+                // "SESSION" is spring-session's cookie; "JSESSIONID" clears
+                // stale cookies from before the JDBC-session migration.
+                .deleteCookies("SESSION", "JSESSIONID")
                 .logoutSuccessHandler((request, response, authentication) -> {
                     response.setStatus(HttpServletResponse.SC_NO_CONTENT); // 204
                 })

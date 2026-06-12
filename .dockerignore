@@ -11,7 +11,10 @@ backend/target
 .idea
 .DS_Store
 tests-e2e
-grow
+# Root-level book folder. In .dockerignore an unanchored "grow" only matches
+# the root anyway, but keep it explicit so it's never copied into a pattern
+# with gitignore semantics (see .gcloudignore, where that broke the deploy).
+/grow
 docs
 specs
 **/*.md

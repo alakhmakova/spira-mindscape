@@ -1808,10 +1808,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             leftAction={!inGrow && goal ? (
               <button
                 onClick={() => setMode("grow-start")}
-                title="Start a GROW session"
-                className="inline-flex items-center gap-1 px-2 h-8 shrink-0 rounded-lg text-[#006d67] text-[12.5px] font-semibold hover:bg-[#006d67]/10 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#006d67] text-[13px] font-medium hover:bg-[#006d67]/10 transition-colors"
               >
-                <Ic path={PATHS.leaf} size={14} /> GROW
+                <Ic path={PATHS.leaf} size={14} /> Start GROW session
               </button>
             ) : undefined}
           />
@@ -3473,10 +3472,12 @@ function Composer({ onSend, placeholder, busy, onStop, initialValue, onDraftChan
     onDraftChange?.("");
   };
 
+  // Layout mirrors the Claude app composer: the textarea spans the full width
+  // on top; below it a bottom row with quick actions on the left (e.g. "Start
+  // GROW session", like the app's "</> Code" chip) and Send/Stop on the right.
   return (
     <div className="px-3 pb-3 pt-1 sm:px-4 sm:pb-4">
-      <div className="flex items-end gap-2 rounded-2xl border border-white/35 bg-white px-3 py-2.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
-        {leftAction}
+      <div className="rounded-2xl border border-white/35 bg-white px-3 pt-2.5 pb-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
         <textarea
           ref={ref}
           value={v}
@@ -3486,21 +3487,25 @@ function Composer({ onSend, placeholder, busy, onStop, initialValue, onDraftChan
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); fire(); }
           }}
-          className="flex-1 bg-transparent resize-none outline-none text-[14.5px] leading-[1.45] text-[#083f3a] placeholder:text-[#083f3a]/40 max-h-32 py-1"
+          className="w-full bg-transparent resize-none outline-none text-[14.5px] leading-[1.45] text-[#083f3a] placeholder:text-[#083f3a]/40 max-h-32 px-1 py-1"
         />
-        {busy ? (
-          <button onClick={onStop}
-            className="w-9 h-9 shrink-0 grid place-items-center rounded-[11px] bg-[#006d67] text-white hover:bg-[#005b56] transition-colors"
-            title="Stop">
-            <span className="w-3 h-3 rounded-sm bg-white" />
-          </button>
-        ) : (
-          <button onClick={fire} disabled={!v.trim()}
-            className="w-9 h-9 shrink-0 grid place-items-center rounded-[11px] bg-[#006d67] text-white disabled:opacity-40 hover:bg-[#005b56] transition-colors"
-            title="Send">
-            <Ic path={PATHS.chevron} size={16} className="rotate-180" />
-          </button>
-        )}
+        <div className="flex items-center gap-2 pt-1">
+          {leftAction}
+          <span className="flex-1" />
+          {busy ? (
+            <button onClick={onStop}
+              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white hover:bg-[#005b56] transition-colors"
+              title="Stop">
+              <span className="w-3 h-3 rounded-sm bg-white" />
+            </button>
+          ) : (
+            <button onClick={fire} disabled={!v.trim()}
+              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white disabled:opacity-40 hover:bg-[#005b56] transition-colors"
+              title="Send">
+              <Ic path={PATHS.chevron} size={16} className="rotate-180" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
