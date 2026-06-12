@@ -1,6 +1,8 @@
 package com.spiramindscape.backend.ai.chat;
 
 import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
+import com.spiramindscape.backend.ai.grow.GoalMemoryService;
+import com.spiramindscape.backend.ai.grow.GrowLibraryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.provider.LlmMessage;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
@@ -272,13 +274,31 @@ public class AiChatService {
             """;
 
     /**
-     * GROW session: pure coaching mode. No execution work.
+     * GROW session: pure coaching mode, grounded strictly in the coaching
+     * library (book excerpts retrieved per turn and appended to this prompt).
+     * No execution work.
      */
     private static final String GROW_PROMPT = """
             You are a coaching intelligence embedded in Spira, a goal achievement platform.
 
-            You are conducting a GROW coaching session. Your role is to raise awareness
-            and responsibility through focused questioning.
+            You are conducting a GROW coaching session, and you coach STRICTLY by the
+            method of the source books excerpted below under "COACHING LIBRARY".
+
+            THE LIBRARY IS YOUR ONLY METHOD:
+            • Every coaching move you make — which question to ask, how to frame it,
+              when to reflect, reframe, or summarise — must be grounded in and
+              consistent with the excerpts supplied for this turn.
+            • Never substitute generic coaching advice, frameworks, or techniques from
+              outside the excerpts. If the excerpts don't cover the current moment,
+              stay with their questioning STYLE — curious, brief, awareness-raising —
+              rather than inventing doctrine.
+            • Do not quote, cite, or mention the books or the excerpts to the user;
+              embody the method, don't lecture about it.
+            • Capturing the user's OWN words as goal data via the `propose_goal_change`
+              tool is PART of the method, not outside advice: turning awareness into
+              responsibility (the Will stage) means commitments get written down. The
+              user approves or rejects every proposal — never skip proposing because
+              it feels like acting beyond the books.
 
             You listen carefully. You ask one good question at a time.
             You follow the user's thinking, not a predetermined agenda.
@@ -548,6 +568,8 @@ public class AiChatService {
     private final AiProposalService proposalService;
     private final ResourceReadService resourceReadService;
     private final UrlReadService urlReadService;
+    private final GrowLibraryService growLibrary;
+    private final GoalMemoryService goalMemory;
 
     // Cached thread pool for blocking SSE I/O. Threads are reused between requests.
     // Wrapped so the caller's Spring Security context propagates to the worker
@@ -564,7 +586,9 @@ public class AiChatService {
             TavilySearchService searchService,
             AiProposalService proposalService,
             ResourceReadService resourceReadService,
-            UrlReadService urlReadService) {
+            UrlReadService urlReadService,
+            GrowLibraryService growLibrary,
+            GoalMemoryService goalMemory) {
         this.safety = safety;
         this.keyService = keyService;
         this.providerFactory = providerFactory;
@@ -573,6 +597,8 @@ public class AiChatService {
         this.proposalService = proposalService;
         this.resourceReadService = resourceReadService;
         this.urlReadService = urlReadService;
+        this.growLibrary = growLibrary;
+        this.goalMemory = goalMemory;
     }
 
     /**
@@ -611,7 +637,23 @@ public class AiChatService {
                         "No API key configured for provider " + providerType.name()
                         + ". Save your key at POST /api/ai/keys first."));
 
-        // Build system prompt
+        boolean isGrow = "grow".equalsIgnoreCase(request.sessionType());
+
+        // GROW sessions are grounded in the coaching library, whose embeddings run
+        // on a Mistral key (Anthropic has no embeddings API; the chat provider
+        // stays the user's choice). Without it the session refuses — by design
+        // there is no generic-prompt fallback. Deliberately an SSE error, not a
+        // 422: the frontend maps any 422 to "NO_KEY" and would open the key sheet
+        // for the CHAT provider, which may well be configured.
+        Optional<AiKeyService.StoredKey> mistralKey =
+                isGrow ? keyService.getKey(ProviderType.MISTRAL) : Optional.empty();
+        if (isGrow && mistralKey.isEmpty()) {
+            return immediateErrorEmitter(
+                    "GROW sessions need a Mistral API key — it powers the coaching "
+                    + "library the coach is grounded in. Add one under \"Bring your own key\".");
+        }
+
+        // Build system prompt (for GROW, library excerpts are appended in the task)
         String systemPrompt = buildSystemPrompt(request.goalId(), request.sessionType());
 
         // Build message list (mutable — the web-search loop appends to it)
@@ -623,7 +665,6 @@ public class AiChatService {
         // Tools: proposals are always available (chat AND GROW — a session must be
         // able to improve the goal). Web search is offered only in regular chat and
         // only if the user has a Tavily key (GROW defers execution work per spec).
-        boolean isGrow = "grow".equalsIgnoreCase(request.sessionType());
         List<ToolSpec> tools = new ArrayList<>(PROPOSAL_TOOLS);
         Optional<AiKeyService.StoredKey> tavilyKey =
                 isGrow ? Optional.empty() : keyService.getKey(ProviderType.TAVILY);
@@ -633,13 +674,100 @@ public class AiChatService {
         // Reading the goal's own resources is fine in chat and GROW alike.
         if (request.goalId() != null) tools.add(READ_RESOURCE_TOOL);
 
-        // Create emitter with 3-minute timeout
-        SseEmitter emitter = new SseEmitter(3 * 60 * 1000L);
+        // GROW gets a longer timeout: the first session ever also embeds the whole
+        // library (~1k chunks) before the model can answer.
+        SseEmitter emitter = new SseEmitter(isGrow ? 10 * 60 * 1000L : 3 * 60 * 1000L);
 
-        executor.submit(() -> runAgenticLoop(
-                provider, messages, systemPrompt, tools, tavilyKey.orElse(null), request.goalId(), emitter));
+        if (isGrow) {
+            String mistralApiKey = mistralKey.get().apiKey();
+            executor.submit(() -> {
+                try {
+                    // One-time embedding pass (no-op once done); progress goes out
+                    // as SSE "status" events, never as transcript tokens.
+                    growLibrary.ensureEmbedded(
+                            mistralApiKey, message -> sendStatus(emitter, message));
+                    String query = growLibrary.buildQuery(request);
+                    String excerpts = growLibrary.retrieveExcerpts(query, mistralApiKey);
+                    // Memory of earlier sessions (saved by the user at session end);
+                    // empty when none — unlike excerpts it is optional.
+                    String memory = goalMemory.memoryBlock(request.goalId());
+                    String growPrompt = systemPrompt + sessionTimingBlock(request)
+                            + (memory.isEmpty() ? "" : "\n\n" + memory)
+                            + "\n\n" + excerpts;
+                    runAgenticLoop(provider, messages, growPrompt,
+                            tools, null, request.goalId(), emitter);
+                } catch (Exception e) {
+                    // Retrieval failed → the session refuses. Never coach promptless.
+                    errorSse(emitter, e);
+                }
+            });
+        } else {
+            executor.submit(() -> runAgenticLoop(
+                    provider, messages, systemPrompt, tools, tavilyKey.orElse(null),
+                    request.goalId(), emitter));
+        }
 
         return emitter;
+    }
+
+    /** Emitter that reports a single {@code error} event and closes — used for
+     *  preconditions the user must fix (e.g. missing Mistral key for GROW). */
+    private SseEmitter immediateErrorEmitter(String message) {
+        SseEmitter emitter = new SseEmitter(0L);
+        try {
+            emitter.send(SseEmitter.event().name("error").data(message));
+            emitter.complete();
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
+        return emitter;
+    }
+
+    /**
+     * Tells the coach how much session time remains so it can pace and close
+     * the conversation itself instead of being cut off by the UI timer. Empty
+     * when the frontend sent no timing (e.g. older clients).
+     */
+    private static String sessionTimingBlock(ChatRequest request) {
+        if (request.sessionTotalMinutes() == null) return "";
+        int totalMinutes = request.sessionTotalMinutes();
+        Integer remainingSeconds = request.sessionRemainingSeconds();
+        StringBuilder sb = new StringBuilder("\n\nSESSION TIMING: This is a ")
+                .append(totalMinutes).append("-minute coaching session");
+        if (remainingSeconds == null) {
+            return sb.append(". Pace the conversation to fit it.").toString();
+        }
+        if (remainingSeconds <= 0) {
+            return sb.append("; the time is now UP. Close the session in THIS reply: "
+                    + "warmly reflect the key insights that emerged, in the user's "
+                    + "language; confirm any commitments or next steps they voiced "
+                    + "(propose capturing them as goal data where fitting); thank them "
+                    + "and say a clear, warm goodbye. Do NOT ask a new exploring "
+                    + "question or open a new topic.").toString();
+        }
+        int remainingMinutes = (int) Math.ceil(remainingSeconds / 60.0);
+        sb.append("; about ").append(remainingMinutes)
+          .append(remainingMinutes == 1 ? " minute remains" : " minutes remain").append(". ");
+        if (remainingSeconds <= totalMinutes * 60 * 0.2) {
+            sb.append("The session is in its closing stretch: begin consolidating — "
+                    + "reflect what has emerged, invite the user to name commitments, "
+                    + "and propose capturing anything worth keeping as goal data. "
+                    + "Don't open new threads; guide gently toward a natural close.");
+        } else {
+            sb.append("There is room to explore. Pace yourself so the conversation "
+                    + "can reach a natural close before the time runs out.");
+        }
+        return sb.toString();
+    }
+
+    /** Progress heartbeat ({@code status} event). Best-effort: a failed send is
+     *  logged but never aborts the work — embeddings persist regardless. */
+    private void sendStatus(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("status").data(message));
+        } catch (Exception e) {
+            log.debug("SSE status send failed (client likely disconnected): {}", e.getMessage());
+        }
     }
 
     /**

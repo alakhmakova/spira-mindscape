@@ -95,7 +95,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # pgvector-enabled Postgres: V13__grow_books.sql runs CREATE EXTENSION
+        # vector, which the stock postgres:16 image cannot satisfy.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: spira
           POSTGRES_USER: spira

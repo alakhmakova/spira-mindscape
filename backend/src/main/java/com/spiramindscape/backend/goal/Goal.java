@@ -57,6 +57,15 @@ public class Goal {
     @Column(name = "achieved_at")
     private Instant achievedAt;
 
+    /**
+     * Memory kept across GROW coaching sessions, appended when the user
+     * chooses "Save memory" at a session's end. Read into the GROW system
+     * prompt so the coach continues from earlier sessions instead of
+     * starting over. (Column added in V7; capped by GoalMemoryService.)
+     */
+    @Column(name = "ai_memory", columnDefinition = "TEXT")
+    private String aiMemory;
+
     @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<RealityItem> realityItems = new ArrayList<>();
 

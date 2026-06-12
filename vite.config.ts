@@ -65,6 +65,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // expose on all network interfaces → shows Network URL on startup
+    watch: {
+      // Maven rewrites backend/target on every build; watching it crashes the
+      // FS watcher on Windows (scandir on a vanishing dir) and kills the dev
+      // server. The frontend never imports from backend/ — don't watch it.
+      ignored: ["**/backend/**", "**/tests-e2e/**", "**/.wrangler/**"],
+    },
     proxy: {
       // All backend routes forwarded to Spring Boot so the browser sees a
       // single origin in dev (no cross-origin cookie issues).
