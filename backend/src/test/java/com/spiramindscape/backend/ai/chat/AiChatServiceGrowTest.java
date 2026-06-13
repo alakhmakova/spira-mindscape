@@ -8,7 +8,9 @@ import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
+import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
 import com.spiramindscape.backend.ai.safety.SafetyService;
+import com.spiramindscape.backend.ai.safety.SafetyVerdict;
 import com.spiramindscape.backend.ai.search.TavilySearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +51,7 @@ class AiChatServiceGrowTest {
             "COACHING LIBRARY — excerpts:\n[Excerpt 1 — \"Test Book\"]\n" + EXCERPTS_MARKER;
 
     @Mock private SafetyService safety;
+    @Mock private AbuseAuditLogger abuseAuditLogger;
     @Mock private AiKeyService keyService;
     @Mock private LlmProviderFactory providerFactory;
     @Mock private GoalContextBuilder goalContextBuilder;
@@ -64,10 +67,11 @@ class AiChatServiceGrowTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiChatService(safety, keyService, providerFactory, goalContextBuilder,
-                searchService, proposalService, resourceReadService, urlReadService, growLibrary,
-                goalMemory);
-        lenient().when(safety.isSafe(anyString())).thenReturn(true);
+        service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
+                goalContextBuilder, searchService, proposalService, resourceReadService,
+                urlReadService, growLibrary, goalMemory);
+        lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
+        lenient().when(safety.referInstruction(any())).thenReturn("");
         lenient().when(goalMemory.memoryBlock(any())).thenReturn("");
         lenient().when(goalContextBuilder.build(any())).thenReturn("");
         lenient().when(keyService.getKey(ProviderType.ANTHROPIC))
