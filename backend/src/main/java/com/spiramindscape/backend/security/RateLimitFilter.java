@@ -32,6 +32,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
 
+    /** Off in the e2e/test profiles, where a black-box suite fires hundreds of
+     *  requests from one IP and would otherwise be throttled. On in prod/dev. */
+    @Value("${spira.ratelimit.enabled:true}")
+    private boolean enabled;
+
     @Value("${spira.ratelimit.ai-chat-per-minute:20}")
     private int aiChatPerMinute;
     @Value("${spira.ratelimit.graphql-per-minute:120}")
@@ -44,6 +49,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
+        if (!enabled) {
+            chain.doFilter(request, response);
+            return;
+        }
         Limit limit = limitFor(request);
         if (limit == null) {
             chain.doFilter(request, response);
@@ -106,6 +115,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     // Visible for tests: lets a test inject limits without Spring.
     void configure(int aiChat, int graphql, int login, int keys) {
+        this.enabled = true;
         this.aiChatPerMinute = aiChat;
         this.graphqlPerMinute = graphql;
         this.loginPerMinute = login;
