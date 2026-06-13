@@ -79,6 +79,18 @@ class RateLimitFilterTest {
     }
 
     @Test
+    @DisplayName("when disabled (e2e/test profile), nothing is throttled")
+    void disabledPassesEverything() throws Exception {
+        RateLimitFilter disabled = new RateLimitFilter(); // enabled defaults to false
+        FilterChain chain = mock(FilterChain.class);
+        for (int i = 0; i < 50; i++) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            disabled.doFilter(aiChat("1.2.3.4"), res, chain);
+            assertThat(res.getStatus()).isEqualTo(200);
+        }
+    }
+
+    @Test
     @DisplayName("unthrottled paths (e.g. GET /health) always pass")
     void unthrottledPaths() throws Exception {
         FilterChain chain = mock(FilterChain.class);
