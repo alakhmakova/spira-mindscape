@@ -23,11 +23,41 @@ public class CorsConfig implements WebMvcConfigurer {
 
     private final String[] allowedOrigins;
 
-    public CorsConfig(@Value("${app.cors.allowed-origins}") String allowedOriginsProperty) {
+    public CorsConfig(
+            @Value("${app.cors.allowed-origins}") String allowedOriginsProperty,
+            @Value("${server.servlet.session.cookie.secure:false}") boolean cookieSecure) {
         this.allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toArray(String[]::new);
+        assertSafeForProd(cookieSecure, this.allowedOrigins);
+    }
+
+    /**
+     * Fail-fast (OWASP A02): the dev LAN/wildcard origin patterns must never
+     * ship to production. {@code COOKIE_SECURE=true} marks prod; if any allowed
+     * origin contains a wildcard or a private/loopback host while we're flagging
+     * cookies Secure, refuse to start rather than expose a credentialed
+     * cross-origin hole.
+     */
+    static void assertSafeForProd(boolean cookieSecure, String[] origins) {
+        if (!cookieSecure) return; // dev: LAN patterns are intentional
+        for (String o : origins) {
+            String lower = o.toLowerCase();
+            boolean unsafe = o.contains("*")
+                    || lower.contains("localhost")
+                    || lower.contains("127.0.0.1")
+                    || lower.contains("://10.")
+                    || lower.contains("://192.168.")
+                    || lower.contains("://172.16.") || lower.contains("://172.17.")
+                    || lower.contains("://172.18.");
+            if (unsafe) {
+                throw new IllegalStateException(
+                        "Refusing to start: CORS origin '" + o + "' is a wildcard/private-range "
+                        + "pattern but COOKIE_SECURE=true (production). Set CORS_ALLOWED_ORIGINS "
+                        + "to exact production origins.");
+            }
+        }
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.spiramindscape.backend.auth.AppUserOidcUserService;
 import com.spiramindscape.backend.auth.E2eTestAuthFilter;
 import com.spiramindscape.backend.auth.LocalDevAuthFilter;
 import com.spiramindscape.backend.auth.OAuth2LoginSuccessHandler;
+import com.spiramindscape.backend.security.RateLimitFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,6 +49,7 @@ public class SecurityConfig {
     private final ObjectProvider<E2eTestAuthFilter> e2eTestAuthFilter;
     /** Present only under the local-dev {@code local} profile (otherwise empty). */
     private final ObjectProvider<LocalDevAuthFilter> localDevAuthFilter;
+    private final RateLimitFilter rateLimitFilter;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -66,6 +68,30 @@ public class SecurityConfig {
         requestHandler.setCsrfRequestAttributeName(null);
 
         http
+            // ----- Security response headers (OWASP A02) -----
+            .headers(headers -> headers
+                // HSTS: tell browsers to use HTTPS for a year (prod is behind TLS).
+                .httpStrictTransportSecurity(hsts -> hsts
+                        .includeSubDomains(true).maxAgeInSeconds(31536000))
+                .contentTypeOptions(opts -> {}) // X-Content-Type-Options: nosniff
+                .referrerPolicy(rp -> rp.policy(
+                        org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
+                                .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                .frameOptions(fo -> fo.deny())
+                // Conservative CSP for the single-origin SPA. Allows the Google
+                // Fonts origins the app actually uses; tighten further if removed.
+                .contentSecurityPolicy(csp -> csp.policyDirectives(
+                        "default-src 'self'; "
+                        + "script-src 'self'; "
+                        + "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                        + "font-src 'self' https://fonts.gstatic.com; "
+                        + "img-src 'self' data: https:; "
+                        + "connect-src 'self'; "
+                        + "frame-ancestors 'none'; "
+                        + "base-uri 'self'; "
+                        + "form-action 'self' https://accounts.google.com"))
+            )
+
             // ----- Authorization -----
             .authorizeHttpRequests(auth -> auth
                 // Public: OAuth2 / OIDC dance
@@ -127,6 +153,11 @@ public class SecurityConfig {
         //   • local — local development, auto-logs-in a fixed dev user (no header)
         // Either way the login is stateless per request, so CSRF is disabled. In
         // production neither bean exists and full OAuth + CSRF apply.
+        // Rate limiting runs just before authorization, so the authenticated
+        // principal (set by earlier security filters) is available for per-user
+        // keying, falling back to client IP when anonymous.
+        http.addFilterBefore(rateLimitFilter, AuthorizationFilter.class);
+
         OncePerRequestFilter devAuthFilter = e2eTestAuthFilter.getIfAvailable();
         if (devAuthFilter == null) devAuthFilter = localDevAuthFilter.getIfAvailable();
         if (devAuthFilter != null) {
