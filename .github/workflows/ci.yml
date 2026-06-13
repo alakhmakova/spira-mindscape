@@ -109,14 +109,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Trivy resolves the Java dependency tree from local Maven cache. Populate
+      # ~/.m2 here (cached across runs by setup-java) so Trivy never reaches out
+      # to Maven Central — the shared runner IP gets 429-rate-limited there,
+      # which crashed the scan as a FATAL error (not a vuln finding).
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Populate local Maven cache
+        run: |
+          cd backend
+          sh ./mvnw -B -q dependency:go-offline
+
       - name: Install Trivy
         run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
+      # --offline-scan: never issue registry/Maven-Central requests (belt-and-
+      # suspenders with the warmed ~/.m2 above). npm/lockfile deps are covered
+      # fully; Java deps resolve from the local cache. Policy: report HIGH,
+      # block on CRITICAL.
       - name: Trivy scan — report HIGH (non-blocking)
-        run: trivy fs --scanners vuln --severity HIGH --ignore-unfixed --exit-code 0 .
+        run: trivy fs --scanners vuln --severity HIGH --ignore-unfixed --offline-scan --exit-code 0 .
 
       - name: Trivy scan — block on CRITICAL
-        run: trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 .
+        run: trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --offline-scan --exit-code 1 .
 
   e2e:
     name: Python E2E tests
