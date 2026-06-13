@@ -7,7 +7,11 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.5</version>
+        <!-- 3.5.15: patches the CRITICAL CVEs the dependency scan caught in
+             3.4.5 — Tomcat ≥10.1.55 (HTTP/2 header validation, digest-auth
+             bypass, improper authorization) and Spring Security ≥6.5.9
+             (method-security bypass, policy-bypass/info-disclosure). -->
+        <version>3.5.15</version>
         <relativePath/>
     </parent>
 
