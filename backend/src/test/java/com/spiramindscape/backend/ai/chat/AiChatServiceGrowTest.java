@@ -61,6 +61,8 @@ class AiChatServiceGrowTest {
     @Mock private UrlReadService urlReadService;
     @Mock private GrowLibraryService growLibrary;
     @Mock private GoalMemoryService goalMemory;
+    @Mock private com.spiramindscape.backend.tools.ToolService toolService;
+    @Mock private com.spiramindscape.backend.tools.ToolContextBuilder toolContextBuilder;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -69,9 +71,13 @@ class AiChatServiceGrowTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, growLibrary, goalMemory);
+                urlReadService, growLibrary, goalMemory,
+                new com.spiramindscape.backend.tools.ToolSchemaValidator(new com.fasterxml.jackson.databind.ObjectMapper()),
+                toolService, toolContextBuilder,
+                new com.spiramindscape.backend.tools.ToolDemandLogger(new com.fasterxml.jackson.databind.ObjectMapper()));
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
+        lenient().when(toolContextBuilder.build(any())).thenReturn("");
         lenient().when(goalMemory.memoryBlock(any())).thenReturn("");
         lenient().when(goalContextBuilder.build(any())).thenReturn("");
         lenient().when(keyService.getKey(ProviderType.ANTHROPIC))

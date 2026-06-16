@@ -1,6 +1,14 @@
 # Personal Tools (AI Mini-Apps) — Design Plan
 
-**Status: design only — not implemented.** This document specifies how the "Personal Tools" feature from [`ai-configuration.md`](./ai-configuration.md) should be built. It is a large feature and should be implemented as its own focused effort.
+**Status: MVP implemented (2026-06-13).** Steps 1–5 of the build order are done:
+the AI can propose a tool, the user previews and approves it, and it renders and
+stores records. Deferred (step 6): `chart`/`progress` primitives and the
+`all_goals` placement. This document is the source of truth; the
+"Implementation notes" below record where the code lives and where the design
+was adjusted during the build.
+
+This document specifies how the "Personal Tools" feature from
+[`ai-configuration.md`](./ai-configuration.md) should be built.
 
 This is **different** from the `propose_goal_change` LLM tool (see [`ai-integration.md`](./ai-integration.md) §4a). "Mini-apps" are small, user-facing widgets — a period tracker, a job-application tracker, a habit log — that the AI assembles from a fixed set of approved UI primitives. The AI never writes arbitrary code.
 
@@ -26,40 +34,65 @@ The AI may only compose these. Each maps to a renderer component and a data shap
 |---|---|---|
 | `number` | numeric input | `number` |
 | `text` | short text / note | `string` |
-| `date` | date / reminder | ISO date string |
+| `textarea` | long / multi-line text | `string` |
+| `date` | date / reminder | ISO date string (`YYYY-MM-DD`) |
+| `time` | time of day | `string` (`HH:MM`, 24h) |
 | `checkbox` | single boolean | `boolean` |
 | `checklist` | list of toggle items | `{ label, done }[]` |
 | `select` | choice from fixed options | `string` |
+| `tags` | free-text labels | `string[]` |
+| `rating` | 0–5 star rating | `number` (0–5) |
+| `url` | a link | `string` |
 | `table` | rows with user-defined columns | `Record<col, cell>[]` |
 | `progress` | progress display (derived or entered) | `number` (0–100) |
 | `chart` | line/bar from a numeric column | (derived from records) |
 
 Charts and progress are **read-only / derived** — they visualise data entered through other primitives, they are not inputs.
 
+This is a **curated, closed set** — the security boundary. The AI cannot invent
+primitives; the backend `ToolSchemaValidator` rejects anything outside this list
+and `ToolRecordValidator` type-checks every stored value against it. When the AI
+proposes a schema using something not here, the rejection is recorded by
+`ToolDemandLogger` (privacy-safe: primitive name only, no user content) so the
+catalog can be grown deliberately rather than opened to arbitrary UI.
+
 ---
 
 ## 3. Data model (backend)
 
+> **Build note — TEXT, not JSONB.** The JSON columns are stored as `TEXT`, not
+> `JSONB`. Reason: the backend test suite runs on H2 (Flyway off, schema from
+> JPA entities) which has no `JSONB` type — a `JSONB` column would make
+> `tool_definitions`/`tool_records` untestable as JPA entities (the same trap
+> hit by `book_chunk`). We never query *inside* the JSON (always fetch a whole
+> tool/record by id), so `TEXT` loses nothing and keeps these as ordinary,
+> fully-testable JPA entities, like `ai_proposals.payload`. Validation happens
+> in Java (`ToolSchemaValidator`), not in the DB.
+
 ```sql
 CREATE TABLE tool_definitions (
-    id          BIGSERIAL PRIMARY KEY,
-    app_user_id BIGINT NOT NULL,
-    goal_id     BIGINT REFERENCES goal(id) ON DELETE CASCADE,  -- null = global
-    name        TEXT NOT NULL,
-    schema      JSONB NOT NULL,     -- primitives, layout, column defs
-    placement   TEXT NOT NULL,      -- 'goal' | 'all_goals' | 'tools'  (may be multiple)
-    created_by  TEXT NOT NULL,      -- 'ai' | 'user'
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id           BIGSERIAL PRIMARY KEY,
+    app_user_id  BIGINT NOT NULL,
+    goal_id      BIGINT REFERENCES goal(id) ON DELETE CASCADE,  -- null = global
+    name         VARCHAR(120) NOT NULL,
+    schema_json  TEXT NOT NULL,      -- primitives, layout, column defs (JSON)
+    placement    VARCHAR(16) NOT NULL,  -- 'goal' | 'all_goals' | 'tools'
+    created_by   VARCHAR(8) NOT NULL,   -- 'ai' | 'user'
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE tool_records (
     id            BIGSERIAL PRIMARY KEY,
     tool_def_id   BIGINT NOT NULL REFERENCES tool_definitions(id) ON DELETE CASCADE,
-    data          JSONB NOT NULL,   -- one row/entry, shape matches the schema
+    data_json     TEXT NOT NULL,     -- one row/entry, shape matches the schema (JSON)
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
+
+Limits (enforced by `ToolSchemaValidator`, bounding storage and prompt size):
+max **20 tools/user**, **12 columns/fields** per tool, **schema 8 KB**,
+**record 16 KB**, **500 records/tool**, name ≤ 120 chars.
 
 `schema` example (job-application tracker):
 
@@ -144,6 +177,29 @@ A minimal MVP is steps 1–4 with a manually-created tool, before wiring the AI 
 
 ## 8. Open questions
 
-- [ ] Can the AI edit an existing tool's schema, or only create new ones? (Schema migration of existing records is tricky — start with create-only.)
-- [ ] Per-record reminders (the `date` primitive as a reminder) — do they integrate with the existing calendar?
-- [ ] Limits: max tools per user, max columns, max records — needed to bound storage and prompt size.
+- [x] Can the AI edit an existing tool's schema, or only create new ones?
+  → **Create-only** for now (record-migration of a changed schema is out of
+  scope). The user can delete a tool and ask for a new one.
+- [ ] Per-record reminders (the `date` primitive as a reminder) — calendar
+  integration deferred; `date` is stored/displayed but not yet surfaced on the
+  calendar.
+- [x] Limits → chosen and enforced (see §3): 20 tools/user, 12 fields, 8 KB
+  schema, 16 KB record, 500 records/tool.
+
+---
+
+## 9. Implementation notes (2026-06-13)
+
+- **Backend** (`backend/.../tools/`): `ToolDefinition` + `ToolRecord` JPA
+  entities (TEXT json), Spring Data repos, `ToolSchemaValidator` (approved
+  primitives + limits), `ToolService` (per-user ownership via
+  `CurrentUserProvider`, schema validation on create, limit enforcement),
+  `ToolController` (the REST surface in §6). Migration `V15__personal_tools.sql`.
+- **AI** (`ai/chat/AiChatService.java`): `propose_tool` tool spec; the model's
+  schema is validated server-side and surfaced as a `tool_proposal` SSE event;
+  rejected if it uses non-approved primitives or exceeds limits.
+- **Frontend**: `ToolRenderer` (text/number/date/checkbox/checklist/select/
+  table), `src/lib/spira/tools-api.ts`, the `/tools` route, goal-page placement,
+  and the AI proposal **preview + Accept** card in `AiPanel`.
+- **Deferred (step 6):** `chart`/`progress` primitives and the `all_goals`
+  pinned-widget placement.

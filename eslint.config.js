@@ -6,7 +6,21 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi"] },
+  {
+    ignores: [
+      "dist",
+      ".output",
+      ".vinxi",
+      // Java backend build output (JaCoCo ships vendored/minified JS) and other
+      // generated / non-app trees — not ours to lint.
+      "backend/**",
+      "**/routeTree.gen.ts",
+      ".tanstack/**",
+      ".wrangler/**",
+      "node_modules/**",
+      "api_backup.ts",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

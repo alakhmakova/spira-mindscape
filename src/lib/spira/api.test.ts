@@ -176,7 +176,6 @@ describe("spiraApi errors", () => {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function callBody(mock: ReturnType<typeof vi.fn>): Record<string, any> {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return JSON.parse(mock.mock.calls[0][1].body as string);
 }
 

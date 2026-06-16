@@ -31,7 +31,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { downloadNoteTxt, downloadNoteDoc, printNotePdf, openInGoogleDocs, syncGoogleDoc } from "@/components/spira/note-export";
+import {
+  downloadNoteTxt,
+  downloadNoteDoc,
+  printNotePdf,
+  openInGoogleDocs,
+  syncGoogleDoc,
+} from "@/components/spira/note-export";
 import { toast } from "sonner";
 
 const typeMeta = {
@@ -599,40 +605,70 @@ function PreviewBody({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadNoteTxt(resource.title, resource.body)}>
+                <DropdownMenuItem
+                  onClick={() => downloadNoteTxt(resource.title, resource.body)}
+                >
                   Plain text (.txt)
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadNoteDoc(resource.title, resource.body)}>
+                <DropdownMenuItem
+                  onClick={() => downloadNoteDoc(resource.title, resource.body)}
+                >
                   Word (.doc)
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => printNotePdf(resource.title, resource.body)}>
+                <DropdownMenuItem
+                  onClick={() => printNotePdf(resource.title, resource.body)}
+                >
                   PDF (Save as PDF)
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={async () => {
                     try {
-                      const link = await openInGoogleDocs(resource.id, resource.body, resource.title);
+                      const link = await openInGoogleDocs(
+                        resource.id,
+                        resource.body,
+                        resource.title,
+                      );
                       // Reflect the link locally so the menu immediately offers "Open" +
                       // "Update" (the backend has stored it; this avoids a reload).
                       if (link && link !== resource.driveWebViewLink) {
-                        updateResource(goalId, resource.id, { driveWebViewLink: link });
+                        updateResource(goalId, resource.id, {
+                          driveWebViewLink: link,
+                        });
                       }
-                      toast.success(resource.driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
+                      toast.success(
+                        resource.driveWebViewLink
+                          ? "Opening in Google Docs"
+                          : "Created in Google Docs — opening it now",
+                      );
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
+                      toast.error(
+                        e instanceof Error
+                          ? e.message
+                          : "Couldn't open the Google Doc",
+                      );
                     }
                   }}
                 >
-                  {resource.driveWebViewLink ? "Open in Google Docs" : "Create in Google Docs"}
+                  {resource.driveWebViewLink
+                    ? "Open in Google Docs"
+                    : "Create in Google Docs"}
                 </DropdownMenuItem>
                 {resource.driveWebViewLink && (
                   <DropdownMenuItem
                     onClick={async () => {
                       try {
-                        await syncGoogleDoc(resource.id, resource.body, resource.title);
+                        await syncGoogleDoc(
+                          resource.id,
+                          resource.body,
+                          resource.title,
+                        );
                         toast.success("Google Doc updated from this note");
                       } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "Couldn't update the Google Doc");
+                        toast.error(
+                          e instanceof Error
+                            ? e.message
+                            : "Couldn't update the Google Doc",
+                        );
                       }
                     }}
                   >
@@ -981,15 +1017,29 @@ function MobileNoteBody({
                 <DropdownMenuItem
                   onClick={async () => {
                     try {
-                      const link = await openInGoogleDocs(resourceId, body, title);
+                      const link = await openInGoogleDocs(
+                        resourceId,
+                        body,
+                        title,
+                      );
                       if (link && link !== driveWebViewLink) onDocLinked(link);
-                      toast.success(driveWebViewLink ? "Opening in Google Docs" : "Created in Google Docs — opening it now");
+                      toast.success(
+                        driveWebViewLink
+                          ? "Opening in Google Docs"
+                          : "Created in Google Docs — opening it now",
+                      );
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Couldn't open the Google Doc");
+                      toast.error(
+                        e instanceof Error
+                          ? e.message
+                          : "Couldn't open the Google Doc",
+                      );
                     }
                   }}
                 >
-                  {driveWebViewLink ? "Open in Google Docs" : "Create in Google Docs"}
+                  {driveWebViewLink
+                    ? "Open in Google Docs"
+                    : "Create in Google Docs"}
                 </DropdownMenuItem>
                 {driveWebViewLink && (
                   <DropdownMenuItem
@@ -998,7 +1048,11 @@ function MobileNoteBody({
                         await syncGoogleDoc(resourceId, body, title);
                         toast.success("Google Doc updated from this note");
                       } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "Couldn't update the Google Doc");
+                        toast.error(
+                          e instanceof Error
+                            ? e.message
+                            : "Couldn't update the Google Doc",
+                        );
                       }
                     }}
                   >
@@ -1336,10 +1390,7 @@ function Form({
         50,
       );
     } else {
-      setTimeout(
-        () => addResource(goalId, payload as ResourceInput),
-        50,
-      );
+      setTimeout(() => addResource(goalId, payload as ResourceInput), 50);
     }
   };
 

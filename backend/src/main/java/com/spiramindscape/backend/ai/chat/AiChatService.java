@@ -16,6 +16,11 @@ import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
 import com.spiramindscape.backend.ai.safety.SafetyCategory;
 import com.spiramindscape.backend.ai.safety.SafetyService;
 import com.spiramindscape.backend.ai.safety.SafetyVerdict;
+import com.spiramindscape.backend.tools.ToolContextBuilder;
+import com.spiramindscape.backend.tools.ToolDemandLogger;
+import com.spiramindscape.backend.tools.ToolSchemaValidator;
+import com.spiramindscape.backend.tools.ToolService;
+import com.spiramindscape.backend.tools.dto.ToolDtos.RecordRequest;
 import com.spiramindscape.backend.ai.search.TavilySearchService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -112,6 +117,29 @@ public class AiChatService {
             describe the change in plain text and never claim it is done. Calling the tool
             creates a proposal card the user must approve. After calling it, briefly tell
             the user you've prepared the change for review.
+
+            PERSONAL TOOLS (mini-apps):
+            When the user wants to TRACK something over time or asks for a tracker / widget /
+            tool / log / countdown (e.g. job applications, weight, habits, a period tracker, a
+            bin-collection reminder), call the `propose_tool` tool to propose a small widget,
+            instead of creating goal targets. Compose it ONLY from the allowed primitives
+            (number, text, textarea, date, time, checkbox, checklist, select, tags, rating, url,
+            table, progress, chart). Use a 'table' layout for repeated entries over time,
+            'fields' for a single-record form.
+            The user approves before it is created — say you've prepared it for review, don't
+            claim it exists. Use propose_goal_change (not propose_tool) for ordinary goal
+            edits like adding a target or an obstacle.
+            FILLING & EDITING TOOL DATA: when the user asks you to put data into a tool (or a
+            tool already exists in the PERSONAL TOOLS context), use add_tool_record to add rows
+            — it applies immediately, so just do it (one call per row) and report what you
+            added. To change an existing row — including clearing or emptying ONE field/column
+            (e.g. "delete the note", "remove the deadline") — use edit_tool_record with the full
+            row and that field set to empty/null; do NOT delete the row. Only use
+            delete_tool_record when the user wants the ENTIRE entry/row gone (e.g. "remove this
+            vacancy", "delete that row"). If it is ambiguous whether they mean a field or the
+            whole row, ask. edit_tool_record and delete_tool_record both need the user's
+            approval. Always use the exact tool id, record id, and column keys from the PERSONAL
+            TOOLS context, and match each column's type.
 
             VOCABULARY — Goal vs Target (important for non-English):
             A "Goal" is the top-level GROW objective; a "target" is a small measurable item
@@ -533,6 +561,94 @@ public class AiChatService {
     }
 
     /** Web-search tool, offered only when the user has a Tavily key configured. */
+    /**
+     * Proposes a Personal Tool (mini-app) — a small widget (job tracker, weight
+     * log, countdown, period tracker, …) the user can keep and fill in. The
+     * model only composes APPROVED primitives; the schema is validated
+     * server-side and surfaced as a {@code tool_proposal} the user approves.
+     */
+    private static final ToolSpec PROPOSE_TOOL = new ToolSpec(
+            "propose_tool",
+            "Propose a small personal tool/widget for the user to track something over time "
+                    + "(e.g. a job-application tracker, weight log, habit checklist, countdown, "
+                    + "period tracker). Use this when the user asks for a tracker/widget/tool or "
+                    + "clearly wants to record entries over time — NOT for one-off goal edits "
+                    + "(use propose_goal_change for those). The user must approve before it is "
+                    + "created, so never say it already exists. Compose ONLY the allowed "
+                    + "primitives; the server rejects anything else.",
+            Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                            "name", Map.of("type", "string",
+                                    "description", "Short tool name, e.g. 'Job Applications'."),
+                            "placement", Map.of("type", "string",
+                                    "enum", List.of("tools", "goal"),
+                                    "description", "'goal' to pin it on the current goal; 'tools' "
+                                            + "for the standalone Tools page (default)."),
+                            "schema", Map.of("type", "object",
+                                    "description", "The tool definition. Shape: "
+                                            + "{\"layout\":\"table\"|\"fields\", \"columns\":[ "
+                                            + "{\"key\":string, \"label\":string, \"primitive\": one of "
+                                            + "number|text|textarea|date|time|checkbox|checklist|select|"
+                                            + "tags|rating|url|table|progress|chart, "
+                                            + "\"options\":[string] (ONLY for select) } ]}. "
+                                            + "Notes: rating=0-5 stars, time=HH:MM, tags=free-text labels, "
+                                            + "url=a link, textarea=long text. "
+                                            + "Use 'table' for many rows over time (trackers); "
+                                            + "'fields' for a single-record form (e.g. a countdown date)."),
+                            "reasoning", Map.of("type", "string",
+                                    "description", "One short sentence on why this tool helps.")),
+                    "required", List.of("name", "schema", "reasoning")));
+
+    /** Add a row to an existing Personal Tool. Applies IMMEDIATELY (validated,
+     *  ownership-checked) — additions are low-risk, so no approval needed. */
+    private static final ToolSpec ADD_TOOL_RECORD = new ToolSpec(
+            "add_tool_record",
+            "Add one row/entry to an existing personal tool the user already has "
+                    + "(see PERSONAL TOOLS in the context for tool ids and column keys). Use this "
+                    + "to FILL a tracker with data. Applies immediately. Call once per row.",
+            Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                            "toolId", Map.of("type", "number",
+                                    "description", "The tool's id from the PERSONAL TOOLS context."),
+                            "data", Map.of("type", "object",
+                                    "description", "The row: keys are the tool's column keys, values "
+                                            + "match each column's type (number, YYYY-MM-DD date, "
+                                            + "boolean checkbox, one of a select's options, etc.).")),
+                    "required", List.of("toolId", "data")));
+
+    /** Edit an existing row — surfaced as an approval card (changing data the
+     *  user entered is not done silently). */
+    private static final ToolSpec EDIT_TOOL_RECORD = new ToolSpec(
+            "edit_tool_record",
+            "Propose changing an existing row in a personal tool (use the record id from the "
+                    + "PERSONAL TOOLS context). USE THIS — not delete_tool_record — to clear or "
+                    + "empty a single field/column of a row (send the full row with that field "
+                    + "set to empty/null). The user approves before it is applied.",
+            Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                            "toolId", Map.of("type", "number", "description", "The tool's id."),
+                            "recordId", Map.of("type", "number", "description", "The row's record id."),
+                            "data", Map.of("type", "object",
+                                    "description", "The full new row (same shape as add_tool_record).")),
+                    "required", List.of("toolId", "recordId", "data")));
+
+    /** Delete an existing row — surfaced as an approval card. */
+    private static final ToolSpec DELETE_TOOL_RECORD = new ToolSpec(
+            "delete_tool_record",
+            "Propose deleting an ENTIRE row/entry from a personal tool (record id from the "
+                    + "PERSONAL TOOLS context). Use ONLY when the user wants the whole entry gone "
+                    + "— to clear one field, use edit_tool_record instead. The user approves "
+                    + "before it is removed.",
+            Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                            "toolId", Map.of("type", "number", "description", "The tool's id."),
+                            "recordId", Map.of("type", "number", "description", "The row's record id.")),
+                    "required", List.of("toolId", "recordId")));
+
     private static final ToolSpec WEB_SEARCH_TOOL = new ToolSpec(
             "web_search",
             "Search the web for current information (facts, prices, listings, recent events) "
@@ -599,6 +715,10 @@ public class AiChatService {
     private final UrlReadService urlReadService;
     private final GrowLibraryService growLibrary;
     private final GoalMemoryService goalMemory;
+    private final ToolSchemaValidator toolSchemaValidator;
+    private final ToolService toolService;
+    private final ToolContextBuilder toolContextBuilder;
+    private final ToolDemandLogger toolDemandLogger;
 
     // Cached thread pool for blocking SSE I/O. Threads are reused between requests.
     // Wrapped so the caller's Spring Security context propagates to the worker
@@ -618,7 +738,11 @@ public class AiChatService {
             ResourceReadService resourceReadService,
             UrlReadService urlReadService,
             GrowLibraryService growLibrary,
-            GoalMemoryService goalMemory) {
+            GoalMemoryService goalMemory,
+            ToolSchemaValidator toolSchemaValidator,
+            ToolService toolService,
+            ToolContextBuilder toolContextBuilder,
+            ToolDemandLogger toolDemandLogger) {
         this.safety = safety;
         this.abuseAuditLogger = abuseAuditLogger;
         this.keyService = keyService;
@@ -630,6 +754,10 @@ public class AiChatService {
         this.urlReadService = urlReadService;
         this.growLibrary = growLibrary;
         this.goalMemory = goalMemory;
+        this.toolSchemaValidator = toolSchemaValidator;
+        this.toolService = toolService;
+        this.toolContextBuilder = toolContextBuilder;
+        this.toolDemandLogger = toolDemandLogger;
     }
 
     /**
@@ -707,6 +835,14 @@ public class AiChatService {
         // able to improve the goal). Web search is offered only in regular chat and
         // only if the user has a Tavily key (GROW defers execution work per spec).
         List<ToolSpec> tools = new ArrayList<>(PROPOSAL_TOOLS);
+        // Personal Tools (mini-apps): the AI can propose a tracker/widget and
+        // fill/edit its data. Offered in regular chat (GROW stays pure coaching).
+        if (!isGrow) {
+            tools.add(PROPOSE_TOOL);
+            tools.add(ADD_TOOL_RECORD);
+            tools.add(EDIT_TOOL_RECORD);
+            tools.add(DELETE_TOOL_RECORD);
+        }
         Optional<AiKeyService.StoredKey> tavilyKey =
                 isGrow ? Optional.empty() : keyService.getKey(ProviderType.TAVILY);
         tavilyKey.ifPresent(k -> tools.add(WEB_SEARCH_TOOL));
@@ -851,15 +987,21 @@ public class AiChatService {
 
                 if (failed.get()) return; // emitter already errored
 
-                // Surface goal-change proposals (these never loop on their own)
+                // Surface goal-change and tool proposals (these never loop on their own)
                 for (ToolCall c : calls) {
                     if ("propose_goal_change".equals(c.name())) sendProposal(emitter, c, goalId);
+                    else if ("propose_tool".equals(c.name())) sendToolProposal(emitter, c, goalId);
+                    else if ("edit_tool_record".equals(c.name()) || "delete_tool_record".equals(c.name())) {
+                        sendToolDataProposal(emitter, c);
+                    }
                 }
 
                 // Result-producing tools we can actually fulfil this turn.
+                // add_tool_record applies immediately, so it loops back with a result.
                 boolean willLoop = calls.stream().anyMatch(c ->
                         "read_resource".equals(c.name())
                         || "read_url".equals(c.name())
+                        || "add_tool_record".equals(c.name())
                         || ("web_search".equals(c.name()) && tavilyKey != null));
 
                 if (!willLoop) {
@@ -893,8 +1035,33 @@ public class AiChatService {
             case "read_resource" -> fenceUntrusted(resourceReadService.read(goalId, extractId(c.argumentsJson())));
             case "read_url" -> fenceUntrusted(readUrl(extractUrl(c.argumentsJson()), tavilyKey));
             case "propose_goal_change" -> "Proposal surfaced to the user for approval.";
+            case "propose_tool" -> "Tool proposal surfaced to the user for approval.";
+            case "add_tool_record" -> addToolRecord(c.argumentsJson());
+            case "edit_tool_record", "delete_tool_record" ->
+                    "Surfaced to the user for approval.";
             default -> "";
         };
+    }
+
+    /** Applies an {@code add_tool_record} call immediately (validated + ownership
+     *  via ToolService) and returns a result string for the model. Never throws —
+     *  a failure becomes an explanatory tool_result the model can relay. */
+    private String addToolRecord(String argumentsJson) {
+        try {
+            JsonNode args = MAPPER.readTree(argumentsJson);
+            Long toolId = args.path("toolId").asLong();
+            JsonNode data = args.path("data");
+            if (toolId == 0 || data.isMissingNode()) {
+                return "Couldn't add the row: missing toolId or data.";
+            }
+            String dataJson = data.isTextual() ? data.asText() : MAPPER.writeValueAsString(data);
+            toolService.addRecord(toolId, new RecordRequest(dataJson));
+            return "Row added to the tool.";
+        } catch (ResponseStatusException e) {
+            return "Couldn't add the row: " + e.getReason();
+        } catch (Exception e) {
+            return "Couldn't add the row: " + e.getMessage();
+        }
     }
 
     /** Wraps tool-sourced text in explicit untrusted-content markers (matches the
@@ -946,10 +1113,18 @@ public class AiChatService {
     // ── Internal ─────────────────────────────────────────────────────────────
 
     private String buildSystemPrompt(Long goalId, String sessionType) {
-        String basePrompt = "grow".equalsIgnoreCase(sessionType) ? GROW_PROMPT : CHAT_PROMPT;
+        boolean isGrow = "grow".equalsIgnoreCase(sessionType);
+        String basePrompt = isGrow ? GROW_PROMPT : CHAT_PROMPT;
+        StringBuilder sb = new StringBuilder(basePrompt);
         String goalContext = goalContextBuilder.build(goalId);
-        if (goalContext.isBlank()) return basePrompt;
-        return basePrompt + "\n\n" + goalContext;
+        if (!goalContext.isBlank()) sb.append("\n\n").append(goalContext);
+        // Personal-tools context (tool ids, schemas, record ids) so the AI can
+        // fill/edit them. Chat only — GROW is pure coaching, no tool tools.
+        if (!isGrow) {
+            String toolContext = toolContextBuilder.build(goalId);
+            if (!toolContext.isBlank()) sb.append("\n\n").append(toolContext);
+        }
+        return sb.toString();
     }
 
     private List<LlmMessage> buildMessages(ChatRequest request) {
@@ -1055,6 +1230,77 @@ public class AiChatService {
             emitter.send(SseEmitter.event().name("proposal").data(data));
         } catch (Exception e) {
             log.debug("SSE proposal send failed: {}", e.getMessage());
+            emitter.completeWithError(e);
+        }
+    }
+
+    /**
+     * Surfaces a {@code propose_tool} call as a {@code tool_proposal} SSE event.
+     * The model's schema is validated server-side FIRST (approved primitives +
+     * limits); an invalid schema is dropped, never shown — the AI never gets to
+     * define arbitrary UI. The event carries name, placement, the canonical
+     * schema, and reasoning for the frontend's preview-and-approve card.
+     */
+    private void sendToolProposal(SseEmitter emitter, ToolCall toolCall, Long goalId) {
+        try {
+            JsonNode args = MAPPER.readTree(toolCall.argumentsJson());
+            JsonNode schemaNode = args.path("schema");
+            if (schemaNode.isMissingNode() || schemaNode.isNull()) {
+                log.warn("Dropping propose_tool with no schema");
+                return;
+            }
+            // schema may arrive as an object or as a JSON string — normalize.
+            String rawSchema = schemaNode.isTextual()
+                    ? schemaNode.asText() : MAPPER.writeValueAsString(schemaNode);
+            String canonicalSchema = toolSchemaValidator.validate(rawSchema);
+
+            ObjectNode out = MAPPER.createObjectNode();
+            out.put("name", args.path("name").asText("Tool"));
+            String placement = args.path("placement").asText("tools");
+            out.put("placement", "goal".equals(placement) && goalId != null ? "goal" : "tools");
+            if (goalId != null) out.put("goalId", goalId);
+            out.set("schema", MAPPER.readTree(canonicalSchema));
+            out.put("reasoning", args.path("reasoning").asText(""));
+
+            emitter.send(SseEmitter.event().name("tool_proposal").data(MAPPER.writeValueAsString(out)));
+        } catch (ToolSchemaValidator.InvalidSchemaException e) {
+            log.warn("Dropping invalid tool proposal: {}", e.getMessage());
+            // Record what the AI tried to build that the catalog can't express,
+            // so the owner sees which primitives to add next (privacy-safe).
+            try {
+                JsonNode args = MAPPER.readTree(toolCall.argumentsJson());
+                JsonNode schemaNode = args.path("schema");
+                String rawSchema = schemaNode.isTextual()
+                        ? schemaNode.asText() : MAPPER.writeValueAsString(schemaNode);
+                toolDemandLogger.recordRejectedSchema(
+                        rawSchema, args.path("name").asText("Tool"), e.getMessage());
+            } catch (Exception ignored) {
+                // best-effort logging only
+            }
+        } catch (Exception e) {
+            log.debug("SSE tool_proposal send failed: {}", e.getMessage());
+            emitter.completeWithError(e);
+        }
+    }
+
+    /**
+     * Surfaces an {@code edit_tool_record}/{@code delete_tool_record} call as a
+     * {@code tool_data_proposal} SSE event for the user to approve. Carries the
+     * op, tool/record ids, and (for edit) the new data — applied by the frontend
+     * only on Accept (PATCH/DELETE), validated server-side then.
+     */
+    private void sendToolDataProposal(SseEmitter emitter, ToolCall toolCall) {
+        try {
+            JsonNode args = MAPPER.readTree(toolCall.argumentsJson());
+            ObjectNode out = MAPPER.createObjectNode();
+            out.put("op", "edit_tool_record".equals(toolCall.name()) ? "edit" : "delete");
+            out.put("toolId", args.path("toolId").asLong());
+            out.put("recordId", args.path("recordId").asLong());
+            if (args.has("data")) out.set("data", args.path("data"));
+            emitter.send(SseEmitter.event().name("tool_data_proposal")
+                    .data(MAPPER.writeValueAsString(out)));
+        } catch (Exception e) {
+            log.debug("SSE tool_data_proposal send failed: {}", e.getMessage());
             emitter.completeWithError(e);
         }
     }

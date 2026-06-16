@@ -1,0 +1,8 @@
+# Normalize line endings to LF in the repo and working tree on every platform.
+# Without this, Windows (core.autocrlf=true) checks files out as CRLF, which the
+# Prettier lint gate (endOfLine) then flags. LF everywhere keeps local == CI.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.docx binary

@@ -10,9 +10,11 @@ import {
   GlobeOff,
   Cable,
   RefreshCw,
+  Wrench,
 } from "lucide-react";
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
+import { ToolWindows } from "@/components/tools/ToolWindows";
 import { useSpira } from "@/lib/spira/store";
 import { useAuth } from "@/lib/spira/auth";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
@@ -125,6 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <AiPanel />
+      <ToolWindows />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
         <header
@@ -467,6 +470,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       {authUser?.email}
                     </div>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {/* Tools entry point: always here (All-Goals + the responsive
+                      fallback for narrow goal pages, where the sub-nav hides it). */}
+                  <DropdownMenuItem asChild className="gap-2">
+                    <Link to="/tools">
+                      <Wrench className="h-4 w-4" />
+                      Tools
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="gap-2 text-destructive focus:text-destructive"

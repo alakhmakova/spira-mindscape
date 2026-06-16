@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Lint gate: ESLint (incl. Prettier formatting + line endings). Fails on
+      # errors; the few pre-existing warnings don't block. .gitattributes keeps
+      # line endings LF so Windows checkouts match this Linux runner.
+      - name: Lint
+        run: npm run lint
+
       - name: Run frontend tests
         run: npm test
 

@@ -125,7 +125,7 @@ Already at the repo root — three files:
 >   server-side prepared statements (Flyway + Hikari). At `max-instances 1` the
 >   connection count is tiny, so the direct endpoint is fine.
 
-Flyway runs on startup and applies all migrations (`V1..V12`) to the empty Neon DB automatically.
+Flyway runs on startup and applies all migrations (`backend/src/main/resources/db/migration/`) to the empty Neon DB automatically.
 
 > Neon free tier scales the DB to zero when idle; the first query after idle has a
 > small wake-up latency (a second or two). Fine for a personal app.

@@ -40,12 +40,22 @@ describe("proposalFromToolArgs — maps a tool call to a Proposal", () => {
   });
 
   it("clamps an out-of-range confidence to 1..10", () => {
-    expect(proposalFromToolArgs(JSON.stringify({ kind: "new_goal", title: "G", confidence: "42" }))!.confidence).toBe(10);
+    expect(
+      proposalFromToolArgs(
+        JSON.stringify({ kind: "new_goal", title: "G", confidence: "42" }),
+      )!.confidence,
+    ).toBe(10);
   });
 
   it("parses a numeric target (type + total/current/unit)", () => {
     const p = proposalFromToolArgs(
-      JSON.stringify({ kind: "target", title: "Send applications", total: "20", current: "2", unit: "apps" }),
+      JSON.stringify({
+        kind: "target",
+        title: "Send applications",
+        total: "20",
+        current: "2",
+        unit: "apps",
+      }),
     )!;
     expect(p.targetType).toBe("numeric");
     expect(p.total).toBe("20");
@@ -58,7 +68,11 @@ describe("proposalFromToolArgs — maps a tool call to a Proposal", () => {
       JSON.stringify({
         kind: "target",
         title: "Visit my sister",
-        items: [{ text: "Buy tickets" }, { text: "Shop presents", done: true }, { text: "   " }],
+        items: [
+          { text: "Buy tickets" },
+          { text: "Shop presents", done: true },
+          { text: "   " },
+        ],
       }),
     )!;
     expect(p.targetType).toBe("checklist");
@@ -69,23 +83,36 @@ describe("proposalFromToolArgs — maps a tool call to a Proposal", () => {
   });
 
   it("marks an option that should also be made active (done flag)", () => {
-    const p = proposalFromToolArgs(JSON.stringify({ kind: "option", value: "Move to Berlin", done: "true" }))!;
+    const p = proposalFromToolArgs(
+      JSON.stringify({ kind: "option", value: "Move to Berlin", done: "true" }),
+    )!;
     expect(p.kind).toBe("option");
     expect(p.done).toBe(true);
     expect(isOptionActivate(p)).toBe(true);
   });
 
   it("carries the goal id for goal-level ops, and the subject for open_goal", () => {
-    const edit = proposalFromToolArgs(JSON.stringify({ kind: "edit_goal", id: "42", field: "deadline", value: "2026-09-05" }))!;
+    const edit = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "edit_goal",
+        id: "42",
+        field: "deadline",
+        value: "2026-09-05",
+      }),
+    )!;
     expect(edit.goalId).toBe("42");
 
-    const open = proposalFromToolArgs(JSON.stringify({ kind: "open_goal", id: "7", value: "the description" }))!;
+    const open = proposalFromToolArgs(
+      JSON.stringify({ kind: "open_goal", id: "7", value: "the description" }),
+    )!;
     expect(open.goalId).toBe("7");
     expect(open.openSubject).toBe("the description");
   });
 
   it("parses a delete-by-id for a smaller item", () => {
-    const p = proposalFromToolArgs(JSON.stringify({ kind: "delete_option", id: "opt-9" }))!;
+    const p = proposalFromToolArgs(
+      JSON.stringify({ kind: "delete_option", id: "opt-9" }),
+    )!;
     expect(p.kind).toBe("delete_option");
     expect(p.itemId).toBe("opt-9");
   });
@@ -102,7 +129,11 @@ describe("dedupCreates — keep every distinct create, drop only exact duplicate
       makeProposal({ id: "b", title: "Goal 2" }),
       makeProposal({ id: "c", title: "Goal 3" }),
     ];
-    expect(dedupCreates(creates).map((p) => p.title)).toEqual(["Goal 1", "Goal 2", "Goal 3"]);
+    expect(dedupCreates(creates).map((p) => p.title)).toEqual([
+      "Goal 1",
+      "Goal 2",
+      "Goal 3",
+    ]);
   });
 
   it("drops a duplicate of the same kind + title (case/space-insensitive)", () => {
@@ -124,8 +155,17 @@ describe("dedupCreates — keep every distinct create, drop only exact duplicate
 
 describe("createAspects — the optional fields shown as checkboxes", () => {
   it("lists confidence, deadline and description for a goal that has them", () => {
-    const p = makeProposal({ kind: "new_goal", confidence: 7, deadline: "2026-08-05", body: "desc" });
-    expect(createAspects(p).map((a) => a.id)).toEqual(["confidence", "deadline", "description"]);
+    const p = makeProposal({
+      kind: "new_goal",
+      confidence: 7,
+      deadline: "2026-08-05",
+      body: "desc",
+    });
+    expect(createAspects(p).map((a) => a.id)).toEqual([
+      "confidence",
+      "deadline",
+      "description",
+    ]);
   });
 
   it("returns [] for a bare goal (name only) → one-tap confirm card", () => {
@@ -134,18 +174,29 @@ describe("createAspects — the optional fields shown as checkboxes", () => {
 
   it("the description aspect carries its body so it can be viewed at the checkbox", () => {
     const p = makeProposal({ kind: "new_goal", body: "long description" });
-    expect(createAspects(p).find((a) => a.id === "description")?.body).toBe("long description");
+    expect(createAspects(p).find((a) => a.id === "description")?.body).toBe(
+      "long description",
+    );
   });
 
   it("lists deadline and 'already done' for a target", () => {
-    const p = makeProposal({ kind: "target", deadline: "2026-08-05", done: true });
+    const p = makeProposal({
+      kind: "target",
+      deadline: "2026-08-05",
+      done: true,
+    });
     expect(createAspects(p).map((a) => a.id)).toEqual(["deadline", "done"]);
   });
 });
 
 describe("applyExcludedAspects — unticked fields are dropped from what gets created", () => {
   it("strips only the excluded fields, leaving the rest", () => {
-    const p = makeProposal({ kind: "new_goal", confidence: 7, deadline: "2026-08-05", body: "desc" });
+    const p = makeProposal({
+      kind: "new_goal",
+      confidence: 7,
+      deadline: "2026-08-05",
+      body: "desc",
+    });
     const out = applyExcludedAspects(p, new Set(["deadline"]));
     expect(out.deadline).toBeUndefined();
     expect(out.confidence).toBe(7);
@@ -153,7 +204,10 @@ describe("applyExcludedAspects — unticked fields are dropped from what gets cr
   });
 
   it("clears the 'done' flag when 'done' is unticked", () => {
-    const out = applyExcludedAspects(makeProposal({ kind: "target", done: true }), new Set(["done"]));
+    const out = applyExcludedAspects(
+      makeProposal({ kind: "target", done: true }),
+      new Set(["done"]),
+    );
     expect(out.done).toBe(false);
   });
 
@@ -165,8 +219,17 @@ describe("applyExcludedAspects — unticked fields are dropped from what gets cr
 
 describe("createSummary — the structural one-liner under a create", () => {
   it("shows the numeric measure", () => {
-    expect(createSummary(makeProposal({ kind: "target", targetType: "numeric", current: "2", total: "20", unit: "apps" })))
-      .toBe("2 / 20 apps");
+    expect(
+      createSummary(
+        makeProposal({
+          kind: "target",
+          targetType: "numeric",
+          current: "2",
+          total: "20",
+          unit: "apps",
+        }),
+      ),
+    ).toBe("2 / 20 apps");
   });
 
   it("shows the checklist count", () => {
@@ -185,9 +248,13 @@ describe("createSummary — the structural one-liner under a create", () => {
 
 describe("isOptionActivate", () => {
   it("is true only for an option with the done flag", () => {
-    expect(isOptionActivate(makeProposal({ kind: "option", done: true }))).toBe(true);
+    expect(isOptionActivate(makeProposal({ kind: "option", done: true }))).toBe(
+      true,
+    );
     expect(isOptionActivate(makeProposal({ kind: "option" }))).toBe(false);
-    expect(isOptionActivate(makeProposal({ kind: "target", done: true }))).toBe(false);
+    expect(isOptionActivate(makeProposal({ kind: "target", done: true }))).toBe(
+      false,
+    );
   });
 });
 
