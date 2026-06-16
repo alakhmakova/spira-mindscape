@@ -8,10 +8,19 @@ vi.mock("../../lib/spira/auth", () => ({
   getCsrfToken: () => "test-csrf-token",
 }));
 
-type FetchInit = { method?: string; credentials?: string; headers?: Record<string, string> };
+type FetchInit = {
+  method?: string;
+  credentials?: string;
+  headers?: Record<string, string>;
+};
 
 function okJson(body: unknown) {
-  return { ok: true, status: 200, json: async () => body, text: async () => "" };
+  return {
+    ok: true,
+    status: 200,
+    json: async () => body,
+    text: async () => "",
+  };
 }
 
 function firstCall(): [string, FetchInit] {
@@ -25,7 +34,10 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
   });
 
   it("saveApiKey POSTs with credentials and the X-XSRF-TOKEN header", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => okJson({ provider: "MISTRAL" })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ provider: "MISTRAL" })),
+    );
 
     await saveApiKey("MISTRAL", "sk-test-123456", "mistral-large");
 
@@ -38,7 +50,10 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
   });
 
   it("approveProposal POSTs with credentials and the CSRF header", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => okJson(null)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson(null)),
+    );
 
     await approveProposal(5);
 
@@ -50,7 +65,10 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
   });
 
   it("listApiKeys sends credentials on the GET (cookie auth, no CSRF needed)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => okJson([])));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson([])),
+    );
 
     await listApiKeys();
 

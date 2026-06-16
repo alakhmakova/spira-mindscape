@@ -411,7 +411,9 @@ function toGoal(goal: GraphqlGoal): Goal {
     options: goal.options.map(toOption),
     resources: goal.resources.map(toResource),
     targets: goal.targets.map(toTarget),
-    confidenceHistory: goal.confidenceHistory?.map((h) => ({ value: h.confidence, at: h.at })) ?? [],
+    confidenceHistory:
+      goal.confidenceHistory?.map((h) => ({ value: h.confidence, at: h.at })) ??
+      [],
   };
 }
 

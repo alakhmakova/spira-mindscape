@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import { goalProgress } from "@/lib/spira/progress";
+import { ToolsMenu } from "@/components/tools/ToolsMenu";
 import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
@@ -100,7 +101,7 @@ function GoalWorkspace() {
 
   return (
     <>
-      <GoalNav />
+      <GoalNav goalId={goal.id} />
       <div
         id="goal-top"
         className="spira-goal-workspace mx-auto max-w-7xl scroll-mt-32 px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6"
@@ -645,7 +646,7 @@ function ConfidenceHistorySheet({
   );
 }
 
-function GoalNav() {
+function GoalNav({ goalId }: { goalId: string }) {
   const [scroll, setScroll] = useState(0);
   const [active, setActive] = useState("Goal");
   const isManualRef = useRef(false);
@@ -722,7 +723,7 @@ function GoalNav() {
   return (
     <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-center gap-8 h-12">
+        <div className="flex items-center justify-center gap-6 sm:gap-8 h-12">
           {items.map((item) => (
             <button
               key={item.id}
@@ -737,6 +738,11 @@ function GoalNav() {
               {item.label}
             </button>
           ))}
+          {/* Tools: a dropdown, not a scroll-target. Shown in the bar when there's
+              width; on narrow screens it lives in the user menu (AppShell). */}
+          <span className="hidden sm:inline-flex">
+            <ToolsMenu goalId={goalId} />
+          </span>
         </div>
       </div>
       <div className="h-[5px] w-full bg-[#dcfce7] overflow-hidden">

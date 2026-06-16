@@ -142,7 +142,10 @@ describe("useSpira resource sync errors", () => {
     // temp id (it does) so none is lost.
     vi.spyOn(spiraApi, "createResource").mockImplementation(
       async (_goalId: string, input) =>
-        ({ ...input, id: "srv-" + (input as { title?: string }).title }) as Resource,
+        ({
+          ...input,
+          id: "srv-" + (input as { title?: string }).title,
+        }) as Resource,
     );
 
     const addResource = useSpira.getState().addResource;
@@ -161,17 +164,21 @@ describe("useSpira resource sync errors", () => {
       .getState()
       .goals[0].resources.map((r) => (r.type === "note" ? r.title : ""))
       .filter(Boolean);
-    expect(titles).toEqual(expect.arrayContaining(["CV", "Diploma", "Project"]));
+    expect(titles).toEqual(
+      expect.arrayContaining(["CV", "Diploma", "Project"]),
+    );
   });
 
   it("rolls back only the failed resource, keeping siblings created at the same time", async () => {
     // Regression: a failed add used to restore a whole-list snapshot, wiping siblings added
     // alongside it. Now only the failed item is removed.
-    vi.spyOn(spiraApi, "createResource").mockImplementation(async (_goalId: string, input) => {
-      const title = (input as { title?: string }).title;
-      if (title === "Bad") throw new SpiraApiError("boom");
-      return { ...input, id: "srv-" + title } as Resource;
-    });
+    vi.spyOn(spiraApi, "createResource").mockImplementation(
+      async (_goalId: string, input) => {
+        const title = (input as { title?: string }).title;
+        if (title === "Bad") throw new SpiraApiError("boom");
+        return { ...input, id: "srv-" + title } as Resource;
+      },
+    );
 
     const addResource = useSpira.getState().addResource;
     addResource("goal-1", { type: "note", title: "Good1", body: "" });

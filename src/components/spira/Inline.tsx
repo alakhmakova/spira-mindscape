@@ -309,14 +309,20 @@ export function AutoTextarea({
   }, [shown]);
 
   const handleChange = (v: string) => {
-    if (!required) { onChange(v); return; }
+    if (!required) {
+      onChange(v);
+      return;
+    }
     setDraft(v);
     setError(false);
     if (v.trim()) onChange(v); // push only non-empty — never blank a required field
   };
 
   const handleBlur = () => {
-    if (required && !draft.trim()) { setDraft(value); setError(true); }
+    if (required && !draft.trim()) {
+      setDraft(value);
+      setError(true);
+    }
   };
 
   const textarea = (

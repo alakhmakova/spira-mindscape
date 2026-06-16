@@ -7,7 +7,9 @@ const AI_BASE = "/api/ai";
  * via the double-submit cookie pattern: echo the readable XSRF-TOKEN cookie in
  * the X-XSRF-TOKEN header, or Spring Security rejects the request with 403.
  */
-function mutationHeaders(extra?: Record<string, string>): Record<string, string> {
+function mutationHeaders(
+  extra?: Record<string, string>,
+): Record<string, string> {
   return { "X-XSRF-TOKEN": getCsrfToken(), ...extra };
 }
 
@@ -25,6 +27,12 @@ export type StreamChatParams = {
   sessionRemainingSeconds?: number;
   onToken: (token: string) => void;
   onProposal?: (argsJson: string) => void;
+  /** A Personal Tool (mini-app) the AI proposes; the JSON has name, placement,
+   *  schema, reasoning. The user previews and approves it. */
+  onToolProposal?: (argsJson: string) => void;
+  /** An AI-proposed change to existing tool DATA (edit/delete a row); the JSON
+   *  has op, toolId, recordId, and (for edit) data. Applied on approval. */
+  onToolDataProposal?: (argsJson: string) => void;
   /** Progress lines (e.g. one-time coaching-library indexing in GROW).
    *  Ephemeral UI only — never part of the transcript or history. */
   onStatus?: (msg: string) => void;
@@ -33,7 +41,22 @@ export type StreamChatParams = {
 };
 
 export async function streamChat(params: StreamChatParams): Promise<void> {
-  const { goalId, message, history, provider = "ANTHROPIC", sessionType = "chat", sessionTotalMinutes, sessionRemainingSeconds, onToken, onProposal, onStatus, onDone, onError } = params;
+  const {
+    goalId,
+    message,
+    history,
+    provider = "ANTHROPIC",
+    sessionType = "chat",
+    sessionTotalMinutes,
+    sessionRemainingSeconds,
+    onToken,
+    onProposal,
+    onToolProposal,
+    onToolDataProposal,
+    onStatus,
+    onDone,
+    onError,
+  } = params;
 
   let response: Response;
   try {
@@ -87,12 +110,22 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
       case "token": {
         // Tokens are JSON-encoded by the backend so they survive newlines.
         let text = data;
-        try { text = JSON.parse(data); } catch { /* fall back to raw */ }
+        try {
+          text = JSON.parse(data);
+        } catch {
+          /* fall back to raw */
+        }
         onToken(text);
         return false;
       }
       case "proposal":
         onProposal?.(data.trim());
+        return false;
+      case "tool_proposal":
+        onToolProposal?.(data.trim());
+        return false;
+      case "tool_data_proposal":
+        onToolDataProposal?.(data.trim());
         return false;
       case "status":
         onStatus?.(data.trim());
@@ -121,7 +154,10 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         if (line.endsWith("\r")) line = line.slice(0, -1);
 
         if (line === "") {
-          if (dispatch()) { finished = true; break; }
+          if (dispatch()) {
+            finished = true;
+            break;
+          }
         } else if (line.startsWith("event:")) {
           eventName = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
@@ -139,12 +175,16 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
   // can close right after an `error`/`done` event) — otherwise the error would
   // be swallowed and reported as a normal completion.
   if (!finished) {
-    const dispatched = (eventName || dataLines.length > 0) ? dispatch() : false;
+    const dispatched = eventName || dataLines.length > 0 ? dispatch() : false;
     if (!dispatched) onDone();
   }
 }
 
-export async function saveApiKey(provider: string, apiKey: string, model?: string) {
+export async function saveApiKey(
+  provider: string,
+  apiKey: string,
+  model?: string,
+) {
   const res = await fetch(`${AI_BASE}/keys`, {
     method: "POST",
     credentials: "include",
@@ -165,7 +205,9 @@ export async function listApiKeys() {
 }
 
 export async function fetchProviderModels(provider: string): Promise<string[]> {
-  const res = await fetch(`${AI_BASE}/keys/${provider}/models`, { credentials: "include" });
+  const res = await fetch(`${AI_BASE}/keys/${provider}/models`, {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
   return res.json();
 }
@@ -190,7 +232,10 @@ export async function updateKeyModel(provider: string, model: string) {
  * Persist a GROW session summary on the goal ("Save memory" on the end card).
  * Later GROW sessions read it back so the coach continues the thread.
  */
-export async function saveSessionMemory(goalId: string, summary: string): Promise<void> {
+export async function saveSessionMemory(
+  goalId: string,
+  summary: string,
+): Promise<void> {
   const res = await fetch(`${AI_BASE}/goals/${parseInt(goalId, 10)}/memory`, {
     method: "POST",
     credentials: "include",
@@ -216,8 +261,12 @@ export type ServerProposal = {
 };
 
 /** Fetch pending proposals for a goal (used to restore cards after a reload). */
-export async function listGoalProposals(goalId: string): Promise<ServerProposal[]> {
-  const res = await fetch(`${AI_BASE}/proposals/goal/${goalId}`, { credentials: "include" });
+export async function listGoalProposals(
+  goalId: string,
+): Promise<ServerProposal[]> {
+  const res = await fetch(`${AI_BASE}/proposals/goal/${goalId}`, {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(`Failed to load proposals: ${res.status}`);
   return res.json();
 }
