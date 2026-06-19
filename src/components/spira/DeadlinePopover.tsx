@@ -168,7 +168,7 @@ export function DeadlinePopover({
               )}
             </div>
           ) : (
-            <span>{placeholder || "Set deadline"}</span>
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">{placeholder || "Set deadline"}</span>
           )}
         </PopoverTrigger>
       ) : renderTrigger ? (

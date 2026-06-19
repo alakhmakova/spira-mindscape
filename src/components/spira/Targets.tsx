@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Calendar,
   Check,
+  CircleCheck,
   Minus,
   Plus,
   Search,
@@ -151,6 +152,7 @@ export function TargetsSection({
     <Section
       title="Will do"
       count={goal.targets.length}
+      countVariant="orange"
       action={
         <div className="flex items-center gap-2">
           {/* Desktop: search + filters */}
@@ -889,7 +891,7 @@ export function DesktopTargetsTable({
                 <TableCell className="text-right pr-6">
                   <button
                     onClick={() => setConfirmTarget(t)}
-                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
+                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md transition-colors inline-flex"
                     title="Delete target"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1068,7 +1070,7 @@ export function TargetRow({
                   }}
                 >
                   {done ? (
-                    <Check className="h-3 w-3 shrink-0" strokeWidth={3} />
+                    <CircleCheck className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
                   ) : deadlineInfo.isOverdue ? (
                     <AlertTriangle className="h-3 w-3 shrink-0" />
                   ) : (
@@ -1090,7 +1092,8 @@ export function TargetRow({
                   )}
                 </span>
               ) : (
-                <span className="text-xs text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
+                  <Calendar className="h-3 w-3 shrink-0" />
                   Set deadline
                 </span>
               )
@@ -1098,10 +1101,10 @@ export function TargetRow({
           />
           <button
             onClick={onRemove}
-            className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md hover:bg-secondary"
+            className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md"
             aria-label="Delete target"
           >
-            <Trash2 className="h-4 w-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
@@ -1668,7 +1671,7 @@ function ChecklistEditor({
                 setLastItemError(false);
                 onChange(items.filter((i) => i.id !== it.id));
               }}
-              className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0"
+              className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0"
               aria-label="Remove subtask"
             >
               <X className="h-3.5 w-3.5" />
@@ -2033,7 +2036,7 @@ function NewTargetForm({
                         setChecklistLastItemError(false);
                         setChecklistItems((prev) => prev.filter((i) => i.id !== item.id));
                       }}
-                      className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0 transition-colors"
+                      className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0 transition-colors"
                       aria-label="Remove task"
                     >
                       <X className="h-3.5 w-3.5" />

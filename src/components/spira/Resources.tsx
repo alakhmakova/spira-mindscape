@@ -417,7 +417,7 @@ function ResourceCard({
               e.stopPropagation();
               onRemove();
             }}
-            className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-destructive-soft hover:text-destructive transition-colors"
+            className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:text-destructive transition-colors"
             title="Remove"
           >
             <Trash2 className="h-3 w-3" />

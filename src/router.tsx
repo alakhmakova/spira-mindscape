@@ -1,4 +1,13 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
+import { Loader } from "lucide-react";
+
+function DefaultPendingComponent() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <Loader className="h-8 w-8 text-[#ea580c] animate-spin" />
+    </div>
+  );
+}
 import { routeTree } from "./routeTree.gen";
 
 function DefaultErrorComponent({
@@ -66,6 +75,7 @@ export const getRouter = () => {
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
     defaultErrorComponent: DefaultErrorComponent,
+    defaultPendingComponent: DefaultPendingComponent,
   });
 
   return router;
