@@ -14,8 +14,10 @@ export function OptionsList({ goal }: { goal: Goal }) {
     reorderOptions,
   } = useSpira();
   const [draft, setDraft] = useState("");
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const touchDragIdx = useRef<number | null>(null);
+  // Use a ref so onDrop always reads the latest source index without stale closures.
+  const dragSourceRef = useRef<number | null>(null);
+  const touchSourceRef = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const add = () => {
     const t = draft.trim();
@@ -44,15 +46,24 @@ export function OptionsList({ goal }: { goal: Goal }) {
           <li
             key={opt.id}
             data-option-index={idx}
-            onDragStart={() => setDragIdx(idx)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (dragIdx !== null && dragIdx !== idx)
-                reorderOptions(goal.id, dragIdx, idx);
-              setDragIdx(null);
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setDragOverIdx(idx);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node))
+                setDragOverIdx(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragSourceRef.current !== null && dragSourceRef.current !== idx)
+                reorderOptions(goal.id, dragSourceRef.current, idx);
+              dragSourceRef.current = null;
+              setDragOverIdx(null);
             }}
             onTouchMove={(e) => {
-              if (touchDragIdx.current === null) return;
+              if (touchSourceRef.current === null) return;
               const touch = e.touches[0];
               const target = document
                 .elementFromPoint(touch.clientX, touch.clientY)
@@ -60,19 +71,18 @@ export function OptionsList({ goal }: { goal: Goal }) {
               const nextIdx = target
                 ? Number((target as HTMLElement).dataset.optionIndex)
                 : NaN;
-              if (!Number.isNaN(nextIdx) && nextIdx !== touchDragIdx.current) {
-                reorderOptions(goal.id, touchDragIdx.current, nextIdx);
-                touchDragIdx.current = nextIdx;
+              if (!Number.isNaN(nextIdx) && nextIdx !== touchSourceRef.current) {
+                reorderOptions(goal.id, touchSourceRef.current, nextIdx);
+                touchSourceRef.current = nextIdx;
               }
             }}
-            onTouchEnd={() => {
-              touchDragIdx.current = null;
-            }}
+            onTouchEnd={() => { touchSourceRef.current = null; }}
             className={cn(
               "group flex items-stretch overflow-hidden rounded-md border transition-colors",
               opt.selected
                 ? "border-primary"
                 : "border-border hover:border-primary/50",
+              dragOverIdx === idx && dragSourceRef.current !== idx && "ring-2 ring-primary/40",
             )}
           >
             {/* Left Section with Radio */}
@@ -101,19 +111,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
             </button>
 
             {/* Right Section with Text */}
-            <div className="flex-1 flex items-center bg-surface px-4 py-3 relative min-h-[48px]">
-              <button
-                draggable
-                onDragStart={() => setDragIdx(idx)}
-                onTouchStart={() => {
-                  touchDragIdx.current = idx;
-                }}
-                className="mr-2 grid h-8 w-6 shrink-0 place-items-center touch-none text-muted-foreground hover:text-foreground cursor-grab transition-colors"
-                aria-label="Drag option"
-              >
-                <GripVertical className="h-4 w-4" />
-              </button>
-
+            <div className="flex-1 flex items-center bg-surface px-4 py-3 min-h-[48px]">
               <InlineText
                 value={opt.text}
                 onChange={(text) => updateOption(goal.id, opt.id, { text })}
@@ -122,8 +120,25 @@ export function OptionsList({ goal }: { goal: Goal }) {
               />
 
               <button
+                draggable
+                onDragStart={(e) => {
+                  dragSourceRef.current = idx;
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragEnd={() => {
+                  dragSourceRef.current = null;
+                  setDragOverIdx(null);
+                }}
+                onTouchStart={() => { touchSourceRef.current = idx; }}
+                className="ml-2 grid h-8 w-6 shrink-0 place-items-center touch-none text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
+                aria-label="Drag to reorder"
+              >
+                <GripVertical className="h-4 w-4" />
+              </button>
+
+              <button
                 onClick={() => removeOption(goal.id, opt.id)}
-                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+                className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
                 aria-label="Remove"
               >
                 <X className="h-4 w-4" />
