@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
@@ -55,54 +56,54 @@ function vendorChunk(id: string) {
   return undefined;
 }
 
-export default defineConfig({
-  plugins: [
-    TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
-    react(),
-    tailwindcss(),
-    tsconfigPaths(),
-  ],
-  server: {
-    port: 5173,
-    host: true, // expose on all network interfaces → shows Network URL on startup
-    watch: {
-      // Maven rewrites backend/target on every build; watching it crashes the
-      // FS watcher on Windows (scandir on a vanishing dir) and kills the dev
-      // server. The frontend never imports from backend/ — don't watch it.
-      ignored: ["**/backend/**", "**/tests-e2e/**", "**/.wrangler/**"],
-    },
-    proxy: {
-      // All backend routes forwarded to Spring Boot so the browser sees a
-      // single origin in dev (no cross-origin cookie issues).
-      "/graphql": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  // loadEnv reads .env, .env.local, .env.[mode] etc. with empty prefix = all vars.
+  const env = loadEnv(mode, process.cwd(), "");
+  const ngrokUrl = env.NGROK_URL ?? "";
+
+  // When NGROK_URL is set, tell Spring Boot (via X-Forwarded-* headers) the
+  // real public host so it builds the OAuth redirect_uri for ngrok, not localhost.
+  const oauthHeaders = ngrokUrl
+    ? { "X-Forwarded-Host": new URL(ngrokUrl).host, "X-Forwarded-Proto": "https" }
+    : undefined;
+
+  return {
+    plugins: [
+      TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
+      react(),
+      tailwindcss(),
+      tsconfigPaths(),
+    ],
+    server: {
+      port: 5173,
+      host: true,
+      watch: {
+        ignored: ["**/backend/**", "**/tests-e2e/**", "**/.wrangler/**"],
       },
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-      // OAuth2 Authorization Code flow — browser follows redirect to Google
-      // and back to /login/oauth2/code/google on the backend.
-      "/oauth2": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-      "/login": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: vendorChunk,
+      allowedHosts: ngrokUrl ? [new URL(ngrokUrl).host] : [],
+      proxy: {
+        "/graphql": { target: "http://localhost:8080", changeOrigin: true },
+        "/api": { target: "http://localhost:8080", changeOrigin: true },
+        // OAuth routes need the public host injected so Spring builds the right
+        // redirect_uri (server.forward-headers-strategy=framework is set in backend).
+        "/oauth2": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+          ...(oauthHeaders && { headers: oauthHeaders }),
+        },
+        "/login": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+          ...(oauthHeaders && { headers: oauthHeaders }),
+        },
       },
     },
-  },
-  test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-  },
+    build: {
+      rollupOptions: { output: { manualChunks: vendorChunk } },
+    },
+    test: {
+      environment: "jsdom",
+      setupFiles: ["./src/test/setup.ts"],
+    },
+  };
 });

@@ -21,7 +21,7 @@ import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { OptionsList } from "@/components/spira/OptionsList";
-import { TargetsList, NewTargetSheet } from "@/components/spira/Targets";
+import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
@@ -232,21 +232,10 @@ function GoalWorkspace() {
         </div>
 
         <div id="targets-section" className="scroll-mt-32">
-          <Section
-            title="Will do"
-            hint="How you execute"
-            count={goal.targets.length}
-            action={
-              <button
-                onClick={() => setNewTarget(true)}
-                className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-semibold hover:bg-[#ea580c]/90"
-              >
-                Add target
-              </button>
-            }
-          >
-            <TargetsList goal={goal} />
-          </Section>
+          <TargetsSection
+            goal={goal}
+            onNewTarget={() => setNewTarget(true)}
+          />
         </div>
 
         <NewTargetSheet
