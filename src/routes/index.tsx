@@ -204,7 +204,7 @@ function GoalsOverview() {
                   className="mt-5 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Try again
+                  Refresh
                 </button>
               </>
             ) : goals.length === 0 ? (
