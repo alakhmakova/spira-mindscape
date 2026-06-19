@@ -4,9 +4,9 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
+  ChevronRight,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
   ChevronUp,
   History,
   Plus,
@@ -116,7 +116,7 @@ function GoalWorkspace() {
           </Link>
           <button
             onClick={() => setConfirmDelete(true)}
-            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive border-2 border-transparent hover:border-destructive/30"
             aria-label="Delete goal"
           >
             <Trash2 className="h-4 w-4" />
@@ -319,7 +319,7 @@ function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
       footer={
         <button
           onClick={onJump}
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap"
         >
           Jump to targets <ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -399,7 +399,7 @@ function ConfidenceKpi({
       footer={
         <button
           onClick={onOpenHistory}
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap"
         >
           Confidence history <ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -500,7 +500,7 @@ function DeadlineKpi({
           }
           hideDaysLeft
           disableScroll
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 outline-none"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap outline-none"
         />
       }
     >

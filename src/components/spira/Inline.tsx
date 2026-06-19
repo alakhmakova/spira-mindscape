@@ -4,7 +4,7 @@ import {
   useEffect,
   type TextareaHTMLAttributes,
 } from "react";
-import { Plus, X, BookmarkCheck, BookmarkX, TriangleAlert } from "lucide-react";
+import { Plus, X, CircleCheck, CircleX, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = { id: string; text: string };
@@ -239,7 +239,7 @@ function Marker({
   const onPrimary = variant === "onPrimary";
   if (kind === "check") {
     return (
-      <BookmarkCheck
+      <CircleCheck
         className={cn(
           "mt-0.5 h-5 w-5 shrink-0",
           onPrimary ? "text-primary-foreground" : "text-primary",
@@ -250,7 +250,7 @@ function Marker({
   }
   if (kind === "warn") {
     return (
-      <BookmarkX
+      <CircleX
         className={cn(
           "mt-0.5 h-5 w-5 shrink-0",
           onPrimary ? "text-primary-foreground" : "text-[#ea580c]",
