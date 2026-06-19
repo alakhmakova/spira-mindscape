@@ -556,6 +556,8 @@ function PreviewBody({
         <div className="flex-1 min-w-0 pr-2">
           {resource.type === "note" ? (
             <AutoTextarea
+              required
+              requiredMessage="Note title is required"
               value={resource.title}
               onChange={(v) =>
                 updateResource(goalId, resource.id, { title: v })

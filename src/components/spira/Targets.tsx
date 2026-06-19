@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   SquareDashed,
   Trash2,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
@@ -528,13 +529,17 @@ export function TargetsList({
   const mobileSorted = useMemo(() => {
     if (!sortField) return goal.targets;
     return [...goal.targets].sort((a, b) => {
+      if (sortField === "deadline") {
+        const aHas = !!a.deadline, bHas = !!b.deadline;
+        if (!aHas && !bHas) return 0;
+        if (!aHas) return 1;
+        if (!bHas) return -1;
+        const cmp = new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+        return (sortDesc ?? false) ? -cmp : cmp;
+      }
       let cmp = 0;
       if (sortField === "title") cmp = a.title.localeCompare(b.title);
-      else if (sortField === "deadline") {
-        const ad = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-        const bd = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-        cmp = ad - bd;
-      } else cmp = targetProgress(a) - targetProgress(b);
+      else cmp = targetProgress(a) - targetProgress(b);
       return (sortDesc ?? false) ? -cmp : cmp;
     });
   }, [goal.targets, sortField, sortDesc]);
@@ -643,16 +648,17 @@ export function DesktopTargetsTable({
   const displayTargets = isControlled
     ? goal.targets
     : [...goal.targets].sort((a, b) => {
-        let cmp = 0;
-        if (sortField === "title") {
-          cmp = a.title.localeCompare(b.title);
-        } else if (sortField === "deadline") {
-          const ad = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-          const bd = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-          cmp = ad - bd;
-        } else if (sortField === "progress") {
-          cmp = targetProgress(a) - targetProgress(b);
+        if (sortField === "deadline") {
+          const aHas = !!a.deadline, bHas = !!b.deadline;
+          if (!aHas && !bHas) return 0;
+          if (!aHas) return 1;
+          if (!bHas) return -1;
+          const cmp = new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+          return sortDesc ? -cmp : cmp;
         }
+        let cmp = 0;
+        if (sortField === "title") cmp = a.title.localeCompare(b.title);
+        else if (sortField === "progress") cmp = targetProgress(a) - targetProgress(b);
         return sortDesc ? -cmp : cmp;
       });
 
@@ -1566,6 +1572,7 @@ function ChecklistEditor({
   compact?: boolean;
   hideCountdown?: boolean;
 }) {
+  const [lastItemError, setLastItemError] = useState(false);
   return (
     <div className={cn("space-y-1", !compact && "mt-4")}>
       {items.map((it) => (
@@ -1656,7 +1663,11 @@ function ChecklistEditor({
             </div>
 
             <button
-              onClick={() => onChange(items.filter((i) => i.id !== it.id))}
+              onClick={() => {
+                if (items.length <= 1) { setLastItemError(true); return; }
+                setLastItemError(false);
+                onChange(items.filter((i) => i.id !== it.id));
+              }}
               className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0"
               aria-label="Remove subtask"
             >
@@ -1665,6 +1676,12 @@ function ChecklistEditor({
           </div>
         </div>
       ))}
+      {lastItemError && items.length <= 1 && (
+        <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+          A checklist must have at least one item
+        </p>
+      )}
     </div>
   );
 }
@@ -1795,6 +1812,7 @@ function NewTargetForm({
   const [checklistItems, setChecklistItems] = useState<
     { id: string; text: string; done: boolean; deadline?: string }[]
   >([]);
+  const [checklistLastItemError, setChecklistLastItemError] = useState(false);
 
   const newTaskUid = () => Math.random().toString(36).slice(2, 9);
   const parsedStart = Number(start);
@@ -2010,11 +2028,11 @@ function NewTargetForm({
                       {item.text}
                     </span>
                     <button
-                      onClick={() =>
-                        setChecklistItems((prev) =>
-                          prev.filter((i) => i.id !== item.id),
-                        )
-                      }
+                      onClick={() => {
+                        if (checklistItems.length <= 1) { setChecklistLastItemError(true); return; }
+                        setChecklistLastItemError(false);
+                        setChecklistItems((prev) => prev.filter((i) => i.id !== item.id));
+                      }}
                       className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0 transition-colors"
                       aria-label="Remove task"
                     >
@@ -2023,6 +2041,12 @@ function NewTargetForm({
                   </div>
                 </div>
               ))}
+              {checklistLastItemError && checklistItems.length <= 1 && (
+                <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                  A checklist must have at least one item
+                </p>
+              )}
               <NewTaskInlineInput
                 onAdd={(text) =>
                   setChecklistItems((prev) => [

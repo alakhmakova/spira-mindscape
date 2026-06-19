@@ -4,7 +4,7 @@ import {
   useEffect,
   type TextareaHTMLAttributes,
 } from "react";
-import { Plus, X, BookmarkCheck, BookmarkX } from "lucide-react";
+import { Plus, X, BookmarkCheck, BookmarkX, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = { id: string; text: string };
@@ -145,7 +145,7 @@ export function InlineText({
   ariaLabel,
   className,
   required = true,
-  requiredMessage = "This can't be empty — it was kept.",
+  requiredMessage = "This field is required",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -157,28 +157,32 @@ export function InlineText({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [error, setError] = useState(false);
+  // Tracks the last non-empty text typed — restoring from `value` prop alone
+  // would revert to a stale value if the store debounces saves.
+  const lastGoodValueRef = useRef(value);
 
   useEffect(() => {
     if (ref.current && document.activeElement !== ref.current) {
       ref.current.textContent = value;
+      if (value.trim()) lastGoodValueRef.current = value;
     }
     setError(false);
   }, [value]);
 
   const commit = (el: HTMLSpanElement) => {
     const next = (el.textContent || "").trim();
-    // Required text must never be cleared: put the old text back and say so, right here.
     if (!next) {
-      el.textContent = value;
+      el.textContent = lastGoodValueRef.current;
       if (required) setError(true);
       return;
     }
+    lastGoodValueRef.current = next;
     setError(false);
     if (next !== value) onChange(next);
   };
 
   return (
-    <span className={cn("relative", className)}>
+    <span className={cn("flex flex-col", className)}>
       <span
         ref={ref}
         contentEditable
@@ -213,8 +217,9 @@ export function InlineText({
       {error && (
         <span
           role="alert"
-          className="absolute left-0 top-full z-20 mt-1 whitespace-nowrap rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground shadow-md"
+          className="flex items-center gap-1.5 mt-1 text-[13px] font-medium text-destructive no-underline not-italic"
         >
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
           {requiredMessage}
         </span>
       )}
@@ -291,9 +296,16 @@ export function AutoTextarea({
   // error). Non-required fields pass through unchanged.
   const [draft, setDraft] = useState(value);
   const shown = required ? draft : value;
+  // Tracks the last non-empty text the user typed — used as the fallback on blur.
+  // `value` from props may lag behind if the store debounces saves, which would
+  // wrongly restore an older title instead of the one the user just typed.
+  const lastGoodDraftRef = useRef(value);
 
   useEffect(() => {
-    if (required && document.activeElement !== ref.current) setDraft(value);
+    if (required && document.activeElement !== ref.current) {
+      setDraft(value);
+      if (value.trim()) lastGoodDraftRef.current = value;
+    }
   }, [value, required]);
 
   useEffect(() => {
@@ -312,11 +324,14 @@ export function AutoTextarea({
     if (!required) { onChange(v); return; }
     setDraft(v);
     setError(false);
-    if (v.trim()) onChange(v); // push only non-empty — never blank a required field
+    if (v.trim()) {
+      lastGoodDraftRef.current = v;
+      onChange(v);
+    }
   };
 
   const handleBlur = () => {
-    if (required && !draft.trim()) { setDraft(value); setError(true); }
+    if (required && !draft.trim()) { setDraft(lastGoodDraftRef.current); setError(true); }
   };
 
   const textarea = (
@@ -338,15 +353,16 @@ export function AutoTextarea({
 
   if (!required) return textarea;
   return (
-    <div className="relative w-full">
+    <div className="w-full">
       {textarea}
       {error && (
-        <span
+        <p
           role="alert"
-          className="absolute left-0 top-full z-20 mt-0.5 whitespace-nowrap rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground shadow-md"
+          className="flex items-center gap-1.5 mt-1 text-[13px] font-medium text-destructive"
         >
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
           {requiredMessage}
-        </span>
+        </p>
       )}
     </div>
   );

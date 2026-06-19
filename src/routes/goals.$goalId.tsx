@@ -127,7 +127,7 @@ function GoalWorkspace() {
         <header>
           <AutoTextarea
             required
-            requiredMessage="A goal needs a name — the previous one was kept."
+            requiredMessage="The goal name is required"
             value={goal.title}
             onChange={(v) => updateGoal(goal.id, { title: v })}
             className="spira-goal-title font-heading text-3xl sm:text-4xl text-foreground w-full leading-tight"
