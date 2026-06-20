@@ -38,7 +38,13 @@ export type Target =
     };
 
 export type Resource =
-  | { id: string; type: "note"; title: string; body: string; driveWebViewLink?: string | null }
+  | {
+      id: string;
+      type: "note";
+      title: string;
+      body: string;
+      driveWebViewLink?: string | null;
+    }
   | { id: string; type: "link"; title: string; url: string }
   | { id: string; type: "file"; title: string; mime: string; dataUrl: string }
   | {

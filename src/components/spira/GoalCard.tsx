@@ -67,10 +67,12 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const stripeColor = isOverdue ? OVERDUE_RED : accentColor;
 
   return (
-    <div className={cn(
-      "text-card-foreground rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full cursor-pointer group border",
-      completed ? "bg-card border-[#4fa8a3]/50" : "bg-card border-border/60",
-    )}>
+    <div
+      className={cn(
+        "text-card-foreground rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full cursor-pointer group border",
+        completed ? "bg-card border-[#4fa8a3]/50" : "bg-card border-border/60",
+      )}
+    >
       {/* Confidence, Progress & Actions Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -145,7 +147,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
                     ) : (
                       <Calendar className="h-3.5 w-3.5 opacity-70 translate-y-[1px]" />
                     )}
-                    {completed ? deadlineInfo.dateStr : `Due date ${deadlineInfo.dateStr}`}
+                    {completed
+                      ? deadlineInfo.dateStr
+                      : `Due date ${deadlineInfo.dateStr}`}
                   </span>
                   <span className="w-px h-3.5 bg-border shrink-0" />
                   <span className="text-foreground font-semibold truncate">

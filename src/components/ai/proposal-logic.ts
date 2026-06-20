@@ -10,15 +10,41 @@ export type ProposalKind =
   // create a brand-new goal (used from the global / All-Goals chat)
   | "new_goal"
   // create / goal-level
-  | "target" | "task" | "option" | "note" | "link" | "email" | "edit" | "obstacle" | "action" | "confidence" | "deadline"
+  | "target"
+  | "task"
+  | "option"
+  | "note"
+  | "link"
+  | "email"
+  | "edit"
+  | "obstacle"
+  | "action"
+  | "confidence"
+  | "deadline"
   // edit existing
-  | "edit_target" | "edit_option" | "edit_obstacle" | "edit_action" | "edit_note" | "edit_link" | "edit_email"
+  | "edit_target"
+  | "edit_option"
+  | "edit_obstacle"
+  | "edit_action"
+  | "edit_note"
+  | "edit_link"
+  | "edit_email"
   // state changes
-  | "complete_target" | "target_progress" | "select_option" | "checklist_item" | "add_checklist_item"
+  | "complete_target"
+  | "target_progress"
+  | "select_option"
+  | "checklist_item"
+  | "add_checklist_item"
   // goal-level by id (All-Goals page) + deletion (opens a confirmation dialog)
-  | "edit_goal" | "open_goal" | "delete_goal" | "delete_target"
+  | "edit_goal"
+  | "open_goal"
+  | "delete_goal"
+  | "delete_target"
   // delete smaller items inside a goal
-  | "delete_option" | "delete_obstacle" | "delete_action" | "delete_checklist_item";
+  | "delete_option"
+  | "delete_obstacle"
+  | "delete_action"
+  | "delete_checklist_item";
 
 export type Proposal = {
   id: string;
@@ -27,18 +53,18 @@ export type Proposal = {
   detail?: string;
   reasoning?: string;
   status: "pending" | "approved" | "rejected";
-  field?: string;       // for "edit": "title" | "description"
-  body?: string;        // for "note" / "edit_note"
-  deadline?: string;    // ISO date for target/task
-  rawValue?: string;    // raw tool argument value (number for confidence/progress, ISO date for deadline)
-  serverId?: number;    // persisted ai_proposals row id (absent for global chat)
-  itemId?: string;      // id of the existing item to edit/change (edit_*/state kinds)
-  done?: boolean;       // for complete_target / checklist_item / binary create
+  field?: string; // for "edit": "title" | "description"
+  body?: string; // for "note" / "edit_note"
+  deadline?: string; // ISO date for target/task
+  rawValue?: string; // raw tool argument value (number for confidence/progress, ISO date for deadline)
+  serverId?: number; // persisted ai_proposals row id (absent for global chat)
+  itemId?: string; // id of the existing item to edit/change (edit_*/state kinds)
+  done?: boolean; // for complete_target / checklist_item / binary create
   // Target creation in a final state:
   targetType?: "binary" | "numeric" | "checklist";
-  total?: string;       // numeric goal amount
-  current?: string;     // numeric starting progress
-  unit?: string;        // numeric unit
+  total?: string; // numeric goal amount
+  current?: string; // numeric starting progress
+  unit?: string; // numeric unit
   items?: { text: string; done?: boolean; deadline?: string }[]; // checklist items
   patch?: Record<string, string>; // resource fields to update (edit_link / edit_email)
   goalId?: string; // target goal id for goal-level ops from All-Goals (edit_goal/open_goal/delete_goal)
@@ -55,14 +81,22 @@ export const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Plain-text snippet from (possibly) HTML note content, for one-line card previews.
 export const stripHtml = (s: string) =>
-  s.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  s
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 /** Human-readable deadline for a checkbox label (falls back to the raw ISO string). */
 export function fmtDeadline(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 // Honour every DISTINCT creation the model proposes — the user may legitimately ask
@@ -92,16 +126,28 @@ export function isOptionActivate(p: Proposal): boolean {
  * a goal with confidence + deadline + description shows all three. A bare goal (name only)
  * returns [] and falls back to the one-tap CreateConfirmCard.
  */
-export function createAspects(p: Proposal): { id: string; label: string; body?: string }[] {
+export function createAspects(
+  p: Proposal,
+): { id: string; label: string; body?: string }[] {
   const a: { id: string; label: string; body?: string }[] = [];
   if (p.kind === "new_goal") {
-    if (p.confidence != null) a.push({ id: "confidence", label: `Confidence ${p.confidence}/10` });
-    if (p.deadline) a.push({ id: "deadline", label: `Deadline · ${fmtDeadline(p.deadline)}` });
+    if (p.confidence != null)
+      a.push({ id: "confidence", label: `Confidence ${p.confidence}/10` });
+    if (p.deadline)
+      a.push({
+        id: "deadline",
+        label: `Deadline · ${fmtDeadline(p.deadline)}`,
+      });
     // Description carries its own content so it can be viewed at the checkbox itself
     // (and never restated under the title).
-    if (p.body && p.body.trim()) a.push({ id: "description", label: "Description", body: p.body });
+    if (p.body && p.body.trim())
+      a.push({ id: "description", label: "Description", body: p.body });
   } else if (p.kind === "target" || p.kind === "task") {
-    if (p.deadline) a.push({ id: "deadline", label: `Deadline · ${fmtDeadline(p.deadline)}` });
+    if (p.deadline)
+      a.push({
+        id: "deadline",
+        label: `Deadline · ${fmtDeadline(p.deadline)}`,
+      });
     if (p.done) a.push({ id: "done", label: "Already done" });
   }
   return a;
@@ -112,7 +158,8 @@ export function createAspects(p: Proposal): { id: string; label: string; body?: 
  *  and bare binary targets have none. Shown once, never duplicated as a field checkbox. */
 export function createSummary(p: Proposal): string | undefined {
   if (p.kind === "target" || p.kind === "task") {
-    if (p.targetType === "numeric") return `${p.current ?? 0} / ${p.total ?? "?"}${p.unit ? " " + p.unit : ""}`;
+    if (p.targetType === "numeric")
+      return `${p.current ?? 0} / ${p.total ?? "?"}${p.unit ? " " + p.unit : ""}`;
     if (p.targetType === "checklist") {
       const total = p.items?.length ?? 0;
       const done = p.items?.filter((i) => i.done).length ?? 0;
@@ -124,7 +171,10 @@ export function createSummary(p: Proposal): string | undefined {
 
 /** A copy of the proposal with any unchecked aspect fields stripped, so only the fields
  *  the user kept ticked are saved. */
-export function applyExcludedAspects(p: Proposal, excluded: Set<string>): Proposal {
+export function applyExcludedAspects(
+  p: Proposal,
+  excluded: Set<string>,
+): Proposal {
   if (excluded.size === 0) return p;
   const out: Proposal = { ...p };
   if (excluded.has("confidence")) out.confidence = undefined;
@@ -146,7 +196,8 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
     const name = data.title ?? "";
     const deadlineVal = data.deadline_value;
     const itemId = data.id != null ? String(data.id) : undefined;
-    const done = data.done === "true" ? true : data.done === "false" ? false : undefined;
+    const done =
+      data.done === "true" ? true : data.done === "false" ? false : undefined;
 
     // Target-creation extras (binary done / numeric / checklist).
     const total = data.total || undefined;
@@ -155,7 +206,11 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
     const items = Array.isArray(data.items)
       ? data.items
           .filter((i) => i && typeof i.text === "string" && i.text.trim())
-          .map((i) => ({ text: i.text!.trim(), done: i.done === true, deadline: i.deadline }))
+          .map((i) => ({
+            text: i.text!.trim(),
+            done: i.done === true,
+            deadline: i.deadline,
+          }))
       : undefined;
     const targetType: Proposal["targetType"] =
       items && items.length ? "checklist" : total ? "numeric" : "binary";
@@ -173,8 +228,12 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         // The "NEW GOAL" badge already names the kind; show description/deadline
         // here when present, otherwise nothing (an empty goal needs no detail line).
         detail = body
-          ? (body.length > 60 ? body.slice(0, 60) + "…" : body)
-          : deadlineVal ? `Due ${deadlineVal}` : undefined;
+          ? body.length > 60
+            ? body.slice(0, 60) + "…"
+            : body
+          : deadlineVal
+            ? `Due ${deadlineVal}`
+            : undefined;
         break;
       case "edit":
         title = value;
@@ -199,13 +258,26 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         } else if (targetType === "numeric") {
           detail = `New target · ${current ?? 0}/${total}${unit ? " " + unit : ""}`;
         } else {
-          detail = done ? `New ${noun} · done` : deadlineVal ? `New ${noun} · due ${deadlineVal}` : `New ${noun}`;
+          detail = done
+            ? `New ${noun} · done`
+            : deadlineVal
+              ? `New ${noun} · due ${deadlineVal}`
+              : `New ${noun}`;
         }
         break;
       }
-      case "option":    title = value || name; detail = "Strategy option"; break;
-      case "obstacle":  title = value || name; detail = "New obstacle"; break;
-      case "action":    title = value || name; detail = "Current action"; break;
+      case "option":
+        title = value || name;
+        detail = "Strategy option";
+        break;
+      case "obstacle":
+        title = value || name;
+        detail = "New obstacle";
+        break;
+      case "action":
+        title = value || name;
+        detail = "Current action";
+        break;
       case "note": {
         title = name || "Note";
         body = value; // HTML
@@ -235,10 +307,24 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         break;
       }
       // ── edit existing ──
-      case "edit_target":   title = value || name; detail = deadlineVal ? `Edit target · due ${deadlineVal}` : "Edit target"; break;
-      case "edit_option":   title = value || name; detail = "Edit option"; break;
-      case "edit_obstacle": title = value || name; detail = "Edit obstacle"; break;
-      case "edit_action":   title = value || name; detail = "Edit action"; break;
+      case "edit_target":
+        title = value || name;
+        detail = deadlineVal
+          ? `Edit target · due ${deadlineVal}`
+          : "Edit target";
+        break;
+      case "edit_option":
+        title = value || name;
+        detail = "Edit option";
+        break;
+      case "edit_obstacle":
+        title = value || name;
+        detail = "Edit obstacle";
+        break;
+      case "edit_action":
+        title = value || name;
+        detail = "Edit action";
+        break;
       case "edit_note":
         title = name || "Note";
         body = value;
@@ -280,19 +366,36 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         detail = "Strategy option";
         break;
       case "checklist_item":
-        title = value || (done === true ? "Check item" : done === false ? "Uncheck item" : "Update item");
-        detail = deadlineVal ? `Checklist item · due ${deadlineVal}` : "Checklist item";
+        title =
+          value ||
+          (done === true
+            ? "Check item"
+            : done === false
+              ? "Uncheck item"
+              : "Update item");
+        detail = deadlineVal
+          ? `Checklist item · due ${deadlineVal}`
+          : "Checklist item";
         break;
       case "add_checklist_item":
         title = value || name;
-        detail = deadlineVal ? `New sub-task · due ${deadlineVal}` : "New sub-task";
+        detail = deadlineVal
+          ? `New sub-task · due ${deadlineVal}`
+          : "New sub-task";
         break;
       // ── goal-level by id (All-Goals) + deletion ──
       case "edit_goal": {
         const f = data.field;
-        if (f === "confidence") { title = `Confidence → ${value}/10`; detail = "Edit goal"; }
-        else if (f === "deadline") { title = value; detail = "Goal deadline"; }
-        else { title = value; detail = "Rename goal"; }
+        if (f === "confidence") {
+          title = `Confidence → ${value}/10`;
+          detail = "Edit goal";
+        } else if (f === "deadline") {
+          title = value;
+          detail = "Goal deadline";
+        } else {
+          title = value;
+          detail = "Rename goal";
+        }
         break;
       }
       case "open_goal":
@@ -336,17 +439,21 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
       unit,
       items,
       patch,
-      goalId: (kind === "edit_goal" || kind === "open_goal" || kind === "delete_goal")
-        ? itemId
-        : undefined,
+      goalId:
+        kind === "edit_goal" || kind === "open_goal" || kind === "delete_goal"
+          ? itemId
+          : undefined,
       // open_goal: the concrete thing the user wanted to change that can't be edited from
       // the overview (e.g. "the description") — named on the card.
-      openSubject: kind === "open_goal" ? (value || undefined) : undefined,
+      openSubject: kind === "open_goal" ? value || undefined : undefined,
       // new_goal: confidence 1-10 the AI extracted (clamped); undefined if not given.
-      confidence: kind === "new_goal" && data.confidence
-        ? Math.min(10, Math.max(1, parseInt(data.confidence) || 0)) || undefined
-        : undefined,
-      serverId: typeof data.proposalId === "number" ? data.proposalId : undefined,
+      confidence:
+        kind === "new_goal" && data.confidence
+          ? Math.min(10, Math.max(1, parseInt(data.confidence) || 0)) ||
+            undefined
+          : undefined,
+      serverId:
+        typeof data.proposalId === "number" ? data.proposalId : undefined,
     };
   } catch {
     return undefined;

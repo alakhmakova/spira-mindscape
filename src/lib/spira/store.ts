@@ -31,7 +31,10 @@ type State = {
   loadGoals: () => Promise<void>;
   refreshGoals: () => Promise<void>;
   clearSyncError: () => void;
-  addGoal: (g: Partial<Goal> & { title: string }, onCreated?: (goal: Goal) => void) => string;
+  addGoal: (
+    g: Partial<Goal> & { title: string },
+    onCreated?: (goal: Goal) => void,
+  ) => string;
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
   setConfidence: (id: string, c: Confidence) => void;
@@ -43,7 +46,11 @@ type State = {
     text: string,
   ) => void;
   removeReality: (id: string, kind: RealityKind, itemId: string) => void;
-  addOption: (id: string, text: string, onCreated?: (created: Option) => void) => void;
+  addOption: (
+    id: string,
+    text: string,
+    onCreated?: (created: Option) => void,
+  ) => void;
   updateOption: (id: string, optId: string, patch: Partial<Option>) => void;
   selectOption: (id: string, optId: string) => void;
   removeOption: (id: string, optId: string) => void;
@@ -51,7 +58,11 @@ type State = {
   addTarget: (id: string, t: CreateTargetInput) => Promise<Target | undefined>;
   updateTarget: (id: string, targetId: string, patch: Partial<Target>) => void;
   removeTarget: (id: string, targetId: string) => void;
-  addResource: (id: string, r: ResourceInput, onCreated?: (created: Resource) => void) => string;
+  addResource: (
+    id: string,
+    r: ResourceInput,
+    onCreated?: (created: Resource) => void,
+  ) => string;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
   removeResource: (id: string, rId: string) => void;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
@@ -242,7 +253,7 @@ export const useSpira = create<State>()((set, get) => ({
       options: g.options ?? [],
       resources: g.resources ?? [],
       targets: g.targets ?? [],
-      confidenceHistory: [{ value: (g.confidence ?? 5), at: nowIso() }],
+      confidenceHistory: [{ value: g.confidence ?? 5, at: nowIso() }],
     };
 
     set((state) => ({ goals: [goal, ...state.goals], syncError: undefined }));
@@ -347,12 +358,19 @@ export const useSpira = create<State>()((set, get) => ({
         set((state) => ({
           goals: updateGoalInList(state.goals, id, (goal) => {
             const known = new Set(
-              goal.reality[kind].filter((i) => !i.id.startsWith("local-")).map((i) => i.id),
+              goal.reality[kind]
+                .filter((i) => !i.id.startsWith("local-"))
+                .map((i) => i.id),
             );
-            const created = reality[kind].find((si) => si.text === text && !known.has(si.id));
+            const created = reality[kind].find(
+              (si) => si.text === text && !known.has(si.id),
+            );
             let swapped = false;
             const next = goal.reality[kind].map((i) => {
-              if (!swapped && i.id === item.id) { swapped = true; return created ?? i; }
+              if (!swapped && i.id === item.id) {
+                swapped = true;
+                return created ?? i;
+              }
               return i;
             });
             return { ...goal, reality: { ...goal.reality, [kind]: next } };

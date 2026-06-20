@@ -47,7 +47,11 @@ function convertListToParagraphs(
       `margin:0 0 3pt 0;${level ? `padding-left:${level * 24}px;` : ""}`,
     );
     const isTask = /^\s*[☑☐]/.test(li.textContent ?? "");
-    const marker = isTask ? "" : ordered ? `${idx}.  ` : "•  ";
+    const marker = isTask
+      ? ""
+      : ordered
+        ? `${idx}.\u00a0\u00a0`
+        : "\u2022\u00a0\u00a0";
     p.innerHTML = marker + li.innerHTML;
     out.appendChild(p);
     idx++;
@@ -63,7 +67,10 @@ function convertListToParagraphs(
  * - (doc only) flattens lists to paragraphs with literal • / n. markers,
  * - drops trailing empty paragraphs/breaks (these cause a blank last PDF page).
  */
-function prepareExportHtml(html: string, opts: { flattenLists?: boolean } = {}): string {
+function prepareExportHtml(
+  html: string,
+  opts: { flattenLists?: boolean } = {},
+): string {
   const root = document.createElement("div");
   root.innerHTML = html || "";
 
@@ -118,7 +125,10 @@ function prepareExportHtml(html: string, opts: { flattenLists?: boolean } = {}):
 }
 
 function safeName(title: string, fallback: string): string {
-  const base = (title || fallback).trim().replace(/[\\/:*?"<>|]+/g, "_").slice(0, 80);
+  const base = (title || fallback)
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .slice(0, 80);
   return base || fallback;
 }
 
@@ -293,7 +303,11 @@ export async function postGoogleDoc(
  * first time. Never overwrites an existing doc (use {@link syncGoogleDoc} for that).
  * Requires Google sign-in with Drive access (`drive.file`). Rejects on failure.
  */
-export async function openInGoogleDocs(resourceId: string, html: string, title?: string): Promise<string> {
+export async function openInGoogleDocs(
+  resourceId: string,
+  html: string,
+  title?: string,
+): Promise<string> {
   const prepared = prepareExportHtml(html);
 
   // Reserve a tab synchronously inside the user-gesture so the browser doesn't
@@ -301,7 +315,12 @@ export async function openInGoogleDocs(resourceId: string, html: string, title?:
   const reserved = window.open("", "_blank");
 
   try {
-    const webViewLink = await postGoogleDoc(resourceId, title ?? "Spira note", prepared, false);
+    const webViewLink = await postGoogleDoc(
+      resourceId,
+      title ?? "Spira note",
+      prepared,
+      false,
+    );
     if (reserved) reserved.location.href = webViewLink;
     else window.open(webViewLink, "_blank", "noopener,noreferrer");
     return webViewLink;
@@ -315,6 +334,15 @@ export async function openInGoogleDocs(resourceId: string, html: string, title?:
  * Pushes the note's current content to its linked Google Doc (overwriting it),
  * creating + linking one if none exists yet. Does not open a tab. Rejects on failure.
  */
-export async function syncGoogleDoc(resourceId: string, html: string, title?: string): Promise<string> {
-  return postGoogleDoc(resourceId, title ?? "Spira note", prepareExportHtml(html), true);
+export async function syncGoogleDoc(
+  resourceId: string,
+  html: string,
+  title?: string,
+): Promise<string> {
+  return postGoogleDoc(
+    resourceId,
+    title ?? "Spira note",
+    prepareExportHtml(html),
+    true,
+  );
 }

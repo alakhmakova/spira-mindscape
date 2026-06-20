@@ -55,11 +55,21 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
   if (!iso) return null;
   const deadline = new Date(iso);
   const now = new Date();
-  const deadlineDay = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  const deadlineDay = new Date(
+    deadline.getFullYear(),
+    deadline.getMonth(),
+    deadline.getDate(),
+  );
   const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.round((deadlineDay.getTime() - todayDay.getTime()) / 86_400_000);
+  const diffDays = Math.round(
+    (deadlineDay.getTime() - todayDay.getTime()) / 86_400_000,
+  );
   const isOverdue = !completed && diffDays < 0;
-  const dateStr = deadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const dateStr = deadline.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   const countdown = completed
     ? "achieved"
     : diffDays === 0
@@ -73,7 +83,6 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
             : `${Math.abs(diffDays)} days overdue`;
   return { dateStr, countdown, isOverdue };
 }
-
 
 /* ─────────────────────────────────────────────────────────────────────────────
    TargetsSection — wraps Section with search, filter and mobile-sort controls
@@ -98,7 +107,11 @@ export function TargetsSection({
 
   const isDefaultSort = sortField === "deadline" && !sortDesc;
   const filtersActive =
-    !!deadlineFrom || !!deadlineTo || !!achievedFrom || !!achievedTo || statusFilter !== "all";
+    !!deadlineFrom ||
+    !!deadlineTo ||
+    !!achievedFrom ||
+    !!achievedTo ||
+    statusFilter !== "all";
   const hasAnyActive = !!search.trim() || filtersActive || !isDefaultSort;
 
   const resetFilters = () => {
@@ -114,7 +127,13 @@ export function TargetsSection({
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      ts = ts.filter((t) => t.title.toLowerCase().includes(q));
+      ts = ts.filter((t) => {
+        if (t.title.toLowerCase().includes(q)) return true;
+        if (t.type === "checklist") {
+          return t.items.some((item) => item.text.toLowerCase().includes(q));
+        }
+        return false;
+      });
     }
 
     if (deadlineFrom || deadlineTo) {
@@ -138,10 +157,19 @@ export function TargetsSection({
     }
 
     if (statusFilter === "done") ts = ts.filter((t) => targetProgress(t) >= 1);
-    else if (statusFilter === "not-done") ts = ts.filter((t) => targetProgress(t) < 1);
+    else if (statusFilter === "not-done")
+      ts = ts.filter((t) => targetProgress(t) < 1);
 
     return ts;
-  }, [goal.targets, search, deadlineFrom, deadlineTo, achievedFrom, achievedTo, statusFilter]);
+  }, [
+    goal.targets,
+    search,
+    deadlineFrom,
+    deadlineTo,
+    achievedFrom,
+    achievedTo,
+    statusFilter,
+  ]);
 
   const processedGoal = useMemo(
     () => ({ ...goal, targets: processedTargets }),
@@ -249,8 +277,12 @@ export function TargetsSection({
                   onValueChange={(v) => setStatusFilter(v as StatusFilter)}
                 >
                   <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="done">Done</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="not-done">Not done</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="done">
+                    Done
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="not-done">
+                    Not done
+                  </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
                 {filtersActive && (
                   <>
@@ -295,7 +327,9 @@ export function TargetsSection({
             <Drawer open={mobileOpen} onOpenChange={setMobileOpen}>
               <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
                 <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
-                  <h2 className="font-sans font-bold text-lg">Filters & Sort</h2>
+                  <h2 className="font-sans font-bold text-lg">
+                    Filters & Sort
+                  </h2>
                   <button
                     onClick={() => setMobileOpen(false)}
                     className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
@@ -468,7 +502,9 @@ export function TargetsSection({
 
                 <div
                   className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
-                  style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+                  style={{
+                    paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+                  }}
                 >
                   {hasAnyActive && (
                     <button
@@ -532,11 +568,13 @@ export function TargetsList({
     if (!sortField) return goal.targets;
     return [...goal.targets].sort((a, b) => {
       if (sortField === "deadline") {
-        const aHas = !!a.deadline, bHas = !!b.deadline;
+        const aHas = !!a.deadline,
+          bHas = !!b.deadline;
         if (!aHas && !bHas) return 0;
         if (!aHas) return 1;
         if (!bHas) return -1;
-        const cmp = new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+        const cmp =
+          new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
         return (sortDesc ?? false) ? -cmp : cmp;
       }
       let cmp = 0;
@@ -589,9 +627,7 @@ export function TargetsList({
           />
         ))}
       </ul>
-      {goal.targets.length > 0 && (
-        <DesktopTargetsTable goal={goal} />
-      )}
+      {goal.targets.length > 0 && <DesktopTargetsTable goal={goal} />}
       <TargetDeleteConfirm
         target={confirmTarget}
         open={!!confirmTarget}
@@ -624,15 +660,20 @@ export function DesktopTargetsTable({
   onToggleSort?: (field: SortField) => void;
 }) {
   const { updateTarget, removeTarget } = useSpira();
-  const [internalSortField, setInternalSortField] = useState<SortField>("deadline");
+  const [internalSortField, setInternalSortField] =
+    useState<SortField>("deadline");
   const [internalSortDesc, setInternalSortDesc] = useState(false);
   const [editingTasksFor, setEditingTasksFor] = useState<string | null>(null);
-  const [editingNumericFor, setEditingNumericFor] = useState<string | null>(null);
+  const [editingNumericFor, setEditingNumericFor] = useState<string | null>(
+    null,
+  );
   const [confirmTarget, setConfirmTarget] = useState<Target | null>(null);
 
   const isControlled = externalSortField !== undefined;
   const sortField = isControlled ? externalSortField! : internalSortField;
-  const sortDesc = isControlled ? (externalSortDesc ?? false) : internalSortDesc;
+  const sortDesc = isControlled
+    ? (externalSortDesc ?? false)
+    : internalSortDesc;
 
   const toggleSort = (field: SortField) => {
     if (onToggleSort) {
@@ -651,16 +692,19 @@ export function DesktopTargetsTable({
     ? goal.targets
     : [...goal.targets].sort((a, b) => {
         if (sortField === "deadline") {
-          const aHas = !!a.deadline, bHas = !!b.deadline;
+          const aHas = !!a.deadline,
+            bHas = !!b.deadline;
           if (!aHas && !bHas) return 0;
           if (!aHas) return 1;
           if (!bHas) return -1;
-          const cmp = new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+          const cmp =
+            new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
           return sortDesc ? -cmp : cmp;
         }
         let cmp = 0;
         if (sortField === "title") cmp = a.title.localeCompare(b.title);
-        else if (sortField === "progress") cmp = targetProgress(a) - targetProgress(b);
+        else if (sortField === "progress")
+          cmp = targetProgress(a) - targetProgress(b);
         return sortDesc ? -cmp : cmp;
       });
 
@@ -738,7 +782,10 @@ export function DesktopTargetsTable({
               className="cursor-pointer hover:text-foreground w-[15%]"
               onClick={() => toggleSort("deadline")}
             >
-              <div className="flex items-center" title="Deadline or Completed date">
+              <div
+                className="flex items-center"
+                title="Deadline or Completed date"
+              >
                 Date <SortIcon field="deadline" />
               </div>
             </TableHead>
@@ -777,7 +824,9 @@ export function DesktopTargetsTable({
                     ariaLabel="Edit target title"
                     className={cn(
                       "block w-full font-medium text-sm",
-                      done ? "line-through text-muted-foreground" : "text-foreground",
+                      done
+                        ? "line-through text-muted-foreground"
+                        : "text-foreground",
                     )}
                   />
                 </TableCell>
@@ -785,7 +834,9 @@ export function DesktopTargetsTable({
                   <span
                     title={
                       (done ? t.achievedAt : t.deadline)
-                        ? done ? "Completed" : "Deadline"
+                        ? done
+                          ? "Completed"
+                          : "Deadline"
                         : undefined
                     }
                   >
@@ -807,7 +858,10 @@ export function DesktopTargetsTable({
                   {t.type === "binary" && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <button title="Click" className="flex items-center gap-2 group h-8">
+                        <button
+                          title="Click"
+                          className="flex items-center gap-2 group h-8"
+                        >
                           <div
                             className={cn(
                               "h-2 w-2 rounded-full shrink-0",
@@ -1038,7 +1092,8 @@ export function TargetRow({
   const progress = targetProgress(target);
   const done = progress >= 1;
 
-  const displayIso = done && target.achievedAt ? target.achievedAt : target.deadline;
+  const displayIso =
+    done && target.achievedAt ? target.achievedAt : target.deadline;
   const deadlineInfo = formatDeadlineInfo(displayIso, done);
 
   return (
@@ -1070,7 +1125,10 @@ export function TargetRow({
                   }}
                 >
                   {done ? (
-                    <CircleCheck className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                    <CircleCheck
+                      className="h-3.5 w-3.5 shrink-0"
+                      strokeWidth={2}
+                    />
                   ) : deadlineInfo.isOverdue ? (
                     <AlertTriangle className="h-3 w-3 shrink-0" />
                   ) : (
@@ -1083,7 +1141,9 @@ export function TargetRow({
                       <span
                         className={cn(
                           "font-semibold",
-                          deadlineInfo.isOverdue ? "text-[#d13239]" : "text-foreground/70",
+                          deadlineInfo.isOverdue
+                            ? "text-[#d13239]"
+                            : "text-foreground/70",
                         )}
                       >
                         {deadlineInfo.countdown}
@@ -1121,7 +1181,11 @@ export function TargetRow({
 
         {/* Body */}
         {target.type === "numeric" && (
-          <NumericBody target={target} onUpdate={onUpdate} progress={progress} />
+          <NumericBody
+            target={target}
+            onUpdate={onUpdate}
+            progress={progress}
+          />
         )}
 
         {target.type === "binary" && (
@@ -1129,7 +1193,9 @@ export function TargetRow({
             onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
             className={cn(
               "mt-4 flex items-stretch overflow-hidden rounded-md border transition-colors min-h-[44px] w-full",
-              target.done ? "border-primary" : "border-border hover:border-primary/50",
+              target.done
+                ? "border-primary"
+                : "border-border hover:border-primary/50",
             )}
           >
             <div
@@ -1143,11 +1209,16 @@ export function TargetRow({
               <div
                 className={cn(
                   "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
-                  target.done ? "bg-primary border-primary" : "border-border-strong",
+                  target.done
+                    ? "bg-primary border-primary"
+                    : "border-border-strong",
                 )}
               >
                 {target.done && (
-                  <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3} />
+                  <Check
+                    className="h-3 w-3 text-primary-foreground"
+                    strokeWidth={3}
+                  />
                 )}
               </div>
             </div>
@@ -1155,7 +1226,9 @@ export function TargetRow({
               <span
                 className={cn(
                   "text-sm",
-                  target.done ? "text-muted-foreground" : "text-foreground font-medium",
+                  target.done
+                    ? "text-muted-foreground"
+                    : "text-foreground font-medium",
                 )}
               >
                 {target.done ? "Done" : "Mark done"}
@@ -1178,7 +1251,11 @@ export function TargetRow({
                   onUpdate({
                     items: [
                       ...target.items,
-                      { id: Math.random().toString(36).slice(2, 9), text, done: false },
+                      {
+                        id: Math.random().toString(36).slice(2, 9),
+                        text,
+                        done: false,
+                      },
                     ],
                   } as Partial<Target>)
                 }
@@ -1667,7 +1744,10 @@ function ChecklistEditor({
 
             <button
               onClick={() => {
-                if (items.length <= 1) { setLastItemError(true); return; }
+                if (items.length <= 1) {
+                  setLastItemError(true);
+                  return;
+                }
                 setLastItemError(false);
                 onChange(items.filter((i) => i.id !== it.id));
               }}
@@ -1681,8 +1761,8 @@ function ChecklistEditor({
       ))}
       {lastItemError && items.length <= 1 && (
         <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
-          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-          A checklist must have at least one item
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />A checklist must
+          have at least one item
         </p>
       )}
     </div>
@@ -2032,9 +2112,14 @@ function NewTargetForm({
                     </span>
                     <button
                       onClick={() => {
-                        if (checklistItems.length <= 1) { setChecklistLastItemError(true); return; }
+                        if (checklistItems.length <= 1) {
+                          setChecklistLastItemError(true);
+                          return;
+                        }
                         setChecklistLastItemError(false);
-                        setChecklistItems((prev) => prev.filter((i) => i.id !== item.id));
+                        setChecklistItems((prev) =>
+                          prev.filter((i) => i.id !== item.id),
+                        );
                       }}
                       className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0 transition-colors"
                       aria-label="Remove task"
@@ -2046,8 +2131,8 @@ function NewTargetForm({
               ))}
               {checklistLastItemError && checklistItems.length <= 1 && (
                 <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
-                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                  A checklist must have at least one item
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" />A checklist
+                  must have at least one item
                 </p>
               )}
               <NewTaskInlineInput

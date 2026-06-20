@@ -3,7 +3,13 @@ import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Highlight from "@tiptap/extension-highlight";
-import { TextStyle, Color, FontFamily, FontSize, LineHeight } from "@tiptap/extension-text-style";
+import {
+  TextStyle,
+  Color,
+  FontFamily,
+  FontSize,
+  LineHeight,
+} from "@tiptap/extension-text-style";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
@@ -74,7 +80,11 @@ export function RichTextEditor({
       attributes: {
         class: cn(
           "tiptap-content prose prose-sm max-w-none focus:outline-none text-[15px] leading-relaxed text-foreground/90",
-          embedded && isMobile ? "min-h-[110px]" : isMobile ? "min-h-full" : "min-h-[40vh]",
+          embedded && isMobile
+            ? "min-h-[110px]"
+            : isMobile
+              ? "min-h-full"
+              : "min-h-[40vh]",
         ),
         "data-placeholder": placeholder ?? "",
       },
@@ -97,7 +107,10 @@ export function RichTextEditor({
     // (border-input, shadow-none, the same focus border + ring) so the note field
     // looks like the Title field, with the formatting toolbar tucked inside.
     return (
-      <div className="rounded-md border border-input bg-surface shadow-none overflow-hidden transition-colors focus-within:border-primary focus-within:outline-none focus-within:ring-[3px] focus-within:ring-ring" data-vaul-no-drag>
+      <div
+        className="rounded-md border border-input bg-surface shadow-none overflow-hidden transition-colors focus-within:border-primary focus-within:outline-none focus-within:ring-[3px] focus-within:ring-ring"
+        data-vaul-no-drag
+      >
         {/* No inner scroll — the field grows with content and the sheet's body
             scrolls, so the browser/vaul can scroll the cursor above the keyboard
             (a nested scroll here makes the field overlap the footer buttons). */}
@@ -174,7 +187,9 @@ function Toolbar({
     const marks = editor.state.selection.$from
       .marks()
       .filter((m) => m.type.name !== "link");
-    setCopiedMarks(marks.map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })));
+    setCopiedMarks(
+      marks.map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })),
+    );
   };
 
   const applyFormatting = () => {
@@ -427,9 +442,15 @@ function Toolbar({
         <input
           type="color"
           aria-label="Text color"
-          value={(editor.getAttributes("textStyle").color as string) || "#111111"}
+          value={
+            (editor.getAttributes("textStyle").color as string) || "#111111"
+          }
           onInput={(e) =>
-            editor.chain().focus().setColor((e.target as HTMLInputElement).value).run()
+            editor
+              .chain()
+              .focus()
+              .setColor((e.target as HTMLInputElement).value)
+              .run()
           }
           className="absolute inset-0 cursor-pointer opacity-0"
         />
@@ -443,9 +464,15 @@ function Toolbar({
         <input
           type="color"
           aria-label="Highlight color"
-          value={(editor.getAttributes("highlight").color as string) || "#fff2a8"}
+          value={
+            (editor.getAttributes("highlight").color as string) || "#fff2a8"
+          }
           onInput={(e) =>
-            editor.chain().focus().setHighlight({ color: (e.target as HTMLInputElement).value }).run()
+            editor
+              .chain()
+              .focus()
+              .setHighlight({ color: (e.target as HTMLInputElement).value })
+              .run()
           }
           className="absolute inset-0 cursor-pointer opacity-0"
         />
@@ -538,26 +565,39 @@ function Toolbar({
         {embedded ? (
           // CREATE form: collapse the formatting behind a "Format" toggle so the
           // bottom sheet isn't crowded.
-          <div onMouseDown={(e) => e.preventDefault()} className="shrink-0 border-t hairline bg-surface">
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className="shrink-0 border-t hairline bg-surface"
+          >
             <div className="flex items-center gap-1 px-2 py-1.5">
               <button
                 type="button"
                 onClick={() => setShowFmt((v) => !v)}
                 className={cn(
                   "inline-flex items-center gap-1.5 h-9 px-2.5 rounded-md text-[13px] font-semibold transition-colors",
-                  showFmt ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  showFmt
+                    ? "bg-primary-soft text-primary"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
                 <Type className="h-4 w-4" /> Format
               </button>
               {!showFmt && (
                 <>
-                  <Btn label="Bold" active={editor.isActive("bold")}
-                    onClick={() => editor.chain().focus().toggleBold().run()}>
+                  <Btn
+                    label="Bold"
+                    active={editor.isActive("bold")}
+                    onClick={() => editor.chain().focus().toggleBold().run()}
+                  >
                     <Bold className="h-4 w-4" />
                   </Btn>
-                  <Btn label="Bullet list" active={editor.isActive("bulletList")}
-                    onClick={() => editor.chain().focus().toggleBulletList().run()}>
+                  <Btn
+                    label="Bullet list"
+                    active={editor.isActive("bulletList")}
+                    onClick={() =>
+                      editor.chain().focus().toggleBulletList().run()
+                    }
+                  >
                     <List className="h-4 w-4" />
                   </Btn>
                 </>

@@ -35,12 +35,14 @@ export function Section({
           />
           <h2 className="font-heading text-2xl">{title}</h2>
           {typeof count === "number" && count > 0 && (
-            <span className={cn(
-              "inline-flex items-center justify-center h-6 min-w-6 rounded-full border-[4.5px] bg-white text-[11px] font-bold leading-none px-1",
-              countVariant === "orange"
-                ? "border-[#ea580c] text-[#ea580c]"
-                : "border-primary text-primary",
-            )}>
+            <span
+              className={cn(
+                "inline-flex items-center justify-center h-10 w-10 rounded-full border-[5px] bg-white text-[15px] font-bold leading-none",
+                countVariant === "orange"
+                  ? "border-[#ea580c] text-[#ea580c]"
+                  : "border-primary text-primary",
+              )}
+            >
               {count}
             </span>
           )}
