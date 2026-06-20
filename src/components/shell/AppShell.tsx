@@ -34,6 +34,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,7 +48,9 @@ function getInitials(name: string): string {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const path = useRouterState({ select: (s) => s.location.pathname });
+  const path = useRouterState({
+    select: (s) => (s.resolvedLocation ?? s.location).pathname,
+  });
   const openAi = useAi((s) => s.open);
   const isAiOpen = useAi((s) => s.isOpen);
   const isAiWide = useAi((s) => s.isWide);
@@ -78,6 +81,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     resetFilters,
     viewMode,
   } = useShellFilters();
+
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
@@ -350,6 +355,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </DropdownMenu>
                   {filtersActive && (
                     <button
+                      onPointerDown={resetFilters}
                       onClick={resetFilters}
                       className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft"
                       aria-label="Reset filters"
@@ -415,6 +421,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </DropdownMenu>
                   {sortActive && (
                     <button
+                      onPointerDown={resetSort}
                       onClick={resetSort}
                       className="grid h-8 w-8 place-items-center rounded-md border hairline-strong text-primary hover:bg-primary-soft"
                       aria-label="Reset sort"
@@ -517,137 +524,213 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </button>
                 )}
               </div>
-              {filtersActive && (
+              {(filtersActive || (showSortControls && sortActive)) && (
                 <button
-                  onClick={resetFilters}
+                  onClick={() => {
+                    resetFilters();
+                    resetSort();
+                  }}
                   className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft"
-                  aria-label="Reset filters"
+                  aria-label="Reset filters and sort"
                 >
                   <X className="h-3 w-3" />
                 </button>
               )}
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  className={cn(
-                    "inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80",
-                    filtersActive &&
-                      "border-primary/40 text-primary bg-primary-soft",
-                  )}
-                >
-                  <SlidersHorizontal className="h-3 w-3" />{" "}
-                  {filtersActive ? "Filters on" : "Filter"}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="w-72 space-y-2 p-2"
-                >
-                  <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
-                  <DeadlineRangeControls
-                    deadlineFrom={deadlineFrom}
-                    deadlineTo={deadlineTo}
-                    setDeadlineFrom={setDeadlineFrom}
-                    setDeadlineTo={setDeadlineTo}
-                  />
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Exact confidence</DropdownMenuLabel>
-                  <div className="grid grid-cols-5 gap-1 px-2">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() =>
-                          setConfidence(
-                            confidence === String(n) ? "" : String(n),
-                          )
-                        }
-                        className={cn(
-                          "h-8 rounded-md border hairline text-xs font-semibold",
-                          confidence === String(n)
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-surface text-foreground",
-                        )}
-                      >
-                        {n}
-                      </button>
-                    ))}
+              <button
+                onClick={() => setMobileFiltersOpen(true)}
+                className={cn(
+                  "inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80 shrink-0",
+                  (filtersActive || (showSortControls && sortActive)) &&
+                    "border-primary/40 text-primary bg-primary-soft",
+                )}
+              >
+                <SlidersHorizontal className="h-3 w-3" />{" "}
+                {filtersActive || (showSortControls && sortActive)
+                  ? "Active"
+                  : "Filter & Sort"}
+              </button>
+              <Drawer
+                open={mobileFiltersOpen}
+                onOpenChange={setMobileFiltersOpen}
+              >
+                <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
+                  <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
+                    <h2 className="font-sans font-bold text-lg">
+                      Filters & Sort
+                    </h2>
+                    <button
+                      onClick={() => setMobileFiltersOpen(false)}
+                      className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+                      aria-label="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup
-                    value={status}
-                    onValueChange={(v) => setStatus(v as GoalStatusFilter)}
-                  >
-                    <DropdownMenuRadioItem value="all">
-                      All goals
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="achieved">
-                      Only achieved
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="not-achieved">
-                      Only not achieved
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {showSortControls && sortActive && (
-                <button
-                  onClick={resetSort}
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft"
-                  aria-label="Reset sort"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-              {showSortControls && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className={cn(
-                      "inline-flex items-center gap-1 h-7 px-2.5 rounded-md border hairline-strong text-xs text-foreground/80",
-                      sortActive &&
-                        "border-primary/40 text-primary bg-primary-soft",
+
+                  <div className="overflow-y-auto flex-1 min-h-0 px-6 pt-2 pb-6 space-y-5">
+                    {/* Deadline range */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                        Deadline range
+                      </p>
+                      <DeadlineRangeControls
+                        deadlineFrom={deadlineFrom}
+                        deadlineTo={deadlineTo}
+                        setDeadlineFrom={setDeadlineFrom}
+                        setDeadlineTo={setDeadlineTo}
+                      />
+                    </div>
+
+                    {/* Confidence */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                        Exact confidence
+                      </p>
+                      <div className="grid grid-cols-5 gap-1">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                          <button
+                            key={n}
+                            onClick={() =>
+                              setConfidence(
+                                confidence === String(n) ? "" : String(n),
+                              )
+                            }
+                            className={cn(
+                              "h-9 rounded-md border hairline text-xs font-semibold",
+                              confidence === String(n)
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-surface text-foreground hover:bg-secondary",
+                            )}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                        Status
+                      </p>
+                      <div className="space-y-0.5">
+                        {(
+                          [
+                            { value: "all", label: "All goals" },
+                            { value: "achieved", label: "Only achieved" },
+                            {
+                              value: "not-achieved",
+                              label: "Only not achieved",
+                            },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setStatus(opt.value)}
+                            className={cn(
+                              "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                              status === opt.value
+                                ? "bg-primary/10 text-primary font-semibold"
+                                : "text-foreground hover:bg-secondary",
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sort (only on cards view) */}
+                    {showSortControls && (
+                      <>
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                            Sort by
+                          </p>
+                          <div className="space-y-0.5">
+                            {(
+                              [
+                                { value: "recent", label: "Most recent" },
+                                {
+                                  value: "deadline",
+                                  label: "Deadline soonest",
+                                },
+                                { value: "progress", label: "Progress" },
+                                { value: "confidence", label: "Confidence" },
+                                { value: "title", label: "Title A-Z" },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => setSort(opt.value)}
+                                className={cn(
+                                  "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                                  sort === opt.value
+                                    ? "bg-primary/10 text-primary font-semibold"
+                                    : "text-foreground hover:bg-secondary",
+                                )}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                            Direction
+                          </p>
+                          <div className="space-y-0.5">
+                            {(
+                              [
+                                { value: "asc", label: "Ascending" },
+                                { value: "desc", label: "Descending" },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => setSortDirection(opt.value)}
+                                className={cn(
+                                  "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                                  sortDirection === opt.value
+                                    ? "bg-primary/10 text-primary font-semibold"
+                                    : "text-foreground hover:bg-secondary",
+                                )}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
                     )}
+                  </div>
+
+                  <div
+                    className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+                    style={{
+                      paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+                    }}
                   >
-                    <ArrowDownUp className="h-3 w-3" />{" "}
-                    {sortActive
-                      ? `Sort ${sortDirection === "asc" ? "up" : "down"}`
-                      : "Sort"}
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuRadioGroup
-                      value={sort}
-                      onValueChange={(v) => setSort(v as SortKey)}
+                    {(filtersActive || (showSortControls && sortActive)) && (
+                      <button
+                        onClick={() => {
+                          resetFilters();
+                          resetSort();
+                        }}
+                        className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
+                      >
+                        Reset all
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setMobileFiltersOpen(false)}
+                      className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 transition-colors"
                     >
-                      <DropdownMenuRadioItem value="recent">
-                        Recent
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="deadline">
-                        Deadline
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="progress">
-                        Progress
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="confidence">
-                        Confidence
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="title">
-                        Title
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup
-                      value={sortDirection}
-                      onValueChange={(v) =>
-                        setSortDirection(v as SortDirection)
-                      }
-                    >
-                      <DropdownMenuRadioItem value="asc">
-                        Ascending
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="desc">
-                        Descending
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                      Done
+                    </button>
+                  </div>
+                </DrawerContent>
+              </Drawer>
             </div>
           )}
         </header>
@@ -690,7 +773,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-semibold hover:bg-destructive/10"
               >
                 <RefreshCw className="h-3 w-3" />
-                Try again
+                Refresh
               </button>
             </div>
           </div>

@@ -102,8 +102,11 @@ Spira is a structured goal-setting workspace. For each goal, a user can manage:
   - checklist target (sub-items)
 - **Resources** — notes, links, files, email/contact resources
 - **AI coach** — a goal-scoped chat assistant that can read the goal's data and resources, run web search, and propose changes (new targets, edits, option selection, notes) that the user approves before they are applied. See [AI Coaching Assistant](#ai-coaching-assistant).
+- **GROW sessions** — a timed, structured coaching session following the GROW model (Goal → Reality → Options → Will), grounded in excerpts from real coaching books retrieved via pgvector RAG. Session history is persisted and carried into future sessions. See [GROW Sessions](#grow-sessions).
 
 Goal progress is calculated from targets and exposed both in frontend and backend.
+
+Authentication is **Google Sign-In only** — users sign in with their Google account and get a fully private workspace; data is never shared across accounts. See [Authentication & Security](#authentication--security).
 
 ---
 
@@ -112,7 +115,7 @@ Goal progress is calculated from targets and exposed both in frontend and backen
 ### Backend
 
 - Language: **Java 17** (`backend/pom.xml`)
-- Framework: **Spring Boot 3.4.5**
+- Framework: **Spring Boot 3.5.15**
 - API layer: **GraphQL** (`spring-boot-starter-graphql`)
 - Database: **PostgreSQL 16** (Docker) + **Flyway** migrations
 - ORM: **Spring Data JPA / Hibernate**
@@ -272,6 +275,83 @@ npm run dev
 
 ---
 
+## Testing on Mobile via ngrok
+
+Vite's dev server is LAN-accessible (`host: true` in `vite.config.ts`), but that only works when the phone is on the **same Wi-Fi**. For a device on a different network (e.g. mobile data) you need a public tunnel. The project is pre-configured for **ngrok**.
+
+### How it works
+
+The Vite dev server proxies every backend route (`/api`, `/graphql`, `/oauth2`, `/login`) to Spring Boot at `localhost:8080`. So a single ngrok tunnel on port **5173** is enough — the mobile browser hits one public URL and Vite handles the rest internally.
+
+OAuth is the tricky part: Spring builds the `redirect_uri` (`/login/oauth2/code/google`) from the incoming `Host` header. With `changeOrigin: true` the proxy would set `Host: localhost:8080` and Spring would build `http://localhost:8080/login/oauth2/code/google` — which the phone can't reach. The fix: `vite.config.ts` reads `NGROK_URL` from `.env.local` and injects `X-Forwarded-Host` + `X-Forwarded-Proto` headers on OAuth proxy routes so Spring builds the correct public redirect URI. Spring trusts these headers because `server.forward-headers-strategy=framework` is set. Vite also adds the ngrok domain to `server.allowedHosts` so the host-check guard doesn't block the request.
+
+### One-time setup
+
+1. **Get a free static ngrok domain** at <https://dashboard.ngrok.com/domains> (one domain per free account). Static domain means the URL never changes and you only add the Google redirect URI once.
+
+2. **Add the redirect URI in Google Cloud Console** ([console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)) → your OAuth 2.0 Client → **Authorized redirect URIs**:
+   ```
+   https://<your-static-domain>.ngrok-free.app/login/oauth2/code/google
+   ```
+
+3. **Save the URL in `.env.local`** (gitignored, created in the project root):
+   ```
+   NGROK_URL=https://<your-static-domain>.ngrok-free.app
+   ```
+   Vite reads this file automatically on startup — no environment variable exports needed.
+
+### Starting everything (daily workflow)
+
+**Step 1 — start ngrok** (reads the static domain from `.env.local` automatically):
+
+```powershell
+.\ngrok-start.ps1
+```
+
+The script kills any existing ngrok process, starts a new tunnel on port 5173, waits for it to come up, writes `NGROK_URL` back to `.env.local`, and prints the full URL plus a reminder of the next steps.
+
+**Step 2 — start Vite** (picks up `NGROK_URL` from `.env.local`):
+
+```powershell
+npm run dev
+```
+
+**Step 3 — start Spring Boot with the ngrok URL as `FRONTEND_URL`**
+
+`FRONTEND_URL` controls where `OAuth2LoginSuccessHandler` redirects the browser after a successful Google login. It must match the public URL.
+
+```powershell
+# PowerShell
+$env:FRONTEND_URL = "https://<your-domain>.ngrok-free.app"
+cd backend
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+```
+
+In IntelliJ: **Run → Edit Configurations → Environment variables**, add `FRONTEND_URL=https://<your-domain>.ngrok-free.app` alongside the other variables.
+
+**Step 4 — open on the phone:**
+```
+https://<your-domain>.ngrok-free.app
+```
+
+### What was changed in the codebase
+
+| File | Change |
+|---|---|
+| `vite.config.ts` | Converted from `defineConfig({})` to `defineConfig(({ mode }) => {})` factory. Reads `NGROK_URL` via `loadEnv()`. Injects `X-Forwarded-Host` / `X-Forwarded-Proto` on `/oauth2` and `/login` proxy routes when set. Adds ngrok host to `server.allowedHosts`. |
+| `.env.local` | Created automatically by `ngrok-start.ps1`; stores `NGROK_URL`. Gitignored (`*.local`). |
+| `ngrok-start.ps1` | Script in the project root. Kills old ngrok, starts a new tunnel (static domain if `NGROK_URL` is in `.env.local`, dynamic otherwise), polls the ngrok local API (`localhost:4040`) for the HTTPS URL, updates `.env.local`, and prints step-by-step instructions. |
+
+### Without a static domain (dynamic URL)
+
+If you skip step 1, `ngrok-start.ps1` still works — it just gets a random URL each run. You then need to:
+- add the new redirect URI to Google Cloud Console each time (tedious), or
+- keep the old one and accept that OAuth won't work until you update it.
+
+The ngrok inspector at <http://localhost:4040> shows all traffic through the tunnel — useful for debugging.
+
+---
+
 ## How Frontend and Backend Are Connected (with code references)
 
 Connection flow in this project:
@@ -422,8 +502,16 @@ GraphQL request -> controller method -> service business logic -> repository -> 
 - `V2__seed_data.sql` — intentionally empty seed
 - `V3__timestamps_to_timestamptz.sql` — deadlines/achieved timestamps to `TIMESTAMPTZ`
 - `V4__option_position.sql` — option ordering (`position`)
-- `V5__resource_label_length.sql` — resource title/name constraints
+- `V5__resource_label_length.sql` — resource title/name constraints (20 chars)
 - `V6__confidence_history.sql` — confidence history table
+- `V7__ai_schema.sql` — per-user AI provider keys (AES-256-GCM encrypted at rest)
+- `V8__resource_label_length_200.sql` — widens resource labels from 20 → 200 chars
+- `V9__app_user.sql` — `app_user` table for Google-authenticated users (keyed on `google_sub`)
+- `V10__goal_owner.sql` — adds `user_id` FK to goals for per-user data isolation
+- `V11__app_user_refresh_token.sql` — stores encrypted Google refresh token for Drive API
+- `V12__resource_google_doc.sql` — links a note resource to its exported Google Doc
+- `V13__grow_books.sql` — `book_chunk` table + pgvector column for GROW RAG library
+- `V14__spring_session.sql` — Spring Session JDBC schema (sessions survive scale-to-zero)
 
 Flyway runs these in order on backend startup.
 
@@ -476,6 +564,52 @@ see `docs/ai-integration.md`, `docs/ai-configuration.md`, and `docs/ai-testing.m
 
 ---
 
+## GROW Sessions
+
+GROW is a structured coaching model (Goal → Reality → Options → Will) built on top of the AI coach. Open a goal, start a GROW session, and the coach leads you through each phase within a fixed time limit.
+
+**What makes it different from the regular AI chat:**
+
+- **Book-grounded answers** — responses are anchored to excerpts from real coaching books retrieved via **pgvector RAG** (`mistral-embed` embeddings). The coach is not allowed to respond from the generic prompt alone; if the book library is empty it refuses with an error (no silent fallback to generic advice).
+- **Session timing** — a visible timer paces the session. When the timer expires the frontend sends a hidden wrap-up prompt and shows the end card only after the coach's goodbye.
+- **Session memory** — at the end of each session the coach writes a closing reflection that is saved to the goal (`goal.ai_memory`). The next GROW session picks this up and continues from where you left off.
+
+**Setup requirements:**
+
+1. **Mistral API key** — embeddings use `mistral-embed` (Anthropic has no embeddings API). Add your Mistral key in the AI panel. Without it the GROW session returns an error by design.
+2. **Coaching books** — the owner places `.txt` files (UTF-8, blank-line paragraph breaks) in `backend/src/main/resources/books/`. Supported titles: `coaching-for-performance.txt`, `coach-the-person.txt`. On first backend start `BookIngestionRunner` chunks and embeds them (one-time; progress is streamed as SSE events). Re-ingest after changes: `DELETE FROM book_chunk WHERE book='<Title>'` + restart.
+
+**Backend implementation:** `backend/src/main/java/com/spiramindscape/backend/ai/grow/` — `BookIngestionRunner`, `GrowLibraryService`, `MistralEmbeddingClient`, `GoalMemoryService`.
+
+---
+
+## Authentication & Security
+
+### Google Sign-In
+
+Spira uses **Spring Security OAuth2 / OIDC Authorization Code flow** — the only way to sign in is with a Google account. There are no passwords; identity is keyed on the Google `sub` claim (stable even if the user changes their email).
+
+- Any Google account may sign in; a `app_user` row is created automatically on first login.
+- Every goal is owned by a user (`goal.user_id`); cross-user access returns `NOT_FOUND` — data is fully private.
+- The Google OAuth **refresh token** is stored encrypted (AES-256-GCM) so the backend can mint Drive access tokens without re-prompting the user.
+
+**Session model:** server-side sessions stored in **PostgreSQL** (`spring_session` table, V14 migration) via Spring Session JDBC. This means sessions survive Cloud Run scale-to-zero and instance restarts. Cookies are `HttpOnly`, `SameSite=Lax`; `Secure` is enabled in production (behind Cloud Run's TLS termination via `server.forward-headers-strategy=framework`). Session lifetime is **14 days** of inactivity.
+
+**Dev bypass (local profile only):** starting with `-Dspring-boot.run.profiles=local` skips Google and auto-logs in a fixed `dev@local` user. Production never uses this profile.
+
+**E2E test bypass (e2e profile only):** CI cannot run real Google OAuth headlessly. The `e2e` profile enables an `X-E2E-Auth` HTTP header login used only by `pytest` tests. Never active in production.
+
+### Security hardening
+
+| Area | What was done |
+|---|---|
+| **Spring Boot CVE patches** | Upgraded 3.4.5 → **3.5.15**, patching 5 critical CVEs in transitive dependencies. |
+| **Session serialization** | `AppUser` and `AppUserOidcUser` implement `Serializable` with explicit `serialVersionUID` — required for Spring Session JDBC to deserialize the principal from the DB correctly after restarts. |
+| **No stored keys in repo** | Google client secret, DB password, and AI encryption key live in GCP Secret Manager; CI authenticates keylessly via Workload Identity Federation. |
+| **HttpOnly + Secure cookies** | Session cookie is never accessible from JavaScript; `Secure` is enforced in production. |
+
+---
+
 ## Tests: how to run and what exists
 
 ### Run tests locally
@@ -525,6 +659,8 @@ cd backend
 - `src/lib/spira/api.test.ts`
 - `src/lib/spira/progress.test.ts`
 - `src/lib/spira/store.test.ts`
+- `src/components/spira/Targets.desktop.test.tsx`
+- `src/components/spira/Targets.mobile.test.tsx`
 
 ### Backend unit/service-level test files (current)
 
@@ -536,11 +672,21 @@ cd backend
 - `backend/src/test/java/com/spiramindscape/backend/goal/EntityTimestampTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/ai/crypto/EncryptionServiceTest.java` — AI key encryption (AES-256)
 - `backend/src/test/java/com/spiramindscape/backend/ai/safety/SafetyServiceTest.java` — AI safety/boundary checks
+- `backend/src/test/java/com/spiramindscape/backend/auth/AppUserServiceTest.java` — user creation/lookup on Google login
+- `backend/src/test/java/com/spiramindscape/backend/auth/SessionSerializationTest.java` — Spring Session JDBC round-trip
+- `backend/src/test/java/com/spiramindscape/backend/ai/grow/BookChunkerTest.java` — text chunking for GROW RAG
+- `backend/src/test/java/com/spiramindscape/backend/ai/grow/GrowLibraryServiceTest.java` — book retrieval logic
+- `backend/src/test/java/com/spiramindscape/backend/ai/grow/GoalMemoryServiceTest.java` — session memory persistence
+- `backend/src/test/java/com/spiramindscape/backend/ai/chat/AiChatServiceGrowTest.java` — GROW session flow
+- `backend/src/test/java/com/spiramindscape/backend/ai/key/AiKeyServiceTest.java` — BYOK key management
+- `backend/src/test/java/com/spiramindscape/backend/ai/proposal/AiProposalServiceTest.java` — proposal lifecycle
+- `backend/src/test/java/com/spiramindscape/backend/security/RateLimitFilterTest.java` — rate limiter
+- `backend/src/test/java/com/spiramindscape/backend/config/CorsConfigTest.java` — CORS origin rules
+- `backend/src/test/java/com/spiramindscape/backend/web/RestExceptionHandlerTest.java` — REST error envelope
 
 ### Backend GraphQL integration/contract test files (current)
 
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalCreationIntegrationTest.java`
-- `backend/src/test/java/com/spiramindscape/backend/graphql/GoalWorkspaceIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalConfidenceIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalListIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/GoalIsolationIntegrationTest.java`
@@ -549,6 +695,10 @@ cd backend
 - `backend/src/test/java/com/spiramindscape/backend/graphql/OptionIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/TargetIntegrationTest.java`
 - `backend/src/test/java/com/spiramindscape/backend/graphql/ResourceIntegrationTest.java`
+- `backend/src/test/java/com/spiramindscape/backend/graphql/CrossUserIsolationIntegrationTest.java` — verifies users can't see each other's goals
+- `backend/src/test/java/com/spiramindscape/backend/graphql/SecurityIntegrationTest.java` — auth-gated endpoints, unauthenticated access
+- `backend/src/test/java/com/spiramindscape/backend/graphql/E2eProfileAuthIntegrationTest.java` — `X-E2E-Auth` header login used by CI
+- `backend/src/test/java/com/spiramindscape/backend/ai/AiKeySecurityIntegrationTest.java` — encrypted key never returned in plaintext
 
 ### Python E2E test files (current)
 
@@ -721,5 +871,7 @@ AI:
 - `specs/2026-05-06-production-backend-foundation/{requirements.md,plan.md,validation.md}`
 - `specs/2026-05-08-backend-test-coverage/{requirements.md,plan.md,validation.md}`
 - `specs/2026-05-08-frontend-backend-integration/{requirements.md,plan.md,validation.md}`
+- `specs/2026-05-28-google-oauth-authentication/{requirements.md,plan.md,validation.md}`
+- `specs/2026-06-07-ai-assistant-cards-and-drawers/` — AI proposal card/drawer UX design
 
 
