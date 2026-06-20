@@ -165,7 +165,7 @@ function setSyncError(set: (state: Partial<State>) => void, error: unknown) {
     syncError:
       error instanceof SpiraApiError
         ? error.message
-        : "Something went wrong. Please try again in a moment.",
+        : "Unable to connect to the server.",
     syncErrorKind: kind,
   });
 }
@@ -205,7 +205,7 @@ export const useSpira = create<State>()((set, get) => ({
         syncError:
           error instanceof SpiraApiError
             ? error.message
-            : "Something went wrong. Please try again in a moment.",
+            : "Unable to connect to the server.",
         syncErrorKind: kind,
       });
     }
@@ -231,7 +231,7 @@ export const useSpira = create<State>()((set, get) => ({
         syncError:
           error instanceof SpiraApiError
             ? error.message
-            : "Something went wrong. Please try again in a moment.",
+            : "Unable to connect to the server.",
         syncErrorKind: kind,
       });
     }

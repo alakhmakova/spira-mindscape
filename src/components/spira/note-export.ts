@@ -50,8 +50,8 @@ function convertListToParagraphs(
     const marker = isTask
       ? ""
       : ordered
-        ? `${idx}.\u00A0\u00A0`
-        : "•\u00A0\u00A0";
+        ? `${idx}.\u00a0\u00a0`
+        : "\u2022\u00a0\u00a0";
     p.innerHTML = marker + li.innerHTML;
     out.appendChild(p);
     idx++;

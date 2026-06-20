@@ -4,9 +4,9 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
+  ChevronRight,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
   ChevronUp,
   History,
   Plus,
@@ -22,7 +22,7 @@ import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { OptionsList } from "@/components/spira/OptionsList";
-import { TargetsList, NewTargetSheet } from "@/components/spira/Targets";
+import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
@@ -117,7 +117,7 @@ function GoalWorkspace() {
           </Link>
           <button
             onClick={() => setConfirmDelete(true)}
-            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary border-2 border-transparent hover:border-destructive/30"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive border-2 border-transparent hover:border-destructive/30"
             aria-label="Delete goal"
           >
             <Trash2 className="h-4 w-4" />
@@ -128,7 +128,7 @@ function GoalWorkspace() {
         <header>
           <AutoTextarea
             required
-            requiredMessage="A goal needs a name — the previous one was kept."
+            requiredMessage="The goal name is required"
             value={goal.title}
             onChange={(v) => updateGoal(goal.id, { title: v })}
             className="spira-goal-title font-heading text-3xl sm:text-4xl text-foreground w-full leading-tight"
@@ -233,21 +233,7 @@ function GoalWorkspace() {
         </div>
 
         <div id="targets-section" className="scroll-mt-32">
-          <Section
-            title="Will do"
-            hint="How you execute"
-            count={goal.targets.length}
-            action={
-              <button
-                onClick={() => setNewTarget(true)}
-                className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-semibold hover:bg-[#ea580c]/90"
-              >
-                Add target
-              </button>
-            }
-          >
-            <TargetsList goal={goal} />
-          </Section>
+          <TargetsSection goal={goal} onNewTarget={() => setNewTarget(true)} />
         </div>
 
         <NewTargetSheet
@@ -331,7 +317,7 @@ function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
       footer={
         <button
           onClick={onJump}
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap"
         >
           Jump to targets <ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -411,7 +397,7 @@ function ConfidenceKpi({
       footer={
         <button
           onClick={onOpenHistory}
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap"
         >
           Confidence history <ChevronRight className="h-3.5 w-3.5" />
         </button>
@@ -512,7 +498,7 @@ function DeadlineKpi({
           }
           hideDaysLeft
           disableScroll
-          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 outline-none"
+          className="text-primary font-semibold text-[13px] hover:underline inline-flex items-center gap-0.5 whitespace-nowrap outline-none"
         />
       }
     >

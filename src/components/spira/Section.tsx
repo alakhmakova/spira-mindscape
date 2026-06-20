@@ -9,6 +9,7 @@ export function Section({
   defaultOpen = true,
   action,
   count,
+  countVariant = "primary",
 }: {
   title: string;
   hint?: string;
@@ -16,6 +17,7 @@ export function Section({
   defaultOpen?: boolean;
   action?: ReactNode;
   count?: number;
+  countVariant?: "primary" | "orange";
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -33,7 +35,14 @@ export function Section({
           />
           <h2 className="font-heading text-2xl">{title}</h2>
           {typeof count === "number" && count > 0 && (
-            <span className="num text-xs font-semibold text-primary bg-primary-soft border border-primary/20 px-2 py-0.5 rounded-full">
+            <span
+              className={cn(
+                "inline-flex items-center justify-center h-10 w-10 rounded-full border-[5px] bg-white text-[15px] font-bold leading-none",
+                countVariant === "orange"
+                  ? "border-[#ea580c] text-[#ea580c]"
+                  : "border-primary text-primary",
+              )}
+            >
               {count}
             </span>
           )}

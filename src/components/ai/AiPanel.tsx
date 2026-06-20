@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { X } from "lucide-react";
+import { X, ArrowUp } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -5220,7 +5220,7 @@ function Composer({
               className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white disabled:opacity-40 hover:bg-[#005b56] transition-colors"
               title="Send"
             >
-              <Ic path={PATHS.chevron} size={16} className="rotate-180" />
+              <ArrowUp className="h-4 w-4" />
             </button>
           )}
         </div>

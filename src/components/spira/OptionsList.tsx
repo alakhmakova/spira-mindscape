@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Check, Plus, X, GripVertical } from "lucide-react";
+import { useState } from "react";
+import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal } from "@/lib/spira/types";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,6 @@ export function OptionsList({ goal }: { goal: Goal }) {
     reorderOptions,
   } = useSpira();
   const [draft, setDraft] = useState("");
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const touchDragIdx = useRef<number | null>(null);
 
   const add = () => {
     const t = draft.trim();
@@ -32,6 +30,8 @@ export function OptionsList({ goal }: { goal: Goal }) {
     }
   };
 
+  const last = goal.options.length - 1;
+
   return (
     <div className="space-y-3">
       {goal.options.length === 0 && (
@@ -43,33 +43,8 @@ export function OptionsList({ goal }: { goal: Goal }) {
         {goal.options.map((opt, idx) => (
           <li
             key={opt.id}
-            data-option-index={idx}
-            onDragStart={() => setDragIdx(idx)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (dragIdx !== null && dragIdx !== idx)
-                reorderOptions(goal.id, dragIdx, idx);
-              setDragIdx(null);
-            }}
-            onTouchMove={(e) => {
-              if (touchDragIdx.current === null) return;
-              const touch = e.touches[0];
-              const target = document
-                .elementFromPoint(touch.clientX, touch.clientY)
-                ?.closest("[data-option-index]");
-              const nextIdx = target
-                ? Number((target as HTMLElement).dataset.optionIndex)
-                : NaN;
-              if (!Number.isNaN(nextIdx) && nextIdx !== touchDragIdx.current) {
-                reorderOptions(goal.id, touchDragIdx.current, nextIdx);
-                touchDragIdx.current = nextIdx;
-              }
-            }}
-            onTouchEnd={() => {
-              touchDragIdx.current = null;
-            }}
             className={cn(
-              "group flex items-stretch overflow-hidden rounded-md border transition-colors",
+              "group flex items-stretch rounded-md border transition-colors",
               opt.selected
                 ? "border-primary"
                 : "border-border hover:border-primary/50",
@@ -79,7 +54,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
             <button
               onClick={() => handleOptionClick(opt.id, opt.selected)}
               className={cn(
-                "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
+                "w-12 shrink-0 flex items-center justify-center border-r transition-colors rounded-l-md",
                 opt.selected
                   ? "bg-primary-soft border-primary"
                   : "bg-surface border-border hover:bg-secondary/50",
@@ -100,33 +75,41 @@ export function OptionsList({ goal }: { goal: Goal }) {
               </div>
             </button>
 
-            {/* Right Section with Text */}
-            <div className="flex-1 flex items-center bg-surface px-4 py-3 relative min-h-[48px]">
-              <button
-                draggable
-                onDragStart={() => setDragIdx(idx)}
-                onTouchStart={() => {
-                  touchDragIdx.current = idx;
-                }}
-                className="mr-2 grid h-8 w-6 shrink-0 place-items-center touch-none text-muted-foreground hover:text-foreground cursor-grab transition-colors"
-                aria-label="Drag option"
-              >
-                <GripVertical className="h-4 w-4" />
-              </button>
-
+            {/* Right Section with Text and Actions */}
+            <div className="flex-1 flex items-center bg-surface px-4 py-3 min-h-[48px] rounded-r-md">
               <InlineText
                 value={opt.text}
                 onChange={(text) => updateOption(goal.id, opt.id, { text })}
-                className="flex-1 text-base font-medium leading-relaxed"
+                className="flex-1 min-w-0 text-base font-medium leading-relaxed"
                 ariaLabel="Edit strategy"
               />
 
+              {/* Up / Down */}
+              <div className="ml-2 flex flex-col shrink-0">
+                <button
+                  onClick={() => reorderOptions(goal.id, idx, idx - 1)}
+                  disabled={idx === 0}
+                  className="flex h-5 w-7 items-center justify-center rounded text-[#ea580c] transition-opacity disabled:opacity-25 disabled:cursor-default"
+                  aria-label="Move up"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => reorderOptions(goal.id, idx, idx + 1)}
+                  disabled={idx === last}
+                  className="flex h-5 w-7 items-center justify-center rounded text-[#ea580c] transition-opacity disabled:opacity-25 disabled:cursor-default"
+                  aria-label="Move down"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              </div>
+
               <button
                 onClick={() => removeOption(goal.id, opt.id)}
-                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+                className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:text-destructive transition-colors"
                 aria-label="Remove"
               >
-                <X className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </li>

@@ -1,5 +1,18 @@
-import { useState, useRef, useEffect } from "react";
-import { Check, Minus, Plus, SquareDashed, Trash2, X } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import {
+  AlertTriangle,
+  Calendar,
+  Check,
+  CircleCheck,
+  Minus,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  SquareDashed,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { targetProgress } from "@/lib/spira/progress";
@@ -24,13 +37,552 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
+import { Section } from "@/components/spira/Section";
 import { InlineText } from "@/components/spira/Inline";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 
-export function TargetsList({ goal }: { goal: Goal }) {
+type SortField = "title" | "deadline" | "progress";
+type StatusFilter = "all" | "done" | "not-done";
+
+const OVERDUE_RED = "#d13239";
+
+function formatDeadlineInfo(iso: string | undefined, completed = false) {
+  if (!iso) return null;
+  const deadline = new Date(iso);
+  const now = new Date();
+  const deadlineDay = new Date(
+    deadline.getFullYear(),
+    deadline.getMonth(),
+    deadline.getDate(),
+  );
+  const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round(
+    (deadlineDay.getTime() - todayDay.getTime()) / 86_400_000,
+  );
+  const isOverdue = !completed && diffDays < 0;
+  const dateStr = deadline.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const countdown = completed
+    ? "achieved"
+    : diffDays === 0
+      ? "due today"
+      : diffDays === 1
+        ? "1 day left"
+        : diffDays > 1
+          ? `${diffDays} days left`
+          : diffDays === -1
+            ? "1 day overdue"
+            : `${Math.abs(diffDays)} days overdue`;
+  return { dateStr, countdown, isOverdue };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TargetsSection — wraps Section with search, filter and mobile-sort controls
+───────────────────────────────────────────────────────────────────────────── */
+
+export function TargetsSection({
+  goal,
+  onNewTarget,
+}: {
+  goal: Goal;
+  onNewTarget: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [deadlineFrom, setDeadlineFrom] = useState("");
+  const [deadlineTo, setDeadlineTo] = useState("");
+  const [achievedFrom, setAchievedFrom] = useState("");
+  const [achievedTo, setAchievedTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortField, setSortField] = useState<SortField>("deadline");
+  const [sortDesc, setSortDesc] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const isDefaultSort = sortField === "deadline" && !sortDesc;
+  const filtersActive =
+    !!deadlineFrom ||
+    !!deadlineTo ||
+    !!achievedFrom ||
+    !!achievedTo ||
+    statusFilter !== "all";
+  const hasAnyActive = !!search.trim() || filtersActive || !isDefaultSort;
+
+  const resetFilters = () => {
+    setDeadlineFrom("");
+    setDeadlineTo("");
+    setAchievedFrom("");
+    setAchievedTo("");
+    setStatusFilter("all");
+  };
+
+  const processedTargets = useMemo(() => {
+    let ts = [...goal.targets];
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      ts = ts.filter((t) => {
+        if (t.title.toLowerCase().includes(q)) return true;
+        if (t.type === "checklist") {
+          return t.items.some((item) => item.text.toLowerCase().includes(q));
+        }
+        return false;
+      });
+    }
+
+    if (deadlineFrom || deadlineTo) {
+      ts = ts.filter((t) => {
+        if (!t.deadline) return false;
+        const d = t.deadline.slice(0, 10);
+        if (deadlineFrom && d < deadlineFrom.slice(0, 10)) return false;
+        if (deadlineTo && d > deadlineTo.slice(0, 10)) return false;
+        return true;
+      });
+    }
+
+    if (achievedFrom || achievedTo) {
+      ts = ts.filter((t) => {
+        if (!t.achievedAt) return false;
+        const d = t.achievedAt.slice(0, 10);
+        if (achievedFrom && d < achievedFrom.slice(0, 10)) return false;
+        if (achievedTo && d > achievedTo.slice(0, 10)) return false;
+        return true;
+      });
+    }
+
+    if (statusFilter === "done") ts = ts.filter((t) => targetProgress(t) >= 1);
+    else if (statusFilter === "not-done")
+      ts = ts.filter((t) => targetProgress(t) < 1);
+
+    return ts;
+  }, [
+    goal.targets,
+    search,
+    deadlineFrom,
+    deadlineTo,
+    achievedFrom,
+    achievedTo,
+    statusFilter,
+  ]);
+
+  const processedGoal = useMemo(
+    () => ({ ...goal, targets: processedTargets }),
+    [goal, processedTargets],
+  );
+
+  return (
+    <Section
+      title="Will do"
+      count={goal.targets.length}
+      countVariant="orange"
+      action={
+        <div className="flex items-center gap-2">
+          {/* Desktop: search + filters */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="h-8 pl-8 pr-7 rounded-md border border-border bg-surface text-sm outline-none focus:border-primary w-36 placeholder:text-muted-foreground/75 transition-colors"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "h-8 px-2.5 rounded-md border text-sm flex items-center gap-1.5 transition-colors whitespace-nowrap",
+                    filtersActive
+                      ? "border-primary/40 text-primary bg-primary/5"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                  )}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden lg:inline text-xs">
+                    {filtersActive ? "Filters on" : "Filters"}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72 p-2 space-y-2">
+                <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
+                <div
+                  className="grid grid-cols-2 gap-2 px-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DeadlinePopover
+                    iso={deadlineFrom || undefined}
+                    onChange={(next) => setDeadlineFrom(next ?? "")}
+                    variant="button"
+                    placeholder="From"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                  <DeadlinePopover
+                    iso={deadlineTo || undefined}
+                    onChange={(next) => setDeadlineTo(next ?? "")}
+                    variant="button"
+                    placeholder="To"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Achieved date range</DropdownMenuLabel>
+                <div
+                  className="grid grid-cols-2 gap-2 px-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DeadlinePopover
+                    iso={achievedFrom || undefined}
+                    onChange={(next) => setAchievedFrom(next ?? "")}
+                    variant="button"
+                    placeholder="From"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                  <DeadlinePopover
+                    iso={achievedTo || undefined}
+                    onChange={(next) => setAchievedTo(next ?? "")}
+                    variant="button"
+                    placeholder="To"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={statusFilter}
+                  onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+                >
+                  <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="done">
+                    Done
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="not-done">
+                    Not done
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                {filtersActive && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <button
+                      onClick={resetFilters}
+                      className="w-full text-left text-xs text-primary hover:text-primary/80 font-semibold px-2 py-1.5 rounded-md hover:bg-primary/5 transition-colors"
+                    >
+                      Reset filters
+                    </button>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {filtersActive && (
+              <button
+                onPointerDown={resetFilters}
+                onClick={resetFilters}
+                className="h-8 w-8 grid place-items-center rounded-md border border-primary/40 text-primary hover:bg-primary/5 transition-colors"
+                aria-label="Reset filters"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Mobile: single icon → drawer with search + sort + filters */}
+          <div className="sm:hidden">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className={cn(
+                "h-9 w-9 rounded-md border flex items-center justify-center transition-colors",
+                hasAnyActive
+                  ? "border-primary/40 text-primary bg-primary/5"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+              aria-label="Search, sort and filter targets"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+            <Drawer open={mobileOpen} onOpenChange={setMobileOpen}>
+              <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
+                <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
+                  <h2 className="font-sans font-bold text-lg">
+                    Filters & Sort
+                  </h2>
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
+                    aria-label="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto flex-1 min-h-0 px-6 pt-2 pb-8 space-y-5">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search targets…"
+                      className="h-9 w-full pl-8 pr-7 rounded-md border border-border bg-surface text-sm outline-none focus:border-primary placeholder:text-muted-foreground/75 transition-colors"
+                    />
+                    {search && (
+                      <button
+                        onClick={() => setSearch("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sort by */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Sort by
+                    </p>
+                    <div className="space-y-0.5">
+                      {(
+                        [
+                          { value: "title", label: "Name" },
+                          { value: "deadline", label: "Deadline" },
+                          { value: "progress", label: "Progress" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setSortField(opt.value)}
+                          className={cn(
+                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                            sortField === opt.value
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Direction */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Direction
+                    </p>
+                    <div className="space-y-0.5">
+                      {(
+                        [
+                          { value: false, label: "Ascending" },
+                          { value: true, label: "Descending" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={String(opt.value)}
+                          onClick={() => setSortDesc(opt.value)}
+                          className={cn(
+                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                            sortDesc === opt.value
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Deadline range */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Deadline range
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <DeadlinePopover
+                        iso={deadlineFrom || undefined}
+                        onChange={(next) => setDeadlineFrom(next ?? "")}
+                        variant="button"
+                        placeholder="From"
+                        hideDaysLeft
+                        disableScroll
+                        className="h-9 justify-start px-2 text-xs"
+                      />
+                      <DeadlinePopover
+                        iso={deadlineTo || undefined}
+                        onChange={(next) => setDeadlineTo(next ?? "")}
+                        variant="button"
+                        placeholder="To"
+                        hideDaysLeft
+                        disableScroll
+                        className="h-9 justify-start px-2 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Achieved date range */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Achieved date range
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <DeadlinePopover
+                        iso={achievedFrom || undefined}
+                        onChange={(next) => setAchievedFrom(next ?? "")}
+                        variant="button"
+                        placeholder="From"
+                        hideDaysLeft
+                        disableScroll
+                        className="h-9 justify-start px-2 text-xs"
+                      />
+                      <DeadlinePopover
+                        iso={achievedTo || undefined}
+                        onChange={(next) => setAchievedTo(next ?? "")}
+                        variant="button"
+                        placeholder="To"
+                        hideDaysLeft
+                        disableScroll
+                        className="h-9 justify-start px-2 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Status
+                    </p>
+                    <div className="space-y-0.5">
+                      {(
+                        [
+                          { value: "all", label: "All" },
+                          { value: "done", label: "Done" },
+                          { value: "not-done", label: "Not done" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setStatusFilter(opt.value)}
+                          className={cn(
+                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                            statusFilter === opt.value
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+                  style={{
+                    paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+                  }}
+                >
+                  {hasAnyActive && (
+                    <button
+                      onClick={() => {
+                        setSearch("");
+                        resetFilters();
+                        setSortField("deadline");
+                        setSortDesc(false);
+                      }}
+                      className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
+                    >
+                      Reset all
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </DrawerContent>
+            </Drawer>
+          </div>
+
+          <button
+            onClick={onNewTarget}
+            className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-semibold hover:bg-[#ea580c]/90"
+          >
+            Add target
+          </button>
+        </div>
+      }
+    >
+      <TargetsList
+        goal={processedGoal}
+        sortField={sortField}
+        sortDesc={sortDesc}
+      />
+    </Section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TargetsList — renders mobile cards + desktop table
+───────────────────────────────────────────────────────────────────────────── */
+
+export function TargetsList({
+  goal,
+  sortField,
+  sortDesc,
+}: {
+  goal: Goal;
+  sortField?: SortField;
+  sortDesc?: boolean;
+}) {
   const { updateTarget, removeTarget } = useSpira();
   const [confirmTarget, setConfirmTarget] = useState<Target | null>(null);
+
+  const mobileSorted = useMemo(() => {
+    if (!sortField) return goal.targets;
+    return [...goal.targets].sort((a, b) => {
+      if (sortField === "deadline") {
+        const aHas = !!a.deadline,
+          bHas = !!b.deadline;
+        if (!aHas && !bHas) return 0;
+        if (!aHas) return 1;
+        if (!bHas) return -1;
+        const cmp =
+          new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+        return (sortDesc ?? false) ? -cmp : cmp;
+      }
+      let cmp = 0;
+      if (sortField === "title") cmp = a.title.localeCompare(b.title);
+      else cmp = targetProgress(a) - targetProgress(b);
+      return (sortDesc ?? false) ? -cmp : cmp;
+    });
+  }, [goal.targets, sortField, sortDesc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -66,8 +618,7 @@ export function TargetsList({ goal }: { goal: Goal }) {
         </p>
       )}
       <ul className="spira-target-mobile-list space-y-3">
-        {/* Newest first: goal.targets is in creation order (oldest→newest). */}
-        {[...goal.targets].reverse().map((t) => (
+        {mobileSorted.map((t) => (
           <TargetRow
             key={t.id}
             target={t}
@@ -91,39 +642,71 @@ export function TargetsList({ goal }: { goal: Goal }) {
   );
 }
 
-export function DesktopTargetsTable({ goal }: { goal: Goal }) {
+/* ─────────────────────────────────────────────────────────────────────────────
+   DesktopTargetsTable
+   Controlled (sortField/onToggleSort provided) → uses pre-sorted goal.targets.
+   Uncontrolled (standalone / tests)            → sorts internally.
+───────────────────────────────────────────────────────────────────────────── */
+
+export function DesktopTargetsTable({
+  goal,
+  sortField: externalSortField,
+  sortDesc: externalSortDesc,
+  onToggleSort,
+}: {
+  goal: Goal;
+  sortField?: SortField;
+  sortDesc?: boolean;
+  onToggleSort?: (field: SortField) => void;
+}) {
   const { updateTarget, removeTarget } = useSpira();
-  const [sortField, setSortField] = useState<"title" | "deadline" | "progress">(
-    "deadline",
-  );
-  const [sortDesc, setSortDesc] = useState(false);
+  const [internalSortField, setInternalSortField] =
+    useState<SortField>("deadline");
+  const [internalSortDesc, setInternalSortDesc] = useState(false);
   const [editingTasksFor, setEditingTasksFor] = useState<string | null>(null);
   const [editingNumericFor, setEditingNumericFor] = useState<string | null>(
     null,
   );
   const [confirmTarget, setConfirmTarget] = useState<Target | null>(null);
 
-  const toggleSort = (field: "title" | "deadline" | "progress") => {
-    if (sortField === field) setSortDesc(!sortDesc);
-    else {
-      setSortField(field);
-      setSortDesc(false);
+  const isControlled = externalSortField !== undefined;
+  const sortField = isControlled ? externalSortField! : internalSortField;
+  const sortDesc = isControlled
+    ? (externalSortDesc ?? false)
+    : internalSortDesc;
+
+  const toggleSort = (field: SortField) => {
+    if (onToggleSort) {
+      onToggleSort(field);
+    } else {
+      if (internalSortField === field) setInternalSortDesc((d) => !d);
+      else {
+        setInternalSortField(field);
+        setInternalSortDesc(false);
+      }
     }
   };
 
-  const sortedTargets = [...goal.targets].sort((a, b) => {
-    let cmp = 0;
-    if (sortField === "title") {
-      cmp = a.title.localeCompare(b.title);
-    } else if (sortField === "deadline") {
-      const ad = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-      const bd = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-      cmp = ad - bd;
-    } else if (sortField === "progress") {
-      cmp = targetProgress(a) - targetProgress(b);
-    }
-    return sortDesc ? -cmp : cmp;
-  });
+  // When controlled, data is pre-sorted by parent; when uncontrolled, sort here.
+  const displayTargets = isControlled
+    ? goal.targets
+    : [...goal.targets].sort((a, b) => {
+        if (sortField === "deadline") {
+          const aHas = !!a.deadline,
+            bHas = !!b.deadline;
+          if (!aHas && !bHas) return 0;
+          if (!aHas) return 1;
+          if (!bHas) return -1;
+          const cmp =
+            new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime();
+          return sortDesc ? -cmp : cmp;
+        }
+        let cmp = 0;
+        if (sortField === "title") cmp = a.title.localeCompare(b.title);
+        else if (sortField === "progress")
+          cmp = targetProgress(a) - targetProgress(b);
+        return sortDesc ? -cmp : cmp;
+      });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -199,11 +782,16 @@ export function DesktopTargetsTable({ goal }: { goal: Goal }) {
               className="cursor-pointer hover:text-foreground w-[15%]"
               onClick={() => toggleSort("deadline")}
             >
-              <div className="flex items-center">
-                Deadline <SortIcon field="deadline" />
+              <div
+                className="flex items-center"
+                title="Deadline or Completed date"
+              >
+                Date <SortIcon field="deadline" />
               </div>
             </TableHead>
-            <TableHead className="w-[15%]">Status</TableHead>
+            <TableHead className="w-[15%]">
+              <div title="Click to update">Update</div>
+            </TableHead>
             <TableHead
               className="cursor-pointer hover:text-foreground w-[15%]"
               onClick={() => toggleSort("progress")}
@@ -216,13 +804,17 @@ export function DesktopTargetsTable({ goal }: { goal: Goal }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedTargets.map((t) => {
+          {displayTargets.map((t) => {
             const progress = targetProgress(t);
+            const done = progress >= 1;
             return (
               <TableRow
                 key={t.id}
                 id={`target-desktop-${t.id}`}
-                className="scroll-mt-24 hover:bg-muted/50 transition-colors"
+                className={cn(
+                  "scroll-mt-24 transition-colors bg-white",
+                  done ? "hover:bg-[#e5f4f3]" : "hover:bg-[#fff2df]",
+                )}
               >
                 <TableCell className="pl-6">
                   <InlineText
@@ -230,28 +822,46 @@ export function DesktopTargetsTable({ goal }: { goal: Goal }) {
                     onChange={(title) => updateTarget(goal.id, t.id, { title })}
                     placeholder="Untitled target"
                     ariaLabel="Edit target title"
-                    className="block w-full font-medium text-sm text-foreground"
+                    className={cn(
+                      "block w-full font-medium text-sm",
+                      done
+                        ? "line-through text-muted-foreground"
+                        : "text-foreground",
+                    )}
                   />
                 </TableCell>
                 <TableCell>
-                  <DeadlinePopover
-                    iso={t.deadline}
-                    achievedAt={t.achievedAt}
-                    completed={progress >= 1}
-                    variant="text"
-                    side="top"
-                    hideChevron
-                    hideDaysLeft
-                    onChange={(next) =>
-                      updateTarget(goal.id, t.id, { deadline: next })
+                  <span
+                    title={
+                      (done ? t.achievedAt : t.deadline)
+                        ? done
+                          ? "Completed"
+                          : "Deadline"
+                        : undefined
                     }
-                  />
+                  >
+                    <DeadlinePopover
+                      iso={t.deadline}
+                      achievedAt={t.achievedAt}
+                      completed={done}
+                      variant="text"
+                      side="top"
+                      hideChevron
+                      hideDaysLeft
+                      onChange={(next) =>
+                        updateTarget(goal.id, t.id, { deadline: next })
+                      }
+                    />
+                  </span>
                 </TableCell>
                 <TableCell>
                   {t.type === "binary" && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <button className="flex items-center gap-2 group h-8">
+                        <button
+                          title="Click"
+                          className="flex items-center gap-2 group h-8"
+                        >
                           <div
                             className={cn(
                               "h-2 w-2 rounded-full shrink-0",
@@ -289,32 +899,34 @@ export function DesktopTargetsTable({ goal }: { goal: Goal }) {
                   {t.type === "numeric" && (
                     <button
                       onClick={() => setEditingNumericFor(t.id)}
+                      title="Click"
                       className="flex items-center gap-2 group h-8"
                     >
                       <div
                         className={cn(
                           "h-2 w-2 rounded-full shrink-0",
-                          progress >= 1 ? "bg-success" : "bg-[#ea580c]",
+                          done ? "bg-success" : "bg-[#ea580c]",
                         )}
                       ></div>
                       <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
-                        {progress >= 1 ? "Complete" : "Update"}
+                        {done ? "Complete" : "Update"}
                       </span>
                     </button>
                   )}
                   {t.type === "checklist" && (
                     <button
                       onClick={() => setEditingTasksFor(t.id)}
+                      title="Click"
                       className="flex items-center gap-2 group h-8"
                     >
                       <div
                         className={cn(
                           "h-2 w-2 rounded-full shrink-0",
-                          progress >= 1 ? "bg-success" : "bg-[#B8A9D4]",
+                          done ? "bg-success" : "bg-[#B8A9D4]",
                         )}
                       ></div>
                       <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
-                        {progress >= 1 ? "Complete" : "Tasks"}
+                        {done ? "Complete" : "Tasks"}
                       </span>
                     </button>
                   )}
@@ -333,7 +945,7 @@ export function DesktopTargetsTable({ goal }: { goal: Goal }) {
                 <TableCell className="text-right pr-6">
                   <button
                     onClick={() => setConfirmTarget(t)}
-                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md hover:bg-secondary transition-colors inline-flex"
+                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md transition-colors inline-flex"
                     title="Delete target"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -478,122 +1090,186 @@ export function TargetRow({
   onRemove: () => void;
 }) {
   const progress = targetProgress(target);
+  const done = progress >= 1;
+
+  const displayIso =
+    done && target.achievedAt ? target.achievedAt : target.deadline;
+  const deadlineInfo = formatDeadlineInfo(displayIso, done);
 
   return (
     <li
       id={`target-mobile-${target.id}`}
-      className="surface-card scroll-mt-24 p-4 sm:p-5"
+      className={cn(
+        "surface-card scroll-mt-24 overflow-hidden",
+        done && "!bg-[#e5f4f3] !border-[#b8dad8]",
+      )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0 space-y-2">
-          {/* Top row: deadline (replaces type label) */}
+      <div className="p-4 sm:p-5">
+        {/* Top row: deadline/completed + trash */}
+        <div className="flex items-start justify-between gap-3 mb-2.5">
           <DeadlinePopover
             iso={target.deadline}
             achievedAt={target.achievedAt}
-            completed={progress >= 1}
+            completed={done}
             onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
+            renderTrigger={() =>
+              deadlineInfo ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer hover:opacity-70 transition-opacity"
+                  style={{
+                    color: done
+                      ? "var(--color-success)"
+                      : deadlineInfo.isOverdue
+                        ? OVERDUE_RED
+                        : "var(--color-muted-foreground)",
+                  }}
+                >
+                  {done ? (
+                    <CircleCheck
+                      className="h-3.5 w-3.5 shrink-0"
+                      strokeWidth={2}
+                    />
+                  ) : deadlineInfo.isOverdue ? (
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                  ) : (
+                    <Calendar className="h-3 w-3 shrink-0 opacity-70" />
+                  )}
+                  {done ? "Completed" : "Deadline"} {deadlineInfo.dateStr}
+                  {!done && (
+                    <>
+                      <span className="w-px h-3 bg-border/60 shrink-0" />
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          deadlineInfo.isOverdue
+                            ? "text-[#d13239]"
+                            : "text-foreground/70",
+                        )}
+                      >
+                        {deadlineInfo.countdown}
+                      </span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
+                  <Calendar className="h-3 w-3 shrink-0" />
+                  Set deadline
+                </span>
+              )
+            }
           />
-          <InlineText
-            value={target.title}
-            onChange={(title) => onUpdate({ title } as Partial<Target>)}
-            ariaLabel="Edit target title"
-            className="block w-full text-base font-semibold text-foreground"
-          />
+          <button
+            onClick={onRemove}
+            className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md"
+            aria-label="Delete target"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <button
-          onClick={onRemove}
-          className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md hover:bg-secondary"
-          aria-label="Delete target"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
 
-      {target.type === "numeric" && (
-        <NumericBody target={target} onUpdate={onUpdate} progress={progress} />
-      )}
-
-      {target.type === "binary" && (
-        <button
-          onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
+        {/* Title */}
+        <InlineText
+          value={target.title}
+          onChange={(title) => onUpdate({ title } as Partial<Target>)}
+          ariaLabel="Edit target title"
           className={cn(
-            "mt-4 flex items-stretch overflow-hidden rounded-md border transition-colors min-h-[44px] w-full",
-            target.done
-              ? "border-primary"
-              : "border-border hover:border-primary/50",
+            "block w-full text-base font-semibold",
+            done ? "line-through text-muted-foreground" : "text-foreground",
           )}
-        >
-          <div
+        />
+
+        {/* Body */}
+        {target.type === "numeric" && (
+          <NumericBody
+            target={target}
+            onUpdate={onUpdate}
+            progress={progress}
+          />
+        )}
+
+        {target.type === "binary" && (
+          <button
+            onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
             className={cn(
-              "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
+              "mt-4 flex items-stretch overflow-hidden rounded-md border transition-colors min-h-[44px] w-full",
               target.done
-                ? "bg-primary-soft border-primary"
-                : "bg-surface border-border hover:bg-secondary/50",
+                ? "border-primary"
+                : "border-border hover:border-primary/50",
             )}
           >
             <div
               className={cn(
-                "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+                "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
                 target.done
-                  ? "bg-primary border-primary"
-                  : "border-border-strong",
+                  ? "bg-primary-soft border-primary"
+                  : "bg-surface border-border hover:bg-secondary/50",
               )}
             >
-              {target.done && (
-                <Check
-                  className="h-3 w-3 text-primary-foreground"
-                  strokeWidth={3}
-                />
-              )}
+              <div
+                className={cn(
+                  "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
+                  target.done
+                    ? "bg-primary border-primary"
+                    : "border-border-strong",
+                )}
+              >
+                {target.done && (
+                  <Check
+                    className="h-3 w-3 text-primary-foreground"
+                    strokeWidth={3}
+                  />
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex-1 flex items-center px-3 bg-surface">
-            <span
-              className={cn(
-                "text-sm",
-                target.done
-                  ? "line-through text-muted-foreground"
-                  : "text-foreground font-medium",
-              )}
-            >
-              {target.done ? "Done" : "Mark done"}
-            </span>
-          </div>
-        </button>
-      )}
+            <div className="flex-1 flex items-center px-3 bg-surface">
+              <span
+                className={cn(
+                  "text-sm",
+                  target.done
+                    ? "text-muted-foreground"
+                    : "text-foreground font-medium",
+                )}
+              >
+                {target.done ? "Done" : "Mark done"}
+              </span>
+            </div>
+          </button>
+        )}
 
-      {target.type === "checklist" && (
-        <>
-          <ChecklistEditor
-            items={target.items}
-            onChange={(items) => onUpdate({ items } as Partial<Target>)}
-            compact
-            hideCountdown
-          />
-          <div className="mt-1">
-            <NewTaskInlineInput
-              onAdd={(text) =>
-                onUpdate({
-                  items: [
-                    ...target.items,
-                    {
-                      id: Math.random().toString(36).slice(2, 9),
-                      text,
-                      done: false,
-                    },
-                  ],
-                } as Partial<Target>)
-              }
+        {target.type === "checklist" && (
+          <>
+            <ChecklistEditor
+              items={target.items}
+              onChange={(items) => onUpdate({ items } as Partial<Target>)}
+              compact
+              hideCountdown
             />
-          </div>
-          <div className="mt-4 flex items-center gap-3">
-            <ProgressBar value={progress} className="flex-1" />
-            <span className="num text-xs text-muted-foreground font-semibold">
-              {Math.round(progress * 100)}%
-            </span>
-          </div>
-        </>
-      )}
+            <div className="mt-1">
+              <NewTaskInlineInput
+                onAdd={(text) =>
+                  onUpdate({
+                    items: [
+                      ...target.items,
+                      {
+                        id: Math.random().toString(36).slice(2, 9),
+                        text,
+                        done: false,
+                      },
+                    ],
+                  } as Partial<Target>)
+                }
+              />
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <ProgressBar value={progress} className="flex-1" />
+              <span className="num text-xs text-muted-foreground font-semibold">
+                {Math.round(progress * 100)}%
+              </span>
+            </div>
+          </>
+        )}
+      </div>
     </li>
   );
 }
@@ -976,6 +1652,7 @@ function ChecklistEditor({
   compact?: boolean;
   hideCountdown?: boolean;
 }) {
+  const [lastItemError, setLastItemError] = useState(false);
   return (
     <div className={cn("space-y-1", !compact && "mt-4")}>
       {items.map((it) => (
@@ -1066,8 +1743,15 @@ function ChecklistEditor({
             </div>
 
             <button
-              onClick={() => onChange(items.filter((i) => i.id !== it.id))}
-              className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0"
+              onClick={() => {
+                if (items.length <= 1) {
+                  setLastItemError(true);
+                  return;
+                }
+                setLastItemError(false);
+                onChange(items.filter((i) => i.id !== it.id));
+              }}
+              className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0"
               aria-label="Remove subtask"
             >
               <X className="h-3.5 w-3.5" />
@@ -1075,6 +1759,12 @@ function ChecklistEditor({
           </div>
         </div>
       ))}
+      {lastItemError && items.length <= 1 && (
+        <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />A checklist must
+          have at least one item
+        </p>
+      )}
     </div>
   );
 }
@@ -1205,6 +1895,7 @@ function NewTargetForm({
   const [checklistItems, setChecklistItems] = useState<
     { id: string; text: string; done: boolean; deadline?: string }[]
   >([]);
+  const [checklistLastItemError, setChecklistLastItemError] = useState(false);
 
   const newTaskUid = () => Math.random().toString(36).slice(2, 9);
   const parsedStart = Number(start);
@@ -1420,12 +2111,17 @@ function NewTargetForm({
                       {item.text}
                     </span>
                     <button
-                      onClick={() =>
+                      onClick={() => {
+                        if (checklistItems.length <= 1) {
+                          setChecklistLastItemError(true);
+                          return;
+                        }
+                        setChecklistLastItemError(false);
                         setChecklistItems((prev) =>
                           prev.filter((i) => i.id !== item.id),
-                        )
-                      }
-                      className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-secondary shrink-0 transition-colors"
+                        );
+                      }}
+                      className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0 transition-colors"
                       aria-label="Remove task"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -1433,6 +2129,12 @@ function NewTargetForm({
                   </div>
                 </div>
               ))}
+              {checklistLastItemError && checklistItems.length <= 1 && (
+                <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" />A checklist
+                  must have at least one item
+                </p>
+              )}
               <NewTaskInlineInput
                 onAdd={(text) =>
                   setChecklistItems((prev) => [

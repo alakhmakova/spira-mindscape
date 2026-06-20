@@ -4,6 +4,7 @@ import {
   Calendar,
   LayoutGrid,
   List,
+  Loader,
   Trophy,
   Cable,
   GlobeOff,
@@ -171,11 +172,12 @@ function GoalsOverview() {
 
         {isLoading && !hasLoaded ? (
           /* ── Loading ── */
-          <div className="surface-card p-12 text-center" role="status">
-            <div className="font-display text-3xl">Loading your goals…</div>
-            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              Just a moment while we fetch your workspace.
-            </p>
+          <div
+            className="surface-card p-12 flex flex-col items-center gap-4"
+            role="status"
+          >
+            <Loader className="h-8 w-8 text-[#ea580c] animate-spin" />
+            <p className="text-sm text-muted-foreground">Loading your goals…</p>
           </div>
         ) : filtered.length === 0 ? (
           /* ── Empty / Error ── */
@@ -204,7 +206,7 @@ function GoalsOverview() {
                   className="mt-5 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Try again
+                  Refresh
                 </button>
               </>
             ) : goals.length === 0 ? (

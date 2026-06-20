@@ -379,13 +379,16 @@ function TimelineRow({
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px]">
           {achieved ? (
             <span className="font-medium text-muted-foreground/60 italic">
-              Completed{" "}
+              {item.kind === "goal" ? "Achieved" : "Completed"}{" "}
               {item.achievedAt
                 ? format(new Date(item.achievedAt), "MMM d")
                 : ""}
             </span>
           ) : (
             <>
+              <span className="font-medium text-muted-foreground/50 text-[12px]">
+                {item.kind === "goal" ? "Due" : "Deadline"}
+              </span>
               <DeadlinePopover
                 iso={item.deadline}
                 onChange={onDeadlineChange}
