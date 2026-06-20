@@ -46,7 +46,9 @@ function getInitials(name: string): string {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const path = useRouterState({ select: (s) => (s.resolvedLocation ?? s.location).pathname });
+  const path = useRouterState({
+    select: (s) => (s.resolvedLocation ?? s.location).pathname,
+  });
   const openAi = useAi((s) => s.open);
   const isAiOpen = useAi((s) => s.isOpen);
   const isAiWide = useAi((s) => s.isWide);
@@ -512,7 +514,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               {(filtersActive || (showSortControls && sortActive)) && (
                 <button
-                  onClick={() => { resetFilters(); resetSort(); }}
+                  onClick={() => {
+                    resetFilters();
+                    resetSort();
+                  }}
                   className="grid h-7 w-7 shrink-0 place-items-center rounded-md border hairline-strong text-primary bg-primary-soft"
                   aria-label="Reset filters and sort"
                 >
@@ -528,12 +533,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 <SlidersHorizontal className="h-3 w-3" />{" "}
-                {(filtersActive || (showSortControls && sortActive)) ? "Active" : "Filter & Sort"}
+                {filtersActive || (showSortControls && sortActive)
+                  ? "Active"
+                  : "Filter & Sort"}
               </button>
-              <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+              <Drawer
+                open={mobileFiltersOpen}
+                onOpenChange={setMobileFiltersOpen}
+              >
                 <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
                   <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
-                    <h2 className="font-sans font-bold text-lg">Filters & Sort</h2>
+                    <h2 className="font-sans font-bold text-lg">
+                      Filters & Sort
+                    </h2>
                     <button
                       onClick={() => setMobileFiltersOpen(false)}
                       className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
@@ -594,7 +606,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           [
                             { value: "all", label: "All goals" },
                             { value: "achieved", label: "Only achieved" },
-                            { value: "not-achieved", label: "Only not achieved" },
+                            {
+                              value: "not-achieved",
+                              label: "Only not achieved",
+                            },
                           ] as const
                         ).map((opt) => (
                           <button
@@ -624,7 +639,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             {(
                               [
                                 { value: "recent", label: "Most recent" },
-                                { value: "deadline", label: "Deadline soonest" },
+                                {
+                                  value: "deadline",
+                                  label: "Deadline soonest",
+                                },
                                 { value: "progress", label: "Progress" },
                                 { value: "confidence", label: "Confidence" },
                                 { value: "title", label: "Title A-Z" },
@@ -677,11 +695,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                   <div
                     className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
-                    style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+                    style={{
+                      paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+                    }}
                   >
                     {(filtersActive || (showSortControls && sortActive)) && (
                       <button
-                        onClick={() => { resetFilters(); resetSort(); }}
+                        onClick={() => {
+                          resetFilters();
+                          resetSort();
+                        }}
                         className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
                       >
                         Reset all

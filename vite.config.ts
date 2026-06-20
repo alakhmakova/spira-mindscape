@@ -64,7 +64,10 @@ export default defineConfig(({ mode }) => {
   // When NGROK_URL is set, tell Spring Boot (via X-Forwarded-* headers) the
   // real public host so it builds the OAuth redirect_uri for ngrok, not localhost.
   const oauthHeaders = ngrokUrl
-    ? { "X-Forwarded-Host": new URL(ngrokUrl).host, "X-Forwarded-Proto": "https" }
+    ? {
+        "X-Forwarded-Host": new URL(ngrokUrl).host,
+        "X-Forwarded-Proto": "https",
+      }
     : undefined;
 
   return {

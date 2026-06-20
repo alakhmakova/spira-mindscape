@@ -321,7 +321,10 @@ export function AutoTextarea({
   }, [shown]);
 
   const handleChange = (v: string) => {
-    if (!required) { onChange(v); return; }
+    if (!required) {
+      onChange(v);
+      return;
+    }
     setDraft(v);
     setError(false);
     if (v.trim()) {
@@ -331,7 +334,10 @@ export function AutoTextarea({
   };
 
   const handleBlur = () => {
-    if (required && !draft.trim()) { setDraft(lastGoodDraftRef.current); setError(true); }
+    if (required && !draft.trim()) {
+      setDraft(lastGoodDraftRef.current);
+      setError(true);
+    }
   };
 
   const textarea = (

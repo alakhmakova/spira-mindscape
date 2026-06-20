@@ -59,7 +59,9 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   ? "bg-primary-soft border-primary"
                   : "bg-surface border-border hover:bg-secondary/50",
               )}
-              aria-label={opt.selected ? "Deselect strategy" : "Select strategy"}
+              aria-label={
+                opt.selected ? "Deselect strategy" : "Select strategy"
+              }
             >
               <div
                 className={cn(
@@ -78,7 +80,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
               <InlineText
                 value={opt.text}
                 onChange={(text) => updateOption(goal.id, opt.id, { text })}
-                className="flex-1 text-base font-medium leading-relaxed"
+                className="flex-1 min-w-0 text-base font-medium leading-relaxed"
                 ariaLabel="Edit strategy"
               />
 

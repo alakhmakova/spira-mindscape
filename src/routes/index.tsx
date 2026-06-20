@@ -172,7 +172,10 @@ function GoalsOverview() {
 
         {isLoading && !hasLoaded ? (
           /* ── Loading ── */
-          <div className="surface-card p-12 flex flex-col items-center gap-4" role="status">
+          <div
+            className="surface-card p-12 flex flex-col items-center gap-4"
+            role="status"
+          >
             <Loader className="h-8 w-8 text-[#ea580c] animate-spin" />
             <p className="text-sm text-muted-foreground">Loading your goals…</p>
           </div>

@@ -232,10 +232,7 @@ function GoalWorkspace() {
         </div>
 
         <div id="targets-section" className="scroll-mt-32">
-          <TargetsSection
-            goal={goal}
-            onNewTarget={() => setNewTarget(true)}
-          />
+          <TargetsSection goal={goal} onNewTarget={() => setNewTarget(true)} />
         </div>
 
         <NewTargetSheet
