@@ -73,6 +73,7 @@ class AiChatServiceGrowTest {
                 goalContextBuilder, searchService, proposalService, resourceReadService,
                 urlReadService, growLibrary, goalMemory,
                 new com.spiramindscape.backend.tools.ToolSchemaValidator(new com.fasterxml.jackson.databind.ObjectMapper()),
+                new com.spiramindscape.backend.tools.ToolRecordValidator(new com.fasterxml.jackson.databind.ObjectMapper()),
                 toolService, toolContextBuilder,
                 new com.spiramindscape.backend.tools.ToolDemandLogger(new com.fasterxml.jackson.databind.ObjectMapper()));
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);

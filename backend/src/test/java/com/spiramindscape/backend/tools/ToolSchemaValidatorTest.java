@@ -89,6 +89,44 @@ class ToolSchemaValidatorTest {
     }
 
     @Test
+    @DisplayName("display options (align, select colours, default sort) are accepted")
+    void acceptsDisplayOptions() {
+        String schema = """
+                {"layout":"table","sort":{"key":"applied","dir":"desc"},"columns":[
+                  {"key":"company","primitive":"text","align":"left"},
+                  {"key":"applied","primitive":"date"},
+                  {"key":"status","primitive":"select",
+                   "options":["applied","offer"],
+                   "colors":{"applied":"amber","offer":"green"}}
+                ]}""";
+        String out = validator.validate(schema);
+        assertThat(out).contains("colors").contains("green").contains("sort");
+    }
+
+    @Test
+    @DisplayName("an unknown badge colour is rejected")
+    void rejectsUnknownColor() {
+        String schema = "{\"layout\":\"table\",\"columns\":[{\"key\":\"s\",\"primitive\":\"select\","
+                + "\"options\":[\"a\"],\"colors\":{\"a\":\"neon\"}}]}";
+        assertThatThrownBy(() -> validator.validate(schema))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("neon");
+    }
+
+    @Test
+    @DisplayName("an invalid align and a sort on a non-existent field are rejected")
+    void rejectsBadAlignAndSort() {
+        String badAlign = "{\"layout\":\"table\",\"columns\":[{\"key\":\"a\",\"primitive\":\"text\",\"align\":\"middle\"}]}";
+        assertThatThrownBy(() -> validator.validate(badAlign))
+                .isInstanceOf(InvalidSchemaException.class);
+        String badSort = "{\"layout\":\"table\",\"sort\":{\"key\":\"nope\",\"dir\":\"asc\"},"
+                + "\"columns\":[{\"key\":\"a\",\"primitive\":\"text\"}]}";
+        assertThatThrownBy(() -> validator.validate(badSort))
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("sort.key");
+    }
+
+    @Test
     @DisplayName("malformed JSON, blank, and oversized schemas are rejected")
     void rejectsJunk() {
         assertThatThrownBy(() -> validator.validate("not json")).isInstanceOf(InvalidSchemaException.class);

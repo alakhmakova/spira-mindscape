@@ -11,6 +11,22 @@ function mutationHeaders(): Record<string, string> {
   return { "X-XSRF-TOKEN": getCsrfToken(), "Content-Type": "application/json" };
 }
 
+/**
+ * Turns a failed response into a user-facing Error. Prefers the server's
+ * human-readable message (RFC-7807 ProblemDetail `detail` — e.g. "This tool has
+ * reached its record limit (500)."), and NEVER surfaces a bare status code.
+ */
+async function failure(res: Response, fallback: string): Promise<Error> {
+  try {
+    const body = await res.json();
+    const detail = typeof body?.detail === "string" ? body.detail.trim() : "";
+    if (detail) return new Error(detail);
+  } catch {
+    /* non-JSON or empty body — use the friendly fallback below */
+  }
+  return new Error(fallback);
+}
+
 export type ToolPrimitive =
   | "number"
   | "text"
@@ -27,16 +43,33 @@ export type ToolPrimitive =
   | "progress"
   | "chart";
 
+/** Safe, closed colour palette for select badges (maps to fixed CSS classes). */
+export type ToolColor =
+  | "gray"
+  | "red"
+  | "amber"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink"
+  | "teal";
+
 export type ToolColumn = {
   key: string;
   label?: string;
   primitive: ToolPrimitive;
   options?: string[];
+  /** Display-only: cell text alignment (table). */
+  align?: "left" | "center" | "right";
+  /** Display-only: per-option colour for a `select` (option value → colour). */
+  colors?: Record<string, ToolColor>;
 };
 
 export type ToolSchema = {
   layout: "table" | "fields";
   columns: ToolColumn[];
+  /** Display-only: default row ordering for a `table`. */
+  sort?: { key: string; dir: "asc" | "desc" };
 };
 
 export type Tool = {
@@ -71,7 +104,8 @@ export function parseSchema(schemaJson: string): ToolSchema | null {
 export async function listTools(goalId?: string | number): Promise<Tool[]> {
   const q = goalId != null ? `?goalId=${goalId}` : "";
   const res = await fetch(`${BASE}${q}`, { credentials: "include" });
-  if (!res.ok) throw new Error(`Failed to load tools: ${res.status}`);
+  if (!res.ok)
+    throw await failure(res, "Couldn't load your tools. Please try again.");
   return res.json();
 }
 
@@ -94,10 +128,32 @@ export async function createTool(input: {
       createdBy: input.createdBy ?? "user",
     }),
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(body || `Failed to create tool: ${res.status}`);
-  }
+  if (!res.ok)
+    throw await failure(res, "Couldn't create the tool. Please try again.");
+  return res.json();
+}
+
+/** Change a tool's structure/appearance (name and/or schema). Returns the
+ *  updated tool. Used when the AI's edit_tool proposal is approved. */
+export async function updateTool(
+  id: number,
+  patch: { name?: string; schemaJson?: string },
+): Promise<Tool> {
+  return patchTool(id, patch);
+}
+
+async function patchTool(
+  id: number,
+  body: Record<string, unknown>,
+): Promise<Tool> {
+  const res = await fetch(`${BASE}/${id}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: mutationHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok)
+    throw await failure(res, "Couldn't update the tool. Please try again.");
   return res.json();
 }
 
@@ -107,14 +163,19 @@ export async function deleteTool(id: number): Promise<void> {
     credentials: "include",
     headers: { "X-XSRF-TOKEN": getCsrfToken() },
   });
-  if (!res.ok) throw new Error(`Failed to delete tool: ${res.status}`);
+  if (!res.ok)
+    throw await failure(res, "Couldn't delete the tool. Please try again.");
 }
 
 export async function listRecords(toolId: number): Promise<ToolRecord[]> {
   const res = await fetch(`${BASE}/${toolId}/records`, {
     credentials: "include",
   });
-  if (!res.ok) throw new Error(`Failed to load records: ${res.status}`);
+  if (!res.ok)
+    throw await failure(
+      res,
+      "Couldn't load this tool's entries. Please try again.",
+    );
   return res.json();
 }
 
@@ -128,7 +189,8 @@ export async function addRecord(
     headers: mutationHeaders(),
     body: JSON.stringify({ dataJson: JSON.stringify(data) }),
   });
-  if (!res.ok) throw new Error(`Failed to add record: ${res.status}`);
+  if (!res.ok)
+    throw await failure(res, "Couldn't save this entry. Please try again.");
   return res.json();
 }
 
@@ -143,7 +205,8 @@ export async function updateRecord(
     headers: mutationHeaders(),
     body: JSON.stringify({ dataJson: JSON.stringify(data) }),
   });
-  if (!res.ok) throw new Error(`Failed to update record: ${res.status}`);
+  if (!res.ok)
+    throw await failure(res, "Couldn't update this entry. Please try again.");
   return res.json();
 }
 
@@ -156,5 +219,6 @@ export async function deleteRecord(
     credentials: "include",
     headers: { "X-XSRF-TOKEN": getCsrfToken() },
   });
-  if (!res.ok) throw new Error(`Failed to delete record: ${res.status}`);
+  if (!res.ok)
+    throw await failure(res, "Couldn't delete this entry. Please try again.");
 }

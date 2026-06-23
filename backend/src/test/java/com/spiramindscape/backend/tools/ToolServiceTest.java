@@ -5,6 +5,7 @@ import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.tools.dto.ToolDtos.CreateToolRequest;
 import com.spiramindscape.backend.tools.dto.ToolDtos.RecordRequest;
+import com.spiramindscape.backend.tools.dto.ToolDtos.UpdateToolRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -90,6 +91,29 @@ class ToolServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("maximum");
         verify(tools, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("update replaces the schema after validating it (AI edit_tool path)")
+    void updateReplacesValidatedSchema() {
+        ToolDefinition tool = ownedTool();
+        when(tools.findByIdAndAppUserId(1L, USER_ID)).thenReturn(Optional.of(tool));
+        String newSchema =
+                "{\"layout\":\"table\",\"columns\":[{\"key\":\"c\",\"primitive\":\"text\"},"
+                        + "{\"key\":\"salary\",\"primitive\":\"number\"}]}";
+
+        ToolDefinition result = service.update(1L, new UpdateToolRequest(null, null, newSchema));
+        assertThat(result.getSchemaJson()).contains("salary");
+    }
+
+    @Test
+    @DisplayName("update rejects an invalid schema — unapproved primitive")
+    void updateRejectsBadSchema() {
+        ToolDefinition tool = ownedTool();
+        lenient().when(tools.findByIdAndAppUserId(1L, USER_ID)).thenReturn(Optional.of(tool));
+        String evil = "{\"layout\":\"fields\",\"columns\":[{\"key\":\"x\",\"primitive\":\"script\"}]}";
+        assertThatThrownBy(() -> service.update(1L, new UpdateToolRequest(null, null, evil)))
+                .isInstanceOf(ResponseStatusException.class);
     }
 
     @Test

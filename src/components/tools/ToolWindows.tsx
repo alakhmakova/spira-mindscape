@@ -1,11 +1,33 @@
 import { useEffect, useState } from "react";
-import { Minus, X, Trash2, GripVertical, Square, Pin } from "lucide-react";
+import { Minus, X, Trash2, GripVertical, Square } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { toast } from "sonner";
 import { ToolRenderer } from "./ToolRenderer";
-import { useTools, useToolWindows, type ToolWindowState } from "./tools-store";
+import {
+  useTools,
+  useToolWindows,
+  TOOL_WINDOW_LIMITS,
+  type ToolWindowState,
+} from "./tools-store";
 import { cn } from "@/lib/utils";
+
+// Resize grips: left/right/bottom edges + bottom corners, each with a cursor
+// and an absolute position. `dir` letters (s/e/w) say which edges this grip
+// moves. There are deliberately NO top grips: the top is the draggable title
+// bar, and a top grip would overlap the header buttons (causing a stray resize
+// "twitch" when you click them). `w`/`e` (the side grips) are listed first so
+// they can also be shown alone when the window is collapsed (width-only).
+const SIDE_GRIPS: { dir: string; className: string }[] = [
+  { dir: "w", className: "left-0 inset-y-2 w-1.5 cursor-w-resize" },
+  { dir: "e", className: "right-0 inset-y-2 w-1.5 cursor-e-resize" },
+];
+const RESIZE_GRIPS: { dir: string; className: string }[] = [
+  ...SIDE_GRIPS,
+  { dir: "s", className: "bottom-0 inset-x-2 h-1.5 cursor-s-resize" },
+  { dir: "sw", className: "bottom-0 left-0 h-3 w-3 cursor-sw-resize" },
+  { dir: "se", className: "bottom-0 right-0 h-3 w-3 cursor-se-resize" },
+];
 
 /**
  * Renders every open Personal Tool as a floating, draggable, resizable,
@@ -18,20 +40,34 @@ export function ToolWindows() {
   const tools = useTools((s) => s.tools);
   const ensureLoaded = useTools((s) => s.ensureLoaded);
 
-  // Pinned windows are restored from storage before tools are loaded — make sure
-  // the tools list is fetched so those windows can resolve and render.
+  // Load the user's tools on mount so an open window can resolve its tool name.
   useEffect(() => {
-    if (windows.length > 0) ensureLoaded();
-  }, [windows.length, ensureLoaded]);
+    ensureLoaded();
+  }, [ensureLoaded]);
 
   if (windows.length === 0) return null;
+
+  // Stacking order by rank, NOT the raw (ever-growing) z counter: this keeps a
+  // window's z-index in a fixed band ABOVE the chat (z-40) but BELOW popovers/
+  // dropdowns/dialogs (z-50). Otherwise the date-picker popover (portaled at
+  // z-50) ends up hidden behind a window whose z had climbed past 50.
+  const order = [...windows].sort((a, b) => a.z - b.z);
+  const rankById = new Map(order.map((w, i) => [w.id, i]));
 
   return (
     <>
       {windows.map((win) => {
         const tool = tools.find((t) => t.id === win.id);
         if (!tool) return null;
-        return <ToolWindow key={win.id} win={win} toolName={tool.name} />;
+        const zIndex = 41 + Math.min(rankById.get(win.id) ?? 0, 8); // 41..49
+        return (
+          <ToolWindow
+            key={win.id}
+            win={win}
+            toolName={tool.name}
+            zIndex={zIndex}
+          />
+        );
       })}
     </>
   );
@@ -40,12 +76,14 @@ export function ToolWindows() {
 function ToolWindow({
   win,
   toolName,
+  zIndex,
 }: {
   win: ToolWindowState;
   toolName: string;
+  zIndex: number;
 }) {
   const isMobile = useIsMobile();
-  const { close, focus, toggleMinimize, togglePin, setRect } = useToolWindows();
+  const { close, focus, toggleMinimize, setRect } = useToolWindows();
   const tools = useTools((s) => s.tools);
   const removeTool = useTools((s) => s.removeTool);
   const recordsVersion = useTools((s) => s.recordsVersion[win.id] ?? 0);
@@ -58,6 +96,8 @@ function ToolWindow({
   const onHeaderPointerDown = (e: React.PointerEvent) => {
     if (isMobile) return;
     if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+    e.preventDefault(); // don't start a text selection while dragging
+    document.body.style.userSelect = "none";
     focus(win.id);
     const startX = e.clientX;
     const startY = e.clientY;
@@ -70,6 +110,7 @@ function ToolWindow({
       });
     };
     const up = () => {
+      document.body.style.userSelect = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -77,21 +118,47 @@ function ToolWindow({
     window.addEventListener("pointerup", up);
   };
 
-  // Resize from the bottom-right corner (desktop only).
-  const onResizePointerDown = (e: React.PointerEvent) => {
+  // Resize from any edge or corner (desktop only). `dir` says which edges move;
+  // edges that move the top/left also shift x/y. The opposite edge stays put
+  // when the window hits its minimum size, so it never "jumps".
+  const onResizeStart = (e: React.PointerEvent, dir: string) => {
     e.stopPropagation();
+    e.preventDefault(); // don't start a text selection while resizing
+    document.body.style.userSelect = "none";
     focus(win.id);
     const startX = e.clientX;
     const startY = e.clientY;
-    const ow = win.w;
-    const oh = win.h;
+    const { x: ox, y: oy, w: ow, h: oh } = win;
+    const { MIN_W, MIN_H } = TOOL_WINDOW_LIMITS;
     const move = (ev: PointerEvent) => {
-      setRect(win.id, {
-        w: ow + (ev.clientX - startX),
-        h: oh + (ev.clientY - startY),
-      });
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      let x = ox;
+      let y = oy;
+      let w = ow;
+      let h = oh;
+      if (dir.includes("e")) w = ow + dx;
+      if (dir.includes("s")) h = oh + dy;
+      if (dir.includes("w")) {
+        w = ow - dx;
+        x = ox + dx;
+      }
+      if (dir.includes("n")) {
+        h = oh - dy;
+        y = oy + dy;
+      }
+      if (w < MIN_W) {
+        if (dir.includes("w")) x = ox + ow - MIN_W;
+        w = MIN_W;
+      }
+      if (h < MIN_H) {
+        if (dir.includes("n")) y = oy + oh - MIN_H;
+        h = MIN_H;
+      }
+      setRect(win.id, { x, y, w, h });
     };
     const up = () => {
+      document.body.style.userSelect = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -123,26 +190,6 @@ function ToolWindow({
       <span className="min-w-0 flex-1 truncate text-sm font-semibold">
         {toolName}
       </span>
-      <button
-        data-no-drag
-        type="button"
-        aria-label={win.pinned ? "Unpin tool" : "Pin tool to the page"}
-        title={
-          win.pinned
-            ? "Unpin (won't reopen after reload)"
-            : "Pin — keep this tool here, even after reload"
-        }
-        aria-pressed={win.pinned}
-        onClick={() => togglePin(win.id)}
-        className={cn(
-          "grid h-7 w-7 place-items-center rounded-md hover:bg-secondary",
-          win.pinned
-            ? "text-primary"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <Pin className={cn("h-3.5 w-3.5", win.pinned && "fill-current")} />
-      </button>
       <button
         data-no-drag
         type="button"
@@ -193,7 +240,7 @@ function ToolWindow({
       <>
         <div
           onPointerDown={() => focus(win.id)}
-          style={{ zIndex: 40 + win.z }}
+          style={{ zIndex }}
           className={cn(
             "fixed inset-x-0 bottom-0 flex flex-col rounded-t-xl border border-border bg-surface shadow-[0_-8px_30px_-12px_rgba(0,0,0,0.35)]",
             win.minimized ? "h-auto" : "h-[72vh]",
@@ -222,17 +269,26 @@ function ToolWindow({
           top: win.y,
           width: win.w,
           height: win.minimized ? undefined : win.h,
-          zIndex: 40 + win.z,
+          zIndex,
         }}
         className="fixed flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[0_12px_40px_-12px_rgba(0,0,0,0.4)]"
       >
         {header}
         {body}
+        {/* Collapsed: only the side grips (width-only); expanded: all of them. */}
+        {(win.minimized ? SIDE_GRIPS : RESIZE_GRIPS).map((grip) => (
+          <div
+            key={grip.dir}
+            onPointerDown={(e) => onResizeStart(e, grip.dir)}
+            aria-hidden
+            className={cn("absolute z-10", grip.className)}
+          />
+        ))}
+        {/* A subtle visual cue on the bottom-right corner. */}
         {!win.minimized && (
           <div
-            onPointerDown={onResizePointerDown}
             aria-hidden
-            className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize"
+            className="pointer-events-none absolute bottom-0 right-0 h-3.5 w-3.5"
             style={{
               background:
                 "linear-gradient(135deg, transparent 50%, var(--color-border) 50%)",
