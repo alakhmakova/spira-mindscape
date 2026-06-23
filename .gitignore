@@ -13,6 +13,11 @@ dist
 dist-ssr
 .output
 .vinxi
+
+# Playwright e2e artifacts
+test-results
+playwright-report
+.playwright
 .tanstack/**
 src/routeTree.gen.ts
 .nitro

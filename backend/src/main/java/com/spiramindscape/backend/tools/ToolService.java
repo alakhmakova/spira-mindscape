@@ -24,6 +24,9 @@ public class ToolService {
     static final int MAX_TOOLS_PER_USER = 20;
     static final int MAX_RECORDS_PER_TOOL = 500;
     // Record size is enforced by ToolRecordValidator (16 KB).
+    /** Sandbox render code is inert text run only in an isolated iframe; we just
+     *  bound its size (it can be larger than a schema). */
+    static final int MAX_RENDER_CODE_BYTES = 64 * 1024;
     static final Set<String> ALLOWED_PLACEMENTS = Set.of("goal", "all_goals", "tools");
     static final Set<String> ALLOWED_CREATORS = Set.of("ai", "user");
 
@@ -80,6 +83,7 @@ public class ToolService {
         tool.setSchemaJson(canonicalSchema);
         tool.setPlacement(placement);
         tool.setCreatedBy(createdBy);
+        tool.setRenderCode(validatedRenderCode(req.renderCode()));
         return tools.save(tool);
     }
 
@@ -117,6 +121,11 @@ public class ToolService {
             } catch (ToolSchemaValidator.InvalidSchemaException e) {
                 throw badRequest(e.getMessage());
             }
+        }
+        if (req.renderCode() != null) {
+            // Empty string clears the code (back to schema-rendered).
+            tool.setRenderCode(req.renderCode().isBlank() ? null
+                    : validatedRenderCode(req.renderCode()));
         }
         return tools.save(tool);
     }
@@ -177,6 +186,17 @@ public class ToolService {
         } catch (ToolRecordValidator.InvalidRecordException e) {
             throw badRequest(e.getMessage());
         }
+    }
+
+    /** Bounds the size of sandbox render code; returns null for blank input.
+     *  The code is inert text (run only in an isolated iframe), so we don't
+     *  parse it — we just cap storage/prompt size. */
+    private String validatedRenderCode(String code) {
+        if (code == null || code.isBlank()) return null;
+        if (code.length() > MAX_RENDER_CODE_BYTES) {
+            throw badRequest("This tool's custom layout code is too large.");
+        }
+        return code;
     }
 
     private Long currentUserId() {

@@ -79,6 +79,8 @@ export type Tool = {
   schemaJson: string;
   placement: "goal" | "all_goals" | "tools";
   createdBy: "ai" | "user";
+  /** Optional AI-written sandbox render code; null = schema-rendered. */
+  renderCode: string | null;
   createdAt: string;
 };
 
@@ -115,6 +117,7 @@ export async function createTool(input: {
   placement?: string;
   goalId?: number | null;
   createdBy?: "ai" | "user";
+  renderCode?: string | null;
 }): Promise<Tool> {
   const res = await fetch(BASE, {
     method: "POST",
@@ -126,6 +129,7 @@ export async function createTool(input: {
       placement: input.placement ?? "tools",
       goalId: input.goalId ?? null,
       createdBy: input.createdBy ?? "user",
+      renderCode: input.renderCode ?? null,
     }),
   });
   if (!res.ok)
@@ -133,11 +137,12 @@ export async function createTool(input: {
   return res.json();
 }
 
-/** Change a tool's structure/appearance (name and/or schema). Returns the
- *  updated tool. Used when the AI's edit_tool proposal is approved. */
+/** Change a tool's structure/appearance (name, schema, and/or render code).
+ *  Returns the updated tool. Used when the AI's edit_tool proposal is approved.
+ *  `renderCode: ""` clears the custom layout (back to schema-rendered). */
 export async function updateTool(
   id: number,
-  patch: { name?: string; schemaJson?: string },
+  patch: { name?: string; schemaJson?: string; renderCode?: string },
 ): Promise<Tool> {
   return patchTool(id, patch);
 }

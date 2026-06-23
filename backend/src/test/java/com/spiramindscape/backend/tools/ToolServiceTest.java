@@ -50,7 +50,7 @@ class ToolServiceTest {
     }
 
     private CreateToolRequest req(String schema) {
-        return new CreateToolRequest(null, "Job Applications", schema, "tools", "ai");
+        return new CreateToolRequest(null, "Job Applications", schema, "tools", "ai", null);
     }
 
     @Test
@@ -68,7 +68,7 @@ class ToolServiceTest {
     @DisplayName("create tolerates a null createdBy (defaults to 'user', no NPE)")
     void createNullCreatedBy() {
         when(tools.countByAppUserId(USER_ID)).thenReturn(0L);
-        var request = new CreateToolRequest(null, "Tracker", VALID_SCHEMA, "tools", null);
+        var request = new CreateToolRequest(null, "Tracker", VALID_SCHEMA, "tools", null, null);
         ToolDefinition saved = service.create(request);
         assertThat(saved.getCreatedBy()).isEqualTo("user");
     }
@@ -102,7 +102,7 @@ class ToolServiceTest {
                 "{\"layout\":\"table\",\"columns\":[{\"key\":\"c\",\"primitive\":\"text\"},"
                         + "{\"key\":\"salary\",\"primitive\":\"number\"}]}";
 
-        ToolDefinition result = service.update(1L, new UpdateToolRequest(null, null, newSchema));
+        ToolDefinition result = service.update(1L, new UpdateToolRequest(null, null, newSchema, null));
         assertThat(result.getSchemaJson()).contains("salary");
     }
 
@@ -112,8 +112,24 @@ class ToolServiceTest {
         ToolDefinition tool = ownedTool();
         lenient().when(tools.findByIdAndAppUserId(1L, USER_ID)).thenReturn(Optional.of(tool));
         String evil = "{\"layout\":\"fields\",\"columns\":[{\"key\":\"x\",\"primitive\":\"script\"}]}";
-        assertThatThrownBy(() -> service.update(1L, new UpdateToolRequest(null, null, evil)))
+        assertThatThrownBy(() -> service.update(1L, new UpdateToolRequest(null, null, evil, null)))
                 .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    @DisplayName("create stores sandbox render code; update clears it with an empty string")
+    void renderCodeStoredAndCleared() {
+        when(tools.countByAppUserId(USER_ID)).thenReturn(0L);
+        var withCode = new CreateToolRequest(null, "Custom", VALID_SCHEMA, "tools", "ai",
+                "ctx.root.textContent='hi';");
+        ToolDefinition created = service.create(withCode);
+        assertThat(created.getRenderCode()).contains("ctx.root");
+
+        ToolDefinition tool = ownedTool();
+        tool.setRenderCode("old();");
+        when(tools.findByIdAndAppUserId(1L, USER_ID)).thenReturn(Optional.of(tool));
+        ToolDefinition cleared = service.update(1L, new UpdateToolRequest(null, null, null, ""));
+        assertThat(cleared.getRenderCode()).isNull();
     }
 
     @Test

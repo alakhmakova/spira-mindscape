@@ -19,6 +19,9 @@ export default tseslint.config(
       ".wrangler/**",
       "node_modules/**",
       "api_backup.ts",
+      // Playwright e2e tests run under their own runner (not vitest/eslint app config).
+      "e2e/**",
+      "playwright.config.ts",
     ],
   },
   {

@@ -65,6 +65,10 @@ public class AiChatService {
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** Upper bound for AI-supplied sandbox render code in a proposal (the
+     *  backend re-checks on save). Keeps the SSE payload/prompt bounded. */
+    private static final int MAX_RENDER_CODE_CHARS = 64 * 1024;
+
     /**
      * Role prompt injected at the top of every system prompt.
      * Grounded in the coaching philosophy from the source books.
@@ -134,15 +138,18 @@ public class AiChatService {
             Tools are GLOBAL — they live in the user's Tools list (the floating Tools button,
             available on every page), never tied to a specific goal. You can create, change, and
             fill tools from ANY chat regardless of which goal (if any) is open.
-            WHAT YOU CAN AND CANNOT CHANGE — BE HONEST: you control a tool's STRUCTURE (its
-            columns, their types from the allowed primitives, the layout table/fields, the name)
-            and its DATA (rows). You do NOT control visual appearance — colours, fonts, button
-            placement, row numbering, spacing, custom widgets, or any layout beyond choosing
-            columns and table/fields. If the user asks for something outside what you can do
-            (restyle the table, move/rename a button, add row numbers, a bespoke chart, etc.),
-            SAY SO PLAINLY: explain you can change the columns, types, and data but not the visual
-            design. NEVER pretend you made a change you cannot make, and never silently ignore the
-            request — be honest about the limit and offer the closest thing you can do.
+            WHAT YOU CAN CHANGE: a tool's STRUCTURE (columns, types from the allowed primitives,
+            table/fields layout, name), its DATA (rows), its declarative display options (column
+            align, select colours, default sort), AND — for a genuinely bespoke look the table/
+            fields can't express — a CUSTOM LAYOUT via 'render' code (propose_tool/edit_tool's
+            'render' field): a JS function body using ctx.root/ctx.schema/ctx.records and
+            ctx.addRow/editRow/deleteRow. Prefer the schema + display options first; reach for
+            'render' only when asked for a custom visual the normal layouts can't do (e.g. a board,
+            a calendar grid, a custom card layout). The render code runs in a LOCKED sandbox: it
+            has the DOM and those callbacks only — NO network, storage, cookies, imports, or access
+            to anything else in the app. BE HONEST: if a request needs something the sandbox can't
+            do (fetch from the internet, talk to other parts of the app), say so plainly; never
+            pretend you made a change you didn't, and never silently ignore a request.
             CHANGING AN EXISTING TOOL'S STRUCTURE: when the user wants to modify a tracker they
             ALREADY have — add/remove/relabel a column, change its layout, or rename it — use
             edit_tool with that tool's id (NOT propose_tool, which would make a duplicate). Send
@@ -644,6 +651,16 @@ public class AiChatService {
                                             + "EXACTLY — never invent, guess, or add sample/example "
                                             + "rows. Leave a cell out if the user didn't give it. "
                                             + "Omit this entirely when the user gave no data."),
+                            "render", Map.of("type", "string",
+                                    "description", "OPTIONAL custom layout code — ONLY when the user "
+                                            + "wants a bespoke look the table/fields layouts and display "
+                                            + "options can't express. Plain browser JS, a function BODY "
+                                            + "given `ctx`: ctx.root (a DOM element to fill), ctx.schema, "
+                                            + "ctx.records ([{id,data}]), and ctx.addRow(data)/"
+                                            + "ctx.editRow(id,data)/ctx.deleteRow(id) to change data. It "
+                                            + "runs in a locked sandbox: NO network, storage, cookies, or "
+                                            + "imports — only the DOM and these callbacks. The schema still "
+                                            + "types the data. Omit for a normal tool."),
                             "reasoning", Map.of("type", "string",
                                     "description", "One short sentence on why this tool helps.")),
                     "required", List.of("name", "schema", "reasoning")));
@@ -671,6 +688,13 @@ public class AiChatService {
                                     "description", "The FULL new tool definition (same shape as "
                                             + "propose_tool's schema). Include ALL columns to keep, "
                                             + "not just changed ones — this replaces the structure."),
+                            "render", Map.of("type", "string",
+                                    "description", "OPTIONAL custom layout code (same shape/sandbox as "
+                                            + "propose_tool's 'render'): a JS function body given `ctx` "
+                                            + "(ctx.root, ctx.schema, ctx.records, ctx.addRow/editRow/"
+                                            + "deleteRow). Send it to set or replace the custom layout; "
+                                            + "send an empty string to remove it (back to the normal "
+                                            + "table). Omit to leave the current rendering unchanged."),
                             "reasoning", Map.of("type", "string",
                                     "description", "One short sentence on what changes and why.")),
                     "required", List.of("toolId", "schema", "reasoning")));
@@ -1366,6 +1390,13 @@ public class AiChatService {
                 if (!valid.isEmpty()) out.set("records", valid);
             }
 
+            // Optional custom sandbox render code (size-capped here; the backend
+            // re-checks on save). It is inert text run only in the sandbox.
+            String render = args.path("render").asText("");
+            if (!render.isBlank() && render.length() <= MAX_RENDER_CODE_CHARS) {
+                out.put("render", render);
+            }
+
             emitter.send(SseEmitter.event().name("tool_proposal").data(MAPPER.writeValueAsString(out)));
         } catch (ToolSchemaValidator.InvalidSchemaException e) {
             log.warn("Dropping invalid tool proposal: {}", e.getMessage());
@@ -1412,6 +1443,13 @@ public class AiChatService {
             if (args.hasNonNull("name")) out.put("name", args.path("name").asText());
             out.set("schema", MAPPER.readTree(canonicalSchema));
             out.put("reasoning", args.path("reasoning").asText(""));
+
+            // Optional custom render code: present (even "") = set/clear it on
+            // accept; absent = leave the current rendering unchanged.
+            if (args.path("render").isTextual()
+                    && args.path("render").asText().length() <= MAX_RENDER_CODE_CHARS) {
+                out.put("render", args.path("render").asText());
+            }
 
             emitter.send(SseEmitter.event().name("tool_proposal").data(MAPPER.writeValueAsString(out)));
         } catch (ToolSchemaValidator.InvalidSchemaException e) {

@@ -45,6 +45,7 @@ function tool(overrides: Partial<Tool> = {}): Tool {
     schemaJson: SCHEMA,
     placement: "goal",
     createdBy: "ai",
+    renderCode: null,
     createdAt: "2026-06-14T00:00:00Z",
     ...overrides,
   };

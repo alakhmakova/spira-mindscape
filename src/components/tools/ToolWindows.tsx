@@ -4,6 +4,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { toast } from "sonner";
 import { ToolRenderer } from "./ToolRenderer";
+import { ToolSandbox } from "./sandbox/ToolSandbox";
 import {
   useTools,
   useToolWindows,
@@ -229,8 +230,14 @@ function ToolWindow({
 
   const body = !win.minimized && (
     <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      {/* Remount on recordsVersion bump so AI-driven row changes show at once. */}
-      <ToolRenderer key={recordsVersion} tool={tool} />
+      {/* Remount on recordsVersion bump so AI-driven row changes show at once.
+          A tool with AI-written render code draws inside the isolated sandbox;
+          otherwise the schema-driven renderer. */}
+      {tool.renderCode ? (
+        <ToolSandbox key={recordsVersion} tool={tool} code={tool.renderCode} />
+      ) : (
+        <ToolRenderer key={recordsVersion} tool={tool} />
+      )}
     </div>
   );
 

@@ -17,6 +17,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ToolRenderer } from "@/components/tools/ToolRenderer";
+import { ToolSandbox } from "@/components/tools/sandbox/ToolSandbox";
 import { columnLabel, formatCell } from "@/components/tools/tool-logic";
 import {
   createTool,
@@ -75,6 +76,9 @@ type ToolProposal = {
   schema: unknown;
   /** Initial rows the user supplied up-front; created with the tool on accept. */
   records?: Record<string, unknown>[];
+  /** Optional AI-written sandbox render code (bespoke layout). For "update",
+   *  "" clears it; undefined leaves the current rendering unchanged. */
+  renderCode?: string;
   reasoning?: string;
   status: "pending" | "created" | "dismissed";
 };
@@ -1129,6 +1133,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const [msgs, setMsgs] = useState<Msg[]>(() => loadTranscript(scopeKey));
   const [gmsgs, setGmsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // A request streams over a page-bound connection: closing/reloading the tab
+  // while it's in flight loses the in-progress generation (it isn't a server
+  // job yet). Warn before an accidental unload while the AI is working.
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [busy]);
   const [session, setSession] = useState<{
     total: number;
     remaining: number;
@@ -1414,6 +1431,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               goalId: typeof t.goalId === "number" ? t.goalId : undefined,
               schema: t.schema,
               records: Array.isArray(t.records) ? t.records : undefined,
+              renderCode: typeof t.render === "string" ? t.render : undefined,
               reasoning: t.reasoning,
               status: "pending",
             });
@@ -2473,6 +2491,21 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                         ),
                       )
                     }
+                    onRevise={(text) => {
+                      const cols = (
+                        (
+                          tp.schema as
+                            | { columns?: { key: string; label?: string }[] }
+                            | undefined
+                        )?.columns ?? []
+                      )
+                        .map((c) => c.label || c.key)
+                        .join(", ");
+                      sendChat(
+                        `Revise the tool you just proposed${tp.name ? ` ("${tp.name}")` : ""}` +
+                          `${cols ? ` (current columns: ${cols})` : ""}: ${text}`,
+                      );
+                    }}
                   />
                 ))}
               {!m.streaming &&
@@ -4521,11 +4554,16 @@ function ToolRecordsPreview({
 function ToolProposalCard({
   proposal,
   onResolve,
+  onRevise,
 }: {
   proposal: ToolProposal;
   onResolve: (status: "created" | "dismissed") => void;
+  /** Ask the AI to adjust this proposal (sends a correction; re-proposes). */
+  onRevise: (text: string) => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [revising, setRevising] = useState(false);
+  const [reviseText, setReviseText] = useState("");
   const isUpdate = proposal.op === "update";
   const tools = useTools((s) => s.tools);
   const existing = isUpdate
@@ -4540,6 +4578,7 @@ function ToolProposalCard({
     schemaJson: JSON.stringify(proposal.schema),
     placement: proposal.placement as Tool["placement"],
     createdBy: "ai" as const,
+    renderCode: proposal.renderCode ?? null,
     createdAt: new Date().toISOString(),
   };
 
@@ -4560,6 +4599,7 @@ function ToolProposalCard({
         const updated = await updateTool(proposal.toolId, {
           name: proposal.name || undefined,
           schemaJson: JSON.stringify(proposal.schema),
+          renderCode: proposal.renderCode, // undefined leaves it; "" clears it
         });
         // Replace it in the shared store + refresh the open window's renderer,
         // and make sure the tool is visible so the change is obvious.
@@ -4575,6 +4615,7 @@ function ToolProposalCard({
         placement: proposal.placement,
         goalId: proposal.goalId ?? null,
         createdBy: "ai",
+        renderCode: proposal.renderCode ?? null,
       });
       // If the user supplied data up-front, the tool is created already filled:
       // write each (already server-validated) row in order. One failure doesn't
@@ -4623,7 +4664,11 @@ function ToolProposalCard({
         </p>
       )}
       <div className="mt-2.5 rounded-[10px] border border-[#e6e4df] bg-[#fbf9f4] p-2.5">
-        <ToolRenderer tool={previewTool} preview />
+        {proposal.renderCode ? (
+          <ToolSandbox preview tool={previewTool} code={proposal.renderCode} />
+        ) : (
+          <ToolRenderer tool={previewTool} preview />
+        )}
       </div>
       {proposal.records && proposal.records.length > 0 && (
         <ToolRecordsPreview
@@ -4631,22 +4676,61 @@ function ToolProposalCard({
           records={proposal.records}
         />
       )}
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          onClick={accept}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#006d67] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#005b56] disabled:opacity-50"
-        >
-          <Ic path={PATHS.check} size={14} />{" "}
-          {isUpdate ? "Apply changes" : "Add tool"}
-        </button>
-        <button
-          onClick={() => onResolve("dismissed")}
-          className="ml-auto px-1.5 text-[13px] text-[#083f3a]/50 hover:text-[#083f3a]"
-        >
-          Dismiss
-        </button>
-      </div>
+      {revising ? (
+        <div className="mt-3">
+          <textarea
+            autoFocus
+            value={reviseText}
+            onChange={(e) => setReviseText(e.target.value)}
+            placeholder="What should change? e.g. add a Salary column, make Deadline a date…"
+            className="min-h-[3.5rem] w-full resize-y rounded-[10px] border border-[#e6e4df] bg-[#fbf9f4] px-3 py-2 text-[13px] outline-none focus:border-[#006d67]"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => {
+                const t = reviseText.trim();
+                if (!t) return;
+                onRevise(t);
+                onResolve("dismissed"); // superseded by the revised proposal
+              }}
+              disabled={!reviseText.trim()}
+              className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#006d67] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#005b56] disabled:opacity-50"
+            >
+              <Ic path={PATHS.sparkles} size={14} /> Send changes
+            </button>
+            <button
+              onClick={() => setRevising(false)}
+              className="ml-auto px-1.5 text-[13px] text-[#083f3a]/50 hover:text-[#083f3a]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={accept}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#006d67] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#005b56] disabled:opacity-50"
+          >
+            <Ic path={PATHS.check} size={14} />{" "}
+            {isUpdate ? "Apply changes" : "Add tool"}
+          </button>
+          <button
+            onClick={() => setRevising(true)}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#cfe3e0] px-3 py-2 text-[13px] font-medium text-[#006d67] hover:bg-[#eef6f4] disabled:opacity-50"
+          >
+            <Ic path={PATHS.pencil} size={13} /> Adjust
+          </button>
+          <button
+            onClick={() => onResolve("dismissed")}
+            className="ml-auto px-1.5 text-[13px] text-[#083f3a]/50 hover:text-[#083f3a]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 }

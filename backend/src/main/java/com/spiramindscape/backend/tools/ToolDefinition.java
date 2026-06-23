@@ -45,6 +45,15 @@ public class ToolDefinition {
     @Column(name = "created_by", nullable = false, length = 8)
     private String createdBy;
 
+    /**
+     * Optional AI-written render module. When set, the tool is drawn by this
+     * code inside an isolated sandbox iframe (see docs/ai-tools-sandbox-plan.md)
+     * instead of the schema-driven renderer. Inert TEXT — never executed in the
+     * parent app. Null = schema-rendered (the default).
+     */
+    @Column(name = "render_code", columnDefinition = "TEXT")
+    private String renderCode;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
