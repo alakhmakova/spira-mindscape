@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
+import { Trash2, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   addRecord,
@@ -15,7 +15,10 @@ import {
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
+  alignClass,
+  badgeClasses,
   columnLabel,
+  compareCells,
   emptyRow,
   formatCell,
   inputColumns,
@@ -63,9 +66,19 @@ export function ToolRenderer({
     );
   }
 
+  // Keep only keys the CURRENT schema defines: if the tool's structure changed
+  // (e.g. the AI removed a column via edit_tool), a row still holding the old
+  // key would be rejected by the server validator. Projecting drops stale keys.
+  const project = (data: ToolRow): ToolRow => {
+    const keys = new Set(schema.columns.map((c) => c.key));
+    const out: ToolRow = {};
+    for (const k of Object.keys(data)) if (keys.has(k)) out[k] = data[k];
+    return out;
+  };
+
   const onAdd = async (data: ToolRow) => {
     try {
-      const saved = await addRecord(tool.id, data);
+      const saved = await addRecord(tool.id, project(data));
       setRecords((prev) => [...prev, saved]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't save the entry.");
@@ -75,7 +88,7 @@ export function ToolRenderer({
 
   const onEdit = async (recordId: number, data: ToolRow) => {
     try {
-      const saved = await updateRecord(tool.id, recordId, data);
+      const saved = await updateRecord(tool.id, recordId, project(data));
       setRecords((prev) => prev.map((r) => (r.id === recordId ? saved : r)));
     } catch (e) {
       toast.error(
@@ -148,7 +161,7 @@ function ToolBody({
               >
                 <dt className="text-muted-foreground">{columnLabel(c)}</dt>
                 <dd className="font-medium text-foreground">
-                  {formatCell(c.primitive, existing.data[c.key])}
+                  <Cell col={c} value={existing.data[c.key]} />
                 </dd>
               </div>
             ))}
@@ -185,12 +198,67 @@ function ToolBody({
     );
   }
 
-  // `table` layout. Desktop = table, mobile = stacked cards.
+  // `table` layout. Desktop = table, mobile = stacked cards. Newest entries
+  // first; a sticky toolbar (stats + Add entry) stays visible while scrolling.
+  const statusCol = cols.find((c) => c.primitive === "select");
+  const total = rows.length;
+  let statsText = `${total} ${total === 1 ? "entry" : "entries"}`;
+  if (statusCol) {
+    const counts: Record<string, number> = {};
+    for (const r of rows) {
+      const v = r.data[statusCol.key];
+      if (typeof v === "string" && v) counts[v] = (counts[v] ?? 0) + 1;
+    }
+    const opts = statusCol.options ?? Object.keys(counts);
+    const parts = opts.filter((o) => counts[o]).map((o) => `${o} ${counts[o]}`);
+    if (parts.length) statsText += ` · ${parts.join(" · ")}`;
+  }
+  // Order: the schema's default sort if set, otherwise newest first. Numbered
+  // from the top in whatever order is shown.
+  const sort = schema.sort;
+  let displayRows: typeof rows;
+  if (sort && cols.some((c) => c.key === sort.key)) {
+    displayRows = [...rows].sort((a, b) =>
+      compareCells(a.data[sort.key], b.data[sort.key]),
+    );
+    if (sort.dir === "desc") displayRows.reverse();
+  } else {
+    displayRows = [...rows].reverse();
+  }
+
   return (
     <div className="space-y-3">
+      {!preview && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-surface py-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {statsText}
+          </span>
+          <button
+            onClick={() => setAdding(true)}
+            className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          >
+            Add entry
+          </button>
+        </div>
+      )}
+
+      {!preview && adding && (
+        <div className="surface-card p-3">
+          <RowForm
+            cols={cols}
+            submitLabel="Add"
+            onSubmit={async (d) => {
+              await onAdd(d);
+              setAdding(false);
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        </div>
+      )}
+
       {isMobile ? (
         <div className="space-y-2">
-          {rows.map((row) =>
+          {displayRows.map((row, i) =>
             editingId === row.id ? (
               <div key={row.id} className="surface-card p-3">
                 <RowForm
@@ -206,6 +274,9 @@ function ToolBody({
               </div>
             ) : (
               <div key={row.id} className="surface-card p-3">
+                <div className="mb-1 text-xs font-semibold text-muted-foreground tabular-nums">
+                  #{i + 1}
+                </div>
                 <dl className="space-y-1">
                   {cols.map((c) => (
                     <div
@@ -216,7 +287,7 @@ function ToolBody({
                         {columnLabel(c)}
                       </dt>
                       <dd className="font-medium text-foreground text-right">
-                        {formatCell(c.primitive, row.data[c.key])}
+                        <Cell col={c} value={row.data[c.key]} />
                       </dd>
                     </div>
                   ))}
@@ -240,7 +311,7 @@ function ToolBody({
           )}
           {!preview && rows.length === 0 && !loading && (
             <p className="px-1 text-xs italic text-muted-foreground">
-              No entries yet — add one below.
+              No entries yet — add one above.
             </p>
           )}
         </div>
@@ -249,10 +320,18 @@ function ToolBody({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left">
+                {!preview && (
+                  <th className="w-10 px-3 py-2 font-medium text-muted-foreground">
+                    #
+                  </th>
+                )}
                 {cols.map((c) => (
                   <th
                     key={c.key}
-                    className="px-3 py-2 font-medium text-muted-foreground whitespace-nowrap"
+                    className={cn(
+                      "px-3 py-2 font-medium text-muted-foreground whitespace-nowrap",
+                      alignClass(c.align),
+                    )}
                   >
                     {columnLabel(c)}
                   </th>
@@ -261,10 +340,10 @@ function ToolBody({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) =>
+              {displayRows.map((row, i) =>
                 editingId === row.id ? (
                   <tr key={row.id} className="border-b bg-primary-soft/30">
-                    <td colSpan={cols.length + 1} className="p-3">
+                    <td colSpan={cols.length + 2} className="p-3">
                       <RowForm
                         cols={cols}
                         initial={row.data}
@@ -283,12 +362,20 @@ function ToolBody({
                     key={row.id}
                     className="border-b last:border-0 hover:bg-muted/20"
                   >
+                    {!preview && (
+                      <td className="px-3 py-2 align-top text-xs text-muted-foreground tabular-nums">
+                        {i + 1}
+                      </td>
+                    )}
                     {cols.map((c) => (
                       <td
                         key={c.key}
-                        className="px-3 py-2 align-top text-foreground"
+                        className={cn(
+                          "px-3 py-2 align-top text-foreground",
+                          alignClass(c.align),
+                        )}
                       >
-                        {formatCell(c.primitive, row.data[c.key])}
+                        <Cell col={c} value={row.data[c.key]} />
                       </td>
                     ))}
                     {!preview && (
@@ -314,10 +401,10 @@ function ToolBody({
               {!preview && rows.length === 0 && !loading && (
                 <tr>
                   <td
-                    colSpan={cols.length + 1}
+                    colSpan={cols.length + 2}
                     className="px-3 py-3 text-xs italic text-muted-foreground"
                   >
-                    No entries yet — add one below.
+                    No entries yet — add one above.
                   </td>
                 </tr>
               )}
@@ -325,30 +412,31 @@ function ToolBody({
           </table>
         </div>
       )}
-
-      {!preview &&
-        (adding ? (
-          <div className="surface-card p-3">
-            <RowForm
-              cols={cols}
-              submitLabel="Add"
-              onSubmit={async (d) => {
-                await onAdd(d);
-                setAdding(false);
-              }}
-              onCancel={() => setAdding(false)}
-            />
-          </div>
-        ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" /> Add entry
-          </button>
-        ))}
     </div>
   );
+}
+
+// A read-only cell value: a coloured badge for a `select` with configured
+// colours, otherwise the plain formatted text.
+function Cell({ col, value }: { col: ToolColumn; value: unknown }) {
+  if (
+    col.primitive === "select" &&
+    col.colors &&
+    value != null &&
+    value !== ""
+  ) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+          badgeClasses(col.colors[String(value)]),
+        )}
+      >
+        {String(value)}
+      </span>
+    );
+  }
+  return <>{formatCell(col.primitive, value)}</>;
 }
 
 // ── A row form, shared by add + edit ────────────────────────────────────────

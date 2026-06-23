@@ -33,6 +33,12 @@ public class ToolSchemaValidator {
 
     static final Set<String> ALLOWED_LAYOUTS = Set.of("table", "fields");
 
+    /** Display-only options the renderer understands (no code, no arbitrary UI). */
+    static final Set<String> ALLOWED_COLORS = Set.of(
+            "gray", "red", "amber", "green", "blue", "purple", "pink", "teal");
+    static final Set<String> ALLOWED_ALIGN = Set.of("left", "center", "right");
+    static final Set<String> ALLOWED_SORT_DIR = Set.of("asc", "desc");
+
     static final int MAX_NAME_CHARS = 120;
     static final int MAX_FIELDS = 12;
     static final int MAX_SCHEMA_BYTES = 8 * 1024;
@@ -87,12 +93,14 @@ public class ToolSchemaValidator {
                     "Too many fields (max " + MAX_FIELDS + ").");
         }
 
+        java.util.Set<String> keys = new java.util.HashSet<>();
         for (JsonNode col : columns) {
             String key = col.path("key").asText("");
             String primitive = col.path("primitive").asText("");
             if (key.isBlank()) {
                 throw new InvalidSchemaException("Every field needs a 'key'.");
             }
+            keys.add(key);
             if (!ALLOWED_PRIMITIVES.contains(primitive)) {
                 throw new InvalidSchemaException(
                         "Unsupported field type '" + primitive + "'.");
@@ -107,6 +115,37 @@ public class ToolSchemaValidator {
                     throw new InvalidSchemaException(
                             "Too many options on field '" + key + "'.");
                 }
+            }
+            // Display-only: cell alignment.
+            JsonNode align = col.path("align");
+            if (!align.isMissingNode() && !ALLOWED_ALIGN.contains(align.asText(""))) {
+                throw new InvalidSchemaException(
+                        "Unsupported align on field '" + key + "'.");
+            }
+            // Display-only: per-option colours for a select.
+            JsonNode colors = col.path("colors");
+            if (!colors.isMissingNode()) {
+                if (!colors.isObject()) {
+                    throw new InvalidSchemaException(
+                            "'colors' on field '" + key + "' must be an object.");
+                }
+                for (JsonNode color : colors) {
+                    if (!ALLOWED_COLORS.contains(color.asText(""))) {
+                        throw new InvalidSchemaException(
+                                "Unsupported colour '" + color.asText("") + "' on field '" + key + "'.");
+                    }
+                }
+            }
+        }
+
+        // Display-only: default sort by an existing column.
+        JsonNode sort = root.path("sort");
+        if (!sort.isMissingNode()) {
+            if (!sort.isObject() || !keys.contains(sort.path("key").asText(""))) {
+                throw new InvalidSchemaException("'sort.key' must be an existing field.");
+            }
+            if (!ALLOWED_SORT_DIR.contains(sort.path("dir").asText("asc"))) {
+                throw new InvalidSchemaException("'sort.dir' must be 'asc' or 'desc'.");
             }
         }
 

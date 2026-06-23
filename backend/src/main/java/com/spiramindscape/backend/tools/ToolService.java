@@ -108,6 +108,16 @@ public class ToolService {
             }
             tool.setPlacement(req.placement());
         }
+        if (req.schemaJson() != null) {
+            // Same security boundary as create: only approved primitives, within
+            // limits. Existing records are kept; the renderer reads by current
+            // column key (extra keys ignored, missing keys show empty).
+            try {
+                tool.setSchemaJson(validator.validate(req.schemaJson()));
+            } catch (ToolSchemaValidator.InvalidSchemaException e) {
+                throw badRequest(e.getMessage());
+            }
+        }
         return tools.save(tool);
     }
 

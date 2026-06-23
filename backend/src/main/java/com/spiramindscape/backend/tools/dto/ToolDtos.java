@@ -14,7 +14,9 @@ public final class ToolDtos {
     public record CreateToolRequest(Long goalId, String name, String schemaJson,
                                     String placement, String createdBy) {}
 
-    public record UpdateToolRequest(String name, String placement) {}
+    /** Nullable fields leave that attribute untouched (partial update). A
+     *  non-null {@code schemaJson} replaces the tool's structure/appearance. */
+    public record UpdateToolRequest(String name, String placement, String schemaJson) {}
 
     public record ToolResponse(Long id, Long goalId, String name, String schemaJson,
                                String placement, String createdBy, Instant createdAt) {

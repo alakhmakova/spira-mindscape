@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import { goalProgress } from "@/lib/spira/progress";
-import { ToolsMenu } from "@/components/tools/ToolsMenu";
 import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
@@ -724,11 +723,6 @@ function GoalNav({ goalId }: { goalId: string }) {
               {item.label}
             </button>
           ))}
-          {/* Tools: a dropdown, not a scroll-target. Shown in the bar when there's
-              width; on narrow screens it lives in the user menu (AppShell). */}
-          <span className="hidden sm:inline-flex">
-            <ToolsMenu goalId={goalId} />
-          </span>
         </div>
       </div>
       <div className="h-[5px] w-full bg-[#dcfce7] overflow-hidden">

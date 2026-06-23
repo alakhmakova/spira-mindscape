@@ -14,13 +14,17 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { useNavigate, Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ToolRenderer } from "@/components/tools/ToolRenderer";
+import { columnLabel, formatCell } from "@/components/tools/tool-logic";
 import {
   createTool,
+  updateTool,
+  addRecord,
   updateRecord,
   deleteRecord,
+  parseSchema,
   type Tool,
 } from "@/lib/spira/tools-api";
 import { useTools, useToolWindows } from "@/components/tools/tools-store";
@@ -61,10 +65,16 @@ import {
 /** A Personal Tool the AI proposed (preview + approve before it's created). */
 type ToolProposal = {
   id: string;
+  /** "create" = a brand-new tool; "update" = restructure an existing one. */
+  op: "create" | "update";
+  /** For op="update": the existing tool's id to PATCH. */
+  toolId?: number;
   name: string;
   placement: string;
   goalId?: number;
   schema: unknown;
+  /** Initial rows the user supplied up-front; created with the tool on accept. */
+  records?: Record<string, unknown>[];
   reasoning?: string;
   status: "pending" | "created" | "dismissed";
 };
@@ -1397,10 +1407,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           if (t && t.schema) {
             pendingToolProposals.push({
               id: uid(),
-              name: t.name ?? "Tool",
+              op: t.op === "update" ? "update" : "create",
+              toolId: typeof t.toolId === "number" ? t.toolId : undefined,
+              name: t.name ?? (t.op === "update" ? "" : "Tool"),
               placement: t.placement ?? "tools",
               goalId: typeof t.goalId === "number" ? t.goalId : undefined,
               schema: t.schema,
+              records: Array.isArray(t.records) ? t.records : undefined,
               reasoning: t.reasoning,
               status: "pending",
             });
@@ -4470,6 +4483,41 @@ function ToolDataProposalCard({
 
 // ── AI tool proposal card (preview + approve a Personal Tool) ───────────────
 
+/**
+ * Read-only preview of the rows the user supplied up-front, so they can verify
+ * their REAL data was captured (not fabricated) before approving the tool.
+ */
+function ToolRecordsPreview({
+  schemaJson,
+  records,
+}: {
+  schemaJson: string;
+  records: Record<string, unknown>[];
+}) {
+  const schema = parseSchema(schemaJson);
+  if (!schema) return null;
+  return (
+    <div className="mt-2 rounded-[10px] border border-[#e6e4df] bg-white p-2.5">
+      <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#006d67]">
+        {records.length} {records.length === 1 ? "entry" : "entries"} to add
+      </p>
+      <ul className="space-y-1">
+        {records.map((row, i) => (
+          <li key={i} className="text-[12px] leading-[1.5] text-[#083f3a]/80">
+            {schema.columns
+              .map((c) => {
+                const v = formatCell(c.primitive, row[c.key]);
+                return v === "—" ? null : `${columnLabel(c)}: ${v}`;
+              })
+              .filter(Boolean)
+              .join(" · ") || "—"}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ToolProposalCard({
   proposal,
   onResolve,
@@ -4478,11 +4526,17 @@ function ToolProposalCard({
   onResolve: (status: "created" | "dismissed") => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const isUpdate = proposal.op === "update";
+  const tools = useTools((s) => s.tools);
+  const existing = isUpdate
+    ? tools.find((t) => t.id === proposal.toolId)
+    : undefined;
+  const displayName = proposal.name || existing?.name || "Tool";
   // A minimal Tool shape so the existing read-only renderer can preview it.
   const previewTool = {
-    id: -1,
-    goalId: proposal.goalId ?? null,
-    name: proposal.name,
+    id: proposal.toolId ?? -1,
+    goalId: proposal.goalId ?? existing?.goalId ?? null,
+    name: displayName,
     schemaJson: JSON.stringify(proposal.schema),
     placement: proposal.placement as Tool["placement"],
     createdBy: "ai" as const,
@@ -4493,11 +4547,8 @@ function ToolProposalCard({
   if (proposal.status === "created") {
     return (
       <div className="mt-2 inline-flex items-center gap-2 self-start rounded-full bg-white/10 px-3 py-1.5 text-[12.5px] text-white/80">
-        <Ic path={PATHS.check} size={12} /> Added “{proposal.name}” — see{" "}
-        <Link to="/tools" className="underline">
-          Tools
-        </Link>
-        .
+        <Ic path={PATHS.check} size={12} /> {isUpdate ? "Updated" : "Added"} “
+        {displayName}” — open it from the Tools button.
       </div>
     );
   }
@@ -4505,6 +4556,19 @@ function ToolProposalCard({
   const accept = async () => {
     setSaving(true);
     try {
+      if (isUpdate && proposal.toolId != null) {
+        const updated = await updateTool(proposal.toolId, {
+          name: proposal.name || undefined,
+          schemaJson: JSON.stringify(proposal.schema),
+        });
+        // Replace it in the shared store + refresh the open window's renderer,
+        // and make sure the tool is visible so the change is obvious.
+        useTools.getState().applyToolUpdate(updated);
+        useToolWindows.getState().open(updated.id);
+        toast.success(`“${updated.name}” updated`);
+        onResolve("created");
+        return;
+      }
       const created = await createTool({
         name: proposal.name,
         schemaJson: JSON.stringify(proposal.schema),
@@ -4512,14 +4576,36 @@ function ToolProposalCard({
         goalId: proposal.goalId ?? null,
         createdBy: "ai",
       });
+      // If the user supplied data up-front, the tool is created already filled:
+      // write each (already server-validated) row in order. One failure doesn't
+      // abort the rest — the tool still exists with whatever rows succeeded.
+      let added = 0;
+      for (const row of proposal.records ?? []) {
+        try {
+          await addRecord(created.id, row);
+          added++;
+        } catch {
+          /* skip a row that won't save; the user can add it by hand */
+        }
+      }
       // Publish to the shared store so it shows up instantly everywhere, and
       // open it as a floating window so the user can use it right away.
       useTools.getState().addTool(created);
       useToolWindows.getState().open(created.id);
-      toast.success(`“${proposal.name}” added to your tools`);
+      toast.success(
+        added > 0
+          ? `“${proposal.name}” added with ${added} ${added === 1 ? "entry" : "entries"}`
+          : `“${proposal.name}” added to your tools`,
+      );
       onResolve("created");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't create the tool.");
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : isUpdate
+            ? "Couldn't update the tool."
+            : "Couldn't create the tool.",
+      );
       setSaving(false);
     }
   };
@@ -4527,10 +4613,10 @@ function ToolProposalCard({
   return (
     <div className="mt-2 rounded-[14px] border border-white/20 bg-white p-3.5 text-[#083f3a] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
       <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#006d67]">
-        <Ic path={PATHS.sparkles} size={12} className="text-[#006d67]" /> New
-        tool
+        <Ic path={PATHS.sparkles} size={12} className="text-[#006d67]" />{" "}
+        {isUpdate ? "Tool update" : "New tool"}
       </span>
-      <h4 className="mt-1.5 font-semibold">{proposal.name}</h4>
+      <h4 className="mt-1.5 font-semibold">{displayName}</h4>
       {proposal.reasoning && (
         <p className="mt-0.5 text-[12.5px] leading-[1.5] text-[#083f3a]/60">
           {proposal.reasoning}
@@ -4539,13 +4625,20 @@ function ToolProposalCard({
       <div className="mt-2.5 rounded-[10px] border border-[#e6e4df] bg-[#fbf9f4] p-2.5">
         <ToolRenderer tool={previewTool} preview />
       </div>
+      {proposal.records && proposal.records.length > 0 && (
+        <ToolRecordsPreview
+          schemaJson={previewTool.schemaJson}
+          records={proposal.records}
+        />
+      )}
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={accept}
           disabled={saving}
           className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#006d67] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#005b56] disabled:opacity-50"
         >
-          <Ic path={PATHS.check} size={14} /> Add tool
+          <Ic path={PATHS.check} size={14} />{" "}
+          {isUpdate ? "Apply changes" : "Add tool"}
         </button>
         <button
           onClick={() => onResolve("dismissed")}
