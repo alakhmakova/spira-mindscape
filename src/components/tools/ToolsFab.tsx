@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Wrench, X, Trash2, Search, Pin } from "lucide-react";
+import {
+  Wrench,
+  X,
+  Trash2,
+  Search,
+  Pin,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { toast } from "sonner";
 import { type Tool } from "@/lib/spira/tools-api";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
@@ -28,6 +36,7 @@ export function ToolsFab() {
   const openWindow = useToolWindows((s) => s.open);
   const pinnedIds = useToolPins((s) => s.pinnedIds);
   const togglePin = useToolPins((s) => s.toggle);
+  const movePin = useToolPins((s) => s.move);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [confirm, setConfirm] = useState<Tool | null>(null);
@@ -183,6 +192,29 @@ export function ToolsFab() {
                       >
                         {t.name}
                       </button>
+                      {/* Reorder pinned tools (only meaningful with no search filter). */}
+                      {pinned && !query.trim() && (
+                        <span className="flex shrink-0 flex-col">
+                          <button
+                            onClick={() => movePin(t.id, -1)}
+                            disabled={pinRank === 0}
+                            aria-label={`Move ${t.name} up`}
+                            title="Move up"
+                            className="grid h-3.5 w-5 place-items-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => movePin(t.id, 1)}
+                            disabled={pinRank === pinnedIds.length - 1}
+                            aria-label={`Move ${t.name} down`}
+                            title="Move down"
+                            className="grid h-3.5 w-5 place-items-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
                       <button
                         onClick={() => setConfirm(t)}
                         aria-label={`Delete ${t.name}`}

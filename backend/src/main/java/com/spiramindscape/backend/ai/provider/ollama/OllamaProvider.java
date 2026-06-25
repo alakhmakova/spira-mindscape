@@ -41,7 +41,9 @@ public class OllamaProvider implements LlmProvider {
     static final String LOCAL_BASE_URL = "http://localhost:11434";
     static final String CLOUD_BASE_URL = "https://ollama.com";
     static final String DEFAULT_MODEL = "gpt-oss:120b";
-    private static final int MAX_TOKENS = 4096;
+    // Generous so a tool call carrying schema (or custom render code) isn't
+    // truncated mid-JSON — truncation leaves a broken/dropped tool.
+    private static final int MAX_TOKENS = 8192;
 
     private final String baseUrl;
     private final String apiKey; // Bearer token for Ollama Cloud; null for a local/self-hosted server

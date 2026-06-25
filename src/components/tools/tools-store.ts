@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import {
   deleteTool as apiDeleteTool,
   listTools,
+  parseSchema,
   type Tool,
 } from "@/lib/spira/tools-api";
 import { useAuth } from "@/lib/spira/auth";
@@ -134,11 +135,16 @@ function clampGeo(geo: Geo): Geo {
   };
 }
 
-/** A cascading position anchored to the right so windows clear a left-docked chat. */
-function nextGeo(count: number): Geo {
+/** A cascading position anchored to the right so windows clear a left-docked
+ *  chat. Initial size depends on the tool's layout: a single-record `fields`
+ *  tool (e.g. a period tracker, a countdown) opens compact; a `table` tool
+ *  (many rows) opens roomy. Both are capped to the viewport. */
+function nextGeo(count: number, layout: "table" | "fields"): Geo {
   const { vw, vh } = viewport();
-  const w = Math.min(DEFAULT_W, Math.max(MIN_W, vw - 48));
-  const h = Math.min(DEFAULT_H, Math.max(MIN_H, vh - 160));
+  const preferred =
+    layout === "fields" ? { w: 340, h: 300 } : { w: DEFAULT_W, h: DEFAULT_H };
+  const w = Math.min(preferred.w, Math.max(MIN_W, vw - 48));
+  const h = Math.min(preferred.h, Math.max(MIN_H, vh - 160));
   const step = 28 * (count % 6);
   const x = Math.max(24, vw - w - 40 - step);
   const y = Math.max(80, 96 + step);
@@ -179,8 +185,10 @@ export const useToolWindows = create<WindowsState>()(
           }));
           return;
         }
+        const tool = useTools.getState().tools.find((t) => t.id === toolId);
+        const layout = parseSchema(tool?.schemaJson ?? "")?.layout ?? "table";
         const geo = clampGeo(
-          get().geometry[toolId] ?? nextGeo(get().windows.length),
+          get().geometry[toolId] ?? nextGeo(get().windows.length, layout),
         );
         set((s) => ({
           topZ: z,
@@ -288,6 +296,8 @@ type ToolPinsState = {
   pinnedIds: number[];
   toggle: (id: number) => void;
   remove: (id: number) => void;
+  /** Move a pinned tool up (-1) or down (+1) in the pin order. */
+  move: (id: number, delta: -1 | 1) => void;
 };
 
 export const useToolPins = create<ToolPinsState>()(
@@ -302,6 +312,15 @@ export const useToolPins = create<ToolPinsState>()(
         })),
       remove: (id) =>
         set((s) => ({ pinnedIds: s.pinnedIds.filter((x) => x !== id) })),
+      move: (id, delta) =>
+        set((s) => {
+          const i = s.pinnedIds.indexOf(id);
+          const j = i + delta;
+          if (i === -1 || j < 0 || j >= s.pinnedIds.length) return s;
+          const next = [...s.pinnedIds];
+          [next[i], next[j]] = [next[j], next[i]];
+          return { pinnedIds: next };
+        }),
     }),
     {
       name: "spira-tool-pins",

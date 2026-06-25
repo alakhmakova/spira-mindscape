@@ -128,35 +128,67 @@ public class AiChatService {
             When the user wants to TRACK something over time or asks for a tracker / widget /
             tool / log / countdown (e.g. job applications, weight, habits, a period tracker, a
             bin-collection reminder), call the `propose_tool` tool to propose a small widget,
-            instead of creating goal targets. Compose it ONLY from the allowed primitives
-            (number, text, textarea, date, time, checkbox, checklist, select, tags, rating, url,
-            table, progress, chart). Use a 'table' layout for repeated entries over time,
-            'fields' for a single-record form.
-            The user approves before it is created — say you've prepared it for review, don't
-            claim it exists. Use propose_goal_change (not propose_tool) for ordinary goal
-            edits like adding a target or an obstacle.
-            Tools are GLOBAL — they live in the user's Tools list (the floating Tools button,
-            available on every page), never tied to a specific goal. You can create, change, and
-            fill tools from ANY chat regardless of which goal (if any) is open.
-            WHAT YOU CAN CHANGE: a tool's STRUCTURE (columns, types from the allowed primitives,
-            table/fields layout, name), its DATA (rows), its declarative display options (column
-            align, select colours, default sort), AND — for a genuinely bespoke look the table/
-            fields can't express — a CUSTOM LAYOUT via 'render' code (propose_tool/edit_tool's
-            'render' field): a JS function body using ctx.root/ctx.schema/ctx.records and
-            ctx.addRow/editRow/deleteRow. Prefer the schema + display options first; reach for
-            'render' only when asked for a custom visual the normal layouts can't do (e.g. a board,
-            a calendar grid, a custom card layout). The render code runs in a LOCKED sandbox: it
-            has the DOM and those callbacks only — NO network, storage, cookies, imports, or access
-            to anything else in the app. BE HONEST: if a request needs something the sandbox can't
-            do (fetch from the internet, talk to other parts of the app), say so plainly; never
-            pretend you made a change you didn't, and never silently ignore a request.
-            CHANGING AN EXISTING TOOL'S STRUCTURE: when the user wants to modify a tracker they
-            ALREADY have — add/remove/relabel a column, change its layout, or rename it — use
-            edit_tool with that tool's id (NOT propose_tool, which would make a duplicate). Send
-            the FULL new schema (all columns to keep, not just the changed one). Keep existing
-            column keys stable so current data is preserved; the user approves the change. Use
-            edit_tool for STRUCTURE (columns/layout/name) and add/edit/delete_tool_record for the
-            DATA inside it.
+            instead of creating goal targets. The user approves before it is created — say you've
+            prepared it for review, don't claim it exists. Use propose_goal_change (not
+            propose_tool) for ordinary goal edits like adding a target or an obstacle. Tools are
+            GLOBAL — they live in the user's Tools list (the floating Tools button, available on
+            every page), never tied to a specific goal. You can create, change, and fill tools
+            from ANY chat regardless of which goal (if any) is open.
+
+            HOW TO BUILD ONE — DESIGN AND CODE THE TOOL'S UI YOURSELF, via the 'render' parameter:
+            Treat every tool as a small, polished front-end app you build from scratch — the same
+            care you'd put into a Claude artifact. The 'render' parameter (on propose_tool and
+            edit_tool) IS that app: plain browser JavaScript, a function BODY that receives `ctx`
+            and fills the page. Default to writing it. What you get:
+              • ctx.root — the empty element to render into; append your DOM to it.
+              • ctx.schema — the tool's columns/shape. ctx.records — the saved rows, as
+                [{ id, data }] (data keys are the schema's column keys).
+              • ctx.addRow(data) / ctx.editRow(id, data) / ctx.deleteRow(id) — call these to
+                persist a change; your render then re-runs with fresh ctx.records, so just read
+                ctx.records each time and redraw.
+            Make it genuinely good, modern UI for THIS specific request: think about what the user
+            is tracking and design it the way a thoughtful product designer would — real layout
+            (flex/grid), spacing, type hierarchy, rounded corners, hover/active states, whatever
+            suits it. YOU choose the visual style and colours that fit the tool; you are NOT
+            limited to the app's palette — pick what looks best for what's being tracked. (If you
+            DO want the tool to blend with the app or follow light/dark mode, theme-aware CSS
+            variables are available: var(--fg) text, var(--muted) secondary, var(--border),
+            var(--accent) brand, var(--bg) background — but using them is your choice, not a
+            requirement.) You own this code end to end; build it beautiful and working.
+
+            BUILD YOUR OWN CONTROLS — the sandbox gives you the DOM and the ctx callbacks ONLY (no
+            network, storage, cookies, imports, or access to the rest of the app), so you cannot
+            import the app's components — you create and style your own. Build controls that are
+            modern, attractive, and functional and that suit the tool — not raw, unstyled browser
+            defaults. (A plain <input> for free text or a number is fine; for things like choosing
+            from options or picking a date, design a proper styled control rather than dropping the
+            bare native one in.) BE HONEST: if a request needs something the sandbox can't do
+            (fetch from the internet, talk to other parts of the app), say so plainly — never
+            pretend, never silently drop it.
+
+            WHEN A PLAIN SCHEMA IS ENOUGH (the only time to omit 'render'): if the tool is truly
+            just a short list of plain fields with nothing bespoke to design, you may skip 'render'
+            and define only the 'schema' from the allowed primitives (number, text, textarea, date,
+            time, checkbox, checklist, select, tags, rating, url, table, progress, chart) — 'table'
+            layout for repeated entries over time, 'fields' for a single record; the app renders
+            that with its own styled controls (including a polished date picker for `date`
+            columns). Otherwise, prefer 'render'. Note: a 'schema' is ALWAYS required even when you
+            write 'render' — it defines how the data is validated and stored; 'render' only changes
+            how that data is DISPLAYED.
+
+            WHAT YOU CAN CHANGE: a tool's STRUCTURE (schema columns, table/fields layout, name,
+            and its 'render' code), its DATA (rows), and its declarative display options (column
+            align, select colours, default sort) when no 'render' is set.
+            EDIT THE EXISTING TOOL — DO NOT CREATE A DUPLICATE: before proposing a new tool,
+            CHECK the PERSONAL TOOLS context. If a tool for this purpose already exists there (the
+            user says "my tracker", "it", "this", or asks to add/remove/rename a column, change the
+            layout, recolour, etc.), you MUST call edit_tool with that tool's id — you must NOT call
+            propose_tool, which creates a second, duplicate tool and orphans the existing rows.
+            edit_tool KEEPS all existing rows (data is preserved). Send the FULL new schema (all
+            columns to keep, not just the changed one) and keep existing column KEYS stable so the
+            data stays attached. Only use propose_tool for a genuinely NEW, different tool the user
+            doesn't already have. Use edit_tool for STRUCTURE (columns/layout/name/render) and
+            add/edit/delete_tool_record for the DATA inside it.
             CREATING A TOOL *WITH* DATA IN ONE STEP: if the user provides the data in the SAME
             message that asks to create the tracker (e.g. "make a job tracker with these: Google
             — applied 5 Jun; Acme — interview"), put those rows in propose_tool's 'records' field
@@ -598,12 +630,60 @@ public class AiChatService {
         return Map.of("type", "object", "properties", props, "required", List.of("kind", "reasoning"));
     }
 
+    /**
+     * The JSON Schema for a tool's {@code schema} parameter — shared by
+     * propose_tool and edit_tool. A FULL, structured schema (not just an opaque
+     * "object" with a prose hint) so that EVERY function-calling model — not only
+     * the strongest — can fill it reliably. Weaker models lean on this schema;
+     * an opaque object param is the main reason they emit broken/empty tools.
+     */
+    private static Map<String, Object> toolSchemaParam() {
+        Map<String, Object> column = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "key", Map.of("type", "string",
+                                "description", "Stable machine key, e.g. 'company'. Keep it stable across edits."),
+                        "label", Map.of("type", "string",
+                                "description", "Human-readable column label, e.g. 'Company'."),
+                        "primitive", Map.of("type", "string",
+                                "enum", List.of("number", "text", "textarea", "date", "time",
+                                        "checkbox", "checklist", "select", "tags", "rating", "url",
+                                        "table", "progress", "chart"),
+                                "description", "Field type. Use 'date' for any date (it renders the "
+                                        + "app's custom date picker). rating=0-5 stars, time=HH:MM."),
+                        "options", Map.of("type", "array", "items", Map.of("type", "string"),
+                                "description", "REQUIRED for 'select' (the allowed values); omit otherwise."),
+                        "align", Map.of("type", "string",
+                                "enum", List.of("left", "center", "right"),
+                                "description", "OPTIONAL cell alignment."),
+                        "colors", Map.of("type", "object",
+                                "description", "OPTIONAL for 'select': map each option to a colour "
+                                        + "(gray|red|amber|green|blue|purple|pink|teal) for status badges.")),
+                "required", List.of("key", "primitive"));
+        return Map.of(
+                "type", "object",
+                "description", "The tool definition: a layout plus its columns. Use 'table' for "
+                        + "many rows over time (trackers); 'fields' for a single-record form.",
+                "properties", Map.of(
+                        "layout", Map.of("type", "string", "enum", List.of("table", "fields")),
+                        "columns", Map.of("type", "array", "items", column,
+                                "description", "The fields/columns (at least one)."),
+                        "sort", Map.of("type", "object",
+                                "description", "OPTIONAL default row order.",
+                                "properties", Map.of(
+                                        "key", Map.of("type", "string"),
+                                        "dir", Map.of("type", "string", "enum", List.of("asc", "desc"))))),
+                "required", List.of("layout", "columns"));
+    }
+
     /** Web-search tool, offered only when the user has a Tavily key configured. */
     /**
      * Proposes a Personal Tool (mini-app) — a small widget (job tracker, weight
      * log, countdown, period tracker, …) the user can keep and fill in. The
-     * model only composes APPROVED primitives; the schema is validated
-     * server-side and surfaced as a {@code tool_proposal} the user approves.
+     * model is steered to write bespoke 'render' code for the UI by default;
+     * 'schema' (composed only of APPROVED primitives) is the fallback for bare
+     * field lists. Both are validated server-side and surfaced as a
+     * {@code tool_proposal} the user approves.
      */
     private static final ToolSpec PROPOSE_TOOL = new ToolSpec(
             "propose_tool",
@@ -611,10 +691,15 @@ public class AiChatService {
                     + "(e.g. a job-application tracker, weight log, habit checklist, countdown, "
                     + "period tracker). Use this when the user asks for a tracker/widget/tool or "
                     + "clearly wants to record entries over time — NOT for one-off goal edits "
-                    + "(use propose_goal_change for those). The user must approve before it is "
-                    + "created, so never say it already exists. Compose ONLY the allowed "
-                    + "primitives; the server rejects anything else. If the user ALREADY gave "
-                    + "data to put in it (e.g. lists their current job applications), include "
+                    + "(use propose_goal_change for those). DO NOT use this to change a tool the "
+                    + "user ALREADY has (see PERSONAL TOOLS context): that creates a duplicate and "
+                    + "orphans the data — use edit_tool with that tool's id instead (it keeps the "
+                    + "rows). The user must approve before it is "
+                    + "created, so never say it already exists. PREFER writing 'render' code for "
+                    + "the actual UI (see its own parameter description) — fall back to composing "
+                    + "ONLY the allowed primitives in 'schema' (the server rejects anything else "
+                    + "there) when the tool is a bare list of plain fields. If the user ALREADY "
+                    + "gave "
                     + "those rows in 'records' so the tool is created WITH the data in one step "
                     + "— do not call add_tool_record for a tool that doesn't exist yet. Tools are "
                     + "global: they live in the user's Tools list (the floating Tools button, on "
@@ -624,24 +709,7 @@ public class AiChatService {
                     "properties", Map.of(
                             "name", Map.of("type", "string",
                                     "description", "Short tool name, e.g. 'Job Applications'."),
-                            "schema", Map.of("type", "object",
-                                    "description", "The tool definition. Shape: "
-                                            + "{\"layout\":\"table\"|\"fields\", \"columns\":[ "
-                                            + "{\"key\":string, \"label\":string, \"primitive\": one of "
-                                            + "number|text|textarea|date|time|checkbox|checklist|select|"
-                                            + "tags|rating|url|table|progress|chart, "
-                                            + "\"options\":[string] (ONLY for select) } ]}. "
-                                            + "Notes: rating=0-5 stars, time=HH:MM, tags=free-text labels, "
-                                            + "url=a link, textarea=long text. "
-                                            + "Use 'table' for many rows over time (trackers); "
-                                            + "'fields' for a single-record form (e.g. a countdown date). "
-                                            + "OPTIONAL display tuning (appearance only, no effect on data): a "
-                                            + "column may set \"align\":\"left\"|\"center\"|\"right\"; a 'select' "
-                                            + "column may set \"colors\":{option:colour} where colour is one of "
-                                            + "gray|red|amber|green|blue|purple|pink|teal (shows coloured status "
-                                            + "badges — use meaningfully, e.g. green=done, red=blocked); the schema "
-                                            + "may set \"sort\":{\"key\":columnKey,\"dir\":\"asc\"|\"desc\"} for the "
-                                            + "default row order."),
+                            "schema", toolSchemaParam(),
                             "records", Map.of("type", "array",
                                     "items", Map.of("type", "object"),
                                     "description", "OPTIONAL initial rows, ONLY if the user already "
@@ -652,15 +720,18 @@ public class AiChatService {
                                             + "rows. Leave a cell out if the user didn't give it. "
                                             + "Omit this entirely when the user gave no data."),
                             "render", Map.of("type", "string",
-                                    "description", "OPTIONAL custom layout code — ONLY when the user "
-                                            + "wants a bespoke look the table/fields layouts and display "
-                                            + "options can't express. Plain browser JS, a function BODY "
-                                            + "given `ctx`: ctx.root (a DOM element to fill), ctx.schema, "
-                                            + "ctx.records ([{id,data}]), and ctx.addRow(data)/"
-                                            + "ctx.editRow(id,data)/ctx.deleteRow(id) to change data. It "
-                                            + "runs in a locked sandbox: NO network, storage, cookies, or "
-                                            + "imports — only the DOM and these callbacks. The schema still "
-                                            + "types the data. Omit for a normal tool."),
+                                    "description", "PREFER setting this for most tools — it's the "
+                                            + "tool's actual UI, which you design and code yourself "
+                                            + "like a polished artifact. Plain browser JS, a function "
+                                            + "BODY given `ctx`: ctx.root (a DOM element to fill), "
+                                            + "ctx.schema, ctx.records ([{id,data}]), ctx.addRow/"
+                                            + "editRow/deleteRow. Runs in a locked sandbox (NO network/"
+                                            + "storage/cookies/imports, and you can't reuse the app's "
+                                            + "components, so build and style your own). Choose the "
+                                            + "look, colours, and controls that best fit what's being "
+                                            + "tracked — modern and functional, not raw unstyled "
+                                            + "browser defaults. Omit only for a truly bare list of "
+                                            + "plain fields with nothing to design."),
                             "reasoning", Map.of("type", "string",
                                     "description", "One short sentence on why this tool helps.")),
                     "required", List.of("name", "schema", "reasoning")));
@@ -676,7 +747,10 @@ public class AiChatService {
                     + "Salary column', 'rename it to …'). To change a row's DATA use "
                     + "add_tool_record/edit_tool_record instead. Keep existing column keys stable "
                     + "when possible — renaming a column's key loses that column's existing data. "
-                    + "Compose ONLY the allowed primitives; the user approves before it applies.",
+                    + "PREFER setting/updating 'render' code for the actual UI; 'schema' is "
+                    + "composed ONLY from the allowed primitives (the server rejects anything "
+                    + "else there) and is the fallback for a bare list of plain fields. The user "
+                    + "approves before it applies.",
             Map.of(
                     "type", "object",
                     "properties", Map.of(
@@ -684,10 +758,7 @@ public class AiChatService {
                                     "description", "The tool's id from the PERSONAL TOOLS context."),
                             "name", Map.of("type", "string",
                                     "description", "OPTIONAL new name; omit to keep the current one."),
-                            "schema", Map.of("type", "object",
-                                    "description", "The FULL new tool definition (same shape as "
-                                            + "propose_tool's schema). Include ALL columns to keep, "
-                                            + "not just changed ones — this replaces the structure."),
+                            "schema", toolSchemaParam(),
                             "render", Map.of("type", "string",
                                     "description", "OPTIONAL custom layout code (same shape/sandbox as "
                                             + "propose_tool's 'render'): a JS function body given `ctx` "

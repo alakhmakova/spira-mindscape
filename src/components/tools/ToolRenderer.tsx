@@ -553,6 +553,10 @@ function FieldInput({
           onChange={(next) => onChange(next ? next.slice(0, 10) : "")}
           variant="input"
           hideDaysLeft
+          // In a floating tool window the auto scroll-into-view on open (and the
+          // scroll-to-top on close) repositions the popover mid-interaction, so
+          // taps on a day miss. Disable it here.
+          disableScroll
           placeholder="Pick a date"
           className="w-full justify-start"
         />

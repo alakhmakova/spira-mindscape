@@ -4564,11 +4564,21 @@ function ToolProposalCard({
   const [saving, setSaving] = useState(false);
   const [revising, setRevising] = useState(false);
   const [reviseText, setReviseText] = useState("");
+  const [askDuplicate, setAskDuplicate] = useState(false);
   const isUpdate = proposal.op === "update";
   const tools = useTools((s) => s.tools);
   const existing = isUpdate
     ? tools.find((t) => t.id === proposal.toolId)
     : undefined;
+  // For a CREATE proposal: a tool the user already has with the same name. We
+  // warn before making a duplicate (which would orphan the existing tool's data).
+  const duplicate = isUpdate
+    ? undefined
+    : tools.find(
+        (t) =>
+          t.name.trim().toLowerCase() ===
+          (proposal.name || "").trim().toLowerCase(),
+      );
   const displayName = proposal.name || existing?.name || "Tool";
   // A minimal Tool shape so the existing read-only renderer can preview it.
   const previewTool = {
@@ -4592,34 +4602,37 @@ function ToolProposalCard({
     );
   }
 
-  const accept = async () => {
+  // Apply the proposed structure to an EXISTING tool (keeps all its rows).
+  const doUpdate = async (toolId: number) => {
     setSaving(true);
     try {
-      if (isUpdate && proposal.toolId != null) {
-        const updated = await updateTool(proposal.toolId, {
-          name: proposal.name || undefined,
-          schemaJson: JSON.stringify(proposal.schema),
-          renderCode: proposal.renderCode, // undefined leaves it; "" clears it
-        });
-        // Replace it in the shared store + refresh the open window's renderer,
-        // and make sure the tool is visible so the change is obvious.
-        useTools.getState().applyToolUpdate(updated);
-        useToolWindows.getState().open(updated.id);
-        toast.success(`“${updated.name}” updated`);
-        onResolve("created");
-        return;
-      }
+      const updated = await updateTool(toolId, {
+        name: proposal.name || undefined,
+        schemaJson: JSON.stringify(proposal.schema),
+        renderCode: proposal.renderCode, // undefined leaves it; "" clears it
+      });
+      useTools.getState().applyToolUpdate(updated);
+      useToolWindows.getState().open(updated.id);
+      toast.success(`“${updated.name}” updated`);
+      onResolve("created");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update the tool.");
+      setSaving(false);
+    }
+  };
+
+  // Create a brand-new tool (and fill any rows the user supplied up-front).
+  const doCreate = async () => {
+    setSaving(true);
+    try {
       const created = await createTool({
         name: proposal.name,
         schemaJson: JSON.stringify(proposal.schema),
         placement: proposal.placement,
         goalId: proposal.goalId ?? null,
         createdBy: "ai",
-        renderCode: proposal.renderCode ?? null,
+        renderCode: proposal.renderCode?.trim() ? proposal.renderCode : null,
       });
-      // If the user supplied data up-front, the tool is created already filled:
-      // write each (already server-validated) row in order. One failure doesn't
-      // abort the rest — the tool still exists with whatever rows succeeded.
       let added = 0;
       for (const row of proposal.records ?? []) {
         try {
@@ -4629,8 +4642,6 @@ function ToolProposalCard({
           /* skip a row that won't save; the user can add it by hand */
         }
       }
-      // Publish to the shared store so it shows up instantly everywhere, and
-      // open it as a floating window so the user can use it right away.
       useTools.getState().addTool(created);
       useToolWindows.getState().open(created.id);
       toast.success(
@@ -4640,15 +4651,16 @@ function ToolProposalCard({
       );
       onResolve("created");
     } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : isUpdate
-            ? "Couldn't update the tool."
-            : "Couldn't create the tool.",
-      );
+      toast.error(e instanceof Error ? e.message : "Couldn't create the tool.");
       setSaving(false);
     }
+  };
+
+  const accept = () => {
+    if (isUpdate && proposal.toolId != null) return doUpdate(proposal.toolId);
+    // Safety net: don't silently duplicate a tool the user already has.
+    if (duplicate) return setAskDuplicate(true);
+    return doCreate();
   };
 
   return (
@@ -4664,7 +4676,7 @@ function ToolProposalCard({
         </p>
       )}
       <div className="mt-2.5 rounded-[10px] border border-[#e6e4df] bg-[#fbf9f4] p-2.5">
-        {proposal.renderCode ? (
+        {proposal.renderCode?.trim() ? (
           <ToolSandbox preview tool={previewTool} code={proposal.renderCode} />
         ) : (
           <ToolRenderer tool={previewTool} preview />
@@ -4676,7 +4688,36 @@ function ToolProposalCard({
           records={proposal.records}
         />
       )}
-      {revising ? (
+      {askDuplicate && duplicate ? (
+        <div className="mt-3">
+          <p className="text-[12.5px] leading-[1.5] text-[#083f3a]/70">
+            You already have a tool named “{duplicate.name}”. Update that one
+            (keeps its existing entries) instead of making a duplicate?
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => doUpdate(duplicate.id)}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#006d67] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#005b56] disabled:opacity-50"
+            >
+              <Ic path={PATHS.check} size={14} /> Update “{duplicate.name}”
+            </button>
+            <button
+              onClick={doCreate}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-[9px] border border-[#cfe3e0] px-3 py-2 text-[13px] font-medium text-[#006d67] hover:bg-[#eef6f4] disabled:opacity-50"
+            >
+              Create new anyway
+            </button>
+            <button
+              onClick={() => setAskDuplicate(false)}
+              className="ml-auto px-1.5 text-[13px] text-[#083f3a]/50 hover:text-[#083f3a]"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      ) : revising ? (
         <div className="mt-3">
           <textarea
             autoFocus

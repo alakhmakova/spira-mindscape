@@ -190,7 +190,8 @@ public class ToolService {
 
     /** Bounds the size of sandbox render code; returns null for blank input.
      *  The code is inert text (run only in an isolated iframe), so we don't
-     *  parse it — we just cap storage/prompt size. */
+     *  parse or police its contents — design is the AI's job, guided by the
+     *  prompt — we just cap storage/prompt size. */
     private String validatedRenderCode(String code) {
         if (code == null || code.isBlank()) return null;
         if (code.length() > MAX_RENDER_CODE_BYTES) {

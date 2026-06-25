@@ -90,6 +90,17 @@ function ToolWindow({
   const recordsVersion = useTools((s) => s.recordsVersion[win.id] ?? 0);
   const tool = tools.find((t) => t.id === win.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Live drag/resize position, kept in LOCAL state — not the persisted store —
+  // while the pointer is down. `setRect` writes through to localStorage on
+  // every call (via zustand persist), so calling it on every pointermove (up
+  // to 100+ times/sec) froze the UI. We now only commit to the store once, on
+  // pointerup; this local value overrides win.x/y/w/h for rendering meanwhile.
+  const [liveRect, setLiveRect] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   if (!tool) return null;
 
@@ -104,16 +115,22 @@ function ToolWindow({
     const startY = e.clientY;
     const ox = win.x;
     const oy = win.y;
+    let last = { x: ox, y: oy, w: win.w, h: win.h };
     const move = (ev: PointerEvent) => {
-      setRect(win.id, {
+      last = {
         x: ox + (ev.clientX - startX),
         y: oy + (ev.clientY - startY),
-      });
+        w: win.w,
+        h: win.h,
+      };
+      setLiveRect(last);
     };
     const up = () => {
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setRect(win.id, last);
+      setLiveRect(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -131,6 +148,7 @@ function ToolWindow({
     const startY = e.clientY;
     const { x: ox, y: oy, w: ow, h: oh } = win;
     const { MIN_W, MIN_H } = TOOL_WINDOW_LIMITS;
+    let last = { x: ox, y: oy, w: ow, h: oh };
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
@@ -156,12 +174,15 @@ function ToolWindow({
         if (dir.includes("n")) y = oy + oh - MIN_H;
         h = MIN_H;
       }
-      setRect(win.id, { x, y, w, h });
+      last = { x, y, w, h };
+      setLiveRect(last);
     };
     const up = () => {
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setRect(win.id, last);
+      setLiveRect(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -233,7 +254,7 @@ function ToolWindow({
       {/* Remount on recordsVersion bump so AI-driven row changes show at once.
           A tool with AI-written render code draws inside the isolated sandbox;
           otherwise the schema-driven renderer. */}
-      {tool.renderCode ? (
+      {tool.renderCode?.trim() ? (
         <ToolSandbox key={recordsVersion} tool={tool} code={tool.renderCode} />
       ) : (
         <ToolRenderer key={recordsVersion} tool={tool} />
@@ -267,15 +288,16 @@ function ToolWindow({
   }
 
   // ── Desktop: a free-floating window ───────────────────────────────────────
+  const rect = liveRect ?? win;
   return (
     <>
       <div
         onPointerDown={() => focus(win.id)}
         style={{
-          left: win.x,
-          top: win.y,
-          width: win.w,
-          height: win.minimized ? undefined : win.h,
+          left: rect.x,
+          top: rect.y,
+          width: rect.w,
+          height: win.minimized ? undefined : rect.h,
           zIndex,
         }}
         className="fixed flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[0_12px_40px_-12px_rgba(0,0,0,0.4)]"

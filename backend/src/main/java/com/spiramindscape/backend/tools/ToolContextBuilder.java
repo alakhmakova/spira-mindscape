@@ -37,9 +37,14 @@ public class ToolContextBuilder {
 
         StringBuilder sb = new StringBuilder();
         sb.append("## PERSONAL TOOLS\n");
-        sb.append("The user has these trackers/widgets. To add a row use add_tool_record "
-                + "(applies immediately); to change or remove an existing row use "
-                + "edit_tool_record / delete_tool_record (the user approves those). "
+        sb.append("The user already has these trackers/widgets (with their ids). "
+                + "To CHANGE one of them — its columns, layout, name, or custom render — call "
+                + "edit_tool with that tool's id: this KEEPS all existing rows. "
+                + "NEVER use propose_tool to modify a tool that already exists here — that creates "
+                + "a DUPLICATE and orphans the data. Only use propose_tool for a genuinely new, "
+                + "different tool. "
+                + "To add a row use add_tool_record (applies immediately); to change or remove an "
+                + "existing row use edit_tool_record / delete_tool_record (the user approves those). "
                 + "Record 'data' keys MUST match the tool's column keys and types.\n");
         for (ToolDefinition tool : tools) {
             String scope = tool.getGoalId() == null

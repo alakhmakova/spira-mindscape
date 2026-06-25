@@ -26,6 +26,11 @@ import java.util.List;
 public class AiModelService {
 
     private static final Logger log = LoggerFactory.getLogger(AiModelService.class);
+    // Bounds the WHOLE request (connectTimeout on the client only covers the TCP
+    // connect phase). Without this, a provider that accepts the connection but
+    // responds slowly hangs the request forever — the frontend's "loading
+    // models" spinner then never clears.
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
 
     private final AiKeyService keyService;
     private final HttpClient httpClient;
@@ -60,6 +65,7 @@ public class AiModelService {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.mistral.ai/v1/models"))
                     .header("authorization", "Bearer " + apiKey)
+                    .timeout(REQUEST_TIMEOUT)
                     .GET().build();
 
             HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
@@ -97,6 +103,7 @@ public class AiModelService {
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder()
                     .uri(URI.create(base + "/v1/models"))
+                    .timeout(REQUEST_TIMEOUT)
                     .GET();
             if (cloud && !v.isBlank()) b.header("authorization", "Bearer " + v);
 
@@ -129,6 +136,7 @@ public class AiModelService {
                     .uri(URI.create("https://api.anthropic.com/v1/models"))
                     .header("x-api-key", apiKey)
                     .header("anthropic-version", "2023-06-01")
+                    .timeout(REQUEST_TIMEOUT)
                     .GET().build();
 
             HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
