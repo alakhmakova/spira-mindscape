@@ -54,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isAiWide = useAi((s) => s.isWide);
   const loadGoals = useSpira((s) => s.loadGoals);
   const refreshGoals = useSpira((s) => s.refreshGoals);
+  const refreshGoalsIfIdle = useSpira((s) => s.refreshGoalsIfIdle);
   const isLoadingGoals = useSpira((s) => s.isLoading);
   const syncError = useSpira((s) => s.syncError);
   const syncErrorKind = useSpira((s) => s.syncErrorKind);
@@ -106,6 +107,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void loadGoals();
   }, [loadGoals]);
+
+  // ── Keep data fresh across devices ───────────────────────────────────────
+  // The store loads goals once and never re-fetches on its own, so a change made
+  // on another device (or the phone) wouldn't appear here without a reload. Pull
+  // a fresh copy whenever this surface regains attention, plus a light poll while
+  // it's visible so two open screens stay roughly in sync. refreshGoalsIfIdle is
+  // silent and skips while local edits are in flight, so this never flashes UI
+  // or clobbers unsaved work.
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible") {
+        void refreshGoalsIfIdle();
+      }
+    };
+    window.addEventListener("focus", refreshOnReturn);
+    window.addEventListener("pageshow", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+
+    const POLL_MS = 45_000;
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshGoalsIfIdle();
+      }
+    }, POLL_MS);
+
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      window.removeEventListener("pageshow", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+      window.clearInterval(poll);
+    };
+  }, [refreshGoalsIfIdle]);
 
   // ── Offline / online detection ──────────────────────────────────────────
   const [isOffline, setIsOffline] = useState(
