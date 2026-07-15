@@ -87,6 +87,11 @@ setx ANDROID_HOME "$env:LOCALAPPDATA\Android\Sdk"
 > at **1024 characters**, and `$env:PATH` is the *combined* Machine+User path — appending to it
 > and saving can silently cut your PATH (and drop the very entries you added). Use the method
 > below instead, which edits only the **User** PATH and has no length limit.
+>
+> On this machine that truncation happened once and dropped the **npm-global** and **gcloud**
+> entries from PATH; both were restored with `[Environment]::SetEnvironmentVariable(...,"User")`.
+> If any CLI suddenly becomes "not recognized", its PATH entry was likely a casualty — re-add it
+> the same way.
 
 For **PATH**, run this in PowerShell (reads only the User PATH, de-duplicates, appends the
 three Android folders, writes it back safely):
@@ -171,16 +176,19 @@ Firebase CLI and gcloud can be logged into **different Google accounts**. On thi
 - **firebase (first login):** `anastasiya.lakhmakova@gmail.com` — **not** an owner → `addFirebase`
   returned **403 PERMISSION_DENIED**.
 
-**Fix:** the Firebase CLI must act as the account that owns the GCP project. Add it and target
-it explicitly:
+**Fix (what was done):** log the Firebase CLI into the **same** account that owns the GCP
+project, so no `--account` juggling is needed. Run this in **your own interactive terminal**,
+**not** through Claude's `!` prefix — `firebase login` opens a browser and fails in
+non-interactive mode (`Cannot run login in non-interactive mode`):
 
 ```powershell
-firebase login:add        # sign in as alakhmakova@gmail.com in the browser
-# then pass --account alakhmakova@gmail.com on every firebase command below
+firebase logout
+firebase login     # pick alakhmakova@gmail.com — sign that account into the browser FIRST,
+                   # otherwise the browser auto-selects whatever account is already signed in
 ```
 
-Check who is logged in with `firebase login:list`; check the active gcloud account with
-`gcloud auth list`. They must both be able to act on the same project.
+Verify with `firebase login:list` (should show `alakhmakova@gmail.com`) and `gcloud auth list`
+(same account). Both must act on the same project.
 
 ### B1. Add Firebase to the existing Spira project (done via CLI)
 
@@ -188,10 +196,10 @@ The Firebase Management API is enabled on the project (via
 `gcloud services enable firebase.googleapis.com`). With the CLI logged into the owner account:
 
 ```powershell
-firebase projects:addfirebase project-10702811-5962-4bf3-877 --account alakhmakova@gmail.com
+firebase projects:addfirebase project-10702811-5962-4bf3-877
 ```
 
-- **Verify:** `firebase projects:list --account alakhmakova@gmail.com` shows the project.
+- **Verify:** `firebase projects:list` shows the project.
 
 ### B2. Register the Android app ✅ (done via CLI 2026-07-15)
 

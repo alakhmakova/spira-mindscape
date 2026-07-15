@@ -145,6 +145,42 @@ class AppUserServiceTest {
         assertThat(result.getEmail()).isEqualTo("changed@example.com");
     }
 
+    // ─── findOrCreateFromGoogle: the native mobile sign-in path (no OidcUser) ──────
+
+    @Test
+    @DisplayName("Mobile sign-in: first time creates a user from raw Google claims")
+    void mobileFirstSignInCreatesUser() {
+        when(appUserRepository.findByGoogleSub("m-sub")).thenReturn(Optional.empty());
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AppUser result = appUserService.findOrCreateFromGoogle("m-sub", "m@example.com", "Mobile User", null);
+
+        assertThat(result.getGoogleSub()).isEqualTo("m-sub");
+        assertThat(result.getEmail()).isEqualTo("m@example.com");
+        assertThat(result.getName()).isEqualTo("Mobile User");
+        assertThat(result.getPictureUrl()).isNull();
+        assertThat(result.getLastLoginAt()).isNotNull();
+        verify(appUserRepository).save(any(AppUser.class));
+    }
+
+    @Test
+    @DisplayName("Mobile sign-in: same google_sub reuses the row, so web and mobile share one account")
+    void mobileReturningSignInReusesRow() {
+        AppUser existing = existingUser("shared-sub", "old@example.com", "Old", null);
+        existing.setId(42L);
+        when(appUserRepository.findByGoogleSub("shared-sub")).thenReturn(Optional.of(existing));
+        when(appUserRepository.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AppUser result = appUserService.findOrCreateFromGoogle("shared-sub", "new@example.com", "New", "https://p");
+
+        // Same id — the mobile login lands on the SAME user the web login created.
+        assertThat(result.getId()).isEqualTo(42L);
+        assertThat(result.getEmail()).isEqualTo("new@example.com");
+        assertThat(result.getName()).isEqualTo("New");
+        assertThat(result.getPictureUrl()).isEqualTo("https://p");
+        verify(appUserRepository).save(existing);
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     /** Builds a minimal OidcUser with the given claims (what Spring gets from Google). */
