@@ -52,8 +52,17 @@ The structured version (mapped to the OWASP Top 10 2025) lives in
   `Secure` in production (HTTPS only).
 - **Unauthenticated API calls get `401`** (not a redirect), so the app can
   cleanly detect "your session expired" and send you to log in.
+- **Native mobile signs in the same way, by a different door.** The Android app
+  can't run the browser redirect, so it verifies a Google **ID token** server-side
+  at `POST /api/auth/google/mobile` and then gets the **same** server-side session +
+  CSRF model as the web. Only the identity proof differs (verify a token vs. the
+  browser redirect); everything after login is identical. That endpoint rotates the
+  session id on login (session-fixation protection) and is the only CSRF-exempt data
+  path (the caller has no token yet). See
+  `docs/google-oauth-implementation-guide.md` §10.
 
-**Where:** `config/SecurityConfig.java`, `backend/.../db/migration/V14__spring_session.sql`.
+**Where:** `config/SecurityConfig.java`, `backend/.../db/migration/V14__spring_session.sql`,
+`auth/MobileAuthController.java`.
 
 ---
 

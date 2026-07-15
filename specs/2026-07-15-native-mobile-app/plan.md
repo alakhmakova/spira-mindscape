@@ -82,7 +82,25 @@ Silent, guarded refetch-on-return. Backend-free. See `backlog/cross-device-data-
 
 ---
 
-## Part 2 — Backend prep for the native app (one additive change)
+## Part 2 — Backend prep for the native app (one additive change) — ✅ done
+
+**Implemented (2026-07-15).** New endpoint `POST /api/auth/google/mobile`
+(`auth/MobileAuthController.java`) verifies a Google ID token via a `MobileTokenVerifier`
+abstraction (`GoogleMobileTokenVerifier` uses Google's `GoogleIdTokenVerifier`; the accepted
+audience is the `GOOGLE_CLIENT_ID` env var + optional `app.auth.mobile.extra-audiences`),
+reuses `AppUserService.findOrCreateFromGoogle(...)` (refactored so web OIDC and mobile share
+one find-or-create keyed on `google_sub`), and establishes the **same** session by storing an
+`AppUserOidcUser` principal via `HttpSessionSecurityContextRepository` — so
+`CurrentUserProvider`, `/graphql`, and `/api/auth/me` are unchanged. `SecurityConfig` permits
+and CSRF-exempts just that path. `pom.xml` adds `google-api-client` (with `commons-logging`
+excluded to avoid a JCL clash). Tests: `MobileAuthControllerTest` (unit: 400/401/200 + session
+principal + session-id rotation + unique-violation race→200/conflict→409), `AppUserServiceTest`
+(mobile find-or-create shares the row), and `MobileAuthIntegrationTest` (`@SpringBootTest` +
+MockMvc: full round-trip login → session → `/api/auth/me` + `/graphql`, plus negative cases).
+Full backend suite green. Post-review hardening applied: session-id rotation (session-fixation),
+and unique-constraint recovery (concurrent first login → reload; email-transfer conflict → 409).
+
+Original design notes below.
 
 Native apps can't ride the browser's OAuth redirect + cookie session cleanly. Add a **mobile
 sign-in endpoint**; leave the web flow untouched.

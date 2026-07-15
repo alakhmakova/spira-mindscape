@@ -66,6 +66,21 @@
             <version>3.0.3</version>
         </dependency>
 
+        <!-- Verifies the Google ID token that the native Android app posts to
+             /api/auth/google/mobile (GoogleIdTokenVerifier). Exclude commons-logging:
+             it reintroduces a second JCL provider that clashes with Spring's spring-jcl. -->
+        <dependency>
+            <groupId>com.google.api-client</groupId>
+            <artifactId>google-api-client</artifactId>
+            <version>2.7.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
