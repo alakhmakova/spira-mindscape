@@ -13,18 +13,19 @@ written for someone doing this for the first time. Do the steps in order; each h
 
 | Component | Status | Note |
 |---|---|---|
-| Android Studio | ❌ | **Not installed.** `C:\Program Files\Android\Android Studio` only contains a leftover `jre` folder (no `studio64.exe`) — a remnant of a previous install. Install it (Step A1). |
-| Android SDK | ✅ | `C:\Users\buale\AppData\Local\Android\Sdk` — real and usable (exists independently of Studio); the new Studio install will reuse it. |
+| Android Studio | ✅ | installed 2026-07-15 at **`C:\Program Files\Android\Android Studio1`** (v2026.1). NB: went to `Studio1` because the old empty `Android Studio` (only `jre`) still occupies the plain name — that leftover is safe to delete. |
+| Android SDK | ✅ | `C:\Users\buale\AppData\Local\Android\Sdk` |
 | platform-tools (`adb`), emulator | ✅ | installed |
-| SDK platforms | ✅ | API 23–33 |
-| build-tools | ✅ | up to 33.0.0 |
+| SDK platforms | ✅ | API 23–34 (incl. **API 34**) |
+| build-tools | ✅ | up to **37.0.0** |
 | System images (emulator) | ✅ | API 23/29/30/31/33 |
-| cmdline-tools (latest) | ❌ | install via SDK Manager (Step A2) |
-| `ANDROID_HOME` + `adb` on PATH | ❌ | set env vars (Step A3) |
-| JDK for Gradle | ⚠️ | system JDK is 22; use **JDK 17** or Android Studio's embedded JDK (Step A4) |
+| cmdline-tools (latest) | ✅ | installed (`sdkmanager` present) — done 2026-07-15 |
+| `ANDROID_HOME` + `adb` on PATH | ✅ | configured 2026-07-15 (open a **fresh** terminal to pick it up) |
+| npm global bin on PATH | ✅ | `%AppData%\Roaming\npm` restored to PATH 2026-07-15 (see note in B5) |
+| JDK for Gradle | ✅ | use Android Studio's **embedded JDK 21** (`...\Android Studio1\jbr`); no separate JDK 17 needed. System JDK 22 is ignored for Android builds. |
 | Node / npm | ✅ | v22 — used for the Firebase CLI |
 | `gcloud` CLI | ✅ | already used for Cloud Run |
-| Firebase CLI | ❌ | install (Step B5) |
+| Firebase CLI | ✅ | installed 2026-07-15 (`firebase --version` → 15.23.0); still need `firebase login` (B5) |
 | Firebase project + `google-services.json` | ❌ | create on your account (Part B) |
 | Google OAuth **Android** client + SHA-1 | ❌ | create (Part C) |
 
@@ -74,18 +75,41 @@ Modern Gradle builds expect the new `cmdline-tools`, which is currently missing.
 
 ### A3. Set environment variables (`ANDROID_HOME`, PATH) ❌
 
-Needed so terminal tools (`adb`, `sdkmanager`, the Gradle wrapper) find the SDK. In
-**PowerShell**, run once (user-level, permanent):
+Needed so terminal tools (`adb`, `sdkmanager`, the Gradle wrapper) find the SDK.
+
+**`ANDROID_HOME`** is short and safe with `setx`:
 
 ```powershell
 setx ANDROID_HOME "$env:LOCALAPPDATA\Android\Sdk"
-setx PATH "$env:PATH;$env:LOCALAPPDATA\Android\Sdk\platform-tools;$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin;$env:LOCALAPPDATA\Android\Sdk\emulator"
 ```
 
-Then **close and reopen** the terminal (and Android Studio) so the change takes effect.
+> ⚠️ **Do NOT use `setx PATH "$env:PATH;..."` for the PATH.** `setx.exe` truncates the value
+> at **1024 characters**, and `$env:PATH` is the *combined* Machine+User path — appending to it
+> and saving can silently cut your PATH (and drop the very entries you added). Use the method
+> below instead, which edits only the **User** PATH and has no length limit.
+
+For **PATH**, run this in PowerShell (reads only the User PATH, de-duplicates, appends the
+three Android folders, writes it back safely):
+
+```powershell
+$sdk = "$env:LOCALAPPDATA\Android\Sdk"
+$android = @("$sdk\platform-tools","$sdk\cmdline-tools\latest\bin","$sdk\emulator")
+$current = [Environment]::GetEnvironmentVariable("Path","User") -split ';'
+$seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$clean = @(); foreach ($e in $current) { if ($e -and $seen.Add($e)) { $clean += $e } }
+foreach ($a in $android) { if ($seen.Add($a)) { $clean += $a } }
+[Environment]::SetEnvironmentVariable("Path", ($clean -join ';'), "User")
+```
+
+Then **close and reopen** the terminal (and Android Studio) so the change takes effect —
+environment changes never apply to already-open windows.
 
 - **Verify (new terminal):** `adb version` prints a version; `echo $env:ANDROID_HOME` prints
   the SDK path.
+
+> ℹ️ The `cmdline-tools\latest\bin` entry can be added before that folder exists (Step A2
+> installs it) — a PATH entry to a missing folder is harmless. `adb` lives in `platform-tools`
+> (already installed), so it works immediately.
 
 ### A4. Pick a JDK for Gradle (important) ⚠️
 
@@ -124,35 +148,75 @@ Firebase distributes the app to testers (App Distribution) and provides push (FC
 crash/usage telemetry (Crashlytics/Analytics). It does **not** host the backend — that stays
 on Cloud Run.
 
-### B1. Create a Firebase project ❌
+### What Firebase actually is (and the project decision)
 
-1. Go to <https://console.firebase.google.com> → **Add project**.
-2. You can **link it to your existing Google Cloud project** (the one already running Cloud
-   Run) by picking that project name, or create a new one — either is fine. Linking keeps
-   everything under one project.
-3. Google Analytics: **enable** (needed for Analytics; you can accept defaults).
+- **A Firebase project *is* a Google Cloud (GCP) project** with a set of Firebase services
+  enabled on top (App Distribution, FCM, Crashlytics, Analytics). "Adding Firebase" to a
+  project just switches those services on for the same GCP project — no separate cloud.
+- **Decision (2026-07-15): use the existing Spira GCP project** —
+  `project-10702811-5962-4bf3-877` ("My First Project", number **952567559986**, the one
+  running Cloud Run and holding the Web OAuth client). Keeping Firebase, OAuth, and Cloud Run
+  in one project means the Google Sign-In audiences line up with no extra wiring.
+- **"You can't remove Firebase from a project later" — what that means:** once enabled, a
+  project stays Firebase-enabled forever. This is **harmless**: it does **not** affect Cloud
+  Run, data, or billing (Spark plan is free); it only means the project shows up in the
+  Firebase console and has Firebase APIs on. Individual apps/resources inside can still be
+  deleted. The irreversibility is cosmetic, not functional.
 
-- **Verify:** the project shows in the Firebase console dashboard.
+### ⚠️ Account gotcha (important)
 
-### B2. Register the Android app ❌
+Firebase CLI and gcloud can be logged into **different Google accounts**. On this machine:
 
-1. In the project, click the **Android** icon ("Add app").
-2. **Android package name:** `com.spiramindscape.android` (this must match the app we build —
-   keep it exactly).
-3. **App nickname:** e.g. "Spira Android" (optional).
-4. **Debug signing certificate SHA-1:** paste the SHA-1 from **Part C, Step C1** (you can also
-   add it later — Google Sign-In needs it, so don't skip it).
-5. Click **Register app**.
+- **gcloud / project owner:** `alakhmakova@gmail.com` (owns the Spira project).
+- **firebase (first login):** `anastasiya.lakhmakova@gmail.com` — **not** an owner → `addFirebase`
+  returned **403 PERMISSION_DENIED**.
 
-### B3. Download `google-services.json` ❌
+**Fix:** the Firebase CLI must act as the account that owns the GCP project. Add it and target
+it explicitly:
 
-1. Firebase gives you **`google-services.json`** — download it.
-2. Place it at **`android/app/google-services.json`** (this folder is created when we scaffold
-   the module; for now save the file somewhere safe).
-3. **Do not commit real secrets** casually — but note `google-services.json` is generally safe
-   to commit for a client app. We'll confirm gitignore rules when scaffolding.
+```powershell
+firebase login:add        # sign in as alakhmakova@gmail.com in the browser
+# then pass --account alakhmakova@gmail.com on every firebase command below
+```
 
-- **Verify:** you have the file and it contains your `package_name` `com.spiramindscape.android`.
+Check who is logged in with `firebase login:list`; check the active gcloud account with
+`gcloud auth list`. They must both be able to act on the same project.
+
+### B1. Add Firebase to the existing Spira project (done via CLI)
+
+The Firebase Management API is enabled on the project (via
+`gcloud services enable firebase.googleapis.com`). With the CLI logged into the owner account:
+
+```powershell
+firebase projects:addfirebase project-10702811-5962-4bf3-877 --account alakhmakova@gmail.com
+```
+
+- **Verify:** `firebase projects:list --account alakhmakova@gmail.com` shows the project.
+
+### B2. Register the Android app ✅ (done via CLI 2026-07-15)
+
+```powershell
+firebase apps:create ANDROID "Spira Android" --package-name com.spiramindscape.android \
+  --project project-10702811-5962-4bf3-877
+firebase apps:android:sha:create <APP_ID> 96:CF:83:C1:31:0E:6C:D3:AC:B2:90:0E:10:CC:FB:9D:F9:0E:15:7E \
+  --project project-10702811-5962-4bf3-877
+```
+
+- **App ID:** `1:952567559986:android:eff4c02ebb5a77b38a892b`
+- **Package:** `com.spiramindscape.android`; **debug SHA-1** added.
+
+### B3. Download `google-services.json` ✅ (done via CLI 2026-07-15)
+
+```powershell
+firebase apps:sdkconfig ANDROID <APP_ID> --project project-10702811-5962-4bf3-877 \
+  --out android/app/google-services.json
+```
+
+- Saved to **`android/app/google-services.json`** (`project_id` and `package_name` verified).
+- **Kept out of git:** the file holds an Android **API key**, and this repo is public, so it is
+  **gitignored** (`android/app/google-services.json`). It stays local; re-fetch on any machine
+  with the `apps:sdkconfig` command above. If you later want it committed (e.g. for CI Android
+  builds), restrict the API key in GCP first, then remove the gitignore line.
 
 ### B4. Enable the Firebase products we use ❌
 
@@ -165,17 +229,31 @@ In the Firebase console left menu, open each once to enable:
   registered.
 - **Analytics** → already enabled in B1.
 
-### B5. Install the Firebase CLI ❌
+### B5. Install the Firebase CLI ✅ installed — `firebase login` still to do
 
 Used to upload builds to testers from the terminal.
 
 ```powershell
-npm install -g firebase-tools
+npm install -g firebase-tools   # package is firebase-toolS (plural) — not "firebase-tool"
 firebase login
 ```
 
-- **Verify:** `firebase --version` prints a version; `firebase projects:list` shows your
-  project.
+> ⚠️ **Global npm CLIs need `%AppData%\Roaming\npm` on your PATH**, or `firebase` won't be
+> found after install. On this machine that folder was missing from PATH (a casualty of the
+> earlier `setx` truncation) and has been restored. If `firebase` is "not recognized" after a
+> global install, add it back:
+> ```powershell
+> $npm = "$env:APPDATA\npm"
+> $user = [Environment]::GetEnvironmentVariable("Path","User") -split ';'
+> if ($user -notcontains $npm) {
+>   [Environment]::SetEnvironmentVariable("Path", (($user + $npm) -join ';'), "User")
+> }
+> ```
+> Then open a fresh terminal.
+
+- **Status:** `firebase-tools` is installed (`firebase --version` → 15.23.0). You still need to
+  run **`firebase login`** (opens a browser — your Google account) once, then
+  `firebase projects:list` should show your project after Part B1.
 
 ---
 
@@ -222,13 +300,19 @@ and read the `SHA1` under `Variant: debug`.
 5. Create. (Registering the Android app in Firebase B2 with the SHA-1 often creates this for
    you automatically — if an Android client already exists there, you can skip C2.)
 
-### C3. Note the Web client ID (audience) ✅ exists / ⚠️ confirm
+### C3. Web client ID (audience) ✅ found
 
-- The website already has a **Web application** OAuth client (used by the current Google
-  Sign-In). Find it in the same Credentials page under **OAuth 2.0 Client IDs → Web client**.
-- Copy its **Client ID** (looks like `1234567890-abc...apps.googleusercontent.com`). We will:
-  - give it to the **Android app** as the "server client ID" it requests an ID token for, and
-  - configure the **backend** to accept that client ID as the valid token audience.
+`google-services.json` already contains a **web** OAuth client (`client_type: 3`) in the same
+project:
+
+```
+952567559986-pv46g2sr17vltmsnbcoq5scdjbat2l3d.apps.googleusercontent.com
+```
+
+This is the **server client ID**: the Android app requests a Google ID token for it, and the
+backend (`POST /api/auth/google/mobile`, Part 2) verifies tokens against it. When implementing
+Part 2, confirm the backend's configured `GOOGLE_CLIENT_ID` (used by the web app) either equals
+this ID or is added alongside it as an accepted audience.
 
 ### C4. Production signing (later, not now)
 
@@ -242,26 +326,26 @@ testing, the **debug** SHA-1 from C1 is enough.
 
 Download / install:
 
-- [ ] **Android Studio** — install and point it at the existing SDK (A1)
-- [ ] SDK: **cmdline-tools (latest)** + confirm build-tools/platform-tools/emulator + **API 34** (A2)
-- [ ] **JDK 17** (Temurin) or set Gradle to the embedded jbr (A4)
-- [ ] **Firebase CLI** (`npm i -g firebase-tools`) (B5)
+- [x] **Android Studio** — installed at `C:\Program Files\Android\Android Studio1` (A1)
+- [x] SDK: **cmdline-tools**, build-tools 37, platform-tools, emulator, **API 34** (A2)
+- [x] **JDK for Gradle** — use the embedded **JDK 21** in Android Studio; no separate JDK 17 (A4)
+- [x] **Firebase CLI** installed — still run `firebase login` (B5)
 
 Configure:
 
-- [ ] `ANDROID_HOME` + PATH env vars (A3)
+- [x] `ANDROID_HOME` + PATH env vars (A3) — done (open a fresh terminal)
 - [ ] Create an **emulator** (AVD) (A5)
-- [ ] Set **Gradle JDK** to 17/embedded in Android Studio (A4)
+- [x] Gradle JDK — Android Studio's embedded JDK 21 (set per-project when the module is created)
 
 Create on your accounts:
 
-- [ ] **Firebase project** (link to existing GCP project) (B1)
-- [ ] **Register Android app** `com.spiramindscape.android` + SHA-1 (B2)
-- [ ] Download **`google-services.json`** (B3)
-- [ ] Enable **App Distribution, Crashlytics, Analytics, FCM** (B4)
-- [ ] **Debug SHA-1** fingerprint (C1)
-- [ ] **Android OAuth client** (C2)
-- [ ] Copy the existing **Web OAuth client ID** (C3)
+- [x] **Firebase project** — added to existing GCP project `project-10702811-5962-4bf3-877` (B1)
+- [x] **Register Android app** `com.spiramindscape.android` + SHA-1 (B2)
+- [x] Download **`google-services.json`** (B3, gitignored)
+- [ ] Enable **App Distribution** (tester group), **Crashlytics** — done when wiring the app (B4)
+- [x] **Debug SHA-1** fingerprint generated + registered (C1)
+- [x] **Android OAuth client** — auto-created in the project by the SHA registration (C2)
+- [x] **Web OAuth client ID** identified from `google-services.json` (C3)
 
 ---
 
