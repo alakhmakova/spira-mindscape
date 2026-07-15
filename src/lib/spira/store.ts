@@ -30,6 +30,13 @@ type State = {
   syncErrorKind?: "network" | "service";
   loadGoals: () => Promise<void>;
   refreshGoals: () => Promise<void>;
+  /**
+   * Silent background refresh used on tab focus / visibility / app resume and
+   * light polling, so a change made on another device shows up without a reload.
+   * Unlike refreshGoals it does NOT toggle the loading banner and it skips when
+   * local edits are in flight, so it never flashes UI or clobbers unsaved work.
+   */
+  refreshGoalsIfIdle: () => Promise<void>;
   clearSyncError: () => void;
   addGoal: (
     g: Partial<Goal> & { title: string },
@@ -84,6 +91,16 @@ function debounceRemote(key: string, task: () => Promise<void>) {
       void task();
     }, 500),
   );
+}
+
+/**
+ * Testing only: cancel and clear any pending debounced writes. `syncTimers` is
+ * module-scoped, so without this a fake-timer test that never advances 500ms
+ * leaks an entry into the next test and trips the `refreshGoalsIfIdle` guard.
+ */
+export function __clearPendingWritesForTests() {
+  for (const timer of syncTimers.values()) clearTimeout(timer);
+  syncTimers.clear();
 }
 
 function replaceGoal(goals: Goal[], goalId: string, next: Goal) {
@@ -234,6 +251,41 @@ export const useSpira = create<State>()((set, get) => ({
             : "Unable to connect to the server.",
         syncErrorKind: kind,
       });
+    }
+  },
+
+  refreshGoalsIfIdle: async () => {
+    const state = get();
+    // Don't fight the foreground load or an in-flight sync.
+    if (state.isLoading) return;
+    // A debounced write (typing) is queued — refreshing now would overwrite it.
+    if (syncTimers.size > 0) return;
+    // A create is in flight (temp `local-` id not yet swapped for the server one);
+    // a wholesale replace would drop it.
+    if (state.goals.some((goal) => goal.id.startsWith("local-"))) return;
+
+    try {
+      const goals = await spiraApi.fetchGoals();
+      // Re-check after the await: the user may have started editing mid-fetch, in
+      // which case applying the server snapshot would clobber their local change.
+      const latest = get();
+      if (syncTimers.size > 0) return;
+      if (latest.goals.some((goal) => goal.id.startsWith("local-"))) return;
+      set({
+        goals,
+        hasLoaded: true,
+        syncError: undefined,
+        syncErrorKind: undefined,
+      });
+    } catch (error) {
+      // Session expired mid-use — reset auth like loadGoals does.
+      if (error instanceof SpiraApiError && error.status === 401) {
+        window.location.replace("/login");
+        return;
+      }
+      // Otherwise stay silent: a background refresh failing must not wipe the
+      // visible data or flash an error banner. The next refresh recovers.
+      console.error("Spira background refresh failed", error);
     }
   },
 
