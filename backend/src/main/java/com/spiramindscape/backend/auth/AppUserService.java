@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Business logic for creating and refreshing user accounts from Google OIDC sign-ins.
@@ -27,11 +28,21 @@ public class AppUserService {
      */
     @Transactional
     public AppUser findOrCreateFromOidc(OidcUser oidcUser) {
-        String sub = oidcUser.getSubject();
-        String email = oidcUser.getEmail();
-        String name = oidcUser.getFullName();
-        String pictureUrl = oidcUser.getPicture();
+        return findOrCreateFromGoogle(
+                oidcUser.getSubject(),
+                oidcUser.getEmail(),
+                oidcUser.getFullName(),
+                oidcUser.getPicture());
+    }
 
+    /**
+     * Find-or-create keyed on the Google {@code sub}, from already-extracted claims.
+     * Shared by the web OIDC login ({@link #findOrCreateFromOidc}) and the native mobile
+     * sign-in ({@code POST /api/auth/google/mobile}), which verifies a Google ID token and
+     * has the same claims but no {@link OidcUser} wrapper.
+     */
+    @Transactional
+    public AppUser findOrCreateFromGoogle(String sub, String email, String name, String pictureUrl) {
         return appUserRepository.findByGoogleSub(sub)
                 .map(existing -> refresh(existing, email, name, pictureUrl))
                 .orElseGet(() -> create(sub, email, name, pictureUrl));
@@ -41,6 +52,11 @@ public class AppUserService {
     public AppUser findById(Long id) {
         return appUserRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<AppUser> findByGoogleSub(String sub) {
+        return appUserRepository.findByGoogleSub(sub);
     }
 
     // ---- private helpers ----

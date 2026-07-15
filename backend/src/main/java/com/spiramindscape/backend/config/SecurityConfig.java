@@ -100,6 +100,9 @@ public class SecurityConfig {
                 .requestMatchers("/health").permitAll()
                 // Public: /api/auth/me returns 401 itself when anonymous (not a security rule)
                 .requestMatchers("/api/auth/me").permitAll()
+                // Public: native mobile sign-in — verifies a Google ID token and starts a
+                // session itself (the caller is unauthenticated at this point).
+                .requestMatchers("/api/auth/google/mobile").permitAll()
                 // Data endpoints require authentication
                 .requestMatchers("/graphql", "/api/**").authenticated()
                 // Everything else is the SPA shell + static assets (served by Spring in
@@ -169,7 +172,8 @@ public class SecurityConfig {
             http.csrf(csrf -> csrf
                 .csrfTokenRepository(csrfRepo)
                 .csrfTokenRequestHandler(requestHandler)
-                .ignoringRequestMatchers("/health", "/oauth2/**", "/login/**"));
+                .ignoringRequestMatchers(
+                        "/health", "/oauth2/**", "/login/**", "/api/auth/google/mobile"));
         }
 
         return http.build();

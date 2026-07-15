@@ -36,6 +36,12 @@ backend/.mvn/wrapper/*.zip
 .wrangler/
 .dev.vars
 
+# Firebase / Android — google-services.json holds an API key; keep it out of the
+# public repo. It lives locally at android/app/ and is fetched per-machine via
+# `firebase apps:sdkconfig` (see docs/mobile-setup-guide.md, Part B).
+android/app/google-services.json
+google-services.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

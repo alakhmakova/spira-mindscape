@@ -27,24 +27,38 @@ full flows at E2E. Web E2E uses Playwright; native UI uses Compose UI Test + Mae
 
 Result recorded in `backlog/cross-device-data-not-refreshing.md` (Status ✅ Fixed).
 
-## Part 2 — Mobile auth (backend)
+## Part 2 — Mobile auth (backend) — ✅ done
 
-### Backend — unit (Mockito)
+### Backend — unit (Mockito) — implemented
 
-| Area | Scenario |
-|---|---|
-| Mobile sign-in | Valid Google ID token → verify → find-or-create `AppUser` on `sub` (reuses `AppUserService`) |
-| Mobile sign-in | Returning user is not duplicated; profile refreshed |
-| Mobile sign-in | Invalid/expired ID token → rejected (no user created) |
+| Area | Scenario | Status |
+|---|---|---|
+| `AppUserService.findOrCreateFromGoogle` | First mobile sign-in creates the user from raw Google claims | ✅ |
+| `AppUserService.findOrCreateFromGoogle` | Same `google_sub` reuses the row → web and mobile share one account | ✅ |
+| `MobileAuthController` | Blank/missing `idToken` → `400`, no verification | ✅ |
+| `MobileAuthController` | Invalid/unverifiable token → `401`, no user created | ✅ |
+| `MobileAuthController` | Valid token → `200` + `UserDto`, find-or-create called, session holds an `AppUserOidcUser` principal | ✅ |
 
-### Backend — integration (`@SpringBootTest`)
+### Backend — integration (`@SpringBootTest` + MockMvc, `MobileAuthIntegrationTest`) — implemented
 
-| Area | Scenario |
-|---|---|
-| Endpoint | `POST /api/auth/google/mobile` with a stubbed-valid token → `200` + `SESSION` cookie |
-| Session reuse | Subsequent `GET /api/auth/me` with that cookie → user JSON |
-| CSRF | Mutation with the cookie + `X-XSRF-TOKEN` → `200`; without token → `403` |
-| No regression | Existing web OAuth + all current GraphQL integration tests still pass unchanged |
+The `test` profile uses in-memory servlet sessions (spring-session-jdbc excluded), so the
+MockMvc session can be captured and reused — the full round-trip is automated:
+
+| Area | Scenario | Status |
+|---|---|---|
+| Login (CSRF-exempt) | `POST /api/auth/google/mobile` (no CSRF token) with a stubbed-valid token → `200` + `UserDto`, user persisted | ✅ |
+| Session reuse | Reusing only that session → `GET /api/auth/me` → `200` + user (no per-request auth) | ✅ |
+| Session authorizes | Same session + CSRF → `POST /graphql` → `200` | ✅ |
+| Negative | Invalid token → `401`, no user created | ✅ |
+| Negative | No session → `POST /graphql` → `401` (proves it's the session doing the auth) | ✅ |
+
+Optional manual check against a running backend (real token): `curl` the endpoint, then reuse
+the `SESSION` cookie on `/api/auth/me` and `/graphql`.
+
+### No regression
+
+Full backend suite green — including all existing web-OAuth security and GraphQL integration
+tests, unchanged.
 
 ## Part 3 — Native Android MVP
 
