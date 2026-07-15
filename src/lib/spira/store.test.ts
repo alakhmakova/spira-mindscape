@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SpiraApiError, spiraApi } from "./api";
-import { useSpira } from "./store";
+import { __clearPendingWritesForTests, useSpira } from "./store";
 import type { Goal, Resource } from "./types";
 
 const BODY_LIMIT_MESSAGE =
@@ -401,6 +401,74 @@ describe("useSpira resource sync errors", () => {
     expect(target.type === "checklist" && target.items[0].deadline).toBe(
       "2026-05-15T00:00:00.000Z",
     );
+  });
+});
+
+describe("useSpira refreshGoalsIfIdle (cross-device freshness)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    // Clear any debounced writes leaked by earlier fake-timer tests, so the
+    // "in flight" guard starts from a clean slate.
+    __clearPendingWritesForTests();
+    useSpira.setState({
+      goals: [goalFixture()],
+      chat: [],
+      isLoading: false,
+      hasLoaded: true,
+      syncError: undefined,
+      syncErrorKind: undefined,
+    });
+  });
+
+  it("re-fetches and replaces goals even after hasLoaded (fixes the stale-cache bug)", async () => {
+    // The bug: loadGoals() no-ops once hasLoaded is true, so a change made on another
+    // device never appeared without a reload. refreshGoalsIfIdle must bypass that guard.
+    const serverGoal: Goal = { ...goalFixture(), title: "Renamed on desktop" };
+    const fetchGoals = vi
+      .spyOn(spiraApi, "fetchGoals")
+      .mockResolvedValue([serverGoal]);
+
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    expect(fetchGoals).toHaveBeenCalledTimes(1);
+    expect(useSpira.getState().goals[0].title).toBe("Renamed on desktop");
+    // Silent refresh must not flip the loading banner on.
+    expect(useSpira.getState().isLoading).toBe(false);
+  });
+
+  it("skips the refresh while a debounced write is in flight (never clobbers an edit)", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(spiraApi, "updateGoal").mockResolvedValue(goalFixture());
+    const fetchGoals = vi
+      .spyOn(spiraApi, "fetchGoals")
+      .mockResolvedValue([{ ...goalFixture(), title: "Stale from server" }]);
+
+    // Start editing: updateGoal schedules a 500ms debounced remote write.
+    useSpira.getState().updateGoal("goal-1", { title: "Typing locally" });
+
+    // A background refresh firing now would overwrite the unsaved local edit.
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    expect(fetchGoals).not.toHaveBeenCalled();
+    expect(useSpira.getState().goals[0].title).toBe("Typing locally");
+
+    // Flush the pending debounce so no timer leaks into the next test.
+    await vi.advanceTimersByTimeAsync(500);
+  });
+
+  it("skips the refresh while a create is in flight (temp local- id present)", async () => {
+    useSpira.setState({
+      goals: [{ ...goalFixture(), id: "local-pending" }],
+    });
+    const fetchGoals = vi
+      .spyOn(spiraApi, "fetchGoals")
+      .mockResolvedValue([goalFixture()]);
+
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    expect(fetchGoals).not.toHaveBeenCalled();
+    expect(useSpira.getState().goals[0].id).toBe("local-pending");
   });
 });
 
