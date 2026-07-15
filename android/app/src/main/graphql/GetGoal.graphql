@@ -1,0 +1,50 @@
+# Full goal for the workspace screen: the five sections (Goal, Reality, Options, Targets,
+# Resources).
+query GetGoal($id: ID!) {
+  goalById(id: $id) {
+    id
+    title
+    description
+    confidence
+    deadline
+    createdAt
+    achievedAt
+    progress
+    reality {
+      id
+      actions { id text }
+      obstacles { id text }
+    }
+    options {
+      id
+      text
+      selected
+      position
+    }
+    targets {
+      id
+      type
+      title
+      start
+      current
+      total
+      unit
+      done
+      progress
+      deadline
+      achievedAt
+      items { id text done }
+    }
+    resources {
+      id
+      type
+      title
+      body
+      url
+      name
+      email
+      role
+      phone
+    }
+  }
+}

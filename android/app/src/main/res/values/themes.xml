@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. Compose drives the real colors (see ui/theme/Theme.kt);
+         this only styles the splash/window before Compose takes over. -->
+    <style name="Theme.SpiraAndroid" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/spira_orange</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

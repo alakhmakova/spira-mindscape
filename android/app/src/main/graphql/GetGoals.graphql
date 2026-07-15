@@ -1,0 +1,23 @@
+# Goals dashboard — mirrors the fields the web cards use.
+query GetGoals {
+  goals {
+    id
+    title
+    description
+    confidence
+    deadline
+    createdAt
+    achievedAt
+    progress
+    targets {
+      id
+      type
+      title
+      progress
+      done
+      current
+      total
+      unit
+    }
+  }
+}

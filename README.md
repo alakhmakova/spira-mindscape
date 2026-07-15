@@ -352,6 +352,54 @@ The ngrok inspector at <http://localhost:4040> shows all traffic through the tun
 
 ---
 
+## Android app (native)
+
+A native **Kotlin / Jetpack Compose** app lives in [`android/`](android/). It reuses the same
+backend as the web app — the GraphQL API plus Google sign-in via `POST /api/auth/google/mobile`
+— so a user has one account across desktop web, responsive mobile web, and the native app. See
+[`android/README.md`](android/README.md), [`docs/mobile-setup-guide.md`](docs/mobile-setup-guide.md),
+and [`specs/2026-07-15-native-mobile-app/`](specs/2026-07-15-native-mobile-app/).
+
+### Prerequisites
+
+- **Android Studio** (installed). One-time tooling/Firebase/OAuth setup is in
+  [`docs/mobile-setup-guide.md`](docs/mobile-setup-guide.md).
+- **JDK 17–21** for Gradle. Android Studio uses its embedded JDK automatically; a system JDK 22
+  is **not** supported by the Android Gradle Plugin.
+
+### Open it in Android Studio
+
+**Open the `android/` folder, _not_ the repository root.** Android Studio treats the folder
+containing `settings.gradle.kts` as the project; the repo root holds the web + backend, so
+opening it won't be recognized as an Android project.
+
+1. Android Studio → **Open** → select `spira-mindscape/android` → OK.
+2. Let **Gradle Sync** finish (first run downloads AGP/Kotlin/Compose).
+3. If prompted about the JDK: **Settings → Build, Execution, Deployment → Build Tools → Gradle →
+   Gradle JDK →** choose the **Embedded JDK (jbr, 21)**.
+
+### Run on a device
+
+- **Real phone (recommended):** enable **Developer options → Wireless debugging** (or USB
+  debugging), pair it, pick it in the device dropdown, and Run ▶. A real device is the best
+  target — real touch and performance.
+- **Emulator:** create one in **Device Manager → Create Device** if you don't have a phone
+  handy.
+- The emulator reaches a locally-running backend at `http://10.0.2.2:8080`.
+
+### Build from the terminal
+
+```powershell
+cd android
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
+.\gradlew.bat :app:assembleDebug     # APK → app/build/outputs/apk/debug/
+.\gradlew.bat installDebug           # install on a connected device/emulator
+```
+
+Why Gradle here and Maven for the backend? See [`docs/build-tools.md`](docs/build-tools.md).
+
+---
+
 ## How Frontend and Backend Are Connected (with code references)
 
 Connection flow in this project:
