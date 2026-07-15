@@ -1068,3 +1068,107 @@ cd backend
 - [ ] Create OAuth 2.0 Client (Web application type)
 - [ ] Add redirect URIs for dev (`localhost:5173`) and prod
 - [ ] Provide `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as environment variables — never in code
+
+---
+
+## 10. Mobile sign-in (native app)
+
+Everything above is the **web** login: a browser redirect to Google and back, ending in a
+server-side session cookie. A **native Android app** can't do that redirect dance cleanly (no
+browser to bounce through, no shared cookie jar during the redirect). So the native app uses a
+small **additive** endpoint — the web flow is untouched.
+
+> Added 2026-07-15 for Phase 13 (native mobile). Design + setup:
+> `specs/2026-07-15-native-mobile-app/` and `docs/mobile-setup-guide.md`.
+
+### The flow
+
+1. The Android app signs in with Google **on-device** (Credential Manager) and receives a
+   Google **ID token** — a signed JWT proving the user's identity. The token's *audience* is
+   the project's **Web** OAuth client ID (the same one the website uses).
+2. The app `POST`s it to **`/api/auth/google/mobile`** as `{ "idToken": "..." }`.
+3. The backend **verifies** the token (signature against Google's public keys, not expired,
+   audience is one we accept), then **find-or-creates** the user and **starts the same kind of
+   session** the web login does. The app stores the returned `SESSION` cookie in its HTTP
+   cookie jar and sends it on every later request — exactly like the browser.
+
+### Why reuse the web session and principal
+
+The whole point is that **after** sign-in, a mobile request is indistinguishable from a web
+request. So the endpoint builds the **same principal** the web login stores — an
+`AppUserOidcUser` — and saves it into the session. That means `CurrentUserProvider`, `/graphql`,
+`/api/auth/me`, owner-scoping, and CSRF all work **unchanged**. No parallel auth path to
+maintain; the only thing that differs is *how the identity is proven* (verify an ID token vs.
+run the browser redirect).
+
+### New files — backend
+
+| File | Role |
+|---|---|
+| `auth/MobileAuthController.java` | `POST /api/auth/google/mobile`: verify → find-or-create → establish session → return `UserDto` |
+| `auth/MobileTokenVerifier.java` | Interface: `Optional<VerifiedGoogleUser> verify(String idToken)` (so the endpoint is unit-testable with a stub) |
+| `auth/GoogleMobileTokenVerifier.java` | Real impl using Google's `GoogleIdTokenVerifier` |
+| `auth/VerifiedGoogleUser.java` | Record of the verified claims (`sub`, `email`, `name`, `pictureUrl`) |
+
+### Modified files — backend
+
+- `auth/AppUserService.java` — extracted `findOrCreateFromGoogle(sub, email, name, pictureUrl)`;
+  `findOrCreateFromOidc(...)` now delegates to it. **Web and mobile share one find-or-create,
+  keyed on the Google `sub`** — so signing in on either surface lands on the *same* user row.
+- `config/SecurityConfig.java` — `permitAll` + CSRF-exempt for `/api/auth/google/mobile` only
+  (the caller has no session or CSRF token yet). Every other rule is unchanged.
+- `pom.xml` — adds `com.google.api-client:google-api-client` (with `commons-logging` excluded,
+  or it clashes with Spring's `spring-jcl`).
+
+### Token verification (the "why" of a few choices)
+
+- **Audience = `GOOGLE_CLIENT_ID`** (the web client ID), plus optional
+  `app.auth.mobile.extra-audiences` (comma-separated). The Android app must request its ID
+  token for that same client ID, and the backend rejects tokens minted for anything else. This
+  is Google's standard "backend server" pattern — one audience trusted for both web and mobile.
+- **`email_verified` is required.** An unverified email could be spoofed on some providers;
+  Google consumer accounts always verify, but we check anyway.
+- **The verifier never throws** — a bad/expired/wrong-audience token just yields "empty" → the
+  endpoint returns `401`.
+
+### Two subtleties worth knowing
+
+- **Synthetic OIDC token.** To build an `AppUserOidcUser` we need an `OidcUser`, which needs an
+  `OidcIdToken`. We construct a small one whose value is literally `"mobile-<sub>"` — it is
+  **not** a real Google token and nothing reads it back (Drive/token refresh use the separately
+  stored, encrypted refresh token). There's a comment on it in `MobileAuthController` so nobody
+  mistakes it for a usable token.
+- **Session-fixation protection.** The browser login gets session-id rotation for free from
+  Spring's session-authentication strategy; a *programmatic* login does not. So the endpoint
+  calls `request.changeSessionId()` when the caller already had a session, so a pre-existing
+  (possibly attacker-known) session id can't be promoted to an authenticated one.
+
+### Error handling
+
+The `app_user` table has unique `google_sub` and `email`. The create path can trip those in two
+cases, and we translate both to something sane instead of a `500`:
+
+- **Concurrent first login for the same account** (two requests both see "no row" and both
+  insert) → catch the `DataIntegrityViolationException`, reload the row the other request
+  created, continue → `200`.
+- **The email now belongs to a different Google account** (email was transferred) → genuine
+  conflict we can't resolve → `409 Conflict`.
+
+### Tests
+
+- `auth/MobileAuthControllerTest` — unit (mocked verifier): blank → `400`, invalid → `401`,
+  valid → `200` + an `AppUserOidcUser` in the session, session-id rotation, race → `200`,
+  email conflict → `409`.
+- `auth/MobileAuthIntegrationTest` — `@SpringBootTest` + MockMvc: the full round-trip — login
+  (no CSRF needed) → the **same session** authenticates `/api/auth/me` and a protected
+  `/graphql` call; invalid token → `401`; no session → `401`. (The `test` profile uses
+  in-memory sessions, so the round-trip is reliable without a DB session store.)
+- `auth/AppUserServiceTest` — the mobile find-or-create creates a user and, for a known `sub`,
+  reuses the existing row.
+
+### What the app must do (Part 3)
+
+Request the ID token for the **Web client ID**, `POST` it here, then keep the `SESSION` cookie
+and echo the `XSRF-TOKEN` cookie as `X-XSRF-TOKEN` on mutations — same as the web client
+(`src/lib/spira/auth.ts`). At deploy time, confirm the production `GOOGLE_CLIENT_ID` equals the
+web client ID in `google-services.json`, or add it to `app.auth.mobile.extra-audiences`.

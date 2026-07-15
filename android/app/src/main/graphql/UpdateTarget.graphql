@@ -1,0 +1,17 @@
+# Low-friction target progress update (the main daily action on mobile).
+mutation UpdateTarget($id: ID!, $input: UpdateTargetInput!) {
+  updateTarget(id: $id, input: $input) {
+    id
+    type
+    title
+    start
+    current
+    total
+    unit
+    done
+    progress
+    deadline
+    achievedAt
+    items { id text done }
+  }
+}
