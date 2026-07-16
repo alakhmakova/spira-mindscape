@@ -1,13 +1,20 @@
 package com.spiramindscape.android.ui.auth
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.spiramindscape.android.BuildConfig
 import com.spiramindscape.android.data.auth.AuthApi
+import com.spiramindscape.android.data.auth.AuthClient
+import com.spiramindscape.android.data.auth.AuthException
 import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.data.auth.GoogleSignInClient
+import com.spiramindscape.android.data.auth.IdTokenProvider
 import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +33,10 @@ sealed interface AuthState {
  * jar may already hold a valid session from a previous launch). Sign-in gets a Google ID token
  * and posts it to the mobile endpoint; sign-out clears the server session and local cookies.
  */
-class AuthViewModel : ViewModel() {
-
-    private val authApi = AuthApi(Network.okHttp, BuildConfig.API_BASE_URL)
-    private val googleSignIn = GoogleSignInClient(BuildConfig.WEB_CLIENT_ID)
+class AuthViewModel(
+    private val authClient: AuthClient,
+    private val idTokenProvider: IdTokenProvider,
+) : ViewModel() {
 
     private val _state = MutableStateFlow<AuthState>(AuthState.Loading)
     val state: StateFlow<AuthState> = _state.asStateFlow()
@@ -51,7 +58,7 @@ class AuthViewModel : ViewModel() {
                 // A genuine answer: a user (authed) or null (real 401 → anonymous). We must
                 // honour null even when currently Authed, so an expired session returns the
                 // user to login.
-                val user = authApi.me()
+                val user = authClient.me()
                 _state.value = if (user != null) AuthState.Authed(user) else AuthState.Anonymous
             } catch (e: Exception) {
                 // Transient network/server error (not a 401): don't drop an active session.
@@ -71,13 +78,21 @@ class AuthViewModel : ViewModel() {
         _error.value = null
         viewModelScope.launch {
             try {
-                val idToken = googleSignIn.getIdToken(activityContext)
-                val user = authApi.mobileLogin(idToken)
+                val idToken = idTokenProvider.getIdToken(activityContext)
+                val user = authClient.mobileLogin(idToken)
                 _state.value = AuthState.Authed(user)
             } catch (e: GetCredentialCancellationException) {
                 // User dismissed the Google sheet — not an error.
+            } catch (e: AuthException) {
+                // A token WAS obtained on-device, but the backend rejected it (audience,
+                // email_verified, or signature). This is a server-side rejection.
+                Log.w(TAG, "Mobile sign-in rejected by backend: HTTP ${e.code}", e)
+                _error.value = "Sign-in failed (server ${e.code})."
             } catch (e: Exception) {
-                _error.value = "Sign-in failed. Please try again."
+                // Failed before/without reaching the backend — Credential Manager on the
+                // device (no Google account, SHA-1 / OAuth-client mismatch, Play Services).
+                Log.w(TAG, "Google sign-in failed on device", e)
+                _error.value = "Google sign-in failed. Please try again."
             } finally {
                 _signingIn.value = false
             }
@@ -87,12 +102,29 @@ class AuthViewModel : ViewModel() {
     fun logout() {
         viewModelScope.launch {
             try {
-                authApi.logout()
+                authClient.logout()
             } catch (_: Exception) {
                 // Best-effort; we clear locally regardless.
             }
             Network.cookieJar.clear()
             _state.value = AuthState.Anonymous
+        }
+    }
+
+    companion object {
+        private const val TAG = "AuthViewModel"
+
+        /**
+         * Production wiring: builds the real [AuthApi] (over the shared OkHttp client) and the
+         * real Google sign-in. Tests construct [AuthViewModel] directly with fakes instead.
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                AuthViewModel(
+                    authClient = AuthApi(Network.okHttp, BuildConfig.API_BASE_URL),
+                    idTokenProvider = GoogleSignInClient(BuildConfig.WEB_CLIENT_ID),
+                )
+            }
         }
     }
 }

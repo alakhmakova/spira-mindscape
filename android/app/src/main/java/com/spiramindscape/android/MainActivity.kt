@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    val authViewModel: AuthViewModel = viewModel()
+                    val authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
                     SpiraApp(authViewModel)
                 }
             }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ backup/transfer rules. Exclude the cookie store: it holds the live SESSION
+     credential, which must never be uploaded to the cloud or transferred to another device. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="spira_cookies.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="spira_cookies.xml" />
+    </device-transfer>
+</data-extraction-rules>

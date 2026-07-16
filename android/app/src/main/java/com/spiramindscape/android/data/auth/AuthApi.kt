@@ -19,6 +19,13 @@ data class AuthUser(
 /** Non-2xx (other than the 401 that `me()` maps to null) from an auth endpoint. */
 class AuthException(val code: Int) : Exception("Auth request failed with HTTP $code")
 
+/** The auth operations the app needs — an interface so the ViewModel can be unit-tested. */
+interface AuthClient {
+    suspend fun mobileLogin(idToken: String): AuthUser
+    suspend fun me(): AuthUser?
+    suspend fun logout()
+}
+
 /**
  * REST calls to the backend's auth endpoints. Uses the shared OkHttp client, so the session
  * cookie set by [mobileLogin] is reused by every later request (REST and GraphQL alike).
@@ -26,11 +33,11 @@ class AuthException(val code: Int) : Exception("Auth request failed with HTTP $c
 class AuthApi(
     private val client: OkHttpClient,
     private val baseUrl: String,
-) {
+) : AuthClient {
     private val json = "application/json".toMediaType()
 
     /** Exchange a Google ID token for a server session. Returns the user, or throws. */
-    suspend fun mobileLogin(idToken: String): AuthUser = withContext(Dispatchers.IO) {
+    override suspend fun mobileLogin(idToken: String): AuthUser = withContext(Dispatchers.IO) {
         val body = JSONObject().put("idToken", idToken).toString().toRequestBody(json)
         val request = Request.Builder()
             .url("$baseUrl/api/auth/google/mobile")
@@ -43,7 +50,7 @@ class AuthApi(
     }
 
     /** Current session user, or null if anonymous (HTTP 401). */
-    suspend fun me(): AuthUser? = withContext(Dispatchers.IO) {
+    override suspend fun me(): AuthUser? = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl/api/auth/me").get().build()
         client.newCall(request).execute().use { response ->
             when {
@@ -55,7 +62,7 @@ class AuthApi(
     }
 
     /** Invalidate the server session. Best-effort — the client also clears its own cookies. */
-    suspend fun logout(): Unit = withContext(Dispatchers.IO) {
+    override suspend fun logout(): Unit = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl/api/auth/logout")
             .post(ByteArray(0).toRequestBody(null))

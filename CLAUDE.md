@@ -44,10 +44,35 @@ Follow this sequence for any code change, small or large:
      web E2E.
    - Android: JUnit/Kotlin (unit) + **Compose UI Test** (components) + **Maestro** (E2E on
      emulator).
-6. **Document** — for a **big** step (new module, new auth/deploy path, architectural "why"),
+   - **Maestro reminder (deferred — act on this):** Android E2E via Maestro only pays off once the
+     app has real **multi-screen user journeys** (e.g. sign-in → dashboard → open a goal → update a
+     target → see progress). Until then, sign-in is verified manually and unit/Compose tests
+     suffice. **When such flows actually land** (native-mobile Steps 4–6), the agent should
+     **proactively remind the user** to install Maestro and add flows, and offer to write them —
+     see `docs/maestro-e2e-guide.md`. Don't push Maestro before there are cross-screen journeys
+     worth testing.
+6. **Security** — first ask whether the change even has a **security surface**: does it touch
+   auth or sessions, another user's data, untrusted input (user text, files, URLs, tokens),
+   external calls, secrets, a new endpoint/permission, or client-side credential storage?
+   - **If no** (styling, copy, a pure refactor, a docs edit): skip this step — do **not** add
+     security theater.
+   - **If yes**, then:
+     - **Reuse the existing model; don't reinvent it.** Follow `docs/security-model.md` and
+       `specs/2026-06-12-security-hardening/`: per-user owner-scoping (`findByIdAndUserId`),
+       server-side validation, CSRF on mutations, secrets only in env / Secret Manager (never in
+       code, logs, or committed files), least privilege, and never trusting client-supplied data.
+     - **Implement the safe option**, and **add a test for the boundary the change creates** —
+       e.g. cross-user isolation, auth-required (401), CSRF-required (403), invalid input
+       rejected, unverified data refused, a credential kept out of backups. Examples already in
+       the repo: `CrossUserIsolationIntegrationTest`, `SecurityIntegrationTest`,
+       `MobileAuthControllerTest` (session-fixation + token audience/verification).
+     - **Surface real risks to the user** and record them in `backlog/`, rather than shipping a
+       known hole silently.
+   When unsure whether something is a genuine risk, **ask** — proportionality over paranoia.
+7. **Document** — for a **big** step (new module, new auth/deploy path, architectural "why"),
    propose an entry in `docs/` or `specs/` and ask the user. Skip docs for small edits
    (renames, styling, bugfixes) — code, git history, and tests cover those.
-7. **Hand off — don't commit.** The user commits.
+8. **Hand off — don't commit.** The user commits.
 
 ---
 
@@ -84,6 +109,18 @@ Full local run (DB + backend + frontend), ngrok mobile testing, and deploy detai
 `README.md`.
 
 ---
+
+## Diagnosing the app (agent self-service vs. user)
+
+**The agent can and should do these itself** before asking the user: build (frontend/backend/
+Android), run unit tests, run the app, and — when a **runtime** error is suspected — launch it
+on an **emulator** and read **`adb logcat`** to reproduce and inspect the error. Do this rather
+than relying on the user to relay logs.
+
+**Only the user can do:** complete an interactive **Google sign-in** (a real account + consent
+in the system UI), and any action in the **Google Cloud / Firebase web consoles** (creating
+OAuth clients, Firebase projects, secrets). The agent has no browser access to those and cannot
+tap on a physical device.
 
 ## Where things live
 

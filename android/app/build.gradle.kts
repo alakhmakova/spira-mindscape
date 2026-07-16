@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.apollographql.apollo")
+    jacoco
 }
 
 android {
@@ -39,6 +40,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // JaCoCo coverage for JVM unit tests → :app:createDebugUnitTestCoverageReport
+            enableUnitTestCoverage = true
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -59,6 +64,45 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged manifest + resources available to JVM unit tests.
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+// Curated coverage report (like the backend's JaCoCo): measures OUR code and excludes what a
+// JVM unit test can't cover — Apollo-generated GraphQL classes and Compose/Activity UI (those
+// belong to Compose UI Test / Maestro on an emulator). Run: ./gradlew :app:jacocoDebugReport
+// Report: app/build/reports/jacoco/jacocoDebugReport/html/index.html
+tasks.register<JacocoReport>("jacocoDebugReport") {
+    dependsOn("testDebugUnitTest")
+    group = "verification"
+    description = "JaCoCo coverage for debug unit tests, excluding generated + UI code."
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+    }
+    val excludes = listOf(
+        "**/graphql/**",             // Apollo-generated GraphQL models/adapters
+        "**/*ComposableSingletons*", // Compose-generated lambda holders
+        "**/ui/theme/**",            // theme constants
+        "**/ui/SpiraAppKt*",         // Compose screens — covered by UI tests, not JVM
+        "**/ui/auth/LoginScreenKt*",
+        "**/MainActivity*",
+        "**/BuildConfig.*",
+    )
+    classDirectories.setFrom(
+        fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) { exclude(excludes) },
+    )
+    sourceDirectories.setFrom(files("src/main/java"))
+    executionData.setFrom(fileTree(layout.buildDirectory) { include("**/*.exec") })
 }
 
 // Apollo Kotlin generates typed models + clients from the GraphQL schema and the .graphql
@@ -98,6 +142,16 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // Android stubs org.json in unit tests ("not mocked"); pull the real impl for JVM tests.
+    testImplementation("org.json:json:20240303")
+    // Robolectric provides a real Android runtime (Context/SharedPreferences) for JVM tests.
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    // Compose UI testing on the JVM (via Robolectric) — no emulator needed.
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
