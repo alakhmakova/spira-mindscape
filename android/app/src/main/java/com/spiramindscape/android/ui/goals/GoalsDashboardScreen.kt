@@ -40,7 +40,7 @@ import kotlin.math.roundToInt
  * made on another device appears without a reload.
  */
 @Composable
-fun GoalsRoute(onLogout: () -> Unit) {
+fun GoalsRoute(onGoalClick: (String) -> Unit, onLogout: () -> Unit) {
     val viewModel: GoalsViewModel = viewModel(factory = GoalsViewModel.Factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -49,13 +49,19 @@ fun GoalsRoute(onLogout: () -> Unit) {
         onPauseOrDispose { }
     }
 
-    GoalsDashboardScreen(state = state, onRetry = viewModel::load, onLogout = onLogout)
+    GoalsDashboardScreen(
+        state = state,
+        onGoalClick = onGoalClick,
+        onRetry = viewModel::load,
+        onLogout = onLogout,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoalsDashboardScreen(
     state: GoalsUiState,
+    onGoalClick: (String) -> Unit,
     onRetry: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -99,7 +105,9 @@ fun GoalsDashboardScreen(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            items(state.goals, key = { it.id }) { GoalCard(it) }
+                            items(state.goals, key = { it.id }) { goal ->
+                                GoalCard(goal, onClick = { onGoalClick(goal.id) })
+                            }
                         }
                     }
             }
@@ -107,9 +115,10 @@ fun GoalsDashboardScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GoalCard(goal: GoalSummary) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun GoalCard(goal: GoalSummary, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text(
                 text = goal.title.ifBlank { "Untitled goal" },

@@ -24,6 +24,16 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
 
 The debug APK lands in `app/build/outputs/apk/debug/`.
 
+### Distribute to testers (one command)
+
+```powershell
+.\gradlew.bat distributeDebug -PreleaseNotes="what changed"
+```
+
+Builds the debug APK and uploads it to **Firebase App Distribution** using your `firebase login`
+(no service-account file). Testers install from any network. See
+`docs/mobile-setup-guide.md` §B6.
+
 ## Run in Android Studio
 
 Open the `android/` folder (not the repo root) in Android Studio, let it sync, then Run ▶ on

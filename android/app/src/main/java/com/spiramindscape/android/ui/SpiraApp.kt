@@ -13,7 +13,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.spiramindscape.android.ui.auth.AuthState
 import com.spiramindscape.android.ui.auth.AuthViewModel
 import com.spiramindscape.android.ui.auth.LoginScreen
-import com.spiramindscape.android.ui.goals.GoalsRoute
 
 /**
  * Root of the app: a spinner while the session is checked, the login screen when anonymous, and
@@ -33,7 +32,7 @@ fun SpiraApp(authViewModel: AuthViewModel) {
             error = error,
             onSignIn = { authViewModel.signIn(context) },
         )
-        is AuthState.Authed -> GoalsRoute(onLogout = authViewModel::logout)
+        is AuthState.Authed -> AuthedApp(onLogout = authViewModel::logout)
     }
 }
 
