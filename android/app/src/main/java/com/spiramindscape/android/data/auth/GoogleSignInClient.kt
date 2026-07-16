@@ -7,6 +7,11 @@ import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 
+/** Source of a Google ID token — an interface so the ViewModel can be unit-tested. */
+interface IdTokenProvider {
+    suspend fun getIdToken(activityContext: Context): String
+}
+
 /**
  * Wraps Android's Credential Manager "Sign in with Google". Returns a Google **ID token** whose
  * audience is the project's web client ID ([webClientId]) — the backend verifies against that
@@ -14,9 +19,9 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
  *
  * Must be called with an **Activity** context (Credential Manager shows UI).
  */
-class GoogleSignInClient(private val webClientId: String) {
+class GoogleSignInClient(private val webClientId: String) : IdTokenProvider {
 
-    suspend fun getIdToken(activityContext: Context): String {
+    override suspend fun getIdToken(activityContext: Context): String {
         val googleIdOption = GetGoogleIdOption.Builder()
             .setServerClientId(webClientId)
             // Show all Google accounts on the device, not only previously-authorized ones.
