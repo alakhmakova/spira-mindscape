@@ -232,9 +232,11 @@ In the Firebase console left menu, open each once to enable:
 
 - **Release & Monitor → App Distribution** → Get started (create a tester group, add your own
   email as a tester).
-- **Release & Monitor → Crashlytics** → Enable.
+- **Release & Monitor → Crashlytics** → Enable. The app is already wired for it (auto crash
+  capture) — see `docs/crash-reporting-and-monitoring.md` for how it works and how to read crashes.
 - **Engage → Messaging (Cloud Messaging / FCM)** → it's on by default once the app is
-  registered.
+  registered. The app already registers device tokens; to have the **backend send** pushes,
+  configure a service-account credential — see `docs/push-notifications-guide.md`.
 - **Analytics** → already enabled in B1.
 
 ### B5. Install the Firebase CLI ✅ installed — `firebase login` still to do
@@ -264,6 +266,29 @@ firebase login
   `firebase projects:list` should show your project after Part B1.
 
 ---
+
+### B6. Distributing a build (one command)
+
+Once you're a tester (B4) and logged into the Firebase CLI (B5), ship a new build to testers
+with a single Gradle task — it builds the debug APK and uploads it:
+
+```powershell
+cd android
+.\gradlew.bat distributeDebug -PreleaseNotes="what changed in this build"
+```
+
+- Uses your `firebase login` (no service-account file needed).
+- Testers get an email/App-Tester update; install works from **any network** (the app talks to
+  the production backend over the internet).
+- Override recipients with `-PdistTesters="a@example.com,b@example.com"`.
+- The task is defined in `android/app/build.gradle.kts` (`distributeDebug`), calling
+  `firebase appdistribution:distribute` with the app id
+  `1:952567559986:android:eff4c02ebb5a77b38a892b`.
+
+For a fully **open** download (no tester invite — e.g. for a portfolio reviewer), attach
+`app-debug.apk` to a **GitHub Release** instead: push the repo, then
+`gh release create <tag> android/app/build/outputs/apk/debug/app-debug.apk` (or via the GitHub
+UI → Releases). Anyone can then download and sideload it.
 
 ## Part C — Google Sign-In OAuth (for the mobile auth endpoint)
 
@@ -365,7 +390,9 @@ Create on your accounts:
 - [x] **Firebase project** — added to existing GCP project `project-10702811-5962-4bf3-877` (B1)
 - [x] **Register Android app** `com.spiramindscape.android` + SHA-1 (B2)
 - [x] Download **`google-services.json`** (B3, gitignored)
-- [ ] Enable **App Distribution** (tester group), **Crashlytics** — done when wiring the app (B4)
+- [x] Enable **App Distribution** (tester group) — used by `:app:distributeDebug`
+- [ ] Enable **Crashlytics** in the console (B4) — the app is already wired for it
+      (`docs/crash-reporting-and-monitoring.md`); enabling in the console starts showing reports
 - [x] **Debug SHA-1** fingerprint generated + registered (C1)
 - [ ] **Android OAuth client** — must be created **manually** in Cloud Console (the Firebase CLI
       SHA registration did NOT create it → error 10). See C2 + `backlog/mobile-sign-in-developer-error-10.md` (C2)

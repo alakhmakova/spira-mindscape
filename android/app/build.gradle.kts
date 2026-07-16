@@ -6,6 +6,15 @@ plugins {
     jacoco
 }
 
+// Crashlytics + Analytics need the google-services plugin, which requires google-services.json.
+// That file is gitignored (holds an API key) and absent on CI, so apply these plugins ONLY when
+// it's present: local/dev builds get crash reporting; CI still builds fine without the file.
+val hasGoogleServices = file("google-services.json").exists()
+if (hasGoogleServices) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+}
+
 android {
     namespace = "com.spiramindscape.android"
     compileSdk = 34
@@ -105,6 +114,37 @@ tasks.register<JacocoReport>("jacocoDebugReport") {
     executionData.setFrom(fileTree(layout.buildDirectory) { include("**/*.exec") })
 }
 
+// One-click distribution: build the debug APK and upload it to Firebase App Distribution.
+// Uses your `firebase login` (no service-account file needed). Run:
+//   .\gradlew.bat distributeDebug -PreleaseNotes="what changed in this build"
+// Override testers with -PdistTesters="a@x.com,b@y.com".
+tasks.register<Exec>("distributeDebug") {
+    group = "distribution"
+    description = "Build the debug APK and upload it to Firebase App Distribution."
+    dependsOn("assembleDebug")
+
+    val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val appId = "1:952567559986:android:eff4c02ebb5a77b38a892b"
+    val testers = (project.findProperty("distTesters") as String?)
+        ?: "anastasiya.lakhmakova@gmail.com,alakhmakova@gmail.com"
+    val notes = (project.findProperty("releaseNotes") as String?) ?: "Spira mobile debug build."
+
+    doFirst {
+        val firebaseArgs = listOf(
+            "appdistribution:distribute", apk.get().asFile.absolutePath,
+            "--app", appId,
+            "--testers", testers,
+            "--release-notes", notes,
+        )
+        // firebase is a Node CLI; on Windows it's a .cmd shim, so invoke through cmd.
+        commandLine = if (System.getProperty("os.name").lowercase().contains("win")) {
+            listOf("cmd", "/c", "firebase") + firebaseArgs
+        } else {
+            listOf("firebase") + firebaseArgs
+        }
+    }
+}
+
 // Apollo Kotlin generates typed models + clients from the GraphQL schema and the .graphql
 // operations under src/main/graphql/. The schema is a copy of the backend's
 // backend/src/main/resources/graphql/schema.graphqls — the shared contract between web and app.
@@ -120,6 +160,15 @@ dependencies {
 
     implementation("com.apollographql.apollo:apollo-runtime:4.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Firebase Crashlytics + Analytics (crash reporting). Active only when google-services.json
+    // is present and the plugins above are applied; the libraries are harmless otherwise.
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-crashlytics")
+    implementation("com.google.firebase:firebase-analytics")
+    // Push notifications (FCM). await() on the Firebase Task APIs comes from coroutines-play-services.
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("androidx.core:core-ktx:1.13.1")

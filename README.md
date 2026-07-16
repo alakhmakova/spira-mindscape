@@ -354,6 +354,9 @@ The ngrok inspector at <http://localhost:4040> shows all traffic through the tun
 
 ## Android app (native)
 
+> **📱 Reviewing the project? Start with [`MOBILE.md`](MOBILE.md)** — the mobile app's current
+> stage, what's done vs. planned, its tests, and how to download/try or run it locally.
+
 A native **Kotlin / Jetpack Compose** app lives in [`android/`](android/). It reuses the same
 backend as the web app — the GraphQL API plus Google sign-in via `POST /api/auth/google/mobile`
 — so a user has one account across desktop web, responsive mobile web, and the native app. See

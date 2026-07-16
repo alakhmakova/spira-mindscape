@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Spira</string>
+    <string name="default_notification_channel_id">spira_default</string>
+    <string name="default_notification_channel_name">Spira reminders</string>
 </resources>

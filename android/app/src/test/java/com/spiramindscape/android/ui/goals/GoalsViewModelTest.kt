@@ -1,5 +1,6 @@
 package com.spiramindscape.android.ui.goals
 
+import com.spiramindscape.android.data.goals.ChecklistItemModel
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.spiramindscape.android.data.goals.GoalsException
 import com.spiramindscape.android.data.goals.GoalsRepository
@@ -31,6 +32,12 @@ class GoalsViewModelTest {
 
     private class FakeRepo(var result: suspend () -> List<GoalSummary>) : GoalsRepository {
         override suspend fun getGoals(): List<GoalSummary> = result()
+        // Not exercised by these dashboard tests:
+        override suspend fun getGoal(id: String) = throw NotImplementedError()
+        override suspend fun setTargetDone(targetId: String, done: Boolean) = throw NotImplementedError()
+        override suspend fun setTargetCurrent(targetId: String, current: Double) = throw NotImplementedError()
+        override suspend fun setChecklistItems(targetId: String, items: List<ChecklistItemModel>) =
+            throw NotImplementedError()
     }
 
     @Test

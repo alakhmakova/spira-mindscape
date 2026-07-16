@@ -27,6 +27,7 @@ class GoalsDashboardScreenTest {
         compose.setContent {
             GoalsDashboardScreen(
                 state = GoalsUiState.Content(listOf(goal)),
+                onGoalClick = {},
                 onRetry = {},
                 onLogout = {},
             )
@@ -40,7 +41,7 @@ class GoalsDashboardScreenTest {
     @Test
     fun `shows the empty state when there are no goals`() {
         compose.setContent {
-            GoalsDashboardScreen(state = GoalsUiState.Content(emptyList()), onRetry = {}, onLogout = {})
+            GoalsDashboardScreen(state = GoalsUiState.Content(emptyList()), onGoalClick = {}, onRetry = {}, onLogout = {})
         }
         compose.onNodeWithText("No goals yet.", substring = true).assertIsDisplayed()
     }
@@ -51,6 +52,7 @@ class GoalsDashboardScreenTest {
         compose.setContent {
             GoalsDashboardScreen(
                 state = GoalsUiState.Error("Couldn't load your goals."),
+                onGoalClick = {},
                 onRetry = { retried = true },
                 onLogout = {},
             )
@@ -67,6 +69,7 @@ class GoalsDashboardScreenTest {
         compose.setContent {
             GoalsDashboardScreen(
                 state = GoalsUiState.Content(listOf(goal)),
+                onGoalClick = {},
                 onRetry = {},
                 onLogout = { loggedOut = true },
             )

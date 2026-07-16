@@ -10,6 +10,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.spiramindscape.android.data.net.Network
+import com.spiramindscape.android.push.PushNotificationsEffect
 import com.spiramindscape.android.ui.SpiraApp
 import com.spiramindscape.android.ui.auth.AuthViewModel
 import com.spiramindscape.android.ui.theme.SpiraTheme
@@ -27,6 +28,8 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     val authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
+                    // Register/deregister this device for push as the sign-in state changes.
+                    PushNotificationsEffect(authViewModel)
                     SpiraApp(authViewModel)
                 }
             }
