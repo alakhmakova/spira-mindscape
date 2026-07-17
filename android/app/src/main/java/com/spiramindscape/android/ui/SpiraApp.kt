@@ -32,7 +32,10 @@ fun SpiraApp(authViewModel: AuthViewModel) {
             error = error,
             onSignIn = { authViewModel.signIn(context) },
         )
-        is AuthState.Authed -> AuthedApp(onLogout = authViewModel::logout)
+        is AuthState.Authed -> AuthedApp(
+            user = (state as AuthState.Authed).user,
+            onLogout = authViewModel::logout,
+        )
     }
 }
 

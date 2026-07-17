@@ -76,6 +76,79 @@ Follow this sequence for any code change, small or large:
 
 ---
 
+## UI conventions (hard rules — web *and* Android)
+
+These are **non-negotiable** and apply to every surface (React web, native Compose).
+
+### 1. Never ship raw, un-customized default elements
+
+**Every UI element must be a Spira-designed, themed component that you build.** Never use a bare,
+un-styled platform default:
+
+- **Web:** don't drop raw `<input>`, `<select>`, `<textarea>`, `<button>`, native checkbox/radio,
+  or an un-styled third-party widget straight into product UI. Use (or extend) the design-system
+  components in `src/components/ui/` and `src/components/spira/`. If a needed primitive doesn't
+  exist yet, **build it** with the design tokens (`src/styles.css`) — don't inline an unthemed tag.
+- **Android:** don't use naked Material 3 defaults (`OutlinedTextField` with a floating label for
+  inline text, default `Button`/`Card`/progress, un-themed dialogs) where a Spira component
+  belongs. Use the kit in `android/app/src/main/java/com/spiramindscape/android/ui/components/`
+  (`SpiraCard`, `SpiraSection`, `SpiraButton`, `InlineEditText`, `ConfidenceStepper`,
+  `DeadlineField`, `SpiraFormSheet`, `ConfirmDialog`, `CircularProgress`, …). If a primitive is
+  missing, **add it to the kit**, themed via `ui/theme/` — never scatter one-off raw widgets.
+
+The two surfaces mirror one design (see `specs/tech-stack.md` "Styling strategy" and
+`specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Playfair
+headings. A raw default element breaks that coherence and is a review-blocking defect.
+
+### 2. Inline inputs (the goal-page editing pattern)
+
+`specs/tech-stack.md` → "Goal Page" mandates **inline editing**. Inline text fields (goal
+title/description, target titles, reality items, options, checklist tasks, numeric values) must
+behave like the web `InlineText`/`AutoTextarea` and the Android `InlineEditText`:
+
+- **Look like the surrounding text** — no box, no floating label, no form-input chrome. Show a
+  muted **placeholder** when empty, not a label.
+- **Commit on blur (focus loss) and on the Done/Enter key** — never write on every keystroke.
+- **Escape reverts** (web) to the last committed value.
+- **Required fields never save empty** — revert to the last good value if the user clears them
+  (e.g. goal title, target title, option/reality text).
+- **Re-seed from the source value** when it changes externally (after a refetch/optimistic update).
+
+Boxed, labelled inputs (`SpiraTextField` on Android, the web `Input`) are only for **create/edit
+forms in sheets/drawers**, not for inline editing on the goal page.
+
+### 3. Icons & emoji
+
+Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the icon convention in
+`specs/tech-stack.md`:
+
+- **No emoji anywhere** — not in UI text, notifications, empty states, badges, or AI/assistant
+  replies. (Use a word like "Achieved", not `✓`/`🎉`.)
+- **Use Lucide icons only.** Web: `lucide-react`. Android: the Lucide glyphs in
+  `ui/icons/SpiraIcons.kt` (built from Lucide SVG **path data** — the "PATHS + Ic" approach the
+  spec names). Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc
+  drawn shapes. If an icon is missing, add its Lucide path to `SpiraIcons` (copy the `d`
+  attribute from https://lucide.dev) — keep the two surfaces on the same icon set.
+
+### 4. Verify UI changes visually before shipping
+
+Existence-only assertions lie: a drawer once rendered with half its content pushed off-screen
+while `assertExists` stayed green. **Any visible UI change must be verified by looking at
+pixels** before distributing: render the changed surface in
+`android/app/src/test/java/com/spiramindscape/android/ui/VisualCheckTest.kt` (writes PNGs to
+`app/build/reports/visual/`) and open the image, or screenshot the emulator (`adb exec-out
+screencap`). Never claim a visual fix without having seen it.
+
+### 5. Menus & overlays are pure white
+
+**All dropdowns, menus, popovers, and overlay surfaces have a plain white background** — no
+tint. On Android this means clearing Material's tonal-elevation overlay (`surfaceTint =
+Color.Transparent` in the theme) so menus don't pick up a teal cast; on the web, don't let a
+popover inherit a tinted/elevated background. If a menu looks greenish/grey, it's wrong — fix the
+surface, don't ship it.
+
+---
+
 ## Bug backlog (`backlog/`)
 
 `backlog/` is the project's bug tracker — **one Markdown file per bug**. See

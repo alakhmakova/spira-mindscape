@@ -1,0 +1,16 @@
+# Options (strategies). Server enforces single-select for selectOption.
+mutation AddOption($goalId: ID!, $text: String!) {
+  addOption(goalId: $goalId, text: $text) { id }
+}
+
+mutation UpdateOption($goalId: ID!, $optionId: ID!, $input: UpdateOptionInput!) {
+  updateOption(goalId: $goalId, optionId: $optionId, input: $input) { id }
+}
+
+mutation SelectOption($goalId: ID!, $optionId: ID!) {
+  selectOption(goalId: $goalId, optionId: $optionId) { id }
+}
+
+mutation RemoveOption($goalId: ID!, $optionId: ID!) {
+  removeOption(goalId: $goalId, optionId: $optionId)
+}

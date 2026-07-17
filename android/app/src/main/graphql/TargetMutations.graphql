@@ -1,0 +1,8 @@
+# Target create/delete (update already lives in UpdateTarget.graphql).
+mutation CreateTarget($goalId: ID!, $input: CreateTargetInput!) {
+  createTarget(goalId: $goalId, input: $input) { id }
+}
+
+mutation DeleteTarget($id: ID!) {
+  deleteTarget(id: $id)
+}

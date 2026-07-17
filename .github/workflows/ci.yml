@@ -124,7 +124,11 @@ jobs:
       # the build still works. Crashlytics is a runtime/distribution concern, not a CI one.
       - name: Run Android unit tests + coverage
         working-directory: android
-        run: ./gradlew :app:testDebugUnitTest :app:jacocoDebugReport --no-daemon
+        # gradlew was committed from Windows without the executable bit, so make it runnable
+        # on the Linux runner before invoking it (otherwise: "./gradlew: Permission denied").
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:jacocoDebugReport --no-daemon
 
       - name: Upload Android coverage report
         if: always()

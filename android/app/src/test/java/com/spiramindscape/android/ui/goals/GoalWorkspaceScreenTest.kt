@@ -1,8 +1,12 @@
 package com.spiramindscape.android.ui.goals
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.OptionItem
 import com.spiramindscape.android.data.goals.ResourceItem
@@ -40,15 +44,18 @@ class GoalWorkspaceScreenTest {
         compose.setContent {
             GoalWorkspaceScreen(
                 state = GoalUiState.Content(goal),
-                onBack = {},
-                onRetry = {},
-                onSetDone = { _, _ -> },
-                onSetNumeric = { _, _ -> },
-                onToggleChecklistItem = { _, _ -> },
+                actions = GoalWorkspaceActions(),
+                user = AuthUser(1, "t@e.com", "T", null),
             )
         }
 
+        // The Goal tab shows the title; switching tabs renders the colliding-id target and
+        // resource without the old duplicate-key crash.
         compose.onNodeWithText("My Goal").assertIsDisplayed()
+        // Bottom-navigation tabs (clickable; the drawer's rubric titles share the same text).
+        compose.onNode(hasText("Targets") and hasClickAction()).performClick()
         compose.onNodeWithText("a target").assertIsDisplayed()
+        compose.onNode(hasText("Resources") and hasClickAction()).performClick()
+        compose.onNodeWithText("a resource").assertIsDisplayed()
     }
 }

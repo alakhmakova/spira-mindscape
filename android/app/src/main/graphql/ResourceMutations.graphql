@@ -1,0 +1,12 @@
+# Resources (note / link / file / email). The `type` string on the input discriminates.
+mutation CreateResource($goalId: ID!, $input: CreateResourceInput!) {
+  createResource(goalId: $goalId, input: $input) { id }
+}
+
+mutation UpdateResource($id: ID!, $input: UpdateResourceInput!) {
+  updateResource(id: $id, input: $input) { id }
+}
+
+mutation DeleteResource($id: ID!) {
+  deleteResource(id: $id)
+}

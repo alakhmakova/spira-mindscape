@@ -6,16 +6,18 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.ui.goals.GoalWorkspaceRoute
 import com.spiramindscape.android.ui.goals.GoalsRoute
 
 /** Navigation for the signed-in app: goals dashboard → goal workspace. */
 @Composable
-fun AuthedApp(onLogout: () -> Unit) {
+fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
     val nav = rememberNavController()
     NavHost(navController = nav, startDestination = "goals") {
         composable("goals") {
             GoalsRoute(
+                user = user,
                 onGoalClick = { goalId -> nav.navigate("goal/$goalId") },
                 onLogout = onLogout,
             )
@@ -26,7 +28,12 @@ fun AuthedApp(onLogout: () -> Unit) {
         ) { entry ->
             GoalWorkspaceRoute(
                 goalId = entry.arguments?.getString("goalId").orEmpty(),
+                user = user,
                 onBack = { nav.popBackStack() },
+                onLogout = onLogout,
+                onOpenGoal = { id ->
+                    nav.navigate("goal/$id") { launchSingleTop = true }
+                },
             )
         }
     }

@@ -1,0 +1,12 @@
+# Reality items (actions / obstacles). `kind` is "actions" or "obstacles".
+mutation AddRealityItem($goalId: ID!, $kind: String!, $text: String!) {
+  addRealityItem(goalId: $goalId, kind: $kind, text: $text) { id }
+}
+
+mutation UpdateRealityItem($goalId: ID!, $kind: String!, $itemId: ID!, $text: String!) {
+  updateRealityItem(goalId: $goalId, kind: $kind, itemId: $itemId, text: $text) { id }
+}
+
+mutation RemoveRealityItem($goalId: ID!, $kind: String!, $itemId: ID!) {
+  removeRealityItem(goalId: $goalId, kind: $kind, itemId: $itemId) { id }
+}
