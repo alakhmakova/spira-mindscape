@@ -37,6 +37,8 @@ Kotlin** (type-safe generated models from the shared schema).
 | Goals **dashboard** (cards: title, progress, confidence, deadline) | ✅ |
 | Goal **workspace** (the five sections) | ✅ |
 | **Low-friction target updates** — done/not-done, numeric ± stepper, checklist | ✅ |
+| **Full editing** — create/edit/delete goals, targets (all types), reality, options, resources | ✅ |
+| **Design** — teal theme + Playfair headings mirroring the web (light-only) | ✅ |
 | Data freshness — re-fetch on app resume | ✅ |
 | Distribution via **Firebase App Distribution** | ✅ |
 | **Crashlytics** — automatic crash reporting from testers' devices | ✅ |
@@ -44,18 +46,20 @@ Kotlin** (type-safe generated models from the shared schema).
 
 ## Roadmap (not yet built)
 
-- Resource viewing (notes, links, files, email).
+- File resources (upload + in-app view) and rich-text notes (mobile notes are plain text for now —
+  `backlog/mobile-notes-rich-text.md`).
+- A few smaller editing niceties: per-target deadline editing, adding checklist items to an
+  existing target, reordering options.
 - AI coach chat + approval workflow.
 - Push notification **reminders** — the delivery pipeline is built (see docs below); the
-  scheduled triggers (deadlines / daily focus) are still to come.
+  scheduled triggers (deadlines / daily focus) are still to come
+  (`backlog/mobile-push-reminder-logic.md`).
 - A release (Play-signed) build; optional Google Play listing.
-- A **visual design pass** — the screens are a functional MVP and don't yet match the web's
-  polished look (native UI is authored separately from the web; shared design *tokens* keep the
-  colors aligned).
+- Dark theme (dropped to mirror the web's light-only palette — `backlog/android-dark-theme.md`).
 
 ## Tests & quality
 
-- **37 automated tests** (unit + Robolectric + Compose UI), all run on the JVM without a device:
+- **40 automated tests** (unit + Robolectric + Compose UI), all run on the JVM without a device:
   - Auth state machine, REST client (MockWebServer), CSRF header, cookie jar, network init.
   - Goals dashboard + goal workspace view models, and Compose UI tests for the screens.
 - **Coverage:** a curated JaCoCo report (`:app:jacocoDebugReport`) that excludes generated +

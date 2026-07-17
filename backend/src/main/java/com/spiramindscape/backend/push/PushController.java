@@ -64,7 +64,7 @@ public class PushController {
     public ResponseEntity<Map<String, Object>> test() {
         Long userId = currentUserProvider.getCurrentUser().getId();
         int sent = pushService.sendToUser(userId, "Spira",
-                "Test push — notifications are working 🎉");
+                "Test push — notifications are working.");
         return ResponseEntity.ok(Map.of("enabled", pushService.isEnabled(), "sent", sent));
     }
 }

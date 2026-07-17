@@ -17,9 +17,24 @@ data class GoalDetail(
 )
 
 data class TextItem(val id: String, val text: String)
-data class OptionItem(val id: String, val text: String, val selected: Boolean)
+data class OptionItem(val id: String, val text: String, val selected: Boolean, val position: Int = 0)
 data class ChecklistItemModel(val id: String, val text: String, val done: Boolean)
-data class ResourceItem(val id: String, val type: String, val title: String?)
+
+/**
+ * A resource, flat across its four kinds (`note` / `link` / `file` / `email`). The UI switches on
+ * [type]; each kind uses a subset of the fields (note→[body], link→[url], email→name/email/…).
+ */
+data class ResourceItem(
+    val id: String,
+    val type: String,
+    val title: String?,
+    val body: String? = null,
+    val url: String? = null,
+    val name: String? = null,
+    val email: String? = null,
+    val role: String? = null,
+    val phone: String? = null,
+)
 
 /**
  * A target, modelled by kind so the UI can render the right low-friction control

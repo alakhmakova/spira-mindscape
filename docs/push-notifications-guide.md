@@ -110,34 +110,45 @@ false), so local dev, CI, and tests need nothing.
 
 ## How to verify it works
 
-### Recommended: the backend self-test (`/api/push/test`)
-This is the easiest reliable check for a **physical phone** (no need to copy device tokens
-around). It needs the backend credentials from Option A/B configured and the phone signed in
-(which registers the device). Signed in as that user, call:
+> ⚠️ **Prerequisite (this is the #1 gotcha):** the app installed on the phone must be a build that
+> **contains the FCM SDK**. FCM was added in the native-mobile work — a build from *before* that
+> has no `firebase-messaging`, so the device never registers with FCM and **no push (campaign or
+> test) can ever arrive**. Always distribute a fresh build (`.\gradlew.bat :app:distributeDebug`)
+> and install it first. You can confirm a build is push-capable: its APK contains a `google_app_id`
+> resource and the `SpiraMessagingService` class.
+
+### Step 0 — on the phone (required either way)
+1. Install the latest build via App Distribution ("App Tester").
+2. Open the app and **sign in**.
+3. **Allow notifications** when prompted (Android 13+). If you dismissed it: phone Settings →
+   Apps → Spira → Notifications → enable.
+4. Send the app to the background (Home) so the notification lands in the tray.
+
+### Quickest check — Firebase console campaign (no backend credentials needed)
+This tests only *device receipt* (Google → phone); it doesn't touch our backend, so it works even
+before Option A/B is set up. **This is the path we verified and it works.**
+
+1. Firebase console → **Messaging** → **Create campaign** → **Firebase Notification messages**.
+2. Fill in **Notification title** and **text**.
+3. **Target → App = Spira Android**, **Scheduling = Send now**, then **Review → Publish**.
+4. The phone shows the notification (allow **1–2 minutes**; it's not always instant).
+
+Notes: the **"Enable Google Analytics"** banner is only about audience targeting/conversion
+reporting — **ignore it**, plain app targeting delivers without Analytics. (There's also a
+**Send test message** button on the compose form that pushes to a single **FCM token**, but
+grabbing that token on a physical phone needs Logcat/adb, so the campaign above is easier.)
+
+### Full-pipeline check — the backend self-test (`/api/push/test`)
+This proves **our backend → FCM → phone**, not just Google → phone. It needs the backend
+credentials from Option A/B configured and the phone signed in (which registers the device with
+our backend). Signed in as that user, call:
 ```
 POST /api/push/test        →  { "enabled": true, "sent": 1 }
 ```
 `enabled:false` → credentials not configured (redo Option A); `sent:0` with `enabled:true` → the
-signed-in user has no registered device yet (open the app so it registers). Because it needs an
-authenticated session + CSRF header, the simplest way to trigger it is an in-app "send test
-notification" action — ask if you want one added (it doubles as a diagnostic until real reminders
-exist).
-
-### Alternative: the Firebase console test message
-The Firebase console's Messaging page changed — there is **no** standalone "send test message"
-button on the landing page anymore, and the **"Enable Google Analytics"** banner is only about
-campaign *targeting/reporting*, **not** about a test push. The test-to-one-device flow now lives
-inside campaign creation and does **not** require Analytics:
-
-1. Firebase console → **Messaging** (under "Engage" / "DevOps & Engagement") → **Create your first
-   campaign** → choose **Firebase Notification messages**.
-2. Fill in **Notification title** and **text**.
-3. Click **Send test message** (top-right of the form).
-4. Paste an **FCM registration token** for your device → **Test**. The phone shows the
-   notification. (You can leave the campaign unsaved after the test.)
-
-Getting the device's FCM token is the catch on a physical phone (it prints to Logcat, which needs
-adb). That's why the backend self-test above is the recommended path for App Distribution testers.
+signed-in user has no registered device yet (open the app so it registers). It needs an
+authenticated session + CSRF header, so the easy way to trigger it is a small in-app "send test
+notification" action (see `backlog/mobile-push-reminder-logic.md`).
 
 ## Tests
 - **Backend** — `PushNotificationServiceTest` (mocked FCM: send counts, dead-token pruning,
@@ -158,7 +169,7 @@ adb). That's why the backend self-test above is the recommended path for App Dis
 The **triggers** — a scheduled job that scans for approaching deadlines / overdue targets / a
 daily focus and calls `sendToUser` — aren't built. This change is the delivery pipeline; wiring
 the reminder rules (and letting users opt in/out per type) is the next push-related step and
-dovetails with roadmap Phase 10.
+dovetails with roadmap Phase 10. **Tracked in `backlog/mobile-push-reminder-logic.md`.**
 
 ## See also
 - `docs/crash-reporting-and-monitoring.md` — Crashlytics (the other Firebase runtime service).
