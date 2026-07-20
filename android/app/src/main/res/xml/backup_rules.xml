@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-Android-12 Auto Backup rules. Exclude the cookie store (holds the SESSION credential). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="spira_cookies.xml" />
+</full-backup-content>

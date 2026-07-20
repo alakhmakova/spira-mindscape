@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- The "shared" cache subfolder holds temporary copies of resource images shared to the
+         clipboard via FileProvider (see ResourceActions.copyImageToClipboard). -->
+    <cache-path name="shared" path="shared/" />
+</paths>

@@ -81,6 +81,23 @@
             </exclusions>
         </dependency>
 
+        <!-- Firebase Admin SDK: sends FCM push notifications to registered devices.
+             Only used when a service-account credential is configured (FirebaseConfig);
+             absent credentials degrade to a no-op, so local/dev/CI run without it. -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>9.4.1</version>
+            <exclusions>
+                <!-- Same reason as google-api-client above: keep a single JCL provider
+                     (Spring's spring-jcl) and avoid the commons-logging clash. -->
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

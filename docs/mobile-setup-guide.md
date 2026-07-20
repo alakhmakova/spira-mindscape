@@ -232,9 +232,11 @@ In the Firebase console left menu, open each once to enable:
 
 - **Release & Monitor → App Distribution** → Get started (create a tester group, add your own
   email as a tester).
-- **Release & Monitor → Crashlytics** → Enable.
+- **Release & Monitor → Crashlytics** → Enable. The app is already wired for it (auto crash
+  capture) — see `docs/crash-reporting-and-monitoring.md` for how it works and how to read crashes.
 - **Engage → Messaging (Cloud Messaging / FCM)** → it's on by default once the app is
-  registered.
+  registered. The app already registers device tokens; to have the **backend send** pushes,
+  configure a service-account credential — see `docs/push-notifications-guide.md`.
 - **Analytics** → already enabled in B1.
 
 ### B5. Install the Firebase CLI ✅ installed — `firebase login` still to do
@@ -265,6 +267,29 @@ firebase login
 
 ---
 
+### B6. Distributing a build (one command)
+
+Once you're a tester (B4) and logged into the Firebase CLI (B5), ship a new build to testers
+with a single Gradle task — it builds the debug APK and uploads it:
+
+```powershell
+cd android
+.\gradlew.bat distributeDebug -PreleaseNotes="what changed in this build"
+```
+
+- Uses your `firebase login` (no service-account file needed).
+- Testers get an email/App-Tester update; install works from **any network** (the app talks to
+  the production backend over the internet).
+- Override recipients with `-PdistTesters="a@example.com,b@example.com"`.
+- The task is defined in `android/app/build.gradle.kts` (`distributeDebug`), calling
+  `firebase appdistribution:distribute` with the app id
+  `1:952567559986:android:eff4c02ebb5a77b38a892b`.
+
+For a fully **open** download (no tester invite — e.g. for a portfolio reviewer), attach
+`app-debug.apk` to a **GitHub Release** instead: push the repo, then
+`gh release create <tag> android/app/build/outputs/apk/debug/app-debug.apk` (or via the GitHub
+UI → Releases). Anyone can then download and sideload it.
+
 ## Part C — Google Sign-In OAuth (for the mobile auth endpoint)
 
 The app signs in with Google and sends a **Google ID token** to the backend
@@ -280,7 +305,7 @@ as the token *audience* the backend verifies against.
 >   client ID. This is Google's standard pattern — the server trusts one audience for both web
 >   and mobile.
 
-### C1. Get your debug SHA-1 fingerprint ❌
+### C1. Get your debug SHA-1 fingerprint ✅ (done)
 
 Google needs the SHA-1 of the key that signs your **debug** builds (created automatically on
 first build at `~/.android/debug.keystore`). Get it with either method:
@@ -297,16 +322,31 @@ and read the `SHA1` under `Variant: debug`.
 > If `~/.android/debug.keystore` doesn't exist yet, it's created the first time you build/run
 > any Android app; run once then re-run the command.
 
-### C2. Create the Android OAuth client ❌
+### C2. Create the Android OAuth client ✅ (done 2026-07-16 — this is what makes sign-in work)
+
+This is the step that fixed the "error 10" sign-in failure (BUG-002). Do it **explicitly** in
+the console:
 
 1. Go to **Google Cloud Console → APIs & Services → Credentials**:
    <https://console.cloud.google.com/apis/credentials> (select the **same project** as
-   Firebase/Cloud Run).
+   Firebase/Cloud Run — `project-10702811-5962-4bf3-877`).
 2. **Create Credentials → OAuth client ID → Application type: Android**.
-3. **Package name:** `com.spiramindscape.android`.
-4. **SHA-1 certificate fingerprint:** paste the value from C1.
-5. Create. (Registering the Android app in Firebase B2 with the SHA-1 often creates this for
-   you automatically — if an Android client already exists there, you can skip C2.)
+3. **Name:** e.g. "Spira Android".
+4. **Package name:** `com.spiramindscape.android`.
+5. **SHA-1 certificate fingerprint:** the debug fingerprint from C1 —
+   `96:CF:83:C1:31:0E:6C:D3:AC:B2:90:0E:10:CC:FB:9D:F9:0E:15:7E`
+   (get it any time with `cd android; .\gradlew.bat signingReport`).
+6. **Create**, then wait ~5 minutes for propagation. No app rebuild needed. Add the **release**
+   keystore's SHA-1 here too when you publish.
+
+> ⚠️ **Do this step explicitly — do not assume Firebase created it.** On this project, adding
+> the SHA-1 via `firebase apps:android:sha:create` registered the fingerprint on the Firebase
+> app but did **not** create a usable Android OAuth client: `firebase apps:sdkconfig ANDROID …`
+> showed only a `client_type: 3` (web) entry, no `client_type: 1` (Android). Without the Android
+> client, Google sign-in fails at runtime with **error 10 "Developer console is not set up
+> correctly"** (see `backlog/mobile-sign-in-developer-error-10.md`). Verify a `client_type: 1`
+> entry appears (or the Android client shows in Cloud Console Credentials) before expecting
+> sign-in to work.
 
 ### C3. Web client ID (audience) ✅ found
 
@@ -350,9 +390,12 @@ Create on your accounts:
 - [x] **Firebase project** — added to existing GCP project `project-10702811-5962-4bf3-877` (B1)
 - [x] **Register Android app** `com.spiramindscape.android` + SHA-1 (B2)
 - [x] Download **`google-services.json`** (B3, gitignored)
-- [ ] Enable **App Distribution** (tester group), **Crashlytics** — done when wiring the app (B4)
+- [x] Enable **App Distribution** (tester group) — used by `:app:distributeDebug`
+- [ ] Enable **Crashlytics** in the console (B4) — the app is already wired for it
+      (`docs/crash-reporting-and-monitoring.md`); enabling in the console starts showing reports
 - [x] **Debug SHA-1** fingerprint generated + registered (C1)
-- [x] **Android OAuth client** — auto-created in the project by the SHA registration (C2)
+- [ ] **Android OAuth client** — must be created **manually** in Cloud Console (the Firebase CLI
+      SHA registration did NOT create it → error 10). See C2 + `backlog/mobile-sign-in-developer-error-10.md` (C2)
 - [x] **Web OAuth client ID** identified from `google-services.json` (C3)
 
 ---
