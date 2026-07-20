@@ -17,6 +17,7 @@ import com.spiramindscape.android.graphql.GetGoalQuery
 import com.spiramindscape.android.graphql.GetGoalsQuery
 import com.spiramindscape.android.graphql.RemoveOptionMutation
 import com.spiramindscape.android.graphql.RemoveRealityItemMutation
+import com.spiramindscape.android.graphql.ReorderOptionsMutation
 import com.spiramindscape.android.graphql.SelectOptionMutation
 import com.spiramindscape.android.graphql.UpdateGoalMutation
 import com.spiramindscape.android.graphql.UpdateOptionMutation
@@ -75,7 +76,9 @@ interface GoalsRepository {
     suspend fun addOption(goalId: String, text: String)
     suspend fun setOptionText(goalId: String, optionId: String, text: String)
     suspend fun selectOption(goalId: String, optionId: String)
+    suspend fun deselectOption(goalId: String, optionId: String)
     suspend fun removeOption(goalId: String, optionId: String)
+    suspend fun reorderOptions(goalId: String, optionIds: List<String>)
 
     // Targets
     suspend fun createTarget(goalId: String, input: CreateTargetInput)
@@ -131,9 +134,11 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
             resources = g.resources.map {
                 ResourceItem(
                     id = it.id, type = it.type, title = it.title, body = it.body, url = it.url,
+                    mime = it.mime, dataUrl = it.dataUrl, driveWebViewLink = it.driveWebViewLink,
                     name = it.name, email = it.email, role = it.role, phone = it.phone,
                 )
             },
+            confidenceHistory = g.confidenceHistory.map { ConfidenceHistoryEntry(it.id, it.confidence, it.at) },
         )
     }
 
@@ -222,8 +227,17 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
         apollo.mutation(SelectOptionMutation(goalId, optionId)).executeOrThrow()
     }
 
+    override suspend fun deselectOption(goalId: String, optionId: String) {
+        val input = UpdateOptionInput(selected = Optional.present(false))
+        apollo.mutation(UpdateOptionMutation(goalId, optionId, input)).executeOrThrow()
+    }
+
     override suspend fun removeOption(goalId: String, optionId: String) {
         apollo.mutation(RemoveOptionMutation(goalId, optionId)).executeOrThrow()
+    }
+
+    override suspend fun reorderOptions(goalId: String, optionIds: List<String>) {
+        apollo.mutation(ReorderOptionsMutation(goalId, optionIds)).executeOrThrow()
     }
 
     // ---- Targets ----

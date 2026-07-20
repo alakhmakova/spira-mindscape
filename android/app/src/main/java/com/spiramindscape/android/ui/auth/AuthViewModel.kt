@@ -107,6 +107,7 @@ class AuthViewModel(
                 // Best-effort; we clear locally regardless.
             }
             Network.cookieJar.clear()
+            com.spiramindscape.android.data.goals.GoalsStore.clear() // don't leak this user's goals to the next sign-in
             _state.value = AuthState.Anonymous
         }
     }

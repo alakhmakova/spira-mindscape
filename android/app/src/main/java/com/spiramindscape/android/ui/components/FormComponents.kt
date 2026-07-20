@@ -64,7 +64,7 @@ fun SpiraTextField(
         modifier = modifier.fillMaxWidth(),
         singleLine = singleLine,
         minLines = minLines,
-        shape = MaterialTheme.shapes.medium,
+        shape = MaterialTheme.shapes.small,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
     )
 }
@@ -95,14 +95,15 @@ fun SpiraButton(
     variant: SpiraButtonVariant = SpiraButtonVariant.Primary,
     enabled: Boolean = true,
 ) {
+    // Web buttons are `rounded-md` (--radius-md, 6px) — SpiraShapes.small, not .medium.
     when (variant) {
         SpiraButtonVariant.Primary ->
-            Button(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.medium) { Text(text) }
+            Button(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { Text(text) }
         SpiraButtonVariant.Ghost ->
-            OutlinedButton(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.medium) { Text(text) }
+            OutlinedButton(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { Text(text) }
         SpiraButtonVariant.Destructive ->
             Button(
-                onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.medium,
+                onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             ) { Text(text) }
     }
@@ -136,16 +137,39 @@ fun ConfidenceStepper(value: Int, onChange: (Int) -> Unit, modifier: Modifier = 
     }
 }
 
+/** The date picker dialog shared by [DeadlineField] and [DeadlineLinkField]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeadlinePickerDialog(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
+    // Seed the calendar with the CURRENT deadline (not "today") so editing an existing date
+    // opens where the user would expect it, rather than always jumping to today's month.
+    val initialMillis = value?.let {
+        try { Instant.parse(it).toEpochMilli() } catch (e: Exception) { null }
+    }
+    val stateDp = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                stateDp.selectedDateMillis?.let {
+                    onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toInstant().toString())
+                }
+                onDismiss()
+            }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) { DatePicker(state = stateDp) }
+}
+
 /**
  * Deadline picker (mirrors the web `DeadlinePopover`): a button that opens a Material date
  * picker, with a Clear action. [value]/[onChange] use an ISO-8601 instant string (or null).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeadlineField(value: String?, onChange: (String?) -> Unit, modifier: Modifier = Modifier) {
     var showPicker by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { showPicker = true }, shape = MaterialTheme.shapes.medium) {
+        OutlinedButton(onClick = { showPicker = true }, shape = MaterialTheme.shapes.small) {
             Text(value?.take(10) ?: "Set deadline")
         }
         if (value != null) {
@@ -153,21 +177,34 @@ fun DeadlineField(value: String?, onChange: (String?) -> Unit, modifier: Modifie
             TextButton(onClick = { onChange(null) }) { Text("Clear") }
         }
     }
-    if (showPicker) {
-        val stateDp = rememberDatePickerState()
-        DatePickerDialog(
-            onDismissRequest = { showPicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    stateDp.selectedDateMillis?.let {
-                        onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toInstant().toString())
-                    }
-                    showPicker = false
-                }) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Cancel") } },
-        ) { DatePicker(state = stateDp) }
+    if (showPicker) DeadlinePickerDialog(value, onChange) { showPicker = false }
+}
+
+/**
+ * A teal, link-styled deadline trigger (mirrors the web's "Nov 1, 2026 ›" link on the Deadline
+ * KPI card): the formatted date (or "Set deadline"), a chevron, opens the same date picker.
+ */
+@Composable
+fun DeadlineLinkField(value: String?, onChange: (String?) -> Unit, modifier: Modifier = Modifier) {
+    var showPicker by remember { mutableStateOf(false) }
+    Row(
+        modifier.clickable { showPicker = true },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            value?.let { com.spiramindscape.android.ui.util.formatDeadlineDate(it) } ?: "Set deadline",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Icon(
+            com.spiramindscape.android.ui.icons.SpiraIcons.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
     }
+    if (showPicker) DeadlinePickerDialog(value, onChange) { showPicker = false }
 }
 
 /**

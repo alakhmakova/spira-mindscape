@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:note-editor": "vite build --config vite.note-editor.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
@@ -41,6 +42,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.83.0",
     "@tanstack/react-router": "^1.168.0",
+    "@tiptap/core": "^3.22.4",
     "@tiptap/extension-highlight": "^3.22.4",
     "@tiptap/extension-link": "^3.22.4",
     "@tiptap/extension-task-item": "^3.22.4",
@@ -95,6 +97,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^7.3.1",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.5"
   }
 }

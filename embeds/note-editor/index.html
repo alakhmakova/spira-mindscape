@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Spira note editor</title>
+    <style>
+      :root {
+        --kale-500: #0a8080; --kale-600: #005961;
+        --salt-1000: #222525; --salt-800: #6c6c72; --salt-500: #dcdcdc; --salt-300: #f4f4f3;
+        --ink: var(--salt-1000);
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { margin: 0; height: 100%; background: #fff; font-family: var(--sans); color: var(--ink); }
+      #app { height: 100%; overflow-y: auto; }
+
+      .tiptap { outline: none; padding: 16px 18px 80px; font-size: 16px; line-height: 1.6; min-height: 100%; }
+      .tiptap:focus { outline: none; }
+      .tiptap p { margin: 0 0 10px; }
+      .tiptap h1 { font-size: 26px; font-weight: 700; margin: 12px 0 8px; line-height: 1.2; }
+      .tiptap h2 { font-size: 22px; font-weight: 700; margin: 12px 0 8px; line-height: 1.2; }
+      .tiptap h3 { font-size: 18px; font-weight: 700; margin: 10px 0 6px; line-height: 1.25; }
+      .tiptap ul, .tiptap ol { padding-left: 22px; margin: 0 0 10px; }
+      .tiptap ul[data-type="taskList"] { list-style: none; padding-left: 4px; }
+      .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
+      .tiptap ul[data-type="taskList"] li > label { margin-top: 2px; }
+      .tiptap blockquote { border-left: 3px solid var(--kale-500); margin: 0 0 10px; padding: 2px 0 2px 14px; color: var(--salt-800); }
+      .tiptap code { background: var(--salt-300); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+      .tiptap pre { background: var(--salt-300); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+      .tiptap hr { border: none; border-top: 1px solid var(--salt-500); margin: 14px 0; }
+      .tiptap a { color: var(--kale-600); text-decoration: underline; }
+      .tiptap mark { background: #fff2b0; border-radius: 2px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"><div id="editor"></div></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

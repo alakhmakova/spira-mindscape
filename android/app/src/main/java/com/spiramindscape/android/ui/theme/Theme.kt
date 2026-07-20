@@ -20,10 +20,10 @@ private val SpiraColors = lightColorScheme(
     secondaryContainer = SpiraTealSoft,
     onSecondaryContainer = SpiraForeground,
 
-    // Orange accent (the web's --brand-orange), used sparingly for highlights/warnings.
-    tertiary = SpiraAmber,
+    // Guava (coral) brand accent — used sparingly for highlights/emphasis (never as a fill).
+    tertiary = SpiraAccent,
     onTertiary = SpiraOnPrimary,
-    tertiaryContainer = SpiraAmberSoft,
+    tertiaryContainer = SpiraAccentSoft,
     onTertiaryContainer = SpiraForeground,
 
     background = SpiraBackground,

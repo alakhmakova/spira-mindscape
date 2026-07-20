@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.spiramindscape.android.ui.icons.SpiraIcons
@@ -52,6 +53,11 @@ fun InlineEditText(
     minLines: Int = 1,
     required: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
+    // Multiline fields default to a literal newline on Enter (e.g. a description). Pass Done
+    // explicitly for fields that should commit on Enter even while wrapping (e.g. a Reality item).
+    imeAction: ImeAction = if (singleLine) ImeAction.Done else ImeAction.Default,
+    textAlign: TextAlign = TextAlign.Start,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     var text by remember { mutableStateOf(value) }
     var focused by remember { mutableStateOf(false) }
@@ -71,31 +77,38 @@ fun InlineEditText(
     }
 
     // If this row is disposed while still focused (e.g. scrolled away / navigated), commit the
-    // pending edit so nothing is lost even when onFocusChanged(blur) doesn't fire.
+    // pending edit so nothing is lost even when onFocusChanged(blur) doesn't fire. Also force
+    // focus off: a focused BasicTextField keeps its cursor blink animation running, and leaving
+    // it dangling past disposal is what causes a cursor to "blink forever" — the field is gone,
+    // but nothing ever told the animation to stop.
     val pending = rememberUpdatedState(Triple(text, value, required))
+    val wasFocused = rememberUpdatedState(focused)
     DisposableEffect(Unit) {
         onDispose {
             val (t, v, req) = pending.value
             if (t != v && !(req && t.isBlank())) onCommit(t)
+            if (wasFocused.value) focusManager.clearFocus(force = true)
         }
     }
 
-    val effectiveStyle = textStyle.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface))
+    val effectiveStyle = textStyle.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface, textAlign = textAlign))
+    val centered = textAlign == TextAlign.Center
 
     BasicTextField(
         value = text,
         onValueChange = { text = it },
-        modifier = modifier
+        modifier = (if (centered) modifier.fillMaxWidth() else modifier)
             .onFocusChanged { state ->
                 if (focused && !state.isFocused) commit()
                 focused = state.isFocused
+                onFocusChanged(state.isFocused)
             },
         textStyle = effectiveStyle,
         singleLine = singleLine,
         minLines = minLines,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(
-            imeAction = if (singleLine) ImeAction.Done else ImeAction.Default,
+            imeAction = imeAction,
             keyboardType = keyboardType,
         ),
         keyboardActions = KeyboardActions(onDone = {
@@ -103,9 +116,20 @@ fun InlineEditText(
             focusManager.clearFocus()
         }),
         decorationBox = { inner ->
-            Box {
+            // When centered, the core text field is measured to its content width, so aligning it
+            // to the Box centre is what actually centres short text (textAlign alone only centres
+            // WITHIN that content-sized field, which is invisible). Left fields keep top-start.
+            Box(
+                modifier = if (centered) Modifier.fillMaxWidth() else Modifier,
+                contentAlignment = if (centered) Alignment.Center else Alignment.TopStart,
+            ) {
                 if (text.isEmpty() && placeholder.isNotEmpty()) {
-                    Text(placeholder, style = effectiveStyle, color = MaterialTheme.spiraExtras.mutedForeground)
+                    Text(
+                        placeholder,
+                        style = effectiveStyle,
+                        color = MaterialTheme.spiraExtras.mutedForeground,
+                        modifier = if (centered) Modifier.fillMaxWidth() else Modifier,
+                    )
                 }
                 inner()
             }
@@ -147,7 +171,7 @@ fun AddItemRow(placeholder: String, onAdd: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         placeholder = { Text(placeholder) },
         singleLine = true,
-        shape = MaterialTheme.shapes.medium,
+        shape = MaterialTheme.shapes.small,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { commit() }),
         trailingIcon = {

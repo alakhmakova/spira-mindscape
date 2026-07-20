@@ -52,10 +52,10 @@ class GoalsDashboardScreenTest {
             )
         }
 
-        compose.onNodeWithContentDescription("Search goals").performClick()
+        compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithText("Search for goals").assertIsDisplayed() // the placeholder
         compose.onNodeWithContentDescription("Close search").performClick()
-        compose.onNodeWithContentDescription("Search goals").assertIsDisplayed() // back to normal
+        compose.onNodeWithContentDescription("Search").assertIsDisplayed() // back to normal
     }
 
     @Test

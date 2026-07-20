@@ -31,7 +31,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -69,9 +68,13 @@ import com.spiramindscape.android.data.goals.GoalsStore
 import com.spiramindscape.android.ui.components.CircularProgress
 import com.spiramindscape.android.ui.components.EmptyState
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
+import com.spiramindscape.android.ui.components.SpiraMenuDivider
+import com.spiramindscape.android.ui.components.SpiraMenuItem
+import com.spiramindscape.android.ui.components.SpiraTopBar
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.confidenceColor
 import com.spiramindscape.android.ui.theme.spiraExtras
+import com.spiramindscape.android.ui.util.deadlineCountdown
 import kotlinx.coroutines.launch
 
 @Composable
@@ -163,33 +166,12 @@ fun GoalsDashboardScreen(
                         onClose = { searchOpen = false; onQueryChange("") },
                     )
                 } else {
-                    TopAppBar(
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(SpiraIcons.Menu, contentDescription = "Menu", modifier = Modifier.size(24.dp))
-                            }
-                        },
-                        title = {
-                            Text(
-                                "spira",
-                                // The web logo: the sans display font, extra-bold, lowercase (not serif).
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        actions = {
-                            IconButton(onClick = { searchOpen = true }) {
-                                Icon(SpiraIcons.Search, contentDescription = "Search goals", modifier = Modifier.size(24.dp))
-                            }
-                            SortMenu(sortKey, sortAscending, onSortChange, onToggleSortDir)
-                            FilterMenu(status, onStatusChange, deadlineFilter, onDeadlineFilterChange)
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background,
-                        ),
+                    // Shared dark-teal header (design mockup): SPIRA + Search / AI / Profile.
+                    SpiraTopBar(
+                        onMenu = { scope.launch { drawerState.open() } },
+                        onSearch = { searchOpen = true },
+                        onAssistant = { /* AI assistant — no screen yet */ },
+                        onProfile = { scope.launch { drawerState.open() } },
                     )
                 }
             },
@@ -376,18 +358,17 @@ private fun SortMenu(
         }
         SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             SortKey.entries.forEach { key ->
-                DropdownMenuItem(
-                    text = { Text(key.label) },
+                SpiraMenuItem(
+                    label = key.label,
                     onClick = { onSortChange(key); expanded = false },
-                    trailingIcon = if (key == sortKey) {
-                        { Icon(SpiraIcons.Check, contentDescription = "Selected", modifier = Modifier.size(16.dp)) }
-                    } else null,
+                    selected = key == sortKey,
                 )
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text(if (sortAscending) "Ascending" else "Descending") },
+            SpiraMenuDivider()
+            SpiraMenuItem(
+                label = if (sortAscending) "Ascending" else "Descending",
                 onClick = { onToggleSortDir(); expanded = false },
+                icon = if (sortAscending) SpiraIcons.ArrowUp else SpiraIcons.ArrowDown,
             )
         }
     }
@@ -413,22 +394,18 @@ private fun FilterMenu(
         }
         SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             StatusFilter.entries.forEach { s ->
-                DropdownMenuItem(
-                    text = { Text(s.label) },
+                SpiraMenuItem(
+                    label = s.label,
                     onClick = { onStatusChange(s); expanded = false },
-                    trailingIcon = if (s == status) {
-                        { Icon(SpiraIcons.Check, contentDescription = "Selected", modifier = Modifier.size(16.dp)) }
-                    } else null,
+                    selected = s == status,
                 )
             }
-            HorizontalDivider()
+            SpiraMenuDivider()
             DeadlineFilter.entries.forEach { d ->
-                DropdownMenuItem(
-                    text = { Text(d.label) },
+                SpiraMenuItem(
+                    label = d.label,
                     onClick = { onDeadlineFilterChange(d); expanded = false },
-                    trailingIcon = if (d == deadlineFilter) {
-                        { Icon(SpiraIcons.Check, contentDescription = "Selected", modifier = Modifier.size(16.dp)) }
-                    } else null,
+                    selected = d == deadlineFilter,
                 )
             }
         }
@@ -509,25 +486,6 @@ private fun ConfidenceBanner(confidence: Int) {
             color = textColor,
         )
     }
-}
-
-/** "due <date> · <N days left / overdue / today>" for a goal card (mirrors the web DeadlineLabel). */
-private fun deadlineCountdown(iso: String): String {
-    val date = try {
-        java.time.Instant.parse(iso).atZone(java.time.ZoneOffset.UTC).toLocalDate()
-    } catch (e: Exception) {
-        return "due ${iso.take(10)}"
-    }
-    val today = java.time.LocalDate.now()
-    val days = java.time.temporal.ChronoUnit.DAYS.between(today, date)
-    val relative = when {
-        days > 1 -> "$days days left"
-        days == 1L -> "1 day left"
-        days == 0L -> "due today"
-        days == -1L -> "1 day overdue"
-        else -> "${-days} days overdue"
-    }
-    return "due $date  ·  $relative"
 }
 
 @Composable

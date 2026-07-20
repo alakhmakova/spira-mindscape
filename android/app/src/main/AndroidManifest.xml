@@ -19,12 +19,21 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.SpiraAndroid">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Full-screen note editor (a real window so the editable WebView reliably gets IME focus). -->
+        <activity
+            android:name=".ui.goals.NoteEditorActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.SpiraAndroid" />
 
         <!-- Receives FCM messages: registers rotated tokens and shows notifications. -->
         <service
@@ -42,6 +51,17 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
+
+        <!-- Shares cached resource images to the clipboard (copy image). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

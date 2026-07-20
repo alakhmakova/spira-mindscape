@@ -14,7 +14,11 @@ data class GoalDetail(
     val options: List<OptionItem>,
     val targets: List<TargetItem>,
     val resources: List<ResourceItem>,
+    val confidenceHistory: List<ConfidenceHistoryEntry> = emptyList(),
 )
+
+/** One past confidence value, newest first (matches the server's ordering). */
+data class ConfidenceHistoryEntry(val id: String, val confidence: Int, val at: String)
 
 data class TextItem(val id: String, val text: String)
 data class OptionItem(val id: String, val text: String, val selected: Boolean, val position: Int = 0)
@@ -30,6 +34,9 @@ data class ResourceItem(
     val title: String?,
     val body: String? = null,
     val url: String? = null,
+    val mime: String? = null,
+    val dataUrl: String? = null,
+    val driveWebViewLink: String? = null,
     val name: String? = null,
     val email: String? = null,
     val role: String? = null,
