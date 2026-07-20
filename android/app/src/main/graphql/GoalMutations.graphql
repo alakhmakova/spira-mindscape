@@ -1,0 +1,13 @@
+# Goal create/update/delete. These return just the id — the ViewModel applies the change
+# optimistically and refetches the goal to reconcile server-computed fields (e.g. progress).
+mutation CreateGoal($input: CreateGoalInput!) {
+  createGoal(input: $input) { id }
+}
+
+mutation UpdateGoal($id: ID!, $input: UpdateGoalInput!) {
+  updateGoal(id: $id, input: $input) { id }
+}
+
+mutation DeleteGoal($id: ID!) {
+  deleteGoal(id: $id)
+}

@@ -8,12 +8,15 @@ import okhttp3.Response
  * `XSRF-TOKEN` cookie, and every non-GET request must echo it back as the `X-XSRF-TOKEN`
  * header. This interceptor does that automatically for the whole app (GraphQL mutations and
  * REST posts alike), mirroring what the web client does in `src/lib/spira/auth.ts`.
+ *
+ * The token is read via [csrfToken] (in production, the cookie jar's XSRF-TOKEN value) so the
+ * interceptor has no Android dependency and can be unit-tested with a plain lambda.
  */
-class CsrfInterceptor(private val cookieJar: PersistentCookieJar) : Interceptor {
+class CsrfInterceptor(private val csrfToken: () -> String?) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val isMutating = request.method != "GET" && request.method != "HEAD"
-        val token = cookieJar.value("XSRF-TOKEN")
+        val token = csrfToken()
         val outgoing = if (isMutating && token != null && request.header("X-XSRF-TOKEN") == null) {
             request.newBuilder().header("X-XSRF-TOKEN", token).build()
         } else {

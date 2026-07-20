@@ -1,0 +1,27 @@
+# Maestro E2E: launch → Google sign-in → signed-in screen.
+#
+# Run on a device/emulator that has Google Play services + a Google account:
+#   maestro test android/.maestro/login.yaml
+#
+# ⚠️ The Google account chooser is SYSTEM UI. On a device with a single account and One Tap it
+# often proceeds automatically; otherwise a person taps the account. Completing a REAL Google
+# login cannot run fully headless (the same constraint as the web OAuth E2E — CI can't do it).
+appId: com.spiramindscape.android
+---
+- launchApp:
+    clearState: true
+
+# Anonymous state: the login screen is shown.
+- assertVisible: "Continue with Google"
+- tapOn: "Continue with Google"
+
+# The system account sheet appears here. After an account is chosen, the app exchanges the
+# Google ID token at POST /api/auth/google/mobile and reaches the signed-in screen.
+# (Update this assertion to the dashboard once Step 4 replaces the placeholder home.)
+- assertVisible:
+    text: "Signed in"
+    timeout: 30000
+
+# Sign out returns to the login screen.
+- tapOn: "Sign out"
+- assertVisible: "Continue with Google"

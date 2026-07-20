@@ -98,6 +98,54 @@ jobs:
           path: backend/target/allure-results
           if-no-files-found: warn
 
+  # Android app: JVM unit + Robolectric + Compose(UI) tests, and the curated JaCoCo report.
+  # No emulator here (Maestro E2E is device-only, run by hand). GitHub's ubuntu runners ship
+  # the Android SDK preinstalled; google-services.json is NOT needed (the app reads its config
+  # from BuildConfig, and no google-services Gradle plugin is applied).
+  android:
+    name: Android tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # google-services.json is gitignored (holds an API key) and absent here, so the app
+      # module skips the Crashlytics/Analytics plugins (see android/app/build.gradle.kts) and
+      # the build still works. Crashlytics is a runtime/distribution concern, not a CI one.
+      - name: Run Android unit tests + coverage
+        working-directory: android
+        # gradlew was committed from Windows without the executable bit, so make it runnable
+        # on the Linux runner before invoking it (otherwise: "./gradlew: Permission denied").
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:jacocoDebugReport --no-daemon
+
+      - name: Upload Android coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jacoco-report
+          path: android/app/build/reports/jacoco/jacocoDebugReport
+          if-no-files-found: warn
+
+      - name: Upload Android test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: android/app/build/reports/tests
+          if-no-files-found: warn
+
   # Supply-chain scan (OWASP A03): filesystem scan of backend + frontend deps.
   # Installed via the official script (stable, no action-version drift). Policy
   # matches npm audit: BLOCK on CRITICAL, REPORT HIGH. Unfixed advisories are

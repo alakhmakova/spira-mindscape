@@ -30,7 +30,7 @@ object Network {
         cookieJar = PersistentCookieJar(context, BuildConfig.API_BASE_URL.toHttpUrl())
         okHttp = OkHttpClient.Builder()
             .cookieJar(cookieJar)
-            .addInterceptor(CsrfInterceptor(cookieJar))
+            .addInterceptor(CsrfInterceptor { cookieJar.value("XSRF-TOKEN") })
             .build()
         apollo = ApolloClient.Builder()
             .serverUrl("${BuildConfig.API_BASE_URL}/graphql")
