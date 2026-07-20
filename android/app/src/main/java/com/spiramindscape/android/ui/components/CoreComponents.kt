@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,28 +29,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 import kotlin.math.roundToInt
 
-/** A white, softly-bordered card — the raised surface used throughout (mirrors the web card). */
+/**
+ * A white, softly-bordered card — the raised surface used throughout (mirrors the web card).
+ * [overlay] draws on top of the card content, clipped to the card's rounded shape — used for
+ * corner accents like the Options tab's "active" check ribbon.
+ */
 @Composable
 fun SpiraCard(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    borderColor: Color = MaterialTheme.spiraExtras.border,
+    borderWidth: Dp = 1.dp,
+    shape: Shape = MaterialTheme.shapes.large,
+    elevation: Dp = 0.dp,
+    overlay: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.spiraExtras.surfaceRaised),
-        border = BorderStroke(1.dp, MaterialTheme.spiraExtras.border),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(borderWidth, borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
     ) {
-        Column(Modifier.padding(contentPadding)) { content() }
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(contentPadding)) { content() }
+            overlay?.invoke(this)
+        }
     }
 }
 

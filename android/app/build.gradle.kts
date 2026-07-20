@@ -86,6 +86,22 @@ jacoco {
     toolVersion = "0.8.12"
 }
 
+// Robolectric NATIVE-graphics tests in one class share a single JVM by default, and something
+// in that shared sandbox was leaking between VisualCheckTest methods — every test passes
+// standalone, but 2-4 of the 5 randomly fail with AppNotIdleException when the class runs
+// together (see backlog/android-visual-test-suite-flaky-appnotidle.md, BUG-009). Tried
+// force-clearing focus on dispose first (a real, separate bug worth keeping — see
+// InlineComponents.kt/GoalWorkspaceScreen.kt), but that alone didn't stop the cross-test
+// failures, and Compose UI tests run under a TestCoroutineScheduler where a plain delay()-loop
+// (which is how the cursor blink is actually implemented, not frame-clock-driven) wouldn't be
+// silenced by mainClock.autoAdvance=false either. forkEvery = 1 sidesteps the question of what
+// exactly leaks by making it structurally impossible: every test method gets its own JVM, so
+// nothing can carry over between them. Trade-off: the full class takes longer to run (repeated
+// JVM/Robolectric cold starts instead of one) — acceptable for correctness over speed here.
+tasks.withType<Test> {
+    forkEvery = 1
+}
+
 // Curated coverage report (like the backend's JaCoCo): measures OUR code and excludes what a
 // JVM unit test can't cover — Apollo-generated GraphQL classes and Compose/Activity UI (those
 // belong to Compose UI Test / Maestro on an emulator). Run: ./gradlew :app:jacocoDebugReport

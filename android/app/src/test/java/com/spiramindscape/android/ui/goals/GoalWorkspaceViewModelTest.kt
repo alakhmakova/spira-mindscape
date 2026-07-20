@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui.goals
 
 import com.spiramindscape.android.data.goals.ChecklistItemModel
+import com.spiramindscape.android.data.goals.ConfidenceHistoryEntry
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.apollographql.apollo.api.Optional
@@ -139,6 +140,36 @@ class GoalWorkspaceViewModelTest {
         advanceUntilIdle()
 
         assertTrue(captured!!.any { it.id == "" && it.text == "two" })
+    }
+
+    @Test
+    fun `setConfidence refetches the goal so confidenceHistory reflects the new entry`() = runTest(dispatcher) {
+        // Simulates the server: a successful update appends a history row, only visible after
+        // a refetch — confirms the confidence-history sheet isn't stuck showing stale data.
+        val repo = object : FakeGoalsRepository() {
+            var goal = goalWithTwoBinaries().copy(confidence = 5, confidenceHistory = emptyList())
+            override suspend fun getGoal(id: String): GoalDetail = goal
+            override suspend fun updateGoal(
+                id: String, title: String?, description: String?, confidence: Int?, deadline: Optional<String?>,
+            ) {
+                if (confidence != null) {
+                    goal = goal.copy(
+                        confidence = confidence,
+                        confidenceHistory = listOf(ConfidenceHistoryEntry("h1", confidence, "2026-07-17T00:00:00Z")) +
+                            goal.confidenceHistory,
+                    )
+                }
+            }
+        }
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+
+        vm.setConfidence(9)
+        advanceUntilIdle()
+
+        val content = vm.state.value as GoalUiState.Content
+        assertEquals(9, content.goal.confidence)
+        assertTrue(content.goal.confidenceHistory.any { it.confidence == 9 })
     }
 
     @Test

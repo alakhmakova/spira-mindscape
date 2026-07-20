@@ -120,8 +120,25 @@ class GoalWorkspaceViewModel(
     fun setGoalDescription(description: String) =
         editGoal({ it.copy(description = description) }) { repository.updateGoal(goalId, description = description) }
 
-    fun setConfidence(confidence: Int) =
-        editGoal({ it.copy(confidence = confidence) }) { repository.updateGoal(goalId, confidence = confidence) }
+    /**
+     * Changing confidence is not a plain field edit: the server also appends a row to
+     * `confidenceHistory` (only the persisted history has real ids/timestamps, so the optimistic
+     * copy can't predict it). Refetch on success so the "Confidence history" sheet reflects the
+     * change immediately — otherwise the new value looked like it only updated the UI, not the
+     * database, until the next unrelated reload.
+     */
+    fun setConfidence(confidence: Int) {
+        val content = _state.value as? GoalUiState.Content ?: return
+        setContent(content.goal.copy(confidence = confidence))
+        viewModelScope.launch {
+            try {
+                repository.updateGoal(goalId, confidence = confidence)
+                setContent(repository.getGoal(goalId))
+            } catch (e: Exception) {
+                load()
+            }
+        }
+    }
 
     fun setDeadline(deadline: String?) =
         editGoal({ it.copy(deadline = deadline) }) { repository.updateGoal(goalId, deadline = Optional.present(deadline)) }
@@ -191,6 +208,25 @@ class GoalWorkspaceViewModel(
         editGoal({ g -> g.copy(options = g.options.map { it.copy(selected = it.id == optionId) }) }) {
             repository.selectOption(goalId, optionId)
         }
+    fun deselectOption(optionId: String) =
+        editGoal({ g -> g.copy(options = g.options.map { if (it.id == optionId) it.copy(selected = false) else it }) }) {
+            repository.deselectOption(goalId, optionId)
+        }
+
+    /** Move an option to [toPosition] (0-based); everything between shifts to make room. */
+    fun reorderOptions(optionId: String, toPosition: Int) {
+        val content = _state.value as? GoalUiState.Content ?: return
+        val current = content.goal.options.sortedBy { it.position }
+        val from = current.indexOfFirst { it.id == optionId }
+        if (from == -1) return
+        val to = toPosition.coerceIn(0, current.lastIndex)
+        if (from == to) return
+        val reordered = current.toMutableList().apply { add(to, removeAt(from)) }
+        val newIds = reordered.map { it.id }
+        editGoal({ g -> g.copy(options = reordered.mapIndexed { idx, opt -> opt.copy(position = idx) }) }) {
+            repository.reorderOptions(goalId, newIds)
+        }
+    }
 
     // ---- Resources ----
 
@@ -203,12 +239,16 @@ class GoalWorkspaceViewModel(
         email: String?,
         role: String?,
         phone: String?,
+        mime: String? = null,
+        dataUrl: String? = null,
     ) {
         val input = CreateResourceInput(
             type = type,
             title = Optional.presentIfNotNull(title),
             body = Optional.presentIfNotNull(body),
             url = Optional.presentIfNotNull(url),
+            mime = Optional.presentIfNotNull(mime),
+            dataUrl = Optional.presentIfNotNull(dataUrl),
             name = Optional.presentIfNotNull(name),
             email = Optional.presentIfNotNull(email),
             role = Optional.presentIfNotNull(role),
@@ -226,20 +266,40 @@ class GoalWorkspaceViewModel(
         email: String? = null,
         role: String? = null,
         phone: String? = null,
+        mime: String? = null,
+        dataUrl: String? = null,
     ) {
         val input = UpdateResourceInput(
             title = Optional.presentIfNotNull(title),
             body = Optional.presentIfNotNull(body),
             url = Optional.presentIfNotNull(url),
+            mime = Optional.presentIfNotNull(mime),
+            dataUrl = Optional.presentIfNotNull(dataUrl),
             name = Optional.presentIfNotNull(name),
             email = Optional.presentIfNotNull(email),
             role = Optional.presentIfNotNull(role),
             phone = Optional.presentIfNotNull(phone),
         )
-        mutateThenReload { repository.updateResource(id, input) }
+        // Optimistic: callers always pass the full desired resource (unchanged fields echo the
+        // current value), so we can apply it locally at once — no gap, no "saving" toast.
+        editGoal({ g ->
+            g.copy(
+                resources = g.resources.map { r ->
+                    if (r.id != id) r
+                    else r.copy(
+                        title = title, body = body, url = url, name = name, email = email,
+                        role = role, phone = phone, mime = mime, dataUrl = dataUrl,
+                    )
+                },
+            )
+        }) { repository.updateResource(id, input) }
     }
 
-    fun removeResource(id: String) = mutateThenReload { repository.removeResource(id) }
+    // Optimistic: drop the resource from the list immediately (reverting on failure), so deleting
+    // feels instant rather than waiting for a round-trip + refetch.
+    fun removeResource(id: String) = editGoal(
+        { g -> g.copy(resources = g.resources.filter { it.id != id }) },
+    ) { repository.removeResource(id) }
 
     // ---- helpers ----
 

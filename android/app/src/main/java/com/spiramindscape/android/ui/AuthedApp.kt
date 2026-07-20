@@ -32,7 +32,14 @@ fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
                 onBack = { nav.popBackStack() },
                 onLogout = onLogout,
                 onOpenGoal = { id ->
-                    nav.navigate("goal/$id") { launchSingleTop = true }
+                    // Jumping to another goal via in-workspace search should leave the back
+                    // stack exactly like navigating there fresh from the dashboard (goals ->
+                    // goal/{id}), so the workspace's "back to all goals" FAB always lands on
+                    // the dashboard — not on whichever goal search was launched from.
+                    nav.navigate("goal/$id") {
+                        popUpTo("goals")
+                        launchSingleTop = true
+                    }
                 },
             )
         }

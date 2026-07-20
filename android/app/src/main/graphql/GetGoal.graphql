@@ -10,6 +10,11 @@ query GetGoal($id: ID!) {
     createdAt
     achievedAt
     progress
+    confidenceHistory {
+      id
+      confidence
+      at
+    }
     reality {
       id
       actions { id text }
@@ -41,6 +46,9 @@ query GetGoal($id: ID!) {
       title
       body
       url
+      mime
+      dataUrl
+      driveWebViewLink
       name
       email
       role

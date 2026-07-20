@@ -14,3 +14,7 @@ mutation SelectOption($goalId: ID!, $optionId: ID!) {
 mutation RemoveOption($goalId: ID!, $optionId: ID!) {
   removeOption(goalId: $goalId, optionId: $optionId)
 }
+
+mutation ReorderOptions($goalId: ID!, $optionIds: [ID!]!) {
+  reorderOptions(goalId: $goalId, optionIds: $optionIds) { id }
+}

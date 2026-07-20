@@ -97,7 +97,7 @@ un-styled platform default:
   missing, **add it to the kit**, themed via `ui/theme/` — never scatter one-off raw widgets.
 
 The two surfaces mirror one design (see `specs/tech-stack.md` "Styling strategy" and
-`specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Playfair
+`specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Spectral
 headings. A raw default element breaks that coherence and is a review-blocking defect.
 
 ### 2. Inline inputs (the goal-page editing pattern)
@@ -134,10 +134,21 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
 
 Existence-only assertions lie: a drawer once rendered with half its content pushed off-screen
 while `assertExists` stayed green. **Any visible UI change must be verified by looking at
-pixels** before distributing: render the changed surface in
-`android/app/src/test/java/com/spiramindscape/android/ui/VisualCheckTest.kt` (writes PNGs to
-`app/build/reports/visual/`) and open the image, or screenshot the emulator (`adb exec-out
+pixels** before distributing: render the changed surface in one of the
+`android/app/src/test/java/com/spiramindscape/android/ui/VisualCheck*Test.kt` classes (each writes
+PNGs to `app/build/reports/visual/`) and open the image, or screenshot the emulator (`adb exec-out
 screencap`). Never claim a visual fix without having seen it.
+
+> ⚠️ **The `VisualCheck*` suite is SLOW and currently has a HANGING test — do not run the whole
+> suite blindly.** Each class re-inits Robolectric NATIVE graphics under `forkEvery = 1`, so a full
+> `:app:testDebugUnitTest` sweep takes **~15 minutes**, and
+> `VisualCheckRealityDraftSaveTest` **hangs indefinitely** (`performTextInput` inside a
+> `ModalBottomSheet` never idles — the unresolved side of **BUG-009**, see
+> `backlog/android-visual-test-suite-flaky-appnotidle.md`). That test is `@Ignore`d so it doesn't
+> wedge the run, but **until BUG-009 is fully fixed, do not add new tests that type into a
+> `ModalBottomSheet`, and prefer running a single `--tests "...VisualCheck<one>Test"` class** (or
+> just render its PNG) instead of the whole suite. If a run appears stuck in
+> `> Task :app:testDebugUnitTest`, stop it with `cd android && ./gradlew.bat --stop`.
 
 ### 5. Menus & overlays are pure white
 
@@ -146,6 +157,174 @@ tint. On Android this means clearing Material's tonal-elevation overlay (`surfac
 Color.Transparent` in the theme) so menus don't pick up a teal cast; on the web, don't let a
 popover inherit a tinted/elevated background. If a menu looks greenish/grey, it's wrong — fix the
 surface, don't ship it.
+
+### 6. Dropdown / menu anatomy (hard spec — don't reinvent)
+
+There is **exactly one** menu surface on Android: `ui/components/SpiraDropdownMenu.kt`
+(`SpiraDropdownMenu` + `SpiraMenuItem` + `SpiraMenuDivider`). **Never** use Material's
+`DropdownMenu` / `DropdownMenuItem` in product UI, and never hand-roll a one-off menu — Material's
+default reads as a flat grey rectangle and was explicitly rejected. Every sort/filter menu, kebab
+(⋮) menu, and action menu uses `SpiraDropdownMenu`. If it can't express what you need, **extend
+that file**, don't fork it.
+
+The look it must always produce (from the reference the owner supplied — a clean floating card
+menu):
+
+- **Pure white** background (`SpiraSurfaceRaised`), never tinted or elevation-grey.
+- **Width fits its content** (`IntrinsicSize.Max`) with a sensible `min` — it never stretches to
+  the full screen width.
+- **Generously rounded** corners (**20dp**), a **1dp hairline border** (`SpiraBorder`), and a soft
+  **shadow** (`shadowElevation ≈ 12dp`) so it floats as a card, not a box.
+- Each row (`SpiraMenuItem`) = **label on the left**, an **icon in a right-aligned column** that
+  lines up across every row (label cell flexes with `weight(1f)`; the icon slot is fixed width so
+  even icon-less rows keep the column aligned). Comfortable padding (~20dp horizontal, ~13dp
+  vertical).
+- **Destructive** items (Delete) are red (`colorScheme.error`); a **selected** item in a pick-one
+  menu shows a check in the icon slot.
+- Anchored just below its trigger, right-edge aligned, flipping above near the screen bottom;
+  dismiss on outside-tap / back.
+
+If a menu doesn't look like that floating white card, it's wrong — fix `SpiraDropdownMenu`, don't
+ship a different-looking menu.
+
+---
+
+## Brand design system (hard rules)
+
+These are the Spira brand rules — typography, colour, and the usage "do / avoid" list. They apply
+to **every** surface (web + Android). The Android tokens live in
+`android/app/src/main/java/.../ui/theme/` (`Color.kt`, `Type.kt`) — change the token, not one-off
+values.
+
+### Typography
+
+These are the **actual fonts we use** (loaded via Google Fonts on both web and Android):
+
+| Role | Font (what ships) | Leading | Tracking |
+|---|---|---|---|
+| Headline | **Spectral** (serif, Georgia fallback) — loaded via Google Fonts | 110% | tight |
+| Body | **Hanken Grotesk** (sans, -apple-system / BlinkMacSystemFont fallback) — loaded via Google Fonts | 130% | 0 |
+
+Both fonts load dynamically: web via `@import` in `styles.css`, Android via Jetpack Compose (see
+`docs/google-fonts-compose.md` for implementation).
+
+- **Leading:** headline line-height = 110% of size; body = 130%. (Applied in `Type.kt` via
+  `lineHeight`.)
+- **Tracking:** headlines use a slightly tighter negative `letterSpacing` so serif glyphs are
+  optically balanced but **never touch**; body tracking is 0.
+- **Alignment:** left or center — whichever suits. Always leave **clear space between the header
+  and body** so the hierarchy reads.
+- **Line length:** headlines are **3–5 words per line, max** — keep them short for impact. If it's
+  long-form, it's body copy → set it in the body font, not the headline serif.
+- Headings use the serif; everything else uses the sans. If a heading font is ever swapped, change
+  **only** `HeadingSerif` in `Type.kt` — the leading/tracking/weight rules above stay.
+
+### Font loading strategy
+
+**Web** (`src/styles.css`): Google Fonts loaded via `@import url(...)` at the top; `--font-heading`
+and `--font-sans` vars reference Spectral and Hanken Grotesk directly. Fallbacks (Georgia, system
+sans) apply if Google Fonts unavailable.
+
+**Android** (`Type.kt`): Jetpack Compose `googleFont()` API loads Spectral and Hanken Grotesk
+without local TTF bundling. Fonts gracefully degrade to system defaults if network unavailable.
+Implementation details and dependency setup are in `docs/google-fonts-compose.md`.
+
+### Colour
+
+Two brand colours, exact hexes (full tint ramps are in `Color.kt`):
+
+- **Guava** (coral) `#F45D48` — the brand **accent/highlight**. Logo colour.
+- **Kale** (teal) `#0A8080` — used for **UI surfaces, buttons, active states, teal bands**.
+
+> Nuance: the guidelines name Guava the "primary brand colour," but they also forbid Guava as a
+> background, and both our app and the reference product UI are teal-forward. So in product UI
+> **Kale is the working primary (fills/buttons/bands) and Guava is the accent only.**
+
+Supporting neutrals (backgrounds & greys): **Ginger** (warm), **Parsnip** (warm-grey),
+**Salt** (neutral grey ramp `Salt-200…Salt-1000`), and **White**.
+
+**Colour rules — do NOT break (these are the guidelines' "avoid" list):**
+
+- **White is the primary canvas.** Use it more than any colour; let colour bring the white space
+  to life. **Tints are used sparingly.**
+- **NEVER use Guava as a large background/fill colour** (page/section/card backgrounds) — it's an
+  accent. Small accent **marks** in Guava are fine (e.g. the Options "active" corner-check ribbon).
+- **NEVER use white copy on a light background colour.**
+- **NEVER use black / `#222525` copy on Kale** — text on teal is white/light.
+- **NEVER use Guava as a text colour over Kale.**
+- Don't mix colours in ways that hurt legibility; keep combinations from the approved pairs.
+
+The **active-option corner check** ribbon is **Guava** (`tertiary`) with a white check — a small
+accent mark, not a fill (an allowed accent use of Guava).
+
+Semantic mapping already wired in `Color.kt` → `Theme.kt`: primary = Kale-500, accent/tertiary =
+Guava-500 (accent marks only, no large fills), foreground = Salt-1000, muted = Salt-800, border =
+Salt-500, background = Parsnip-100, Options page = Kale-500 (teal), cards/menus = White, destructive =
+Guava-600. (`success` stays a functional green — the brand palette has none.)
+
+> The type params above (**leading / tracking / alignment**) are **font-independent** — they're set
+> on the type scale (`Type.kt`) and per-usage alignment, so they hold no matter which heading font
+> ships. Don't tie them to a specific font.
+
+### Goal-workspace screen header (every tab)
+
+Every goal-workspace tab opens with the shared **`GoalTabIntro`** block (`GoalWorkspaceScreen.kt`):
+
+- a **left-aligned kicker label** = the screen/phase name in the brand label style (`labelLarge`,
+  bold, teal — or white on the teal Options tab), then
+- a **centered heading + centered description** below it, with **clear space between the kicker and
+  the heading** (the brand "clear space between header and body" rule).
+
+Use it on **all five tabs** (Goal, Reality, Resources, Options, and the Targets tab). The five
+kicker labels are `GOAL / REALITY / RESOURCES / OPTIONS / WILL DO` — note the fifth tab's bottom-nav
+label stays **"Targets"** but its on-screen kicker reads **"Will do"** (the GROW "Will" step). Don't
+re-center the kicker and don't drop the header/body spacing.
+
+### Options cards (interaction)
+
+- The Options screen background is the teal **primary** (Kale-500); cards are white and pop off it.
+- Card **title + strategy text are centered**; the "Option N" number is **display-only** and
+  renumbers automatically.
+- **Reorder is drag-and-drop**: long-press a card and drag it into place (`OptionCard`'s
+  `detectDragGesturesAfterLongPress` → `onReorderOption`). There is **no** reorder-by-editing-the-
+  number.
+- The card menu is a **bottom-centre "bump"** — a small white **half-oval** tab with a **horizontal**
+  ⋯ (`OptionMenuBump`, shape `HalfOvalDown`) hanging **entirely below** the card's bottom edge (it
+  must not overlap the white card). Tapping it **flips the card into a menu in place**
+  (`OptionCardMenu`: close button + Make active/Deactivate + Delete) —
+  **not** a dropdown and **not** a kebab. The close (✕) button leaves menu mode.
+- The **active-option** marker is a **Guava** corner-check ribbon (top-right); no "Active" label.
+
+For implementation details and testing, see `docs/drag-and-drop-options.md`.
+
+---
+
+## Claude Design (claude.ai/design)
+
+Claude Design (`https://claude.ai/design`) is the visual design tool: designers or PMs create screens
+there, and you import them into this codebase to implement.
+
+**How to import a design:**
+
+1. **Open the design file** in Claude Design (you or a teammate shares a link like
+   `https://claude.ai/design/p/<projectId>?file=<filename>.html`)
+2. **Authorize MCP access** (one-time): run `/design-login` in Claude Code to authenticate to claude.ai/design
+3. **Use the claude_design MCP** (once authorized):
+   - The MCP endpoint `https://api.anthropic.com/v1/design/mcp` is already available
+   - You can read design files, component specs, and preview assets from the shared design project
+   - Reference the design's file structure to understand layout, component naming, and interaction patterns
+4. **Implement in the codebase**: translate the design specs into React (web) or Compose (Android) code
+   - Use Spira's design components (`src/components/spira/`, `ui/components/` on Android)
+   - Apply brand tokens (colours, typography, spacing — see `src/styles.css` and `Type.kt`)
+   - Match the reference screenshots for visual fidelity (see CLAUDE.md rule #4: verify UI changes visually)
+
+**When to use**:
+- A designer creates a screen mockup and shares a link
+- You need to see the exact layout, spacing, interactions, or component composition
+- You want to verify your implementation matches the reference design
+
+**What NOT to use**: do not use `/design-sync` to upload the codebase as a design system (unless you're
+building a component library for designers to use). That's a separate workflow for design-system repos.
 
 ---
 
@@ -177,9 +356,31 @@ surface, don't ship it.
 | Backend run (no Google login) | `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"` | Auto-logs-in `dev@local` |
 | Backend tests | `cd backend && .\mvnw.cmd test` | |
 | Android build | `cd android && .\gradlew.bat :app:assembleDebug` | Emulator reaches local backend at `http://10.0.2.2:8080` |
+| Android distribute (APK → email link) | `cd android && .\gradlew.bat distributeDebug -PreleaseNotes="what changed"` | Builds the debug APK and uploads it to Firebase App Distribution; testers (incl. the owner) get an email link. Uses your `firebase login`. |
 
 Full local run (DB + backend + frontend), ngrok mobile testing, and deploy details are in
 `README.md`.
+
+### 📦 Always distribute the APK after Android app changes (hard rule)
+
+**After completing any change that affects the Android app (UI, behavior, dependencies — anything
+that changes what runs on the device), always build and distribute the APK** so the owner gets a
+fresh email link to test on a real phone:
+
+```
+cd android && .\gradlew.bat distributeDebug -PreleaseNotes="<short summary of what changed>"
+```
+
+- This runs `assembleDebug` and uploads to **Firebase App Distribution**, which emails the testers
+  (the owner's address is the default) a download link.
+- Always pass `-PreleaseNotes="…"` describing the change so the email is meaningful.
+- Do this as the final step of the Definition-of-Done loop for Android work, **without waiting to
+  be asked** — the owner tests on-device from that email link.
+- It relies on the Firebase CLI being logged in (`firebase login`). If the upload fails with an
+  auth error, that login is interactive and **only the user can do it** — surface the exact command
+  and ask them to run it (e.g. `! firebase login`), then retry `distributeDebug`.
+- Skip only for changes that cannot affect the running app (pure docs/backlog edits, web-only or
+  backend-only work).
 
 ---
 
