@@ -135,6 +135,17 @@ backend/target/allure-results
 The `allure-report` job downloads both the backend and E2E raw results and
 generates a single combined HTML report, uploaded as the `allure-report` artifact.
 
+It runs the **Allure CLI directly** (download the official `allure-2.x.tgz`, then
+`allure generate`) rather than a third-party action. Two things to know if you touch this job:
+
+- **Pass each results directory explicitly.** `allure generate` does *not* recurse into
+  sub-folders, so it gets `allure-input/backend allure-input/e2e` — not the parent
+  `allure-input`. Empty/missing directories are skipped, and no results at all is a no-op rather
+  than a failure (the job is `if: always()`, so upstream may legitimately have produced nothing).
+- **The Allure launcher requires `xargs`** and hard-exits with `xargs is not available` without it.
+  GitHub's `ubuntu-latest` runner has it; the third-party action's container did **not**, which
+  made this job red on every run for weeks — see **BUG-015**.
+
 ## Artifacts produced by a run
 
 | Artifact | What it contains |

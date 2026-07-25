@@ -411,22 +411,65 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # This job runs with `if: always()`, so an upstream job may have failed before
+      # producing results. Missing artifacts must not fail the report itself.
       - name: Download backend Allure results
         uses: actions/download-artifact@v4.1.3
+        continue-on-error: true
         with:
           name: backend-allure-results
           path: allure-input/backend
 
       - name: Download E2E Allure results
         uses: actions/download-artifact@v4.1.3
+        continue-on-error: true
         with:
           name: e2e-allure-results
           path: allure-input/e2e
 
-      - name: Allure Report
-        uses: simple-elf/allure-report-action@53ebb757a2097edc77c53ecef4d454fc2f2f774c # v1.13
+      # Allure's CLI is a JVM tool.
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          allure_results: allure-input
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Generate the report with the Allure CLI directly instead of a third-party action.
+      # The previously used simple-elf/allure-report-action runs inside a container whose
+      # image lacks `xargs`, so its generate step aborted with "xargs is not available",
+      # never produced ./allure-report, and every following `cp` failed — the job was red
+      # on every run regardless of test results. Owning the two commands is simpler than
+      # debugging someone else's container, and drops a supply-chain dependency.
+      - name: Install Allure CLI
+        env:
+          ALLURE_VERSION: '2.44.0'
+        run: |
+          curl -sSLo allure.tgz \
+            "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
+          tar -xzf allure.tgz
+          echo "$PWD/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Allure report
+        run: |
+          # Pass each results directory explicitly — `allure generate` does not recurse
+          # into sub-folders of a parent directory. Skip any that the download step
+          # couldn't fetch, and don't fail the job when there is simply nothing to report.
+          dirs=""
+          for d in allure-input/backend allure-input/e2e; do
+            if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then
+              dirs="$dirs $d"
+            else
+              echo "No Allure results in $d — skipping it."
+            fi
+          done
+          if [ -z "$dirs" ]; then
+            echo "No Allure results at all; nothing to generate."
+            exit 0
+          fi
+          echo "Generating from:$dirs"
+          allure generate $dirs --clean -o allure-report
+          echo "Report generated:"
+          ls -la allure-report | head
 
       - name: Upload Allure report artifact
         uses: actions/upload-artifact@v4
