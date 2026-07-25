@@ -27,6 +27,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -151,6 +153,22 @@ class SecurityIntegrationTest {
                         .with(authentication(testAuth))
                         .with(csrf()))
                 .andExpect(status().isNoContent());
+    }
+
+    // ─── Content-Security-Policy ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("CSP lets the SPA frame its own blob: PDF previews but keeps the site un-frameable")
+    void cspAllowsBlobFramesButForbidsBeingFramed() throws Exception {
+        mockMvc.perform(get("/health").with(anonymous()))
+                .andExpect(status().isOk())
+                // The resource PDF preview embeds an app-created blob: URL in an <iframe>;
+                // without frame-src blob: the browser's default-src 'self' would block it.
+                .andExpect(header().string("Content-Security-Policy",
+                        containsString("frame-src 'self' blob:")))
+                // …while the app itself must never be embeddable by another origin.
+                .andExpect(header().string("Content-Security-Policy",
+                        containsString("frame-ancestors 'none'")));
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────

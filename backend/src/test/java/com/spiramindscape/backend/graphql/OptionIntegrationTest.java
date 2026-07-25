@@ -983,6 +983,143 @@ class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
                                 "NOT_FOUND".equals(error.getExtensions().get("classification"))));
     }
 
+    // --- option status (active / good_idea / didnt_work / none) --------------
+
+    @Test
+    @DisplayName("New option starts with status 'none' and selected=false")
+    void newOptionStartsWithNoneStatus() {
+        String optionId = addOption(goalId, "A fresh idea");
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id status selected }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal[0].id").entity(String.class).isEqualTo(optionId)
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("none")
+                .path("optionsByGoal[0].selected").entity(Boolean.class).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("updateOption status='good_idea' sets the status and keeps selected=false")
+    void setsGoodIdeaStatus() {
+        String optionId = addOption(goalId, "A promising angle");
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { status: "good_idea" }) {
+                            id status selected
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .execute()
+                .path("updateOption.status").entity(String.class).isEqualTo("good_idea")
+                .path("updateOption.selected").entity(Boolean.class).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("Status values are mutually exclusive - the latest set wins")
+    void statusIsMutuallyExclusive() {
+        String optionId = addOption(goalId, "One idea, one label");
+        updateStatus(optionId, "good_idea");
+        updateStatus(optionId, "didnt_work");
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id status selected }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("didnt_work")
+                .path("optionsByGoal[0].selected").entity(Boolean.class).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("updateOption status='active' makes it selected and clears any other active option's status")
+    void activeStatusIsSingleSelectAcrossGoal() {
+        String firstId  = addOption(goalId, "First strategy");
+        String secondId = addOption(goalId, "Second strategy");
+        selectOption(goalId, firstId); // first becomes active
+
+        // Make the second one active via status; the first must revert to none.
+        updateStatus(secondId, "active");
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id status selected }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                .path("optionsByGoal[0].id").entity(String.class).isEqualTo(firstId)
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("none")
+                .path("optionsByGoal[0].selected").entity(Boolean.class).isEqualTo(false)
+                .path("optionsByGoal[1].id").entity(String.class).isEqualTo(secondId)
+                .path("optionsByGoal[1].status").entity(String.class).isEqualTo("active")
+                .path("optionsByGoal[1].selected").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("selectOption sets status to 'active'; deselected options that were active revert to 'none'")
+    void selectOptionSyncsStatus() {
+        String firstId  = addOption(goalId, "First strategy");
+        String secondId = addOption(goalId, "Second strategy");
+        updateStatus(firstId, "good_idea"); // a non-active label that must survive
+
+        selectOption(goalId, secondId);
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id status selected }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                // first keeps its good_idea label (only active options are cleared)
+                .path("optionsByGoal[0].id").entity(String.class).isEqualTo(firstId)
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("good_idea")
+                .path("optionsByGoal[1].id").entity(String.class).isEqualTo(secondId)
+                .path("optionsByGoal[1].status").entity(String.class).isEqualTo("active")
+                .path("optionsByGoal[1].selected").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("updateOption rejects an invalid status with a ValidationError")
+    void rejectsInvalidStatus() {
+        String optionId = addOption(goalId, "An idea");
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { status: "bogus" }) {
+                            id
+                          }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Invalid option status") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
+    }
+
+    private void updateStatus(String optionId, String status) {
+        graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!, $status: String!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { status: $status }) { id }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .variable("optionId", optionId)
+                .variable("status", status)
+                .execute();
+    }
+
     // --- helpers -------------------------------------------------------------
 
     @Test

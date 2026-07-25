@@ -107,6 +107,10 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: ["./src/test/setup.ts"],
+      // Vitest runs the unit/component tests under src/. The Playwright E2E specs in
+      // e2e/ also match *.spec.ts but must NOT be collected by Vitest (they use the
+      // Playwright runner). Run them with `npm run test:e2e`.
+      exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
     },
   };
 });
