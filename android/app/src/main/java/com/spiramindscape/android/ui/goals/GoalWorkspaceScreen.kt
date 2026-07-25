@@ -1320,7 +1320,7 @@ private fun OptionsTabContent(
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 18.dp)) {
         // Page head — light on the teal Options surface (title + description, no kicker), matching
-        // the mockup: 32sp Spectral title, 14sp Hanken description on a light teal tint.
+        // the mockup: 32sp Playfair Display title, 14sp Roboto description on a light teal tint.
         Column(
             Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

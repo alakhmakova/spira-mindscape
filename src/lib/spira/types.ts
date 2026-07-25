@@ -70,10 +70,14 @@ export type ResourceInput =
   | Omit<Extract<Resource, { type: "file" }>, "id">
   | Omit<Extract<Resource, { type: "email" }>, "id">;
 
+// Mutually-exclusive option status. "active" mirrors the legacy `selected` boolean.
+export type OptionStatus = "none" | "active" | "good_idea" | "didnt_work";
+
 export type Option = {
   id: string;
   text: string;
   selected: boolean;
+  status: OptionStatus;
   position: number;
 };
 

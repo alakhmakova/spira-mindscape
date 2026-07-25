@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.spiramindscape.android.data.goals.GoalDetail
@@ -45,6 +46,8 @@ class VisualCheckRealityTabTest : VisualCheckTestBase() {
         compose.onNodeWithText("Obstacles").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Not enough time in the evenings").assertIsDisplayed()
-        compose.onNodeWithText("Add new obstacle").assertIsDisplayed()
+        // The add affordance is the Guava "+" FAB (icon-only), and it re-labels itself per the
+        // selected Reality kind — so on the obstacles list it must read "Add obstacle".
+        compose.onNodeWithContentDescription("Add obstacle").assertIsDisplayed()
     }
 }

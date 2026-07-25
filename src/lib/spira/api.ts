@@ -70,6 +70,7 @@ type GraphqlOption = {
   id: string;
   text: string;
   selected: boolean;
+  status: string;
   position: number;
 };
 
@@ -161,7 +162,7 @@ const GOAL_FIELDS = `
     actions { id text }
     obstacles { id text }
   }
-  options { id text selected position }
+  options { id text selected status position }
   resources {
     id
     type
@@ -169,7 +170,10 @@ const GOAL_FIELDS = `
     body
     url
     mime
-    dataUrl
+    # dataUrl is deliberately NOT fetched here: a file's dataUrl is a multi-MB base64 blob and
+    # the goals list would carry EVERY file's contents on each load, making the payload huge
+    # (slow, and it can break the whole list on flaky mobile connections). File contents are
+    # loaded lazily per resource via fetchResourceFile() when the user actually opens one.
     name
     role
     email
@@ -220,6 +224,24 @@ const RESOURCE_FIELDS = `
   phone
 `;
 
+// Same as RESOURCE_FIELDS but WITHOUT dataUrl. Used for mutation responses: a file's dataUrl is
+// a multi-MB base64 blob, and echoing it back made flaky mobile/ngrok connections reset while
+// writing the response — the client then treated the (already-persisted) create as failed and
+// rolled the resource back, so a just-added PDF appeared to "disappear". The client already has
+// the dataUrl it sent, so we re-attach it locally instead of round-tripping it.
+const RESOURCE_META_FIELDS = `
+  id
+  type
+  title
+  body
+  url
+  mime
+  name
+  role
+  email
+  phone
+`;
+
 const REALITY_FIELDS = `
   id
   actions { id text }
@@ -230,6 +252,7 @@ const OPTION_FIELDS = `
   id
   text
   selected
+  status
   position
 `;
 
@@ -385,6 +408,7 @@ function toOption(option: GraphqlOption): Option {
     id: option.id,
     text: option.text,
     selected: option.selected,
+    status: (option.status as Option["status"]) ?? "none",
     position: option.position,
   };
 }
@@ -427,7 +451,11 @@ function resourceInput(
     body: "body" in resource ? resource.body : undefined,
     url: "url" in resource ? resource.url : undefined,
     mime: "mime" in resource ? resource.mime : undefined,
-    dataUrl: "dataUrl" in resource ? resource.dataUrl : undefined,
+    // Never send an EMPTY dataUrl: file contents load lazily, so a resource in memory may not
+    // have its bytes yet (e.g. renaming a file whose preview was never opened). Sending "" would
+    // blank the stored file. Omitting the field leaves the persisted contents untouched.
+    dataUrl:
+      "dataUrl" in resource && resource.dataUrl ? resource.dataUrl : undefined,
     name: "name" in resource ? resource.name : undefined,
     role: "role" in resource ? resource.role : undefined,
     email: "email" in resource ? resource.email : undefined,
@@ -637,7 +665,11 @@ export const spiraApi = {
       {
         goalId,
         optionId,
-        input: cleanInput({ text: input.text, selected: input.selected }),
+        input: cleanInput({
+          text: input.text,
+          selected: input.selected,
+          status: input.status,
+        }),
       },
     );
     return toOption(data.updateOption);
@@ -732,13 +764,19 @@ export const spiraApi = {
       `
         mutation CreateResource($goalId: ID!, $input: CreateResourceInput!) {
           createResource(goalId: $goalId, input: $input) {
-            ${RESOURCE_FIELDS}
+            ${RESOURCE_META_FIELDS}
           }
         }
       `,
       { goalId, input: resourceInput(input, true) },
     );
-    return toResource(data.createResource);
+    const created = toResource(data.createResource);
+    // The response omits dataUrl (see RESOURCE_META_FIELDS) — re-attach the one we just sent so
+    // the persisted resource keeps its file contents locally.
+    if (created.type === "file" && input.type === "file" && input.dataUrl) {
+      return { ...created, dataUrl: input.dataUrl };
+    }
+    return created;
   },
 
   async updateResource(
@@ -749,13 +787,41 @@ export const spiraApi = {
       `
         mutation UpdateResource($id: ID!, $input: UpdateResourceInput!) {
           updateResource(id: $id, input: $input) {
-            ${RESOURCE_FIELDS}
+            ${RESOURCE_META_FIELDS}
           }
         }
       `,
       { id, input: resourceInput(input, false) },
     );
-    return toResource(data.updateResource);
+    const updated = toResource(data.updateResource);
+    // dataUrl is omitted from the response; keep whatever the caller passed (the store ignores
+    // this return value for files, but preserve it for correctness).
+    if (updated.type === "file" && "dataUrl" in input && input.dataUrl) {
+      return { ...updated, dataUrl: input.dataUrl };
+    }
+    return updated;
+  },
+
+  /**
+   * Fetch just the file contents (base64 data URL) of one resource. File bodies are excluded
+   * from the goals list (see GOAL_FIELDS) so the list stays small; this pulls the bytes on
+   * demand when the user opens/downloads/copies a specific file.
+   */
+  async fetchResourceFile(id: string): Promise<string> {
+    const data = await graphql<{
+      resourceById: { dataUrl?: string | null } | null;
+    }>(
+      `
+        query ResourceFile($id: ID!) {
+          resourceById(id: $id) {
+            id
+            dataUrl
+          }
+        }
+      `,
+      { id },
+    );
+    return data.resourceById?.dataUrl ?? "";
   },
 
   async deleteResource(id: string): Promise<void> {

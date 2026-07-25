@@ -19,16 +19,22 @@ The workflow runs on:
 
 ## What CI Runs
 
-The pipeline has five jobs: `frontend`, `backend`, `e2e` (runs after `backend`),
-`allure-report` (aggregates results), and `deploy` (continuous deployment to Cloud Run,
-push-to-`main` only). The first three are the test gate; `deploy` runs only if they pass.
+The pipeline's jobs: `frontend`, `backend`, `android`, `dependency-scan`, `e2e` (Python, after
+`backend`), `web-e2e` (Playwright, after `backend`), `allure-report` (aggregates results), and
+`deploy` (continuous deployment to Cloud Run, push-to-`main` only). The test jobs are the gate;
+`deploy` runs only if its `needs` pass.
 
 ### Frontend Job
 
 1. Install Node.js 20.
 2. Run `npm ci`.
-3. Run `npm test` (Vitest).
-4. Run `npm run build`.
+3. Run `npm test` (Vitest — the `e2e/` Playwright specs are excluded from this).
+4. Run `npm audit --audit-level=critical` — **blocks on CRITICAL**, then reports HIGH
+   non-blocking. (Policy note: the standing HIGHs are build tooling — vite/esbuild/undici — that
+   never ships in the bundle and is only fixable via a breaking Vite upgrade; CRITICALs must always
+   be fixed. See **BUG-013** for the time this gate — correctly — held the line on a critical
+   `seroval` advisory.)
+5. Run `npm run build`.
 
 ### Backend Job
 
@@ -65,6 +71,28 @@ end-to-end, exactly as in production (the unit/integration tests use H2 instead)
 > Note: the bundled jar does **not** contain the H2 test profile (that lives under
 > `src/test/resources`), so the E2E job deliberately uses real PostgreSQL via the
 > production env vars rather than `SPRING_PROFILES_ACTIVE=test`.
+
+### Web E2E Job — Playwright (`needs: backend`)
+
+The browser twin of the Python E2E job: it drives the **real SPA in Chromium** against a real
+backend, covering interactions neither Vitest nor the HTTP-level Python suite can see (the Options
+drag-and-drop reorder; the inline PDF/image viewers).
+
+1. Start the same `pgvector/pgvector:pg16` service container.
+2. Install Java 17 + Node 20, `npm ci`, and `npx playwright install --with-deps chromium`
+   (Chromium only — this is a functional check, not a cross-browser matrix).
+3. Build and start the backend jar under `SPRING_PROFILES_ACTIVE=e2e`, exactly like the Python job,
+   and wait for `GET /health`.
+4. Run `npm run test:e2e`. `playwright.config.ts` starts the **Vite dev server** itself, which
+   proxies `/graphql` and `/api` to the backend on `:8080`.
+5. Upload `playwright-report` + `test-results` as an artifact; on failure, dump the last 200 lines
+   of `backend.log`; always stop the backend.
+
+> **Auth:** the `e2e` profile has no auto-login, so the job sets `SPIRA_E2E_AUTH=e2e@test.local` and
+> `playwright.config.ts` turns that into `extraHTTPHeaders: { "X-E2E-Auth": … }` on every browser
+> request — the same `E2eTestAuthFilter` mechanism the Python suite uses, so the SPA loads
+> authenticated without a Google sign-in. Locally you don't set that variable: the `local` profile
+> auto-logs-in `dev@local` instead.
 
 ### Deploy Job (`needs: frontend, backend, e2e`)
 

@@ -288,6 +288,119 @@ jobs:
             kill $(cat backend.pid) || true
           fi
 
+  # Browser E2E (Playwright): drives the real SPA in Chromium against the real backend, covering
+  # what the Python suite (HTTP-level) and Vitest (unit/component) cannot — actual UI interaction
+  # such as the Options drag-and-drop reorder and the inline PDF/image viewers.
+  web-e2e:
+    name: Web E2E (Playwright)
+    needs: [backend]
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector-enabled Postgres: V13__grow_books.sql runs CREATE EXTENSION vector.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: spira
+          POSTGRES_USER: spira
+          POSTGRES_PASSWORD: spira
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Only Chromium — the suite is a functional check, not a cross-browser matrix, and
+      # --with-deps pulls the system libraries the headless browser needs on the runner.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Build backend JAR
+        run: |
+          cd backend
+          sh ./mvnw package -DskipTests -q
+
+      # Same setup as the Python E2E job: a real PostgreSQL so Flyway runs end-to-end, under the
+      # CI-only 'e2e' profile (enables the X-E2E-Auth test login, disables CSRF). Output is
+      # captured because the process is backgrounded — a startup crash would otherwise be invisible.
+      - name: Start backend against PostgreSQL
+        run: |
+          java -jar backend/target/*.jar > backend.log 2>&1 &
+          echo $! > backend.pid
+        env:
+          SPRING_PROFILES_ACTIVE: e2e
+          DATABASE_URL: jdbc:postgresql://localhost:5432/spira
+          DATABASE_USERNAME: spira
+          DATABASE_PASSWORD: spira
+          GOOGLE_CLIENT_ID: ci-e2e-dummy
+          GOOGLE_CLIENT_SECRET: ci-e2e-dummy
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Backend ready"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "Backend did not start in time. Last 200 lines of backend.log:"
+          tail -n 200 backend.log || echo "(no backend.log found)"
+          exit 1
+
+      # playwright.config.ts starts the Vite dev server itself (it proxies /graphql + /api to
+      # :8080). SPIRA_E2E_AUTH makes every browser request carry the X-E2E-Auth header, so the
+      # SPA loads as an authenticated user without a Google sign-in.
+      - name: Run Playwright E2E
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+          SPIRA_E2E_AUTH: e2e@test.local
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+
+      - name: Backend log (on failure)
+        if: failure()
+        run: tail -n 200 backend.log || echo "(no backend.log found)"
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill $(cat backend.pid) || true
+          fi
+
   allure-report:
     name: Allure report
     needs: [backend, e2e]

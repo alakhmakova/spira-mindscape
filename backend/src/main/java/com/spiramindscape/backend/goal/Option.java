@@ -26,6 +26,12 @@ public class Option {
     @Column(nullable = false)
     private Boolean selected = false;
 
+    // Mutually-exclusive status: "none" | "active" | "good_idea" | "didnt_work".
+    // `selected` is kept in sync (selected == "active".equals(status)) for the Android
+    // client, which still reads/writes the legacy boolean. See GoalService.
+    @Column(nullable = false, length = 20)
+    private String status = "none";
+
     @Column(nullable = false)
     private Integer position = 0;
 

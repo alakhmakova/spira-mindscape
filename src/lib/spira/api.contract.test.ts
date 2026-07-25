@@ -39,8 +39,20 @@ describe("spiraApi goal mapping", () => {
       obstacles: [{ id: "obstacle-1", text: "Waiting for design review" }],
     });
     expect(goal.options).toEqual([
-      { id: "option-1", text: "Stay focused", selected: true, position: 0 },
-      { id: "option-2", text: "Reduce scope", selected: false, position: 1 },
+      {
+        id: "option-1",
+        text: "Stay focused",
+        selected: true,
+        status: "active",
+        position: 0,
+      },
+      {
+        id: "option-2",
+        text: "Reduce scope",
+        selected: false,
+        status: "none",
+        position: 1,
+      },
     ]);
   });
 
@@ -340,8 +352,20 @@ function goalResponse() {
       obstacles: [{ id: "obstacle-1", text: "Waiting for design review" }],
     },
     options: [
-      { id: "option-1", text: "Stay focused", selected: true, position: 0 },
-      { id: "option-2", text: "Reduce scope", selected: false, position: 1 },
+      {
+        id: "option-1",
+        text: "Stay focused",
+        selected: true,
+        status: "active",
+        position: 0,
+      },
+      {
+        id: "option-2",
+        text: "Reduce scope",
+        selected: false,
+        status: "none",
+        position: 1,
+      },
     ],
     resources: [
       noteResourceResponse(),

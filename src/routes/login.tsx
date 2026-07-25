@@ -253,8 +253,8 @@ function LoginStyles() {
   --lp-border-strong: oklch(0.80 0 0);
   --lp-ring: oklch(0.51 0.092 194 / 0.45);
   --lp-radius: 10px;
-  --lp-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --lp-font-heading: "Playfair Display", Georgia, serif;
+  --lp-font-sans: GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --lp-font-heading: "ITC Clearface", "Playfair Display", Georgia, serif;
   --lp-shadow-soft: 0 1px 2px 0 oklch(0.2 0 0 / 0.05);
   --lp-shadow-raised: 0 1px 2px 0 oklch(0.2 0 0 / 0.05), 0 12px 32px -16px oklch(0.2 0 0 / 0.18);
 

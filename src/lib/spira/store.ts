@@ -6,6 +6,7 @@ import type {
   Confidence,
   Goal,
   Option,
+  OptionStatus,
   Resource,
   ResourceInput,
   Target,
@@ -60,6 +61,7 @@ type State = {
   ) => void;
   updateOption: (id: string, optId: string, patch: Partial<Option>) => void;
   selectOption: (id: string, optId: string) => void;
+  setOptionStatus: (id: string, optId: string, status: OptionStatus) => void;
   removeOption: (id: string, optId: string) => void;
   reorderOptions: (id: string, from: number, to: number) => void;
   addTarget: (id: string, t: CreateTargetInput) => Promise<Target | undefined>;
@@ -72,12 +74,21 @@ type State = {
   ) => string;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
   removeResource: (id: string, rId: string) => void;
+  /**
+   * Lazily load a file resource's contents (base64 dataUrl). The goals list omits file bodies
+   * to keep its payload small, so call this before previewing / downloading / copying a file.
+   * Resolves to the dataUrl and caches it on the resource; a no-op if already loaded.
+   */
+  loadResourceFile: (id: string, rId: string) => Promise<string>;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
   resolveAction: (msgId: string, status: "approved" | "rejected") => void;
   clearChat: () => void;
 };
 
 const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** In-flight lazy file loads, keyed by resource id, so concurrent callers share one request. */
+const fileLoads = new Map<string, Promise<string>>();
 
 function debounceRemote(key: string, task: () => Promise<void>) {
   const existing = syncTimers.get(key);
@@ -91,6 +102,15 @@ function debounceRemote(key: string, task: () => Promise<void>) {
       void task();
     }, 500),
   );
+}
+
+/** Cancel a pending debounced write so a later, authoritative write isn't overwritten. */
+function cancelDebouncedRemote(key: string) {
+  const existing = syncTimers.get(key);
+  if (existing) {
+    clearTimeout(existing);
+    syncTimers.delete(key);
+  }
 }
 
 /**
@@ -492,7 +512,13 @@ export const useSpira = create<State>()((set, get) => ({
 
   addOption: (id, text, onCreated) => {
     const tempId = localId();
-    const option: Option = { id: tempId, text, selected: false, position: 0 };
+    const option: Option = {
+      id: tempId,
+      text,
+      selected: false,
+      status: "none",
+      position: 0,
+    };
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
@@ -548,13 +574,23 @@ export const useSpira = create<State>()((set, get) => ({
   },
 
   selectOption: (id, optId) => {
+    // "active" is single-select across the goal (radio): the chosen option becomes
+    // active, and any other option that was active reverts to "none".
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
-        options: goal.options.map((option) => ({
-          ...option,
-          selected: option.id === optId,
-        })),
+        options: goal.options.map((option) => {
+          const chosen = option.id === optId;
+          return {
+            ...option,
+            selected: chosen,
+            status: chosen
+              ? ("active" as OptionStatus)
+              : option.status === "active"
+                ? ("none" as OptionStatus)
+                : option.status,
+          };
+        }),
       })),
       syncError: undefined,
     }));
@@ -564,6 +600,38 @@ export const useSpira = create<State>()((set, get) => ({
       .selectOption(id, optId)
       .then(() => get().refreshGoals())
       .catch((error) => setSyncError(set, error));
+  },
+
+  setOptionStatus: (id, optId, status) => {
+    // "active" is radio behaviour — delegate to selectOption. The other statuses
+    // (good_idea / didnt_work / none) are per-card: set this option and clear its
+    // active flag; the single-valued status makes the three mutually exclusive.
+    if (status === "active") {
+      get().selectOption(id, optId);
+      return;
+    }
+    set((state) => ({
+      goals: updateGoalInList(state.goals, id, (goal) => ({
+        ...goal,
+        options: goal.options.map((option) =>
+          option.id === optId ? { ...option, status, selected: false } : option,
+        ),
+      })),
+      syncError: undefined,
+    }));
+
+    if (id.startsWith("local-") || optId.startsWith("local-")) return;
+    // Persist immediately (not debounced). A status change is a discrete click, and if it
+    // lagged behind a 500ms debounce a follow-up selectOption()/refreshGoals() could refetch
+    // stale server state and revert it to "none". Cancel any pending debounced text write for
+    // this option so it can't fire afterwards with a stale copy.
+    cancelDebouncedRemote(`option:${optId}`);
+    const goal = get().goals.find((item) => item.id === id);
+    const option = goal?.options.find((item) => item.id === optId);
+    if (!option) return;
+    void spiraApi.updateOption(id, optId, option).catch((error) => {
+      setSyncError(set, error);
+    });
   },
 
   removeOption: (id, optId) => {
@@ -766,6 +834,47 @@ export const useSpira = create<State>()((set, get) => ({
         setSyncError(set, error);
       }
     });
+  },
+
+  loadResourceFile: async (id, resourceId) => {
+    const find = () =>
+      get()
+        .goals.find((g) => g.id === id)
+        ?.resources.find((r) => r.id === resourceId);
+    const resource = find();
+    if (!resource || resource.type !== "file") return "";
+    if (resource.dataUrl) return resource.dataUrl; // already loaded
+    if (resourceId.startsWith("local-")) return "";
+
+    // Coalesce concurrent requests for the same file (preview + download at once).
+    const pending = fileLoads.get(resourceId);
+    if (pending) return pending;
+
+    const task = (async () => {
+      try {
+        const dataUrl = await spiraApi.fetchResourceFile(resourceId);
+        if (dataUrl) {
+          set((state) => ({
+            goals: updateGoalInList(state.goals, id, (goal) => ({
+              ...goal,
+              resources: goal.resources.map((item) =>
+                item.id === resourceId && item.type === "file"
+                  ? { ...item, dataUrl }
+                  : item,
+              ),
+            })),
+          }));
+        }
+        return dataUrl;
+      } catch (error) {
+        setSyncError(set, error);
+        return "";
+      } finally {
+        fileLoads.delete(resourceId);
+      }
+    })();
+    fileLoads.set(resourceId, task);
+    return task;
   },
 
   removeResource: (id, resourceId) => {

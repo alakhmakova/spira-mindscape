@@ -1,86 +1,50 @@
-# Google Fonts in Jetpack Compose (Implementation Plan)
+# Fonts in Jetpack Compose (Android)
 
-## Current State (as of Compose BOM 2024.06.00)
+> **Looking to change the fonts?** See **[`changing-fonts.md`](./changing-fonts.md)** — the single
+> source of truth for swapping fonts on **both** web and Android. This file just explains *how the
+> Android side loads them today*.
 
-The Android app currently uses **system fallback fonts**:
-- **Spectral** (target) → **Georgia** (system serif fallback)
-- **Hanken Grotesk** (target) → **Roboto** (system sans, default Android font)
+## How Android loads the brand fonts
 
-The typography rules (110% leading, tight tracking, alignment) are applied to whatever fonts render, so the UI is usable and readable. The web already loads Spectral and Hanken Grotesk via Google Fonts, ensuring web/mobile parity on browsers.
+`android/app/src/main/java/com/spiramindscape/android/ui/theme/Type.kt` defines two font families:
 
-## Why We Can't Use Google Fonts Yet on Android
+- **Headlines → Playfair Display (serif).** Shipped as a **bundled variable TTF**,
+  `android/app/src/main/res/font/playfair_display.ttf`. Each weight is a `FontVariation` on the
+  `wght` axis (supported on `minSdk 26+`), so a single file covers SemiBold + Bold. Bundling means
+  the brand serif renders **identically on every device, offline, and in Robolectric test renders** —
+  no network fetch and no Google Play Services dependency.
 
-The Jetpack Compose Google Fonts API (`androidx.compose.ui.text.googlefonts.GoogleFont`) was added in Compose BOM **2024.10.00** (released October 2024), but this project uses **2024.06.00** (June 2024).
+- **Body / labels → Roboto (sans).** `BodySans = FontFamily.Default`. Roboto is Android's
+  **system-default sans**, so the default family resolves to it with no bundled file and no download.
 
-Updating the Compose BOM to 2024.10+ would enable direct Google Fonts loading without external dependencies, but it requires:
-- Testing compatibility with existing Material 3 components
-- Verifying Apollo Kotlin GraphQL client compatibility
-- Validating with the rest of the Android build
+`SpiraTypography` assigns the serif to the display/headline/`titleLarge` scales and the sans to the
+body/label/title-chrome scales, then applies the brand **leading** (headlines 110%, body 130%) via
+`lineHeight` and the tight headline **tracking** via `letterSpacing`. Those numbers are
+font-independent — they stay when the font changes.
 
-## Future: Upgrading to Compose 2024.10+
+## Why bundled TTF instead of downloadable Google Fonts?
 
-When the Compose BOM is upgraded, update `Type.kt` to this:
+The Jetpack Compose *downloadable* Google Fonts API (`androidx.compose.ui.text.googlefonts.GoogleFont`)
+fetches faces from a Google Play Services font provider at runtime. We deliberately **don't** use it
+for the headline serif because:
 
-```kotlin
-import androidx.compose.ui.text.googlefonts.GoogleFont
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
+- it needs the network on first run (and Play Services present), so the brand serif would flash a
+  fallback on cold start or fail entirely on a Play-less device; and
+- it **doesn't render in Robolectric/JVM test renders**, which our `VisualCheck*` pixel checks rely on.
 
-// Spectral serif for headlines (Google Fonts, Georgia fallback)
-private val HeadingSerif = FontFamily(
-    Font(GoogleFont("Spectral"), weight = FontWeight.SemiBold),
-    Font(GoogleFont("Spectral"), weight = FontWeight.Bold),
-)
+A bundled variable TTF avoids all of that. Roboto needs nothing at all because it's the system sans.
 
-// Hanken Grotesk sans for body/labels (Google Fonts, Roboto fallback)
-private val BodySans = FontFamily(
-    Font(GoogleFont("Hanken Grotesk"), weight = FontWeight.Normal),
-    Font(GoogleFont("Hanken Grotesk"), weight = FontWeight.Medium),
-    Font(GoogleFont("Hanken Grotesk"), weight = FontWeight.SemiBold),
-    Font(GoogleFont("Hanken Grotesk"), weight = FontWeight.Bold),
-)
-```
+## Verifying fonts on Android
 
-Then the app will:
-1. On cold start: fetch fonts from Google Fonts CDN (takes ~1–3 sec, cached after)
-2. On subsequent launches: use cached fonts (instant)
-3. If network unavailable: gracefully degrade to system fonts
-
-## Testing Fonts Locally (Without Google Fonts)
-
-The current system fonts work for all brand typography rules. To visually verify:
-
-- Launch the app: `./gradlew.bat :app:assembleDebug && adb install ...`
-- Navigate to **Goal Workspace** → any tab
-- Check that **headlines appear in a serif font** (Georgia on most devices)
-- Check that **body text appears in sans** (Roboto on Android)
-- The typography hierarchy (110%/130% leading, spacing) is correct regardless of which font faces render
-
-## Web (Already Done)
-
-The web app (`src/styles.css`) already loads Spectral and Hanken Grotesk from Google Fonts:
-
-```css
-@import url('https://fonts.googleapis.com/css2?family=Spectral:wght@600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
-
---font-heading: Spectral, Georgia, serif;
---font-sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-```
-
-So web users see the full Spectral + Hanken Grotesk experience already.
-
-## Implementation Checklist
-
-- [x] Update CLAUDE.md with new font names (Spectral + Hanken Grotesk)
-- [x] Web styles.css: Google Fonts @import + font-family updates
-- [x] Android Type.kt: Document upgrade path to Compose 2024.10+
-- [ ] **Future**: Upgrade Compose BOM to 2024.10+ and implement Google Fonts API
-- [ ] **Future**: Verify compatibility after Compose BOM upgrade
-- [ ] **Future**: Test fonts load and cache correctly on device
+- Build: `cd android && ./gradlew.bat :app:assembleDebug`
+- Render a `VisualCheck*` PNG (writes to `app/build/reports/visual/`) or screenshot the emulator
+  (`adb exec-out screencap`) and **look**: headlines must be the **serif** (Playfair Display), body
+  the **sans** (Roboto). (CLAUDE.md rule #4 — existence assertions lie; verify pixels.)
+- Ship it: `./gradlew.bat distributeDebug -PreleaseNotes="…"`.
 
 ## References
 
-- [Jetpack Compose Google Fonts](https://developer.android.com/jetpack/compose/text/fonts#google-fonts) (requires Compose 2024.10+)
-- [Google Fonts](https://fonts.google.com)
-- [Compose BOM Release Notes](https://developer.android.com/jetpack/androidx/releases/compose-bom)
-- Spira brand design system: `CLAUDE.md` → Typography section
+- Swap procedure (web + Android): [`changing-fonts.md`](./changing-fonts.md)
+- Brand typography rules: `CLAUDE.md` → Brand design system → Typography
+- [Jetpack Compose fonts](https://developer.android.com/jetpack/compose/text/fonts)
+- [Downloadable Google Fonts in Compose](https://developer.android.com/jetpack/compose/text/fonts#downloadable-fonts) (intentionally not used here)
