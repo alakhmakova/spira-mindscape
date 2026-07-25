@@ -158,8 +158,25 @@ public class GoalService {
             validateOptionText(normalized);
             option.setText(normalized);
         }
-        if (input.selected() != null) option.setSelected(input.selected());
-        return optionRepository.save(option);
+        // Resolve the final status from either the legacy `selected` boolean or the
+        // `status` string (status wins if both are sent). Then keep `selected` in sync and
+        // enforce that "active" is single-select across the goal (radio behaviour).
+        String newStatus = option.getStatus();
+        if (input.selected() != null) {
+            newStatus = input.selected()
+                    ? "active"
+                    : ("active".equals(newStatus) ? "none" : newStatus);
+        }
+        if (input.status() != null) {
+            newStatus = normalizeOptionStatus(input.status());
+        }
+        option.setStatus(newStatus);
+        option.setSelected("active".equals(newStatus));
+        Option saved = optionRepository.save(option);
+        if ("active".equals(newStatus)) {
+            deselectOtherActiveOptions(goalId, optionId);
+        }
+        return saved;
     }
 
     @Transactional
@@ -167,9 +184,28 @@ public class GoalService {
         findById(goalId);
         Option selected = getOption(goalId, optionId);
         List<Option> all = optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(goalId);
-        all.forEach(o -> o.setSelected(o.getId().equals(optionId)));
+        all.forEach(o -> {
+            boolean chosen = o.getId().equals(optionId);
+            o.setSelected(chosen);
+            if (chosen) {
+                o.setStatus("active");
+            } else if ("active".equals(o.getStatus())) {
+                o.setStatus("none");
+            }
+        });
         optionRepository.saveAll(all);
         return selected;
+    }
+
+    /** Clear any OTHER option that is still "active", so only one option is active per goal. */
+    private void deselectOtherActiveOptions(Long goalId, Long keepOptionId) {
+        for (Option o : optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(goalId)) {
+            if (!o.getId().equals(keepOptionId) && "active".equals(o.getStatus())) {
+                o.setStatus("none");
+                o.setSelected(false);
+                optionRepository.save(o);
+            }
+        }
     }
 
     @Transactional
@@ -220,6 +256,17 @@ public class GoalService {
             throw new IllegalArgumentException(
                     "Option text must be " + MAX_OPTION_TEXT_LENGTH + " characters or fewer");
         }
+    }
+
+    private static final java.util.Set<String> OPTION_STATUSES =
+            java.util.Set.of("none", "active", "good_idea", "didnt_work");
+
+    private String normalizeOptionStatus(String status) {
+        String normalized = status == null ? "none" : status.trim();
+        if (!OPTION_STATUSES.contains(normalized)) {
+            throw new IllegalArgumentException("Invalid option status: " + status);
+        }
+        return normalized;
     }
 
     private String normalizeRequiredText(String value, String message) {

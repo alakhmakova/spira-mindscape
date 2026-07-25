@@ -1,8 +1,70 @@
-@import url('https://fonts.googleapis.com/css2?family=Spectral:wght@600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&family=Roboto:wght@400;500;700&display=swap');
 
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+
+/* ── Gusto brand fonts (GCentra body + ITC Clearface headings) ───────────────────────
+ * These are LICENSED fonts — drop the files into `public/fonts/` (see public/fonts/README.md)
+ * and they activate automatically. Until the files exist these @font-face src's 404 and the
+ * app falls back to the loaded Roboto / Playfair Display faces (same as before), so nothing
+ * breaks. `local(...)` is tried first so a machine with the font installed skips the fetch.
+ */
+@font-face {
+  font-family: "GCentra";
+  src:
+    local("GCentra"), local("GCentra-Regular"),
+    url("/fonts/GCentra-Regular.woff2") format("woff2"),
+    url("/fonts/GCentra-Regular.otf") format("opentype"),
+    url("/fonts/GCentra-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "GCentra";
+  src:
+    local("GCentra Medium"), local("GCentra-Medium"),
+    url("/fonts/GCentra-Medium.woff2") format("woff2"),
+    url("/fonts/GCentra-Medium.otf") format("opentype"),
+    url("/fonts/GCentra-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "GCentra";
+  src:
+    local("GCentra Bold"), local("GCentra-Bold"),
+    url("/fonts/GCentra-Bold.woff2") format("woff2"),
+    url("/fonts/GCentra-Bold.otf") format("opentype"),
+    url("/fonts/GCentra-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "ITC Clearface";
+  src:
+    local("ITC Clearface"), local("ITCClearface-Regular"),
+    url("/fonts/ITCClearface-Regular.woff2") format("woff2"),
+    url("/fonts/ITCClearface-Regular.otf") format("opentype"),
+    url("/fonts/ITCClearface-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "ITC Clearface";
+  src:
+    local("ITC Clearface Bold"), local("ITCClearface-Bold"),
+    url("/fonts/ITCClearface-Bold.woff2") format("woff2"),
+    url("/fonts/ITCClearface-Bold.otf") format("opentype"),
+    url("/fonts/ITCClearface-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -64,12 +126,14 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* Gusto brand fonts first; Roboto / Playfair Display are the loaded fallbacks that show
+     until the licensed GCentra / ITC Clearface files are added to public/fonts/. */
   --font-sans:
-    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    GCentra, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-display:
-    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    GCentra, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-heading:
-    Spectral, Georgia, serif;
+    "ITC Clearface", "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --shadow-soft: 0 1px 2px 0 oklch(0.2 0 0 / 0.04);
@@ -173,6 +237,8 @@
   .font-heading {
     font-family: var(--font-heading);
     font-weight: 600;
+    /* Brand rule: headline leading = 110% (Playfair Display serif). */
+    line-height: 1.1;
   }
   .font-mono {
     font-family: var(--font-mono);

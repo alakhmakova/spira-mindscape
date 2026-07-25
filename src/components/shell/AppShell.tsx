@@ -201,7 +201,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {!isAiOpen && (
                     <Link
                       to="/"
-                      className="text-[32px] font-extrabold tracking-normal text-white hover:text-white/90 transition-colors leading-none"
+                      className="text-[32px] font-extrabold tracking-[-0.01em] text-white hover:text-white/90 transition-colors leading-none"
                     >
                       spira
                     </Link>
@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       to="/"
                       className={cn(
-                        "text-[32px] font-extrabold tracking-normal transition-colors leading-none",
+                        "text-[32px] font-extrabold tracking-[-0.01em] transition-colors leading-none",
                         isDashboard
                           ? "text-white hover:text-white/90 sm:text-[#ea580c] sm:hover:text-[#ea580c]/90"
                           : "text-[#ea580c] hover:text-[#ea580c]/90",

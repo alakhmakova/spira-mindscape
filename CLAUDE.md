@@ -97,7 +97,7 @@ un-styled platform default:
   missing, **add it to the kit**, themed via `ui/theme/` — never scatter one-off raw widgets.
 
 The two surfaces mirror one design (see `specs/tech-stack.md` "Styling strategy" and
-`specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Spectral
+`specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Playfair Display
 headings. A raw default element breaks that coherence and is a review-blocking defect.
 
 ### 2. Inline inputs (the goal-page editing pattern)
@@ -200,13 +200,20 @@ values.
 
 These are the **actual fonts we use** (loaded via Google Fonts on both web and Android):
 
-| Role | Font (what ships) | Leading | Tracking |
+| Role | Font (brand → loaded fallback) | Leading | Tracking |
 |---|---|---|---|
-| Headline | **Spectral** (serif, Georgia fallback) — loaded via Google Fonts | 110% | tight |
-| Body | **Hanken Grotesk** (sans, -apple-system / BlinkMacSystemFont fallback) — loaded via Google Fonts | 130% | 0 |
+| Headline | **ITC Clearface** (serif) → **Playfair Display** → Georgia | 110% | tight |
+| Body | **GCentra** (sans) → **Roboto** → system sans | 130% | 0 |
 
-Both fonts load dynamically: web via `@import` in `styles.css`, Android via Jetpack Compose (see
-`docs/google-fonts-compose.md` for implementation).
+The brand faces are **ITC Clearface** (headlines) and **GCentra** (body) — Gusto's **licensed**
+brand fonts. They are the *primary* families in the tokens, but the font **files are not committed**
+(licensing). Until the files are added, the app renders the **fallbacks** — **Playfair Display** and
+**Roboto** — which ARE loaded (web: Google Fonts `@import`; Android: bundled Playfair TTF + system
+Roboto), so the UI always has a serif headline + sans body.
+
+**To activate the brand fonts:** drop the licensed files into **`public/fonts/`** (web — see
+`public/fonts/README.md`) and **`res/font/`** (Android). Full steps for any font swap live in
+**`docs/changing-fonts.md`**.
 
 - **Leading:** headline line-height = 110% of size; body = 130%. (Applied in `Type.kt` via
   `lineHeight`.)
@@ -221,13 +228,18 @@ Both fonts load dynamically: web via `@import` in `styles.css`, Android via Jetp
 
 ### Font loading strategy
 
-**Web** (`src/styles.css`): Google Fonts loaded via `@import url(...)` at the top; `--font-heading`
-and `--font-sans` vars reference Spectral and Hanken Grotesk directly. Fallbacks (Georgia, system
-sans) apply if Google Fonts unavailable.
+**Web** (`src/styles.css`): `@font-face` blocks declare **GCentra** and **ITC Clearface** pointing at
+`public/fonts/…` (served at `/fonts/…`); the `--font-heading` / `--font-sans` / `--font-display`
+tokens list the brand font first, then the fallback. Google Fonts `@import` (mirrored by the `<link>`
+in `index.html`) loads the fallbacks **Roboto** + **Playfair Display**. Until the licensed files exist
+in `public/fonts/`, the `@font-face` `src` URLs 404 and the fallbacks render — nothing breaks.
 
-**Android** (`Type.kt`): Jetpack Compose `googleFont()` API loads Spectral and Hanken Grotesk
-without local TTF bundling. Fonts gracefully degrade to system defaults if network unavailable.
-Implementation details and dependency setup are in `docs/google-fonts-compose.md`.
+**Android** (`Type.kt`): currently bundles **Playfair Display** (a variable TTF under `res/font/`) for
+headlines and uses `FontFamily.Default` (**Roboto**) for body — these are the fallbacks. To switch to
+the brand faces, bundle **ITC Clearface** + **GCentra** under `res/font/` and point `HeadingSerif` /
+`BodySans` at them (see `docs/changing-fonts.md`).
+
+Full step-by-step swap instructions (both surfaces) live in `docs/changing-fonts.md`.
 
 ### Colour
 
@@ -242,6 +254,21 @@ Two brand colours, exact hexes (full tint ramps are in `Color.kt`):
 
 Supporting neutrals (backgrounds & greys): **Ginger** (warm), **Parsnip** (warm-grey),
 **Salt** (neutral grey ramp `Salt-200…Salt-1000`), and **White**.
+
+**Full brand palette — exact hexes (the ONLY colours allowed in product UI). Do not invent
+intermediate shades; if you need a colour, pick one of these.**
+
+| Ramp | Values (light → dark) |
+|---|---|
+| **Guava** (coral accent) | `100 #FFF3EF` · `200 #FEEFE8` · `300 #FAC6B9` · `400 #F49582` · **`500 #F45D48`** · `600 #EF523C` |
+| **Kale** (teal — working primary) | `100 #F3FAFB` · `200 #E0F2F5` · `300 #8DD3D4` · `400 #2BABAD` · **`500 #0A8080`** · `600 #005961` |
+| **Ginger** (warm background) | `100 #FFFAF2` · `200 #FFF2DF` |
+| **Parsnip** (warm-grey background) | `100 #FBFAFA` · `200 #F8F5F2` |
+| **Salt** (neutral grey) | `200 #FBFAFA` · `300 #F4F4F3` · `400 #EAEAEA` · `500 #DCDCDC` · `600 #BABABC` · `700 #919197` · `800 #6C6C72` · `900 #525257` · `1000 #222525` |
+| **White** | `#FFFFFF` |
+
+Typography colour is **Salt-1000 `#222525`** on light. Ginger/Parsnip have only the two light
+tints shown (there is no darker Ginger/Parsnip — for a stronger tone use Salt or Kale).
 
 **Colour rules — do NOT break (these are the guidelines' "avoid" list):**
 
