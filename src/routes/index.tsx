@@ -123,7 +123,7 @@ function GoalsOverview() {
           <div>
             {viewMode === "cards" ? (
               <>
-                <h1 className="font-heading text-3xl leading-tight text-foreground sm:text-4xl">
+                <h1 className="font-heading text-3xl leading-[1.1] text-foreground sm:text-4xl">
                   All goals
                 </h1>
                 <p className="mt-1.5 text-sm text-muted-foreground sm:text-[15px]">
@@ -133,7 +133,7 @@ function GoalsOverview() {
               </>
             ) : (
               <>
-                <h2 className="font-heading text-3xl leading-tight text-foreground sm:text-4xl">
+                <h2 className="font-heading text-3xl leading-[1.1] text-foreground sm:text-4xl">
                   Timeline
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">

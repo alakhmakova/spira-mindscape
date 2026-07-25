@@ -77,6 +77,9 @@ type Option {
     id: ID!
     text: String!
     selected: Boolean!
+    # Mutually exclusive: "none" | "active" | "good_idea" | "didnt_work".
+    # `selected` mirrors status == "active" for backward compatibility.
+    status: String!
     position: Int!
     createdAt: String!
     updatedAt: String!
@@ -144,6 +147,8 @@ input UpdateGoalInput {
 input UpdateOptionInput {
     text: String
     selected: Boolean
+    # "none" | "active" | "good_idea" | "didnt_work" — mutually exclusive.
+    status: String
 }
 
 input CreateTargetInput {

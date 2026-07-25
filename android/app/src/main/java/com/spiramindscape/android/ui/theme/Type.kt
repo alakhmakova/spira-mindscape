@@ -12,32 +12,31 @@ import com.spiramindscape.android.R
 
 // Brand typography — the Spira brand guidelines (see CLAUDE.md → "Brand design system").
 //
-//  • Headlines: Spectral (serif).
-//  • Body/labels: Hanken Grotesk (sans).
+//  • Headlines: Playfair Display (serif).
+//  • Body/labels: Roboto (sans — Android's system default).
 //  • Leading: headlines 110%, body 130%.  Tracking: headlines slightly tighter.
 //
-// The font files are BUNDLED under res/font (no network / Play Services dependency), so the
-// brand faces render identically on every device and in test renders. See
-// docs/google-fonts-compose.md.
+// To change these fonts (both here and on web), follow docs/changing-fonts.md — change
+// ONLY the two FontFamily values below; the leading/tracking/weight rules are
+// font-independent and must stay.
 
-// Spectral serif for headlines — bundled static weights.
-private val HeadingSerif = FontFamily(
-    Font(R.font.spectral_semibold, FontWeight.SemiBold),
-    Font(R.font.spectral_bold, FontWeight.Bold),
-)
-
-// Hanken Grotesk sans for body/labels — a single bundled VARIABLE font; each weight is a
-// FontVariation on the same `wght` axis (supported on minSdk 26+).
+// Playfair Display serif for headlines — a single bundled VARIABLE font; each weight is a
+// FontVariation on the `wght` axis (supported on minSdk 26+). Bundled under res/font so the
+// brand serif renders identically on every device and in test renders (no network needed).
 @OptIn(ExperimentalTextApi::class)
-private val BodySans = FontFamily(
-    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { w ->
+private val HeadingSerif = FontFamily(
+    listOf(FontWeight.SemiBold, FontWeight.Bold).map { w ->
         Font(
-            R.font.hanken_grotesk,
+            R.font.playfair_display,
             weight = w,
             variationSettings = FontVariation.Settings(FontVariation.weight(w.weight)),
         )
     },
 )
+
+// Roboto sans for body/labels. Roboto is Android's system default sans, so FontFamily.Default
+// resolves to it on every device with no bundled file or network fetch required.
+private val BodySans = FontFamily.Default
 
 private val base = Typography()
 

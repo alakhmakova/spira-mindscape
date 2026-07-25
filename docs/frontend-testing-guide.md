@@ -16,7 +16,7 @@ There are three levels, same idea as the backend pyramid:
 |---|---|---|---|
 | **Logic unit test** | "Does this pure TypeScript function compute the right value?" | No | ✅ Exists (4 files) |
 | **Component test** | "When I render this UI and click it, does it behave correctly?" | No (a simulated DOM) | ❌ Not yet — the main gap |
-| **Browser E2E** | "Does the whole real app work in a real browser?" | Yes (Chromium etc.) | ❌ Not yet |
+| **Browser E2E** | "Does the whole real app work in a real browser?" | Yes (Chromium etc.) | ✅ Playwright (`e2e/`) |
 
 The tool we use is **Vitest** (already installed). It is the test runner — the frontend equivalent of JUnit on the backend. You write tests, Vitest runs them and reports pass/fail.
 
@@ -167,13 +167,59 @@ Open the React components (the `.tsx` files under `src/`). Good first targets ar
 
 ---
 
-## 5. The top: browser E2E (later, and few)
+## 5. The top: browser E2E — **Playwright** (installed, runs in CI)
 
-A browser E2E test launches the **real app in a real browser** and clicks through it. The tool would be **Playwright** (recommended today) or Cypress — neither is installed yet.
+A browser E2E test launches the **real app in a real browser** and clicks through it. Spira uses
+**Playwright** (`@playwright/test`). It is the frontend twin of the Python `tests-e2e/` suite:
+slow, broad, and you want **very few** of them — only journeys that nothing lower can prove.
 
-This is the frontend twin of the Python `tests-e2e/` suite: slow, broad, and you want **very few** of them — only the most important journeys, e.g. "open the app → create a goal → add a target → see progress update."
+### Where it lives
 
-Add these only after component tests exist, and keep them to a handful. They are the slowest and most fragile, so they earn their place only for the critical end-to-end flow.
+```
+playwright.config.ts     # config: baseURL, retries, starts the Vite dev server
+e2e/
+  helpers.ts             # createGoal(), addOptions(), optionCards()
+  options.spec.ts        # active radio, delete, drag-and-drop reorder
+  pdf.spec.ts            # PDF resource renders inline (PDF.js canvas)
+  image.spec.ts          # image resource opens fullscreen and zooms
+  fixtures/              # sample.pdf, sample.png used by the specs
+```
+
+**Vitest does not run these.** `vite.config.ts` excludes `e2e/**` from the Vitest `test.exclude`,
+because both use `*.spec.ts`. `npm test` = Vitest; `npm run test:e2e` = Playwright.
+
+### Running them locally
+
+The stack must be up first (Docker Postgres + backend on the `local` profile + Vite — see the
+`run-spira` skill or the README). Then:
+
+```bash
+npm run test:e2e                 # headless
+npx playwright test --headed     # watch the browser drive the app
+npx playwright test pdf.spec.ts  # one file
+```
+
+Locally the backend's `local` profile auto-logs-in `dev@local`, so no sign-in step is needed.
+
+### How they run in CI
+
+The `web-e2e` job in `.github/workflows/ci.yml` mirrors the Python E2E job: a pgvector Postgres
+service + the backend JAR started under the **`e2e` profile**. That profile has **no** auto-login —
+`E2eTestAuthFilter` authenticates a request carrying `X-E2E-Auth: <email>`. So CI sets
+`SPIRA_E2E_AUTH=e2e@test.local`, and `playwright.config.ts` turns that into `extraHTTPHeaders` on
+every browser request, which makes the SPA load authenticated. Chromium only
+(`npx playwright install --with-deps chromium`); the report is uploaded as an artifact.
+
+### What belongs here (and what does not)
+
+Good E2E candidates are **interactions no lower level can prove**: the Options drag-and-drop
+reorder (real pointer events + a DOM that reorders mid-drag), and the inline PDF/image viewers
+(real canvas rendering). Do **not** re-prove the progress formula or API error mapping here — those
+belong in `progress.test.ts` / `api.test.ts`.
+
+> The suite runs with `retries: 2`. The app polls for goals in the background, which can re-render
+> and detach an element mid-interaction; retrying that is preferable to weakening the product
+> behaviour. If a test needs more than retries to be stable, fix the selector/wait, don't add sleeps.
 
 ---
 
@@ -214,9 +260,15 @@ If those two tests pass, you've covered the single biggest gap in the frontend a
 
 ```powershell
 # from the repo root
-npm.cmd test                                   # run all frontend tests once
+npm.cmd test                                   # run all frontend tests once (Vitest; excludes e2e/)
 npm.cmd test -- --run src/lib/spira/api.test.ts  # run one file
 npm.cmd run build                              # type-check + build (CI runs this too)
+
+# browser E2E (Playwright) — needs the full local stack running first
+npm.cmd run test:e2e                           # all specs, headless
+npx playwright test --headed                   # watch it drive the browser
 ```
 
-The frontend tests also run automatically in CI (the "Frontend tests and build" job) — see `docs/github-actions-ci.md`.
+Both run automatically in CI: the **"Frontend tests and build"** job (Vitest + audit + build) and
+the **"Web E2E (Playwright)"** job (browser suite against a real backend) — see
+`docs/github-actions-ci.md`.

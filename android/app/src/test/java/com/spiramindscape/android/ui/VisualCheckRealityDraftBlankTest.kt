@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.spiramindscape.android.data.goals.GoalDetail
@@ -38,9 +39,10 @@ class VisualCheckRealityDraftBlankTest : VisualCheckTestBase() {
         compose.onNodeWithText("Reality").performClick()
         compose.waitForIdle()
 
-        // "Add new action" opens the "New action" form (a sheet); Cancel dismisses it, so an
-        // aborted create is never a dead end.
-        compose.onNodeWithText("Add new action").performClick()
+        // The Guava "+" FAB opens the "New action" form (a sheet); Cancel dismisses it, so an
+        // aborted create is never a dead end. The FAB is icon-only, so it is addressed by its
+        // contentDescription — there is no longer an "Add new action" text row.
+        compose.onNodeWithContentDescription("Add action").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("New action").assertIsDisplayed()
         compose.onNodeWithText("Add action").assertIsDisplayed()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   FileText,
@@ -13,8 +13,10 @@ import {
   ArrowUpRight,
   Pencil,
   ZoomIn,
+  ZoomOut,
   X,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import type { Goal, Resource, ResourceInput } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
@@ -24,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
+import { PdfViewer } from "@/components/spira/PdfViewer";
 import { RichTextEditor } from "@/components/spira/RichTextEditor";
 import {
   DropdownMenu,
@@ -217,6 +220,7 @@ function useCopied() {
 
 export function ResourcesList({ goal }: { goal: Goal }) {
   const removeResource = useSpira((s) => s.removeResource);
+  const loadResourceFile = useSpira((s) => s.loadResourceFile);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
   if (goal.resources.length === 0) {
@@ -234,6 +238,9 @@ export function ResourcesList({ goal }: { goal: Goal }) {
           <ResourceCard
             key={r.id}
             resource={r}
+            // File contents are not in the goals list (lazy) — fetch them on demand for the
+            // card's copy/download actions.
+            loadFile={() => loadResourceFile(goal.id, r.id)}
             onOpen={() => {
               if (r.type === "link") window.open(r.url, "_blank");
               else setPreviewId(r.id);
@@ -258,10 +265,12 @@ function ResourceCard({
   resource: r,
   onOpen,
   onRemove,
+  loadFile,
 }: {
   resource: Resource;
   onOpen: () => void;
   onRemove: () => void;
+  loadFile: () => Promise<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = typeMeta[r.type].icon;
@@ -274,7 +283,10 @@ function ResourceCard({
     } else if (r.type === "link") {
       run(() => copyPlainText(r.url));
     } else if (r.type === "file" && r.mime.startsWith("image/")) {
-      run(() => copyImageToClipboard(r.dataUrl));
+      run(async () => {
+        const dataUrl = r.dataUrl || (await loadFile());
+        if (dataUrl) await copyImageToClipboard(dataUrl);
+      });
     } else if (r.type === "email" && r.email) {
       run(() => copyPlainText(r.email!));
     }
@@ -287,7 +299,10 @@ function ResourceCard({
       const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       downloadBlob(blob, `${r.title || "note"}.txt`);
     } else if (r.type === "file") {
-      downloadDataUrl(r.dataUrl, r.title);
+      void (async () => {
+        const dataUrl = r.dataUrl || (await loadFile());
+        if (dataUrl) downloadDataUrl(dataUrl, r.title);
+      })();
     }
   };
 
@@ -511,6 +526,18 @@ function PreviewBody({
 }) {
   const { copied, run } = useCopied();
   const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const loadResourceFile = useSpira((s) => s.loadResourceFile);
+
+  // File contents are excluded from the goals list (lazy) — pull them when a file is opened.
+  const isFile = resource.type === "file";
+  const hasFileData = isFile && !!resource.dataUrl;
+  useEffect(() => {
+    if (isFile && !hasFileData) void loadResourceFile(goalId, resource.id);
+  }, [isFile, hasFileData, goalId, resource.id, loadResourceFile]);
+
+  const ensureFile = async () =>
+    (resource.type === "file" && resource.dataUrl) ||
+    (await loadResourceFile(goalId, resource.id));
 
   if (isEditingEmail) {
     return (
@@ -542,7 +569,10 @@ function PreviewBody({
     } else if (resource.type === "link") {
       run(() => copyPlainText(resource.url));
     } else if (resource.type === "file" && resource.mime.startsWith("image/")) {
-      run(() => copyImageToClipboard(resource.dataUrl, resource.title));
+      run(async () => {
+        const dataUrl = await ensureFile();
+        if (dataUrl) await copyImageToClipboard(dataUrl, resource.title);
+      });
     }
   };
 
@@ -552,7 +582,10 @@ function PreviewBody({
       const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       downloadBlob(blob, `${resource.title || "note"}.txt`);
     } else if (resource.type === "file") {
-      downloadDataUrl(resource.dataUrl, resource.title);
+      void (async () => {
+        const dataUrl = await ensureFile();
+        if (dataUrl) downloadDataUrl(dataUrl, resource.title);
+      })();
     }
   };
 
@@ -744,11 +777,26 @@ function PreviewBody({
         )}
         {resource.type === "file" && (
           <>
-            {resource.mime.startsWith("image/") && (
-              <ZoomableImage src={resource.dataUrl} alt={resource.title} />
-            )}
-            {resource.mime === "application/pdf" && (
-              <PdfViewer dataUrl={resource.dataUrl} title={resource.title} />
+            {/* Contents load lazily — show a spinner until the bytes arrive. */}
+            {!resource.dataUrl ? (
+              <div className="grid flex-1 place-items-center py-10 text-muted-foreground">
+                <Loader2
+                  className="h-6 w-6 animate-spin"
+                  aria-label="Loading file"
+                />
+              </div>
+            ) : (
+              <>
+                {resource.mime.startsWith("image/") && (
+                  <ZoomableImage src={resource.dataUrl} alt={resource.title} />
+                )}
+                {resource.mime === "application/pdf" && (
+                  <PdfViewer
+                    dataUrl={resource.dataUrl}
+                    title={resource.title}
+                  />
+                )}
+              </>
             )}
           </>
         )}
@@ -775,53 +823,59 @@ function PreviewBody({
   );
 }
 
-/* ── PDF viewer (blob URL for iframe) ────────────── */
-
-function PdfViewer({ dataUrl, title }: { dataUrl: string; title: string }) {
-  const blobUrl = useMemo(() => {
-    try {
-      const byteString = atob(dataUrl.split(",")[1]);
-      const mimeString = dataUrl.split(",")[0].split(":")[1].split(";")[0];
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
-      }
-      const blob = new Blob([ab], { type: mimeString });
-      return URL.createObjectURL(blob);
-    } catch {
-      return dataUrl;
-    }
-  }, [dataUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (blobUrl !== dataUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl, dataUrl]);
-
-  return (
-    <div className="relative flex-1 min-h-0">
-      <iframe
-        src={blobUrl}
-        className="absolute inset-0 w-full h-full rounded-md border hairline bg-secondary"
-        title={title}
-      />
-    </div>
-  );
-}
-
 /* ── Zoomable image (tap to fullscreen on mobile) ── */
+
+const IMG_ZOOM_MIN = 1;
+const IMG_ZOOM_MAX = 5;
+const IMG_ZOOM_STEP = 0.5;
 
 function ZoomableImage({ src, alt }: { src: string; alt: string }) {
   const [zoomed, setZoomed] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const pan = useRef<{
+    sx: number;
+    sy: number;
+    ox: number;
+    oy: number;
+  } | null>(null);
+
+  const open = () => {
+    setScale(1);
+    setPos({ x: 0, y: 0 });
+    setZoomed(true);
+  };
+  const close = () => setZoomed(false);
+  const zoomIn = () =>
+    setScale((s) => Math.min(IMG_ZOOM_MAX, +(s + IMG_ZOOM_STEP).toFixed(2)));
+  const zoomOut = () =>
+    setScale((s) => {
+      const next = Math.max(IMG_ZOOM_MIN, +(s - IMG_ZOOM_STEP).toFixed(2));
+      if (next === IMG_ZOOM_MIN) setPos({ x: 0, y: 0 });
+      return next;
+    });
+
+  // Drag to pan once zoomed in (works for mouse + touch via pointer events).
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (scale <= 1) return;
+    e.stopPropagation();
+    pan.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!pan.current) return;
+    setPos({
+      x: pan.current.ox + (e.clientX - pan.current.sx),
+      y: pan.current.oy + (e.clientY - pan.current.sy),
+    });
+  };
+  const onPointerUp = () => {
+    pan.current = null;
+  };
 
   return (
     <>
-      <div
-        className="relative cursor-zoom-in group"
-        onClick={() => setZoomed(true)}
-      >
+      <div className="relative cursor-zoom-in group" onClick={open}>
         <img
           src={src}
           alt={alt}
@@ -835,22 +889,66 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
       </div>
       {zoomed && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
-          onClick={() => setZoomed(false)}
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center overflow-hidden"
+          onClick={close}
         >
           <button
-            onClick={() => setZoomed(false)}
+            onClick={close}
             className="absolute top-4 right-4 z-10 h-10 w-10 grid place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
+
+          {/* Zoom toolbar */}
+          <div
+            className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-white/10 px-1 py-1 text-white backdrop-blur"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={zoomOut}
+              disabled={scale <= IMG_ZOOM_MIN}
+              aria-label="Zoom out"
+              className="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-white/20 disabled:opacity-30"
+            >
+              <ZoomOut className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => {
+                setScale(1);
+                setPos({ x: 0, y: 0 });
+              }}
+              aria-label="Reset zoom"
+              className="h-9 w-14 rounded-full text-xs font-medium tabular-nums transition-colors hover:bg-white/20"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={scale >= IMG_ZOOM_MAX}
+              aria-label="Zoom in"
+              className="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-white/20 disabled:opacity-30"
+            >
+              <ZoomIn className="h-5 w-5" />
+            </button>
+          </div>
+
           <img
             src={src}
             alt={alt}
-            className="max-w-full max-h-full object-contain touch-pinch-zoom"
-            style={{ touchAction: "pinch-zoom" }}
+            draggable={false}
+            className="max-w-full max-h-full object-contain select-none"
+            style={{
+              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+              transition: pan.current ? "none" : "transform 0.15s ease",
+              cursor: scale > 1 ? (pan.current ? "grabbing" : "grab") : "auto",
+              touchAction: "none",
+            }}
             onClick={(e) => e.stopPropagation()}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
           />
         </div>
       )}
@@ -919,9 +1017,19 @@ function ResourcePreview({
       );
     }
 
+    // A PDF needs a DEFINITE drawer height so its flex-1 canvas area can fill (otherwise
+    // the height collapses and the document shows as a thin strip). Other file types
+    // (images, email) size to their content, capped at 92vh.
+    const isPdf =
+      resource?.type === "file" && resource.mime === "application/pdf";
     return (
       <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
-        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
+        <DrawerContent
+          className={cn(
+            "px-0 pb-6 flex flex-col",
+            isPdf ? "h-[92vh]" : "max-h-[92vh]",
+          )}
+        >
           {Body}
         </DrawerContent>
       </Drawer>
@@ -1371,7 +1479,10 @@ function Form({
         type: "file",
         title: title.trim() || fileData.name,
         mime: fileData.mime,
-        dataUrl: fileData.dataUrl,
+        // File contents load lazily, so an existing resource being edited may have an empty
+        // dataUrl here. Only send it when we actually have bytes (i.e. the user picked a new
+        // file) — otherwise omit it so the stored file is left untouched rather than blanked.
+        ...(fileData.dataUrl ? { dataUrl: fileData.dataUrl } : {}),
       };
     } else {
       if (!email.trim()) return;

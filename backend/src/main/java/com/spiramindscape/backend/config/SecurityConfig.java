@@ -86,6 +86,14 @@ public class SecurityConfig {
                         + "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                         + "font-src 'self' https://fonts.gstatic.com; "
                         + "img-src 'self' data: https:; "
+                        // Let the SPA preview file resources (e.g. PDFs) it renders in an
+                        // <iframe>/<object> from an in-memory blob: URL it created itself.
+                        // blob: is same-origin and app-generated, so this stays tight.
+                        + "frame-src 'self' blob:; "
+                        + "object-src 'self' blob:; "
+                        // PDF.js renders resource PDFs on a canvas via a same-origin web
+                        // worker (blob: is its fallback), so allow workers from self/blob.
+                        + "worker-src 'self' blob:; "
                         + "connect-src 'self'; "
                         + "frame-ancestors 'none'; "
                         + "base-uri 'self'; "

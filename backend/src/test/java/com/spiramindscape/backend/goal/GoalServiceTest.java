@@ -247,7 +247,7 @@ class GoalServiceTest {
         when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
 
-        assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("   ", null)))
+        assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("   ", null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Option text is required");
 
@@ -264,7 +264,7 @@ class GoalServiceTest {
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
         String maxText = "A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH);
 
-        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput(maxText, null));
+        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput(maxText, null, null));
 
         assertThat(result.getText()).isEqualTo(maxText);
         verify(optionRepository).save(option);
@@ -279,7 +279,7 @@ class GoalServiceTest {
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
 
         assertThatThrownBy(() -> goalService.updateOption(1L, 10L,
-                new UpdateOptionInput("A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1), null)))
+                new UpdateOptionInput("A".repeat(GoalService.MAX_OPTION_TEXT_LENGTH + 1), null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Option text must be " + GoalService.MAX_OPTION_TEXT_LENGTH + " characters or fewer");
 
@@ -295,7 +295,7 @@ class GoalServiceTest {
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput("New text", null));
+        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput("New text", null, null));
 
         assertThat(result.getText()).isEqualTo("New text");
         assertThat(result.getSelected()).isFalse();
@@ -311,7 +311,7 @@ class GoalServiceTest {
         when(optionRepository.findById(10L)).thenReturn(Optional.of(option));
         when(optionRepository.save(any(Option.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput(null, true));
+        Option result = goalService.updateOption(1L, 10L, new UpdateOptionInput(null, true, null));
 
         assertThat(result.getSelected()).isTrue();
         assertThat(result.getText()).isEqualTo("Option 10");
@@ -653,7 +653,7 @@ class GoalServiceTest {
         when(goalRepository.findByIdAndUserId(1L, TEST_USER_ID)).thenReturn(Optional.of(goal));
         when(optionRepository.findById(10L)).thenReturn(Optional.of(otherGoalOption));
 
-        assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("Updated", null)))
+        assertThatThrownBy(() -> goalService.updateOption(1L, 10L, new UpdateOptionInput("Updated", null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Option does not belong to goal");
     }

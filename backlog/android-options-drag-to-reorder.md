@@ -1,7 +1,7 @@
 # Android: Options cards should support drag-and-drop reordering
 
 - **ID:** BUG-010 (enhancement — tracked here at the user's request)
-- **Status:** 🐞 Open
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
 - **Reported by:** User
 - **Area:** Android — `ui/goals/GoalWorkspaceScreen.kt` (`OptionsTabContent`, `OptionCard`)
 - **Severity:** Low (nice-to-have UX; a working alternative already ships)
@@ -61,5 +61,24 @@ drag handle icon, or distinguishing "long-press-then-hold-still" from "long-pres
 
 ## Resolution
 
-Not yet implemented — deferred at the user's request; manual number-entry reordering ships
-instead as the initial mechanism (2026-07-18).
+✅ **Implemented on Android** (and subsequently on web too).
+
+- **Android** (`ui/goals/GoalWorkspaceScreen.kt`): `OptionCard` drags via
+  `detectDragGesturesAfterLongPress` (long-press to pick up, then drag), with the card lifted
+  using `zIndex` + `Modifier.offset`. `OptionsTabContent` holds the live `order` / `draggingId`
+  state, shuffles neighbours during the drag, and commits once on release through
+  `GoalWorkspaceViewModel.reorderOptions(id, index)` → `ReorderOptionMutation`. A short tap still
+  focuses the card text for inline editing, so the two gestures coexist. The number-entry
+  reordering it replaced is gone (the "Option N" number is now display-only).
+- **Web** (`src/components/spira/OptionsList.tsx`): the same interaction model, but grabbed via a
+  dedicated grip handle (the card body hosts an inline text field, so press-and-drag there would
+  fight text selection), with ↑/↓ on the focused handle as a keyboard fallback. This replaced the
+  old ↑/↓ arrow buttons.
+
+Both surfaces are documented in **`docs/drag-and-drop-options.md`** — including what each replaced
+and the `pointer-capture` bug that made web down-drags freeze (fixed by attaching
+`pointermove`/`pointerup` to `window` instead of the handle).
+
+Verification: web — `e2e/options.spec.ts` "dragging a card downward reorders it" (Playwright mouse
+drag) passes; Android — built and exercised manually on the emulator, `VisualCheckOptionsTabTest`
+renders the tab.
