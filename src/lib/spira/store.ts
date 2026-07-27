@@ -574,47 +574,37 @@ export const useSpira = create<State>()((set, get) => ({
   },
 
   selectOption: (id, optId) => {
-    // "active" is single-select across the goal (radio): the chosen option becomes
-    // active, and any other option that was active reverts to "none".
+    // The "active" radio is single-select across the goal, and INDEPENDENT of the thumb
+    // lean (`status`): toggle only `selected`; each option keeps its own thumb.
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
-        options: goal.options.map((option) => {
-          const chosen = option.id === optId;
-          return {
-            ...option,
-            selected: chosen,
-            status: chosen
-              ? ("active" as OptionStatus)
-              : option.status === "active"
-                ? ("none" as OptionStatus)
-                : option.status,
-          };
-        }),
+        options: goal.options.map((option) => ({
+          ...option,
+          selected: option.id === optId,
+        })),
       })),
       syncError: undefined,
     }));
 
     if (id.startsWith("local-") || optId.startsWith("local-")) return;
+    // No refreshGoals() here: the optimistic update above already enforces single-active, and
+    // a refetch could race a still-in-flight thumb (setOptionStatus) write over a slow link and
+    // revert it — the two must stay independent. The server enforces single-active on its side.
     void spiraApi
       .selectOption(id, optId)
-      .then(() => get().refreshGoals())
       .catch((error) => setSyncError(set, error));
   },
 
   setOptionStatus: (id, optId, status) => {
-    // "active" is radio behaviour — delegate to selectOption. The other statuses
-    // (good_idea / didnt_work / none) are per-card: set this option and clear its
-    // active flag; the single-valued status makes the three mutually exclusive.
-    if (status === "active") {
-      get().selectOption(id, optId);
-      return;
-    }
+    // The thumb lean (good_idea / didnt_work / none) is per-card and INDEPENDENT of the
+    // "active" radio (`selected`) — set the status only, leaving `selected` untouched. The
+    // single-valued status keeps the three thumbs mutually exclusive. "active" is not a thumb.
     set((state) => ({
       goals: updateGoalInList(state.goals, id, (goal) => ({
         ...goal,
         options: goal.options.map((option) =>
-          option.id === optId ? { ...option, status, selected: false } : option,
+          option.id === optId ? { ...option, status } : option,
         ),
       })),
       syncError: undefined,

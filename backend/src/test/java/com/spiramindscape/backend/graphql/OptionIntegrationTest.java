@@ -983,7 +983,7 @@ class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
                                 "NOT_FOUND".equals(error.getExtensions().get("classification"))));
     }
 
-    // --- option status (active / good_idea / didnt_work / none) --------------
+    // --- option thumb status (good_idea / didnt_work / none), independent of the radio -----
 
     @Test
     @DisplayName("New option starts with status 'none' and selected=false")
@@ -1038,14 +1038,11 @@ class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
     }
 
     @Test
-    @DisplayName("updateOption status='active' makes it selected and clears any other active option's status")
-    void activeStatusIsSingleSelectAcrossGoal() {
-        String firstId  = addOption(goalId, "First strategy");
-        String secondId = addOption(goalId, "Second strategy");
-        selectOption(goalId, firstId); // first becomes active
-
-        // Make the second one active via status; the first must revert to none.
-        updateStatus(secondId, "active");
+    @DisplayName("A thumb (status) and the active radio (selected) are independent — both can be set at once")
+    void thumbAndActiveAreIndependent() {
+        String optionId = addOption(goalId, "One strong idea");
+        selectOption(goalId, optionId);   // active radio on
+        updateStatus(optionId, "good_idea"); // thumbs-up — must NOT clear the radio
 
         graphQlTester.document("""
                         query($goalId: ID!) {
@@ -1054,36 +1051,58 @@ class OptionIntegrationTest extends BaseGraphQlIntegrationTest {
                         """)
                 .variable("goalId", goalId)
                 .execute()
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("good_idea")
+                .path("optionsByGoal[0].selected").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("selectOption toggles only the radio; each option keeps its own thumb")
+    void selectOptionPreservesThumbs() {
+        String firstId  = addOption(goalId, "First strategy");
+        String secondId = addOption(goalId, "Second strategy");
+        updateStatus(firstId, "good_idea");   // a thumb that must survive
+        updateStatus(secondId, "didnt_work"); // another thumb that must survive
+        selectOption(goalId, firstId);
+
+        selectOption(goalId, secondId); // move the radio to the second option
+
+        graphQlTester.document("""
+                        query($goalId: ID!) {
+                          optionsByGoal(goalId: $goalId) { id status selected }
+                        }
+                        """)
+                .variable("goalId", goalId)
+                .execute()
+                // first loses the radio but keeps its thumb
                 .path("optionsByGoal[0].id").entity(String.class).isEqualTo(firstId)
-                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("none")
+                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("good_idea")
                 .path("optionsByGoal[0].selected").entity(Boolean.class).isEqualTo(false)
+                // second gains the radio and keeps its own thumb
                 .path("optionsByGoal[1].id").entity(String.class).isEqualTo(secondId)
-                .path("optionsByGoal[1].status").entity(String.class).isEqualTo("active")
+                .path("optionsByGoal[1].status").entity(String.class).isEqualTo("didnt_work")
                 .path("optionsByGoal[1].selected").entity(Boolean.class).isEqualTo(true);
     }
 
     @Test
-    @DisplayName("selectOption sets status to 'active'; deselected options that were active revert to 'none'")
-    void selectOptionSyncsStatus() {
-        String firstId  = addOption(goalId, "First strategy");
-        String secondId = addOption(goalId, "Second strategy");
-        updateStatus(firstId, "good_idea"); // a non-active label that must survive
-
-        selectOption(goalId, secondId);
-
-        graphQlTester.document("""
-                        query($goalId: ID!) {
-                          optionsByGoal(goalId: $goalId) { id status selected }
+    @DisplayName("'active' is no longer a valid status value — it lives in `selected`")
+    void rejectsActiveStatus() {
+        String optionId = addOption(goalId, "An idea");
+        GraphQlTester.Response response = graphQlTester.document("""
+                        mutation($goalId: ID!, $optionId: ID!) {
+                          updateOption(goalId: $goalId, optionId: $optionId, input: { status: "active" }) {
+                            id
+                          }
                         }
                         """)
                 .variable("goalId", goalId)
-                .execute()
-                // first keeps its good_idea label (only active options are cleared)
-                .path("optionsByGoal[0].id").entity(String.class).isEqualTo(firstId)
-                .path("optionsByGoal[0].status").entity(String.class).isEqualTo("good_idea")
-                .path("optionsByGoal[1].id").entity(String.class).isEqualTo(secondId)
-                .path("optionsByGoal[1].status").entity(String.class).isEqualTo("active")
-                .path("optionsByGoal[1].selected").entity(Boolean.class).isEqualTo(true);
+                .variable("optionId", optionId)
+                .execute();
+
+        response.errors()
+                .satisfy(errors -> assertThat(errors)
+                        .anyMatch(error ->
+                                error.getMessage().contains("Invalid option status") &&
+                                "ValidationError".equals(error.getExtensions().get("classification"))));
     }
 
     @Test

@@ -158,22 +158,20 @@ public class GoalService {
             validateOptionText(normalized);
             option.setText(normalized);
         }
-        // Resolve the final status from either the legacy `selected` boolean or the
-        // `status` string (status wins if both are sent). Then keep `selected` in sync and
-        // enforce that "active" is single-select across the goal (radio behaviour).
-        String newStatus = option.getStatus();
+        // `selected` (the "active" radio) and `status` (the good_idea/didnt_work/none thumb
+        // lean) are INDEPENDENT — an option can be both active and thumbed. Apply each input
+        // separately; neither derives the other.
+        boolean becameActive = false;
         if (input.selected() != null) {
-            newStatus = input.selected()
-                    ? "active"
-                    : ("active".equals(newStatus) ? "none" : newStatus);
+            option.setSelected(input.selected());
+            becameActive = input.selected();
         }
         if (input.status() != null) {
-            newStatus = normalizeOptionStatus(input.status());
+            option.setStatus(normalizeOptionStatus(input.status()));
         }
-        option.setStatus(newStatus);
-        option.setSelected("active".equals(newStatus));
         Option saved = optionRepository.save(option);
-        if ("active".equals(newStatus)) {
+        if (becameActive) {
+            // "active" is single-select across the goal (radio behaviour) — clear the others.
             deselectOtherActiveOptions(goalId, optionId);
         }
         return saved;
@@ -184,24 +182,17 @@ public class GoalService {
         findById(goalId);
         Option selected = getOption(goalId, optionId);
         List<Option> all = optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(goalId);
-        all.forEach(o -> {
-            boolean chosen = o.getId().equals(optionId);
-            o.setSelected(chosen);
-            if (chosen) {
-                o.setStatus("active");
-            } else if ("active".equals(o.getStatus())) {
-                o.setStatus("none");
-            }
-        });
+        // Only toggle the "active" radio (`selected`). The thumb lean (`status`) is independent
+        // and must survive selection.
+        all.forEach(o -> o.setSelected(o.getId().equals(optionId)));
         optionRepository.saveAll(all);
         return selected;
     }
 
-    /** Clear any OTHER option that is still "active", so only one option is active per goal. */
+    /** Clear any OTHER option that is still active, so only one option is active per goal. */
     private void deselectOtherActiveOptions(Long goalId, Long keepOptionId) {
         for (Option o : optionRepository.findByGoalIdOrderByPositionAscCreatedAtAsc(goalId)) {
-            if (!o.getId().equals(keepOptionId) && "active".equals(o.getStatus())) {
-                o.setStatus("none");
+            if (!o.getId().equals(keepOptionId) && Boolean.TRUE.equals(o.getSelected())) {
                 o.setSelected(false);
                 optionRepository.save(o);
             }
@@ -258,8 +249,10 @@ public class GoalService {
         }
     }
 
+    // The thumb lean is independent of the "active" radio (`selected`), so "active" is NOT a
+    // status value — it lives in `selected`.
     private static final java.util.Set<String> OPTION_STATUSES =
-            java.util.Set.of("none", "active", "good_idea", "didnt_work");
+            java.util.Set.of("none", "good_idea", "didnt_work");
 
     private String normalizeOptionStatus(String status) {
         String normalized = status == null ? "none" : status.trim();
