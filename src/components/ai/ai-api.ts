@@ -13,6 +13,61 @@ function mutationHeaders(
   return { "X-XSRF-TOKEN": getCsrfToken(), ...extra };
 }
 
+/**
+ * Turns a failed `Response` into a short, human-readable message — never the raw
+ * body. The backend returns Spring **ProblemDetail** JSON (and Bean-Validation
+ * errors) on failure; dumping that JSON into a toast is meaningless to a user, so
+ * we pull out a readable field when there is one and otherwise map by status.
+ *
+ * - Validation errors (`400`/`422`) surface their `detail`/field message (e.g.
+ *   "apiKey must be between 8 and 512 characters") — these are already written
+ *   for humans.
+ * - `401`/`403` → a sign-in / permission hint.
+ * - `5xx` → a generic "try again" (the ProblemDetail `detail` for a 500 is just
+ *   "Something went wrong… Reference: <uuid>", which we deliberately hide).
+ * - A plain-text (non-JSON) body is safe to show as-is.
+ */
+async function friendlyError(res: Response, fallback: string): Promise<string> {
+  let body = "";
+  try {
+    body = await res.text();
+  } catch {
+    /* body already consumed / unavailable */
+  }
+
+  const trimmed = body.trim();
+  if (trimmed) {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const j = JSON.parse(trimmed) as {
+          detail?: string;
+          message?: string;
+          errors?: Array<{ defaultMessage?: string }>;
+          status?: number;
+        };
+        const fieldMsg = Array.isArray(j.errors) && j.errors[0]?.defaultMessage;
+        // Only trust `detail`/`message` for non-5xx — a 500's detail carries an
+        // internal reference id, not something the user can act on.
+        const problemMsg = res.status < 500 ? j.detail || j.message : undefined;
+        const msg = fieldMsg || problemMsg;
+        if (msg) return msg;
+      } catch {
+        /* not valid JSON — fall through to status mapping */
+      }
+    } else {
+      // Plain-text error body — safe to show directly.
+      return trimmed;
+    }
+  }
+
+  if (res.status === 401 || res.status === 403)
+    return "Your session expired. Please sign in again.";
+  if (res.status === 400 || res.status === 422) return fallback;
+  if (res.status >= 500)
+    return "Something went wrong on the server. Please try again.";
+  return fallback;
+}
+
 export type HistoryEntry = { role: "user" | "assistant"; content: string };
 
 export type StreamChatParams = {
@@ -178,8 +233,12 @@ export async function saveApiKey(
     body: JSON.stringify({ provider, apiKey, model: model ?? null }),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(body || `Failed to save key: ${res.status}`);
+    throw new Error(
+      await friendlyError(
+        res,
+        `Couldn't save the ${provider} key. Please try again.`,
+      ),
+    );
   }
   return res.json();
 }
@@ -194,7 +253,14 @@ export async function fetchProviderModels(provider: string): Promise<string[]> {
   const res = await fetch(`${AI_BASE}/keys/${provider}/models`, {
     credentials: "include",
   });
-  if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(
+      await friendlyError(
+        res,
+        `Couldn't load ${provider} models — check the key is valid.`,
+      ),
+    );
+  }
   return res.json();
 }
 
@@ -206,8 +272,9 @@ export async function updateKeyModel(provider: string, model: string) {
     body: JSON.stringify({ model }),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(body || `Failed to update model: ${res.status}`);
+    throw new Error(
+      await friendlyError(res, "Couldn't change the model. Please try again."),
+    );
   }
   return res.json();
 }
@@ -229,8 +296,12 @@ export async function saveSessionMemory(
     body: JSON.stringify({ summary }),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(body || `Failed to save session memory: ${res.status}`);
+    throw new Error(
+      await friendlyError(
+        res,
+        "Couldn't save the session memory. Please try again.",
+      ),
+    );
   }
 }
 

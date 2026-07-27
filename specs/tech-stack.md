@@ -397,8 +397,9 @@ This keeps the system flexible while preserving safety, testability, and maintai
 Spira does not manage AI costs centrally. Users bring their own API keys. Supported providers at launch:
 
 - **Anthropic** — claude-sonnet-4, claude-opus-4
-- **OpenAI** — gpt-4o, o1
+- **OpenAI** — gpt-4o, o3, o4-mini
 - **Mistral** — mistral-large, mistral-medium
+- **Google Gemini** — gemini-2.5-flash, gemini-2.5-pro
 
 ### Key Storage
 
@@ -419,7 +420,8 @@ The AI orchestration layer must abstract over all providers. GROW sessions, chat
 AIProvider (interface)
   ├── AnthropicProvider
   ├── OpenAIProvider
-  └── MistralProvider
+  ├── MistralProvider
+  └── GeminiProvider
 ```
 
 Each implementation handles authentication headers, request format, response parsing, streaming, and error normalization into a common `AIError` type.
@@ -728,7 +730,7 @@ The backend must provide:
 - file upload/download flow
 - text extraction pipeline for readable resources
 - BYOK API key storage (encrypted)
-- provider abstraction layer (Anthropic, OpenAI, Mistral)
+- provider abstraction layer (Anthropic, OpenAI, Mistral, Gemini)
 - streaming AI responses (SSE or WebSocket)
 - coaching knowledge index (pgvector, one-time setup)
 - coaching chunk retrieval at query time

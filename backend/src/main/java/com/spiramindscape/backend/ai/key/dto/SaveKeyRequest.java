@@ -8,8 +8,8 @@ public record SaveKeyRequest(
 
         @NotBlank
         @Pattern(
-                regexp = "ANTHROPIC|OPENAI|MISTRAL|OLLAMA|TAVILY|anthropic|openai|mistral|ollama|tavily",
-                message = "provider must be one of ANTHROPIC, OPENAI, MISTRAL, OLLAMA, TAVILY")
+                regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|TAVILY|anthropic|openai|mistral|gemini|tavily",
+                message = "provider must be one of ANTHROPIC, OPENAI, MISTRAL, GEMINI, TAVILY")
         String provider,
 
         @NotBlank

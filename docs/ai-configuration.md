@@ -33,8 +33,9 @@ Supported providers at launch:
 | Provider | Models |
 |---|---|
 | Anthropic | claude-sonnet-4, claude-opus-4 |
-| OpenAI | gpt-4o, o1 |
+| OpenAI | gpt-4o, o3, o4-mini |
 | Mistral | mistral-large, mistral-medium |
+| Google Gemini | gemini-2.5-flash, gemini-2.5-pro |
 
 ### Key Storage
 
@@ -55,7 +56,8 @@ The AI orchestration layer must abstract over all providers. The rest of the sys
 AIProvider (interface)
   ├── AnthropicProvider
   ├── OpenAIProvider
-  └── MistralProvider
+  ├── MistralProvider
+  └── GeminiProvider
 ```
 
 Each provider implementation handles:
@@ -76,6 +78,7 @@ This matters for how much conversation history and goal data we can include per 
 | Claude (Anthropic) | 200 000 tokens |
 | GPT-4o (OpenAI) | 128 000 tokens |
 | Mistral Large | 128 000 tokens |
+| Gemini 2.5 Flash (Google) | 1 000 000 tokens |
 
 Design to the lowest common denominator: 128 000 tokens. In practice, even a large goal with full history will rarely approach this limit in the MVP.
 
