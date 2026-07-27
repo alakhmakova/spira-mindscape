@@ -372,7 +372,8 @@ for up to MAX_TOOL_ITERATIONS (4):
       append an assistant message echoing ALL the turn's tool calls
       append a `tool` result for EACH call:
         • web_search        → Tavily results
-        • read_resource     → the resource's text (ResourceReadService)
+        • read_resource     → the resource's text, or the image itself for an
+                               image resource (ResourceReadService)
         • propose_goal_change → "surfaced to the user for approval" (synthetic ack)
       loop  (model now continues using the results)
   else:
@@ -481,9 +482,9 @@ The context lists resources by **id / type / title only** — never their conten
 | `link` | the URL | — |
 | `email` | name / role / email / phone | — |
 | `file` (PDF) | text extracted with **Apache PDFBox** ([`ResourceTextExtractor`](../backend/src/main/java/com/spiramindscape/backend/ai/chat/ResourceTextExtractor.java)) | 15 pages / 12 000 chars |
-| `file` (image) | "(image file — not readable as text)" | — |
+| `file` (image) | the **actual image**, shown to the model (vision) — png/jpeg/webp/gif; other subtypes (e.g. SVG) fall back to a text note | 5 MB (upload cap) |
 
-Extraction is **text-only** and provider-agnostic (the file never leaves the backend — only extracted text enters the prompt, so it works with Anthropic, OpenAI, Mistral, and Gemini). Scanned/image-only PDFs have no text layer and come back as "(no extractable text)"; the prompt tells the AI to ask the user to paste the text rather than invent it. When asked to **rewrite** a document (e.g. a CV), the AI proposes a **new `note`** rather than touching the original file.
+For **PDFs/notes/contacts**, extraction is text-only and provider-agnostic (only extracted text enters the prompt). For **images**, `read_resource` now delivers the picture itself: `ResourceReadService.readImage(...)` returns the base64 image, and each provider serializes it into its own multimodal format ([`VisionSupport`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/VisionSupport.java)) — an `image` block inside the Anthropic `tool_result`, or an `image_url` follow-up user message for the OpenAI-compatible providers (OpenAI/Mistral/Gemini). This **requires a vision-capable model** (Claude *, gpt-4o, gemini-2.5-flash/pro, Mistral Pixtral); a text-only model returns a clean provider error via the usual `friendlyError` path. Image content is treated as **untrusted** (same footing as any resource text — text baked into a picture is data, not instructions). Scanned/image-only PDFs still have no text layer and come back as "(no extractable text)". When asked to **rewrite** a document (e.g. a CV), the AI proposes a **new `note`** rather than touching the original file.
 
 > **Notes are the rich-text container.** A note's `body` is HTML (TipTap editor), so pasting from Word/Docs keeps common formatting (headings, bold, lists, links). The note detail view exports a note to **.txt / Word (.doc) / PDF** ([`note-export.ts`](../src/components/spira/note-export.ts)) with no backend dependency — txt strips HTML, Word uses an openable Word-HTML document, PDF uses the browser's Save-as-PDF. This closes the CV loop: paste or upload a CV → AI reads it → AI proposes a rewritten note → you export it. (DOCX *files* are intentionally not an upload type; paste the content into a note instead.)
 
@@ -817,7 +818,7 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | Goal-data proposals (create) | ✅ Done | `propose_goal_change` tool: title, description, confidence, deadline, target, option, obstacle, action, note. Works in chat **and** GROW. |
 | Edit existing items & state | ✅ Done | Same tool, edit/state kinds (`edit_target`, `edit_option`, `edit_obstacle`, `edit_action`, `edit_note`, `complete_target`, `target_progress`, `select_option`, `checklist_item`, `add_checklist_item`) referencing item `id` from the context. See §4a. |
 | Checklist sub-tasks | ✅ Done | A checklist target holds sub-tasks (items). The AI can add one (`add_checklist_item`), edit its text, check/uncheck it, and set its **due date** (`checklist_item` with `deadline_value`). Items exist only on checklist targets. |
-| Reading resources | ✅ Done (text, on demand) | `read_resource` tool loads a note/PDF/link/contact's text only when needed (not embedded in every request). PDF via PDFBox. Provider-agnostic. Images / scanned PDFs aren't readable (no text layer). Rewrites are proposed as a new note. |
+| Reading resources | ✅ Done (text + images, on demand) | `read_resource` tool loads a note/PDF/link/contact's text only when needed (not embedded in every request). PDF via PDFBox. **Images are shown to the model directly (vision)** — needs a vision-capable model; SVG and scanned PDFs (no text layer) still fall back to a text note. Rewrites are proposed as a new note. |
 | Deletion | ✅ Done (confirmation only) | `delete_goal` / `delete_target` open a confirmation dialog in `AiPanel`; the AI never deletes directly — the user confirms. |
 | All-Goals goal ops | ✅ Done | From the All-Goals page the AI can `new_goal`, `edit_goal` (name/confidence/deadline by id), `open_goal`, and start `delete_goal`. Context lists the user's goals with ids. |
 | Web search (Tavily) | ✅ Done (needs live testing) | `web_search` tool via Tavily (BYOK key). Agentic loop in `AiChatService.runAgenticLoop`. Offered only in chat when a Tavily key exists. See section 4b. |
