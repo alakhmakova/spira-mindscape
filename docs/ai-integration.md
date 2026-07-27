@@ -43,7 +43,7 @@ The AI system adds three things to the database, defined in [`backend/src/main/r
 CREATE TABLE ai_api_keys (
     id          BIGSERIAL    PRIMARY KEY,
     app_user_id BIGINT,                     -- the owning user (from CurrentUserProvider)
-    provider    VARCHAR(32)  NOT NULL,       -- 'ANTHROPIC' | 'OPENAI' | 'MISTRAL'
+    provider    VARCHAR(32)  NOT NULL,       -- 'ANTHROPIC' | 'OPENAI' | 'MISTRAL' | 'GEMINI' | 'TAVILY'
     model       VARCHAR(64),                 -- optional model override
     enc_key     TEXT         NOT NULL,       -- AES-256-GCM ciphertext, Base64
     key_hint    VARCHAR(16)  NOT NULL,       -- '••••1234' for display only
@@ -73,7 +73,7 @@ Migrations run automatically via Flyway when the Spring Boot app starts. The sch
 
 ## 2. API Key Storage (BYOK)
 
-**Bring Your Own Key** means users supply their own Anthropic/OpenAI/Mistral keys. Spira stores them encrypted — the raw key is never written to the database or returned through the API.
+**Bring Your Own Key** means users supply their own Anthropic/OpenAI/Mistral/Gemini keys. Spira stores them encrypted — the raw key is never written to the database or returned through the API.
 
 ### Entity
 
@@ -177,10 +177,12 @@ Every implementation blocks the calling thread until the stream ends. The caller
 
 ### Implementations
 
-Two providers are implemented: **Anthropic** and **Mistral**. OpenAI is a stub.
+Four chat providers are implemented: **Anthropic**, **OpenAI**, **Mistral**, and **Google Gemini**.
 
 [`AnthropicProvider.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/anthropic/AnthropicProvider.java) — Anthropic Messages API.
+[`OpenAiProvider.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/openai/OpenAiProvider.java) — OpenAI chat completions (the reference schema; uses `max_completion_tokens`).
 [`MistralProvider.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/mistral/MistralProvider.java) — Mistral chat completions (OpenAI-compatible format).
+[`GeminiProvider.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/google/GeminiProvider.java) — Google Gemini via its OpenAI-compatibility layer.
 
 It uses Java's built-in `HttpClient` (no extra HTTP library needed):
 
@@ -210,7 +212,7 @@ The provider parses `content_block_delta` events with `type=text_delta` and forw
 
 ### Factory
 
-[`LlmProviderFactory.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/LlmProviderFactory.java) constructs the right implementation given a `ProviderType`. Anthropic and Mistral are implemented; OpenAI throws `UnsupportedOperationException` until implemented.
+[`LlmProviderFactory.java`](../backend/src/main/java/com/spiramindscape/backend/ai/provider/LlmProviderFactory.java) constructs the right implementation given a `ProviderType`. Anthropic, OpenAI, Mistral, and Gemini are all implemented; only `TAVILY` (a search key, not a chat provider) is rejected.
 
 ### Adding a new provider
 
@@ -481,7 +483,7 @@ The context lists resources by **id / type / title only** — never their conten
 | `file` (PDF) | text extracted with **Apache PDFBox** ([`ResourceTextExtractor`](../backend/src/main/java/com/spiramindscape/backend/ai/chat/ResourceTextExtractor.java)) | 15 pages / 12 000 chars |
 | `file` (image) | "(image file — not readable as text)" | — |
 
-Extraction is **text-only** and provider-agnostic (the file never leaves the backend — only extracted text enters the prompt, so it works with Anthropic, Mistral, Ollama). Scanned/image-only PDFs have no text layer and come back as "(no extractable text)"; the prompt tells the AI to ask the user to paste the text rather than invent it. When asked to **rewrite** a document (e.g. a CV), the AI proposes a **new `note`** rather than touching the original file.
+Extraction is **text-only** and provider-agnostic (the file never leaves the backend — only extracted text enters the prompt, so it works with Anthropic, OpenAI, Mistral, and Gemini). Scanned/image-only PDFs have no text layer and come back as "(no extractable text)"; the prompt tells the AI to ask the user to paste the text rather than invent it. When asked to **rewrite** a document (e.g. a CV), the AI proposes a **new `note`** rather than touching the original file.
 
 > **Notes are the rich-text container.** A note's `body` is HTML (TipTap editor), so pasting from Word/Docs keeps common formatting (headings, bold, lists, links). The note detail view exports a note to **.txt / Word (.doc) / PDF** ([`note-export.ts`](../src/components/spira/note-export.ts)) with no backend dependency — txt strips HTML, Word uses an openable Word-HTML document, PDF uses the browser's Save-as-PDF. This closes the CV loop: paste or upload a CV → AI reads it → AI proposes a rewritten note → you export it. (DOCX *files* are intentionally not an upload type; paste the content into a note instead.)
 
@@ -784,13 +786,14 @@ The Vite dev server on port 5173 proxies all `/api/*` and `/graphql/*` requests 
 
 ### Connecting the 3 providers (BYOK)
 
-Each provider is connected the same way: the user pastes their own key into the panel's **"Bring your own key"** sheet, picks a model, and it is stored encrypted (one key per provider). Only Anthropic and Mistral actually run; OpenAI is a stub.
+Each provider is connected the same way: the user pastes their own key into the panel's **"Bring your own key"** sheet, picks a model, and it is stored encrypted (one key per provider). All four chat providers — Anthropic, OpenAI, Mistral, and Google Gemini — run.
 
 | Provider | Where to get a key | Key format | Default model | Models endpoint (live list) |
 |---|---|---|---|---|
 | Anthropic | console.anthropic.com → API Keys | `sk-ant-…` | `claude-sonnet-4-6` | `GET https://api.anthropic.com/v1/models` |
+| OpenAI | platform.openai.com → API Keys | `sk-…` | `gpt-4o` | `GET https://api.openai.com/v1/models` |
 | Mistral | console.mistral.ai → API Keys | (no fixed prefix) | `mistral-large-latest` | `GET https://api.mistral.ai/v1/models` |
-| OpenAI | platform.openai.com → API Keys | `sk-…` | — (not implemented) | — |
+| Google Gemini | aistudio.google.com → Get API key | `AIza…` | `gemini-2.5-flash` | `GET https://generativelanguage.googleapis.com/v1beta/openai/models` |
 | Tavily (web search) | tavily.com → API Keys | `tvly-…` | n/a (search, not chat) | n/a |
 
 Tavily is stored the same way (BYOK, encrypted) under provider `TAVILY`, but it is a **search** key, not a chat provider — it never appears as an active LLM and has its own small section in the key sheet.
@@ -808,7 +811,9 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | Feature | Status | Notes |
 |---|---|---|
 | Anthropic provider | ✅ Done | Streaming + tool calling |
+| OpenAI provider | ✅ Done | Streaming + tool calling (`max_completion_tokens` for o-series compatibility) |
 | Mistral provider | ✅ Done | Streaming + tool calling (OpenAI-compatible) |
+| Gemini provider | ✅ Done | Streaming + tool calling via Google's OpenAI-compatibility layer |
 | Goal-data proposals (create) | ✅ Done | `propose_goal_change` tool: title, description, confidence, deadline, target, option, obstacle, action, note. Works in chat **and** GROW. |
 | Edit existing items & state | ✅ Done | Same tool, edit/state kinds (`edit_target`, `edit_option`, `edit_obstacle`, `edit_action`, `edit_note`, `complete_target`, `target_progress`, `select_option`, `checklist_item`, `add_checklist_item`) referencing item `id` from the context. See §4a. |
 | Checklist sub-tasks | ✅ Done | A checklist target holds sub-tasks (items). The AI can add one (`add_checklist_item`), edit its text, check/uncheck it, and set its **due date** (`checklist_item` with `deadline_value`). Items exist only on checklist targets. |
@@ -818,7 +823,6 @@ These items exist in the plan ([`docs/ai-configuration.md`](./ai-configuration.m
 | Web search (Tavily) | ✅ Done (needs live testing) | `web_search` tool via Tavily (BYOK key). Agentic loop in `AiChatService.runAgenticLoop`. Offered only in chat when a Tavily key exists. See section 4b. |
 | Proposal persistence | ✅ Done | Goal-scoped proposals are stored in `ai_proposals` (PENDING), the id is streamed to the client, approve/reject hit the server, and pending cards are restored on reload. See section 4a. |
 | Chat transcript persistence | ✅ Done (client-side) | Regular chat cached in `localStorage` per goal/global scope. GROW sessions are not persisted (ephemeral). See section 9. |
-| OpenAI provider | Stub | `LlmProviderFactory` throws `UnsupportedOperationException` |
 | **Mini-app tools (Personal Tools)** | ❌ Planned only | Spec's "Personal Tools" — AI assembles widgets (trackers) from approved UI primitives. Design is in [`ai-mini-apps-plan.md`](./ai-mini-apps-plan.md); not yet coded. |
 | RAG (coaching book retrieval) | ❌ Not started | Requires `pgvector`, book chunking, embedding pipeline |
 | GROW session backend state | ❌ Not started | `GROWSession` entity, timing fields not in DB; timer is currently frontend-only |

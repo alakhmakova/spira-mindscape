@@ -17,7 +17,7 @@ public record ChatRequest(
          * Which provider to use. Defaults to {@code ANTHROPIC} if omitted.
          * Must match a key that the user has previously saved.
          */
-        @Pattern(regexp = "ANTHROPIC|OPENAI|MISTRAL|OLLAMA|anthropic|openai|mistral|ollama")
+        @Pattern(regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|anthropic|openai|mistral|gemini")
         String provider,
 
         /**

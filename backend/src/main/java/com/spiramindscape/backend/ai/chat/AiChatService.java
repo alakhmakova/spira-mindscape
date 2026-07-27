@@ -1134,9 +1134,9 @@ public class AiChatService {
 
     /**
      * Pulls a human-readable message out of a provider error body embedded in
-     * the exception message. Handles {@code {"error":"…"}} (Ollama) and
-     * {@code {"error":{"message":"…"}}} (OpenAI/Mistral-style). Returns null if
-     * none is found.
+     * the exception message. Handles both {@code {"error":"…"}} and
+     * {@code {"error":{"message":"…"}}} (OpenAI/Mistral/Gemini-style) shapes.
+     * Returns null if none is found.
      */
     private String extractProviderMessage(String raw) {
         int brace = raw.indexOf('{');
