@@ -1,5 +1,7 @@
 package com.spiramindscape.backend.ai.chat;
 
+import com.spiramindscape.backend.ai.provider.LlmImage;
+import com.spiramindscape.backend.ai.provider.VisionSupport;
 import com.spiramindscape.backend.resource.Resource;
 import com.spiramindscape.backend.resource.ResourceRepository;
 import org.springframework.stereotype.Service;
@@ -64,9 +66,36 @@ public class ResourceReadService {
                     : text;
         }
         if (mime.startsWith("image/")) {
-            return "(image file — not readable as text; ask the user to describe it or paste any text)";
+            // Vision-capable image types are delivered as an actual image via
+            // readImage(); this text path only reaches image subtypes the
+            // providers can't view (e.g. image/svg+xml).
+            return VisionSupport.isVisionMime(mime)
+                    ? "(image is attached below for you to view)"
+                    : "(image type " + mime + " can't be viewed; ask the user to describe it)";
         }
         return "(unsupported file type: " + mime + ")";
+    }
+
+    /**
+     * Returns the image to SHOW the model for an image resource the model asked
+     * to read, or empty if the resource is missing, not part of {@code goalId},
+     * not a file, or not a vision-viewable image type. Owner scoping is the same
+     * goal check as {@link #read} — a resource on another goal is never returned.
+     */
+    @Transactional(readOnly = true)
+    public Optional<LlmImage> readImage(Long goalId, Long resourceId) {
+        if (goalId == null || resourceId == null) return Optional.empty();
+        Optional<Resource> opt = resourceRepository.findById(resourceId);
+        if (opt.isEmpty()) return Optional.empty();
+
+        Resource r = opt.get();
+        if (r.getGoal() == null || !goalId.equals(r.getGoal().getId())) {
+            return Optional.empty(); // not part of this goal
+        }
+        if (!"file".equals(r.getType())) return Optional.empty();
+        String mime = r.getMime() == null ? "" : r.getMime().toLowerCase();
+        if (!VisionSupport.isVisionMime(mime)) return Optional.empty();
+        return Optional.ofNullable(VisionSupport.fromDataUrl(r.getDataUrl()));
     }
 
     private String contactDetails(Resource r) {

@@ -7,6 +7,7 @@ import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.ai.provider.ToolCall;
 import com.spiramindscape.backend.ai.provider.ToolSpec;
+import com.spiramindscape.backend.ai.provider.VisionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -167,7 +168,7 @@ public class AnthropicProvider implements LlmProvider {
         }
     }
 
-    private String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
+    String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
         // Use LinkedHashMap to guarantee key order in JSON output
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -211,7 +212,19 @@ public class AnthropicProvider implements LlmProvider {
             Map<String, Object> block = new LinkedHashMap<>();
             block.put("type", "tool_result");
             block.put("tool_use_id", m.toolResultFor());
-            block.put("content", m.content());
+            if (m.hasImages()) {
+                // Anthropic accepts image blocks INSIDE a tool_result's content
+                // array — so the image the model asked to read rides here, with a
+                // short text note, keeping user/assistant role alternation intact.
+                List<Map<String, Object>> blocks = new ArrayList<>();
+                if (m.content() != null && !m.content().isBlank()) {
+                    blocks.add(Map.of("type", "text", "text", m.content()));
+                }
+                blocks.addAll(VisionSupport.anthropicImageBlocks(m.images()));
+                block.put("content", blocks);
+            } else {
+                block.put("content", m.content());
+            }
             msg.put("role", "user");
             msg.put("content", List.of(block));
             return msg;
