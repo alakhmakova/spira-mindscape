@@ -46,10 +46,9 @@ public class AiModelService {
                         HttpStatus.UNPROCESSABLE_ENTITY, "No key configured for " + type.name()));
         return switch (type) {
             case ANTHROPIC -> fetchAnthropicModels(key.apiKey());
+            case OPENAI    -> fetchOpenAiModels(key.apiKey());
             case MISTRAL   -> fetchMistralModels(key.apiKey());
-            case OLLAMA    -> fetchOllamaModels(key.apiKey());
-            case OPENAI    -> throw new ResponseStatusException(
-                    HttpStatus.NOT_IMPLEMENTED, "OpenAI provider not yet implemented");
+            case GEMINI    -> fetchGeminiModels(key.apiKey());
             case TAVILY    -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Tavily is a search key, not a chat provider");
         };
@@ -84,23 +83,14 @@ public class AiModelService {
         }
     }
 
-    /**
-     * Lists available Ollama models. The stored value is either an http(s) base
-     * URL (local/self-hosted, no auth) or an Ollama Cloud API key (Bearer against
-     * https://ollama.com). Either way we query the OpenAI-compatible
-     * {@code /v1/models} endpoint.
-     */
-    private List<String> fetchOllamaModels(String keyOrUrl) {
-        String v = keyOrUrl == null ? "" : keyOrUrl.trim();
-        boolean cloud = !(v.startsWith("http://") || v.startsWith("https://"));
-        String base = cloud ? "https://ollama.com" : v.replaceAll("/+$", "").replaceAll("/v1$", "");
+    private List<String> fetchOpenAiModels(String apiKey) {
         try {
-            HttpRequest.Builder b = HttpRequest.newBuilder()
-                    .uri(URI.create(base + "/v1/models"))
-                    .GET();
-            if (cloud && !v.isBlank()) b.header("authorization", "Bearer " + v);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/models"))
+                    .header("authorization", "Bearer " + apiKey)
+                    .GET().build();
 
-            HttpResponse<String> res = httpClient.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() != 200) {
                 throw new RuntimeException("HTTP " + res.statusCode() + ": " + res.body());
             }
@@ -116,10 +106,46 @@ public class AiModelService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch Ollama models: {}", e.getMessage());
+            log.warn("Failed to fetch OpenAI models: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Could not reach Ollama at " + base + (cloud ? "" : " — is it running?")
-                            + " (" + e.getMessage() + ")");
+                    "Failed to fetch models from OpenAI: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Lists available Gemini models via Google's OpenAI-compatibility layer
+     * ({@code /v1beta/openai/models}), so the response shape matches the other
+     * providers. The key is a Google AI Studio API key sent as a Bearer token.
+     */
+    private List<String> fetchGeminiModels(String apiKey) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/openai/models"))
+                    .header("authorization", "Bearer " + apiKey)
+                    .GET().build();
+
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() != 200) {
+                throw new RuntimeException("HTTP " + res.statusCode() + ": " + res.body());
+            }
+
+            JsonNode root = objectMapper.readTree(res.body());
+            List<String> ids = new ArrayList<>();
+            for (JsonNode item : root.path("data")) {
+                // Gemini's compat layer prefixes ids with "models/" — strip it so the
+                // value matches what the chat endpoint expects (e.g. "gemini-2.5-flash").
+                String id = item.path("id").asText("");
+                if (id.startsWith("models/")) id = id.substring("models/".length());
+                if (!id.isBlank()) ids.add(id);
+            }
+            ids.sort(String.CASE_INSENSITIVE_ORDER);
+            return ids;
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Failed to fetch Gemini models: {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Failed to fetch models from Gemini: " + e.getMessage());
         }
     }
 

@@ -15,11 +15,11 @@ public enum ProviderType {
      */
     TAVILY,
     /**
-     * Ollama — a locally-run LLM runtime (ollama.com) exposing an
-     * OpenAI-compatible API (default http://localhost:11434/v1). No real API key
-     * is needed; the stored "key" holds the base URL of the Ollama server.
+     * Google Gemini — accessed via its OpenAI-compatibility layer
+     * ({@code generativelanguage.googleapis.com/v1beta/openai}). The stored key
+     * is a Google AI Studio API key (prefix {@code AIza}).
      */
-    OLLAMA;
+    GEMINI;
 
     public static ProviderType fromString(String value) {
         return ProviderType.valueOf(value.toUpperCase());
