@@ -7,6 +7,7 @@ import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.ai.provider.ToolCall;
 import com.spiramindscape.backend.ai.provider.ToolSpec;
+import com.spiramindscape.backend.ai.provider.VisionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -170,7 +171,7 @@ public class MistralProvider implements LlmProvider {
         }
     }
 
-    private String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
+    String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("max_tokens", MAX_TOKENS);
@@ -182,6 +183,11 @@ public class MistralProvider implements LlmProvider {
         }
         for (LlmMessage m : messages) {
             allMessages.add(toMistralMessage(m));
+            // The tool role can't hold image parts here, so a read_resource that
+            // returned an image is followed by a user message carrying the image.
+            if (m.hasImages()) {
+                allMessages.add(VisionSupport.openAiImageUserMessage(m.images()));
+            }
         }
         body.put("messages", allMessages);
 
