@@ -23,12 +23,12 @@ public class Option {
     @Column(length = 500)
     private String text;
 
+    // The "active" radio — single-select across the goal, INDEPENDENT of `status`.
     @Column(nullable = false)
     private Boolean selected = false;
 
-    // Mutually-exclusive status: "none" | "active" | "good_idea" | "didnt_work".
-    // `selected` is kept in sync (selected == "active".equals(status)) for the Android
-    // client, which still reads/writes the legacy boolean. See GoalService.
+    // The thumb lean: "none" | "good_idea" | "didnt_work" — mutually exclusive among
+    // themselves, but independent of `selected` (an option can be active AND thumbed).
     @Column(nullable = false, length = 20)
     private String status = "none";
 
