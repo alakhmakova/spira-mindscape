@@ -76,9 +76,10 @@ type RealityItem {
 type Option {
     id: ID!
     text: String!
+    # The "active" radio — single-select across the goal, independent of `status`.
     selected: Boolean!
-    # Mutually exclusive: "none" | "active" | "good_idea" | "didnt_work".
-    # `selected` mirrors status == "active" for backward compatibility.
+    # The thumb lean: "none" | "good_idea" | "didnt_work" — mutually exclusive among
+    # themselves, but independent of `selected` (an option can be active AND thumbed).
     status: String!
     position: Int!
     createdAt: String!
@@ -146,8 +147,9 @@ input UpdateGoalInput {
 
 input UpdateOptionInput {
     text: String
+    # The "active" radio, independent of `status`.
     selected: Boolean
-    # "none" | "active" | "good_idea" | "didnt_work" — mutually exclusive.
+    # The thumb lean: "none" | "good_idea" | "didnt_work".
     status: String
 }
 

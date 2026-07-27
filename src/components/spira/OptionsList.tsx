@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, GripVertical, Smile, Frown, X } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
     addOption,
     updateOption,
     selectOption,
+    setOptionStatus,
     removeOption,
     reorderOptions,
   } = useSpira();
@@ -44,7 +45,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
   const add = () => {
     const t = draft.trim();
     if (!t) return;
-    addOption(goal.id, t);
+    addOption(goal.id, t); // a URL in the text is auto-linked on display
     setDraft("");
   };
 
@@ -140,7 +141,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   : undefined
               }
               className={cn(
-                "group flex items-stretch rounded-md border transition-colors",
+                "group relative flex items-stretch rounded-md border transition-colors",
                 isDragging
                   ? "border-primary shadow-lg select-none"
                   : opt.selected
@@ -148,6 +149,15 @@ export function OptionsList({ goal }: { goal: Goal }) {
                     : "border-border hover:border-primary/50",
               )}
             >
+              {/* Delete — a circle-✕ badge stuck on the top-right corner. */}
+              <button
+                onClick={() => removeOption(goal.id, opt.id)}
+                aria-label="Remove strategy"
+                className="absolute -right-2 -top-2 z-10 grid h-6 w-6 place-items-center rounded-full border border-border bg-surface text-muted-foreground shadow-sm transition-colors hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+
               {/* Left slot — the active radio (single-select across the goal). */}
               <button
                 onClick={() => handleOptionClick(opt.id, opt.selected)}
@@ -173,8 +183,9 @@ export function OptionsList({ goal }: { goal: Goal }) {
                 </div>
               </button>
 
-              {/* Right section — text, delete, then the drag handle at the edge. */}
-              <div className="flex-1 flex items-center bg-surface px-4 py-3 min-h-[48px] rounded-r-md">
+              {/* Right section — the strategy text, the cycling thumb rating, and a grey drag
+                  handle. `min-w-0` lets the text shrink so a long URL wraps inside the card. */}
+              <div className="flex min-h-[48px] min-w-0 flex-1 items-center rounded-r-md bg-surface py-3 pr-3 pl-4">
                 <InlineText
                   value={opt.text}
                   onChange={(text) => updateOption(goal.id, opt.id, { text })}
@@ -182,16 +193,42 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   ariaLabel="Edit strategy"
                 />
 
-                {/* Delete — grey (same as an unselected radio), red on hover. */}
+                {/* Rating — one button that cycles on tap: none (light-grey smile) → good_idea
+                    (Guava smile) → didnt_work (Kale frown) → none. Outline only, no fill;
+                    independent of the active radio. */}
                 <button
-                  onClick={() => removeOption(goal.id, opt.id)}
-                  className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md text-border-strong hover:text-destructive transition-colors"
-                  aria-label="Remove"
+                  onClick={() =>
+                    setOptionStatus(
+                      goal.id,
+                      opt.id,
+                      opt.status === "good_idea"
+                        ? "didnt_work"
+                        : opt.status === "didnt_work"
+                          ? "none"
+                          : "good_idea",
+                    )
+                  }
+                  aria-label="Rate strategy"
+                  aria-pressed={
+                    opt.status === "good_idea" || opt.status === "didnt_work"
+                  }
+                  className={cn(
+                    "ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
+                    opt.status === "good_idea"
+                      ? "text-[#F45D48]" // Guava (like)
+                      : opt.status === "didnt_work"
+                        ? "text-primary" // Kale (dislike)
+                        : "text-border-strong hover:text-muted-foreground", // light grey, like the unselected radio
+                  )}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {opt.status === "didnt_work" ? (
+                    <Frown className="h-[18px] w-[18px]" />
+                  ) : (
+                    <Smile className="h-[18px] w-[18px]" />
+                  )}
                 </button>
 
-                {/* Drag handle at the edge — press and drag to reorder (↑/↓ for keyboard) */}
+                {/* Drag handle — grey; press & drag to reorder (↑/↓ for keyboard). */}
                 <button
                   onPointerDown={(e) => startDrag(e, opt.id)}
                   onKeyDown={(e) => {
@@ -205,7 +242,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
                   }}
                   style={{ touchAction: "none" }}
                   className={cn(
-                    "-mr-1 ml-1 flex h-8 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground",
+                    "ml-1 grid h-8 w-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground",
                     isDragging ? "cursor-grabbing" : "cursor-grab",
                   )}
                   aria-label="Drag to reorder strategy"
@@ -223,18 +260,18 @@ export function OptionsList({ goal }: { goal: Goal }) {
         <div className="w-12 shrink-0 flex items-center justify-center border-r border-border bg-secondary/30">
           <Plus className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div className="flex-1 flex items-center px-4 py-1 relative">
+        <div className="flex-1 min-w-0 flex items-center px-4 py-1 relative">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && add()}
             placeholder="Add a strategy…"
-            className="flex-1 bg-transparent text-base outline-none min-h-[40px] placeholder:text-muted-foreground/75"
+            className="flex-1 min-w-0 bg-transparent text-base outline-none min-h-[40px] placeholder:text-muted-foreground/75"
           />
           {draft && (
             <button
               onClick={add}
-              className="ml-2 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20"
+              className="ml-2 mr-1 shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20"
             >
               Add
             </button>
