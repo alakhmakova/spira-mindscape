@@ -1,4 +1,4 @@
-package com.spiramindscape.backend.ai.provider.ollama;
+package com.spiramindscape.backend.ai.provider.openai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,56 +23,40 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * Ollama (ollama.com) — a locally-run LLM runtime with an OpenAI-compatible
- * chat-completions API.
+ * OpenAI chat completions with SSE streaming.
  *
- * <p>No API key/auth: Ollama runs on the user's machine. The "stored key" is
- * repurposed as the server's base URL (default {@code http://localhost:11434}),
- * so a user can point at a custom host/port. Streaming and tool-calling format
- * are identical to OpenAI/Mistral.
+ * <p>OpenAI is the reference schema the Mistral and Gemini clients mirror. The
+ * system prompt is injected as the first message with {@code role=system}.
  *
- * <p>Tool calling works only with tool-capable local models (e.g. llama3.1,
- * qwen2.5, mistral). Pull a model first with {@code ollama pull <model>}.
+ * <p>Unlike Mistral/Gemini this sends {@code max_completion_tokens} rather than
+ * the legacy {@code max_tokens}: the reasoning models (o3, o4-mini) reject
+ * {@code max_tokens}, and {@code gpt-4o} accepts both — so the newer field works
+ * across the whole model range.
+ *
+ * <p>Streaming format:
+ * <pre>
+ * data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}
+ * data: [DONE]
+ * </pre>
  */
-public class OllamaProvider implements LlmProvider {
+public class OpenAiProvider implements LlmProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(OllamaProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(OpenAiProvider.class);
 
-    static final String LOCAL_BASE_URL = "http://localhost:11434";
-    static final String CLOUD_BASE_URL = "https://ollama.com";
-    static final String DEFAULT_MODEL = "gpt-oss:120b";
-    private static final int MAX_TOKENS = 4096;
+    private static final String ENDPOINT = "https://api.openai.com/v1/chat/completions";
+    static final String DEFAULT_MODEL = "gpt-4o";
+    private static final int MAX_TOKENS = 8192;
 
-    private final String baseUrl;
-    private final String apiKey; // Bearer token for Ollama Cloud; null for a local/self-hosted server
+    private final String apiKey;
     private final String model;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    /**
-     * The stored value is either an http(s):// base URL (local / self-hosted
-     * Ollama, no auth) or an Ollama Cloud API key (used as a Bearer token
-     * against {@code https://ollama.com}).
-     */
-    public OllamaProvider(String keyOrUrl, String model, HttpClient httpClient, ObjectMapper objectMapper) {
-        String v = keyOrUrl == null ? "" : keyOrUrl.trim();
-        if (v.startsWith("http://") || v.startsWith("https://")) {
-            this.baseUrl = stripBase(v);
-            this.apiKey = null;                 // local / self-hosted
-        } else {
-            this.baseUrl = CLOUD_BASE_URL;
-            this.apiKey = v;                    // Ollama Cloud API key
-        }
+    public OpenAiProvider(String apiKey, String model, HttpClient httpClient, ObjectMapper objectMapper) {
+        this.apiKey = apiKey;
         this.model = (model != null && !model.isBlank()) ? model : DEFAULT_MODEL;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
-    }
-
-    /** Strips a trailing slash and an optional /v1 suffix from a base URL. */
-    static String stripBase(String url) {
-        String v = url.trim().replaceAll("/+$", "");
-        if (v.endsWith("/v1")) v = v.substring(0, v.length() - 3);
-        return v;
     }
 
     @Override
@@ -88,14 +72,12 @@ public class OllamaProvider implements LlmProvider {
         try {
             String bodyJson = buildRequestBody(messages, systemPrompt, tools);
 
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/v1/chat/completions"))
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(ENDPOINT))
                     .header("content-type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(bodyJson));
-            if (apiKey != null && !apiKey.isBlank()) {
-                builder.header("authorization", "Bearer " + apiKey);
-            }
-            HttpRequest request = builder.build();
+                    .header("authorization", "Bearer " + apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
+                    .build();
 
             HttpResponse<java.util.stream.Stream<String>> response = httpClient.send(
                     request,
@@ -105,18 +87,14 @@ public class OllamaProvider implements LlmProvider {
             if (response.statusCode() != 200) {
                 String errorBody = response.body().collect(Collectors.joining("\n"));
                 onError.accept(new RuntimeException(
-                        "Ollama API error " + response.statusCode() + ": " + errorBody));
+                        "OpenAI API error " + response.statusCode() + ": " + errorBody));
                 return;
             }
 
             processStream(response.body(), onToken, onToolCall, onComplete, onError);
 
         } catch (Exception e) {
-            String hint = apiKey == null
-                    ? " — is the local server running?"
-                    : ""; // cloud
-            onError.accept(new RuntimeException(
-                    "Could not reach Ollama at " + baseUrl + hint + " (" + e.getMessage() + ")", e));
+            onError.accept(e);
         }
     }
 
@@ -127,6 +105,7 @@ public class OllamaProvider implements LlmProvider {
             Runnable onComplete,
             Consumer<Throwable> onError) {
 
+        // Per tool-call index: accumulated id, function name and partial JSON arguments
         Map<Integer, String> toolIds = new HashMap<>();
         Map<Integer, String> toolNames = new HashMap<>();
         Map<Integer, StringBuilder> toolArgs = new HashMap<>();
@@ -190,7 +169,7 @@ public class OllamaProvider implements LlmProvider {
     private String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("max_tokens", MAX_TOKENS);
+        body.put("max_completion_tokens", MAX_TOKENS);
         body.put("stream", true);
 
         List<Map<String, Object>> allMessages = new ArrayList<>();
@@ -198,7 +177,7 @@ public class OllamaProvider implements LlmProvider {
             allMessages.add(Map.of("role", "system", "content", systemPrompt));
         }
         for (LlmMessage m : messages) {
-            allMessages.add(toMessage(m));
+            allMessages.add(toOpenAiMessage(m));
         }
         body.put("messages", allMessages);
 
@@ -217,7 +196,11 @@ public class OllamaProvider implements LlmProvider {
         return objectMapper.writeValueAsString(body);
     }
 
-    private Map<String, Object> toMessage(LlmMessage m) {
+    /**
+     * Converts an {@link LlmMessage} to OpenAI's format, expanding tool-call
+     * echoes and tool results.
+     */
+    private Map<String, Object> toOpenAiMessage(LlmMessage m) {
         Map<String, Object> msg = new LinkedHashMap<>();
 
         if (m.isToolResult()) {
@@ -230,9 +213,8 @@ public class OllamaProvider implements LlmProvider {
         if (m.toolCalls() != null && !m.toolCalls().isEmpty()) {
             List<Map<String, Object>> calls = new ArrayList<>();
             for (ToolCall tc : m.toolCalls()) {
-                // Ollama's OpenAI-compatible API expects function.arguments as a
-                // JSON-encoded STRING (per the OpenAI spec). Send the raw JSON
-                // string; default to "{}" when empty so it's always valid JSON.
+                // OpenAI expects function.arguments as a JSON-encoded STRING.
+                // Default to "{}" when empty so it is always valid JSON.
                 String args = (tc.argumentsJson() == null || tc.argumentsJson().isBlank())
                         ? "{}"
                         : tc.argumentsJson();
@@ -246,6 +228,7 @@ public class OllamaProvider implements LlmProvider {
                 calls.add(call);
             }
             msg.put("role", "assistant");
+            // An assistant message with tool_calls may omit content; include it only when present.
             if (m.content() != null && !m.content().isBlank()) {
                 msg.put("content", m.content());
             }
@@ -260,6 +243,6 @@ public class OllamaProvider implements LlmProvider {
 
     @Override
     public ProviderType providerType() {
-        return ProviderType.OLLAMA;
+        return ProviderType.OPENAI;
     }
 }

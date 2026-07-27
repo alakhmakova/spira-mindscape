@@ -121,7 +121,7 @@ Authentication is **Google Sign-In only** — users sign in with their Google ac
 - ORM: **Spring Data JPA / Hibernate**
 - Build tool: **Maven Wrapper** (`backend/mvnw`)
 - Tests: **Spring Boot Test + Spring GraphQL Test + H2 (test profile)**, plus **Python E2E** (`pytest`) against a real PostgreSQL
-- AI: **multi-provider, bring-your-own-key** (Anthropic / OpenAI / Mistral / Ollama Cloud + Tavily web search), SSE streaming, native tool calling. Keys are encrypted at rest (AES-256).
+- AI: **multi-provider, bring-your-own-key** (Anthropic / OpenAI / Mistral / Google Gemini + Tavily web search), SSE streaming, native tool calling. Keys are encrypted at rest (AES-256).
 
 ### Frontend
 
@@ -584,26 +584,25 @@ and switch the active one; your selection is remembered between sessions.
 | Provider | Status | Notes |
 |---|---|---|
 | **Anthropic (Claude)** | ✅ Recommended | Best user experience — the most reliable tool calling and multilingual conversation. |
-| **Ollama Cloud** | ✅ Works (free option) | Good for testing without paying for an API. See the setup note below. |
+| **Google Gemini** | ✅ Works (free option) | Good for testing without paying for an API. Free key from Google AI Studio. See the setup note below. |
 | **Mistral** | ✅ Works | Free with Mistral Studio. Free mode. You can create API keys and use the free tier within the limits described on the limits page https://admin.mistral.ai/plateforme/limits. This free usage is included in your Vibe subscription, if you have one, or available by default. |
-| **OpenAI** | ⚠️ Untested | The integration exists but has **not** been tested. |
+| **OpenAI** | ✅ Works | Paste an `sk-…` key from platform.openai.com. Supports `gpt-4o` and the `o3`/`o4-mini` reasoning models. |
 | **Tavily** | 🔍 Web search only | Not a chat model. Add a free Tavily https://www.tavily.com/ key to give the coach web-search capability. |
 
-### Using Ollama (free testing)
+### Using Google Gemini (free testing)
 
-Ollama is the recommended free way to try the coach. Two requirements — **both** are needed:
+Gemini is a free way to try the coach:
 
-1. **Install Ollama on your computer** — download it from <https://ollama.com/download>.
+1. **Get an API key** at <https://aistudio.google.com/app/apikey> (Google AI Studio → "Get API key"). The key starts with `AIza…`.
 
-2. **Create an API key** at <https://ollama.com/settings/keys> and paste it into the AI panel.
+2. **Paste it into the AI panel**, pick a model, and start chatting.
 
-**Pick a model that supports tool calling and multiple languages** — the ai coach relies on
-both. Recommended models:
+**Pick a model that supports tool calling** — the ai coach relies on it. Recommended models:
 
-- `nemotron-3-super`
-- `qwen3-coder-next`
+- `gemini-2.5-flash` (fast, the default)
+- `gemini-2.5-pro` (stronger reasoning)
 
-Avoid tiny/instruct-only models (e.g. small Gemma variants): they tend to ignore tool calls, so proposals won't appear.
+Avoid tiny/instruct-only models: they tend to ignore tool calls, so proposals won't appear.
 
 ### Web search
 

@@ -90,7 +90,7 @@ fail completely across languages; embeddings handle it natively.
 Spira is **BYOK** ("bring your own key") — the server stores no AI keys of its
 own; every user saves their own provider keys (encrypted with AES-256-GCM in
 the `ai_api_keys` table). Chat can run on any configured provider: Anthropic
-(Claude), Mistral, Ollama.
+(Claude), OpenAI, Mistral, Google Gemini.
 
 Embeddings, however, are a **separate API** from chat — and **Anthropic does
 not offer an embeddings API at all** (they point customers to third parties
@@ -100,8 +100,9 @@ multilingual embedding model:
 | | Chat API | Embeddings API |
 |---|---|---|
 | Anthropic (Claude) | ✅ | ❌ none |
+| OpenAI | ✅ | ✅ (not used for GROW — the library is pinned to Mistral) |
 | Mistral | ✅ | ✅ `mistral-embed`, 1024 dimensions, multilingual |
-| Ollama (local) | ✅ | ✅ (model-dependent; not wired up in Spira yet) |
+| Google Gemini | ✅ | ✅ (not used for GROW — the library is pinned to Mistral) |
 
 So the rule is:
 
