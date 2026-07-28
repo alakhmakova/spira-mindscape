@@ -9,9 +9,24 @@ This is the **single source of truth** for swapping the app's fonts.
 
 > ### Activating the brand fonts (ITC Clearface + GCentra)
 >
-> These are **Gusto's licensed** brand fonts, so the font **files are not committed** — only the
-> references are. The tokens already list them first, with **Playfair Display / Roboto** as the
-> loaded fallbacks, so the app looks correct until you add the files.
+> **Status: the brand files are now added** (`public/fonts/` for web, `res/font/` for Android), so
+> ITC Clearface + GCentra are active on both surfaces. Playfair Display remains the declared serif
+> fallback; **Roboto has been removed entirely** — GCentra is the sole sans. Three details a future
+> swap must preserve:
+>
+> - **GCentra ships Book (400) + Medium (500) only**, and Medium covers everything heavier. On web
+>   the Medium `@font-face` claims `font-weight: 500 900`; on Android `Font(R.font.gcentra_medium,
+>   FontWeight.Bold)` is registered alongside the Medium entry. So bold/semibold text renders GCentra
+>   Medium with no faux-bold synthesis and no Roboto fallback (neither CSS nor Compose falls through
+>   to another family for a missing weight, so the family must carry its own heavy slot).
+> - **ITC Clearface ships Bold + Bold Italic only**; the Regular slot falls back to Bold.
+> - **Vertical-metrics normalisation** keeps text from shifting relative to icons: web uses
+>   `ascent/descent/line-gap-override` on the `@font-face` blocks; Android centres each style in its
+>   line box (`LineHeightStyle(alignment = Center)` + `includeFontPadding = false` in `Type.kt`).
+>   GCentra's native metrics are asymmetric (full-em ascent, 30% typo line-gap), so a naive swap
+>   would push body/label text off the icon centre line.
+>
+> The original "how to add them" steps below are kept for reference / re-adding after a font swap.
 >
 > **Web:** download the licensed files from Gusto's Brandfolder and drop them into **`public/fonts/`**
 > with the names listed in **`public/fonts/README.md`** (`GCentra-*.woff2`, `ITCClearface-*.woff2`).
