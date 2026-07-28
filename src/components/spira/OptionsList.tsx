@@ -271,7 +271,7 @@ export function OptionsList({ goal }: { goal: Goal }) {
           {draft && (
             <button
               onClick={add}
-              className="ml-2 mr-1 shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20"
+              className="ml-2 mr-1 shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-medium text-primary hover:bg-primary/20"
             >
               Add
             </button>

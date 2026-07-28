@@ -37,7 +37,7 @@ export function Section({
           {typeof count === "number" && count > 0 && (
             <span
               className={cn(
-                "inline-flex items-center justify-center h-10 w-10 rounded-full border-[5px] bg-white text-[15px] font-bold leading-none",
+                "inline-flex items-center justify-center h-10 w-10 rounded-full border-[5px] bg-white text-[15px] font-medium leading-none",
                 countVariant === "orange"
                   ? "border-[#ea580c] text-[#ea580c]"
                   : "border-primary text-primary",

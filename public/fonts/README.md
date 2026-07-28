@@ -1,9 +1,15 @@
-# Brand fonts (drop the licensed files here)
+# Brand fonts
 
-Spira's brand fonts are **GCentra** (body) and **ITC Clearface** (headings) — Gusto's licensed
-brand faces. The CSS (`src/styles.css`) and the login page already reference them, with **Roboto**
-and **Playfair Display** as the loaded fallbacks. The moment the files below exist in this folder,
-the real fonts activate — no code change needed.
+Body/labels use **GCentra** and headings use **ITC Clearface** — Gusto's **licensed** brand faces,
+self-hosted in this folder; **Playfair Display** is the serif fallback. (Roboto has been removed.)
+
+> **GCentra** ships Book (400) + Medium (500) here as `.otf`. The Medium `@font-face` claims the whole
+> `font-weight: 500 900` range, so bold/semibold render GCentra Medium (no faux-bold, no Roboto). Each
+> `@font-face` carries `ascent/descent/line-gap-override: 75%/25%/0%` to normalise GCentra's asymmetric
+> native metrics so text does **not** shift relative to adjacent icons.
+>
+> **ITC Clearface** ships `ITCClearface-Bold.otf` + `ITCClearface-BoldItalic.otf` (the only licensed
+> weights); the Regular `@font-face` falls back to the Bold file (headings render at 600–700 anyway).
 
 > ⚠️ **Licensing:** GCentra and ITC Clearface are **commercial, licensed** fonts. Only add them if
 > you hold a **webfont license** to serve them publicly. Download them from Gusto's Brandfolder

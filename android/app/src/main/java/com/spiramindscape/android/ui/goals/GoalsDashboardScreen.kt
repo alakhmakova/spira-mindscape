@@ -442,7 +442,8 @@ private fun GoalCard(goal: GoalSummary, onClick: () -> Unit) {
                         Text(
                             text = goal.title.ifBlank { "Untitled goal" },
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            // Goal name on the All-goals cards: GCentra Medium (500), matching web.
+                            fontWeight = FontWeight.Medium,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),

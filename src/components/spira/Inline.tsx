@@ -79,7 +79,7 @@ export function InlineList({
             <button
               onClick={add}
               className={cn(
-                "ml-2 mr-1 shrink-0 text-sm font-semibold rounded-md px-2 py-1",
+                "ml-2 mr-1 shrink-0 text-sm font-medium rounded-md px-2 py-1",
                 tone === "warning"
                   ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
                   : "bg-primary/10 text-primary hover:bg-primary/20",

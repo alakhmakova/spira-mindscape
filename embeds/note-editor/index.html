@@ -24,7 +24,10 @@
       .tiptap ul, .tiptap ol { padding-left: 22px; margin: 0 0 10px; }
       .tiptap ul[data-type="taskList"] { list-style: none; padding-left: 4px; }
       .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
-      .tiptap ul[data-type="taskList"] li > label { margin-top: 2px; }
+      .tiptap ul[data-type="taskList"] li > label { margin-top: 5px; display: inline-flex; align-items: center; }
+      .tiptap ul[data-type="taskList"] li > div { flex: 1; }
+      .tiptap ul[data-type="taskList"] li > div > p { margin: 0; }
+      .tiptap ul[data-type="taskList"] input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--kale-500); }
       .tiptap blockquote { border-left: 3px solid var(--kale-500); margin: 0 0 10px; padding: 2px 0 2px 14px; color: var(--salt-800); }
       .tiptap code { background: var(--salt-300); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
       .tiptap pre { background: var(--salt-300); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }

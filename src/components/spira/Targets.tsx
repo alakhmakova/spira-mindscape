@@ -532,7 +532,7 @@ export function TargetsSection({
 
           <button
             onClick={onNewTarget}
-            className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-semibold hover:bg-[#ea580c]/90"
+            className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-medium hover:bg-[#ea580c]/90"
           >
             Add target
           </button>
@@ -1174,7 +1174,7 @@ export function TargetRow({
           onChange={(title) => onUpdate({ title } as Partial<Target>)}
           ariaLabel="Edit target title"
           className={cn(
-            "block w-full text-base font-semibold",
+            "block w-full text-base font-medium",
             done ? "line-through text-muted-foreground" : "text-foreground",
           )}
         />
@@ -1667,40 +1667,38 @@ function ChecklistEditor({
               : "border-border hover:border-primary/50",
           )}
         >
-          <button
-            onClick={() =>
-              onChange(
-                items.map((i) =>
-                  i.id === it.id ? { ...i, done: !i.done } : i,
-                ),
-              )
-            }
+          {/* Same simple checkbox as the note editor's task list (teal accent), kept in its own
+              divider cell (border-r) so it stays visually separated from the task text. */}
+          <label
             className={cn(
-              "shrink-0 flex items-center justify-center border-r transition-colors",
+              "shrink-0 flex items-center justify-center border-r cursor-pointer transition-colors",
               compact ? "w-10" : "w-12",
               it.done
                 ? "bg-primary-soft border-primary"
                 : "bg-surface border-border hover:bg-secondary/50",
             )}
           >
-            <div
-              className={cn(
-                "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
-                it.done ? "bg-primary border-primary" : "border-border-strong",
-              )}
-            >
-              {it.done && (
-                <Check
-                  className="h-3 w-3 text-primary-foreground"
-                  strokeWidth={3}
-                />
-              )}
-            </div>
-          </button>
+            <input
+              type="checkbox"
+              checked={it.done}
+              onChange={() =>
+                onChange(
+                  items.map((i) =>
+                    i.id === it.id ? { ...i, done: !i.done } : i,
+                  ),
+                )
+              }
+              aria-label={
+                it.done ? "Mark subtask not done" : "Mark subtask done"
+              }
+              className="h-4 w-4 cursor-pointer"
+              style={{ accentColor: "var(--color-primary)" }}
+            />
+          </label>
 
           <div
             className={cn(
-              "flex-1 flex items-center min-w-0 gap-1 relative bg-surface",
+              "flex-1 flex items-center min-w-0 gap-1 bg-surface",
               compact ? "px-2 py-1" : "px-3 py-1.5",
             )}
           >
