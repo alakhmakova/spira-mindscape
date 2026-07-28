@@ -203,13 +203,13 @@ These are the **actual fonts we use** (loaded via Google Fonts on both web and A
 | Role | Font (brand → loaded fallback) | Leading | Tracking |
 |---|---|---|---|
 | Headline | **ITC Clearface** (serif) → **Playfair Display** → Georgia | 110% | tight |
-| Body | **GCentra** (sans) → **Roboto** → system sans | 130% | 0 |
+| Body | **GCentra** (sans, Book 400 + Medium 500) → system sans | 130% | 0 |
 
 The brand faces are **ITC Clearface** (headlines) and **GCentra** (body) — Gusto's **licensed**
-brand fonts. They are the *primary* families in the tokens, but the font **files are not committed**
-(licensing). Until the files are added, the app renders the **fallbacks** — **Playfair Display** and
-**Roboto** — which ARE loaded (web: Google Fonts `@import`; Android: bundled Playfair TTF + system
-Roboto), so the UI always has a serif headline + sans body.
+brand fonts, now **present** in `public/fonts/` (web) and `res/font/` (Android), so they render on
+both surfaces. **Playfair Display** stays as the serif fallback; **Roboto has been removed** —
+GCentra is the sole sans. GCentra only ships Book (400) + Medium (500), and Medium covers every
+heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no faux-bold).
 
 **To activate the brand fonts:** drop the licensed files into **`public/fonts/`** (web — see
 `public/fonts/README.md`) and **`res/font/`** (Android). Full steps for any font swap live in
@@ -228,16 +228,16 @@ Roboto), so the UI always has a serif headline + sans body.
 
 ### Font loading strategy
 
-**Web** (`src/styles.css`): `@font-face` blocks declare **GCentra** and **ITC Clearface** pointing at
-`public/fonts/…` (served at `/fonts/…`); the `--font-heading` / `--font-sans` / `--font-display`
-tokens list the brand font first, then the fallback. Google Fonts `@import` (mirrored by the `<link>`
-in `index.html`) loads the fallbacks **Roboto** + **Playfair Display**. Until the licensed files exist
-in `public/fonts/`, the `@font-face` `src` URLs 404 and the fallbacks render — nothing breaks.
+**Web** (`src/styles.css`): `@font-face` blocks declare **GCentra** (Book 400 + a Medium face that
+claims `font-weight: 500 900`) and **ITC Clearface**, pointing at `public/fonts/…` (served at
+`/fonts/…`); the `--font-heading` / `--font-sans` / `--font-display` tokens list the brand font first,
+then system fallbacks (no Roboto). The Google Fonts `@import` (mirrored by the `<link>` in
+`index.html`) loads only **Playfair Display** + JetBrains Mono now.
 
-**Android** (`Type.kt`): currently bundles **Playfair Display** (a variable TTF under `res/font/`) for
-headlines and uses `FontFamily.Default` (**Roboto**) for body — these are the fallbacks. To switch to
-the brand faces, bundle **ITC Clearface** + **GCentra** under `res/font/` and point `HeadingSerif` /
-`BodySans` at them (see `docs/changing-fonts.md`).
+**Android** (`Type.kt`): bundles **ITC Clearface** (headlines) and **GCentra** (body — Book + Medium,
+with Medium also registered at `FontWeight.Bold`) under `res/font/`; `HeadingSerif` = ITC Clearface,
+`BodySans` = GCentra (no Roboto). To swap either, bundle the replacement under `res/font/` and point
+`HeadingSerif` / `BodySans` at them (see `docs/changing-fonts.md`).
 
 Full step-by-step swap instructions (both surfaces) live in `docs/changing-fonts.md`.
 

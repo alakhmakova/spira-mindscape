@@ -948,7 +948,8 @@ private fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions) {
                     onCommit = { actions.onSetTargetTitle(target.id, it) },
                     modifier = Modifier.weight(1f),
                     placeholder = "Target title",
-                    textStyle = MaterialTheme.typography.bodyLarge,
+                    // Target title: GCentra Medium (500) — matches the Options strategy weight.
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     required = true,
                 )
                 IconButton(onClick = { confirmDelete = true }) {
@@ -1109,7 +1110,7 @@ private fun RealityToggleButton(label: String, selected: Boolean, modifier: Modi
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
             border = androidx.compose.foundation.BorderStroke(HeroButtonBorderWidth, MaterialTheme.colorScheme.primary),
-        ) { Text(label, fontWeight = FontWeight.SemiBold) }
+        ) { Text(label, fontWeight = FontWeight.Medium) }
     } else {
         OutlinedButton(
             onClick = onClick,
@@ -1119,7 +1120,7 @@ private fun RealityToggleButton(label: String, selected: Boolean, modifier: Modi
                 contentColor = MaterialTheme.colorScheme.primary,
             ),
             border = androidx.compose.foundation.BorderStroke(HeroButtonBorderWidth, MaterialTheme.colorScheme.primary),
-        ) { Text(label, fontWeight = FontWeight.SemiBold) }
+        ) { Text(label, fontWeight = FontWeight.Medium) }
     }
 }
 
@@ -1320,7 +1321,7 @@ private fun OptionsTabContent(
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 18.dp)) {
         // Page head — light on the teal Options surface (title + description, no kicker), matching
-        // the mockup: 32sp Playfair Display title, 14sp Roboto description on a light teal tint.
+        // the mockup: 32sp ITC Clearface title, 14sp GCentra description on a light teal tint.
         Column(
             Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

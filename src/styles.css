@@ -1,69 +1,96 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap');
 
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
 
 /* ── Gusto brand fonts (GCentra body + ITC Clearface headings) ───────────────────────
- * These are LICENSED fonts — drop the files into `public/fonts/` (see public/fonts/README.md)
- * and they activate automatically. Until the files exist these @font-face src's 404 and the
- * app falls back to the loaded Roboto / Playfair Display faces (same as before), so nothing
- * breaks. `local(...)` is tried first so a machine with the font installed skips the fetch.
+ * LICENSED fonts, present in `public/fonts/` (see public/fonts/README.md). GCentra is the SOLE
+ * sans (Book 400 + Medium 500); ITC Clearface is the headline serif. `local(...)` is tried first
+ * so a machine with the font installed skips the fetch. Playfair Display is kept only as a serif
+ * fallback — there is no Roboto anywhere in the app.
  */
+/* GCentra body sans — two static faces: Book (400) and Medium (500). The Medium face claims the
+ * whole 500–900 range, so every heavier request (bold/semibold: h1–h3, .font-display, buttons)
+ * renders GCentra Medium with NO faux-bold synthesis and NO fallback to Roboto.
+ *
+ * The ascent/descent/line-gap-override descriptors normalise GCentra's asymmetric native metrics
+ * (its OS/2 typo ascent/descent is 700/300 with a 30%-of-em line-gap, and its hhea ascent is a
+ * full em) to a stable ascent 75% / descent 25% / no line-gap box, so body and label text keeps a
+ * consistent baseline and does not jump up/down relative to adjacent icons. */
 @font-face {
   font-family: "GCentra";
   src:
-    local("GCentra"), local("GCentra-Regular"),
+    local("G Centra"), local("GCentra-Book"),
     url("/fonts/GCentra-Regular.woff2") format("woff2"),
     url("/fonts/GCentra-Regular.otf") format("opentype"),
     url("/fonts/GCentra-Regular.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: "GCentra";
   src:
-    local("GCentra Medium"), local("GCentra-Medium"),
+    local("G Centra Medium"), local("GCentra-Medium"),
     url("/fonts/GCentra-Medium.woff2") format("woff2"),
     url("/fonts/GCentra-Medium.otf") format("opentype"),
     url("/fonts/GCentra-Medium.ttf") format("truetype");
-  font-weight: 500;
+  /* 500–900: Medium covers every heavier weight so bold/semibold text renders GCentra Medium
+     (no faux-bold, no Roboto). */
+  font-weight: 500 900;
   font-style: normal;
   font-display: swap;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
 }
-@font-face {
-  font-family: "GCentra";
-  src:
-    local("GCentra Bold"), local("GCentra-Bold"),
-    url("/fonts/GCentra-Bold.woff2") format("woff2"),
-    url("/fonts/GCentra-Bold.otf") format("opentype"),
-    url("/fonts/GCentra-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
+/* ITC Clearface headline serif — only Bold + Bold Italic are licensed to us. The Regular face
+ * therefore falls back to the Bold file (headings render at weight 600–700 anyway). The
+ * line-gap-override:0% removes ITC Clearface's ~20%-of-em native line-gap so multi-line headings
+ * do not overflow the 110% heading leading (.font-heading). */
 @font-face {
   font-family: "ITC Clearface";
   src:
-    local("ITC Clearface"), local("ITCClearface-Regular"),
+    local("ITC Clearface Std"), local("ClearfaceStd-Bold"),
     url("/fonts/ITCClearface-Regular.woff2") format("woff2"),
     url("/fonts/ITCClearface-Regular.otf") format("opentype"),
-    url("/fonts/ITCClearface-Regular.ttf") format("truetype");
+    url("/fonts/ITCClearface-Bold.otf") format("opentype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+  ascent-override: 74%;
+  descent-override: 26%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: "ITC Clearface";
   src:
-    local("ITC Clearface Bold"), local("ITCClearface-Bold"),
+    local("ITC Clearface Std Bold"), local("ClearfaceStd-Bold"),
     url("/fonts/ITCClearface-Bold.woff2") format("woff2"),
-    url("/fonts/ITCClearface-Bold.otf") format("opentype"),
-    url("/fonts/ITCClearface-Bold.ttf") format("truetype");
+    url("/fonts/ITCClearface-Bold.otf") format("opentype");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
+  ascent-override: 74%;
+  descent-override: 26%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "ITC Clearface";
+  src:
+    local("ITC Clearface Std Bold Italic"), local("ClearfaceStd-BoldItalic"),
+    url("/fonts/ITCClearface-BoldItalic.woff2") format("woff2"),
+    url("/fonts/ITCClearface-BoldItalic.otf") format("opentype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+  ascent-override: 74%;
+  descent-override: 26%;
+  line-gap-override: 0%;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -126,12 +153,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Gusto brand fonts first; Roboto / Playfair Display are the loaded fallbacks that show
-     until the licensed GCentra / ITC Clearface files are added to public/fonts/. */
+  /* GCentra is the only sans; system sans is the ultimate fallback (no Roboto). Playfair Display
+     stays as the serif fallback for --font-heading below. */
   --font-sans:
-    GCentra, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-display:
-    GCentra, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-heading:
     "ITC Clearface", "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -367,10 +394,17 @@
     align-items: flex-start;
     gap: 0.55rem;
   }
+  /* Checkbox sits centred on the FIRST text line; with align-items:flex-start it then stays at the
+     top for multi-line items (not floating in the vertical middle). Zeroing the inner paragraph
+     margin is what actually fixes the "checkbox too high" look — the p's top margin was pushing the
+     text down while the checkbox stayed at the top. */
   .tiptap-content :where(ul[data-type="taskList"] li > label) {
-    margin-top: 0.25rem;
+    margin-top: 0.2rem;
+    display: inline-flex;
+    align-items: center;
   }
   .tiptap-content :where(ul[data-type="taskList"] li > div) { flex: 1; }
+  .tiptap-content :where(ul[data-type="taskList"] li > div > p) { margin: 0; }
   .tiptap-content :where(ul[data-type="taskList"] input[type="checkbox"]) {
     width: 1rem;
     height: 1rem;
