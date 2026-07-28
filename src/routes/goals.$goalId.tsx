@@ -173,7 +173,7 @@ function GoalWorkspace() {
           >
             <div className="spira-reality-grid grid gap-0 rounded-lg overflow-hidden border hairline">
               <div className="spira-reality-primary p-5 sm:p-6 bg-[#e5f4f3] hairline">
-                <h3 className="font-display text-lg mb-3">Actions taken</h3>
+                <h3 className="font-medium text-lg mb-3">Actions taken</h3>
                 <InlineList
                   items={goal.reality.actions}
                   emptyHint="Nothing yet — what have you tried?"
@@ -185,7 +185,7 @@ function GoalWorkspace() {
                 />
               </div>
               <div className="p-5 sm:p-6 bg-[#fff2df]">
-                <h3 className="font-display text-lg mb-3">Obstacles</h3>
+                <h3 className="font-medium text-lg mb-3">Obstacles</h3>
                 <InlineList
                   items={goal.reality.obstacles}
                   emptyHint="What's standing in the way?"
@@ -211,7 +211,7 @@ function GoalWorkspace() {
             action={
               <button
                 onClick={() => setNewResource(true)}
-                className="inline-flex items-center px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-semibold hover:bg-primary-soft"
+                className="inline-flex items-center px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-medium hover:bg-primary-soft"
               >
                 Add resource
               </button>

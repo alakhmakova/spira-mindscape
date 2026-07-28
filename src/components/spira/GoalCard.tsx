@@ -104,7 +104,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
 
       {/* Title */}
       <div className="flex-1 flex flex-col justify-center min-w-0 py-5">
-        <h3 className="font-semibold text-lg text-foreground/90 leading-snug line-clamp-2">
+        <h3 className="font-medium text-lg text-foreground/90 leading-snug line-clamp-2">
           <Link
             to="/goals/$goalId"
             params={{ goalId: goal.id }}
