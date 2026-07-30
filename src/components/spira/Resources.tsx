@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
+import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { PdfViewer } from "@/components/spira/PdfViewer";
 import { RichTextEditor } from "@/components/spira/RichTextEditor";
 import {
@@ -51,7 +52,8 @@ const typeMeta = {
 } as const;
 
 const MAX_RESOURCE_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_RESOURCE_LABEL_LENGTH = 200;
+// Single source of truth for the resource label cap (mirrors the server); see limits.ts.
+const MAX_RESOURCE_LABEL_LENGTH = FIELD_LIMITS.resourceLabel;
 
 function validResourceFileType(mime: string) {
   return mime.startsWith("image/") || mime === "application/pdf";
@@ -597,6 +599,8 @@ function PreviewBody({
             <AutoTextarea
               required
               requiredMessage="Note title is required"
+              maxLength={FIELD_LIMITS.resourceLabel}
+              maxLengthLabel="Note title"
               value={resource.title}
               onChange={(v) =>
                 updateResource(goalId, resource.id, { title: v })
@@ -1185,6 +1189,8 @@ function MobileNoteBody({
         <AutoTextarea
           value={title}
           onChange={onTitleChange}
+          maxLength={FIELD_LIMITS.resourceLabel}
+          maxLengthLabel="Note title"
           className="font-display text-2xl w-full"
           placeholder="Note title"
         />
@@ -1430,10 +1436,26 @@ function Form({
   const linkError =
     type === "link" && trimmedUrl && !validResourceUrl(trimmedUrl)
       ? "Enter a valid http or https URL."
-      : "";
+      : type === "link"
+        ? (lengthError(trimmedUrl, FIELD_LIMITS.resourceUrl, "URL") ?? "")
+        : "";
   const emailError =
     type === "email" && trimmedEmail && !validResourceEmail(trimmedEmail)
       ? "Enter a valid email address."
+      : type === "email"
+        ? (lengthError(trimmedEmail, FIELD_LIMITS.resourceLabel, "Email") ?? "")
+        : "";
+  const bodyError =
+    type === "note"
+      ? (lengthError(body, FIELD_LIMITS.resourceNoteBody, "Note") ?? "")
+      : "";
+  const roleError =
+    type === "email"
+      ? (lengthError(role.trim(), FIELD_LIMITS.resourceLabel, "Role") ?? "")
+      : "";
+  const phoneError =
+    type === "email"
+      ? (lengthError(phone.trim(), FIELD_LIMITS.resourcePhone, "Phone") ?? "")
       : "";
   const labelValue =
     type === "email"
@@ -1452,12 +1474,12 @@ function Form({
   const canSubmit = labelError
     ? false
     : type === "note"
-      ? !!title.trim()
+      ? !!title.trim() && !bodyError
       : type === "link"
         ? !!trimmedUrl && !linkError
         : type === "file"
           ? !!fileData && !fileError
-          : !!trimmedEmail && !emailError;
+          : !!trimmedEmail && !emailError && !roleError && !phoneError;
 
   const submit = () => {
     if (submittedRef.current) return;
@@ -1557,11 +1579,7 @@ function Form({
               Title{" "}
               {type === "note" && <span className="text-destructive">*</span>}
             </label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={MAX_RESOURCE_LABEL_LENGTH + 1}
-            />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
             {labelError && (
               <p
                 className="mt-2 text-xs font-medium text-destructive"
@@ -1583,6 +1601,14 @@ function Form({
               placeholder="Write your note here..."
               embedded
             />
+            {bodyError && (
+              <p
+                className="mt-2 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {bodyError}
+              </p>
+            )}
           </div>
         )}
         {type === "link" && (
@@ -1645,7 +1671,6 @@ function Form({
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                maxLength={MAX_RESOURCE_LABEL_LENGTH + 1}
                 placeholder="Optional"
               />
               {labelError && (
@@ -1683,6 +1708,14 @@ function Form({
                 onChange={(e) => setRole(e.target.value)}
                 placeholder="Optional"
               />
+              {roleError && (
+                <p
+                  className="mt-2 text-xs font-medium text-destructive"
+                  role="alert"
+                >
+                  {roleError}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-sm font-semibold block mb-1.5">
@@ -1693,6 +1726,14 @@ function Form({
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="Optional"
               />
+              {phoneError && (
+                <p
+                  className="mt-2 text-xs font-medium text-destructive"
+                  role="alert"
+                >
+                  {phoneError}
+                </p>
+              )}
             </div>
           </div>
         )}

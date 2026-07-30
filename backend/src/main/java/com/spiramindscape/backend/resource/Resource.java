@@ -50,12 +50,15 @@ public class Resource {
     @Column(length = 200)
     private String name;
 
+    @Size(max = 200)
     @Column(length = 200)
     private String role;
 
+    @Size(max = 200)
     @Column(length = 200)
     private String email;
 
+    @Size(max = 50)
     @Column(length = 50)
     private String phone;
 
