@@ -4,6 +4,7 @@ import com.spiramindscape.backend.goal.Goal;
 import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -193,6 +194,54 @@ class ResourceServiceTest {
         )))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Note resource requires title");
+
+        verify(resourceRepository, never()).save(any(Resource.class));
+    }
+
+    // ─── email/contact length limits ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("create email: role over 200 chars is rejected with a clear message")
+    void rejectsEmailResourceRoleOverLimit() {
+        when(goalService.findById(1L)).thenReturn(goal(1L));
+
+        assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
+                null, "email", null, null, null, null,
+                "Alice", "r".repeat(201), "alice@example.com", null
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Email resource role must be 200 characters or fewer");
+
+        verify(resourceRepository, never()).save(any(Resource.class));
+    }
+
+    @Test
+    @DisplayName("create email: phone over 50 chars is rejected with a clear message")
+    void rejectsEmailResourcePhoneOverLimit() {
+        when(goalService.findById(1L)).thenReturn(goal(1L));
+
+        assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
+                null, "email", null, null, null, null,
+                "Alice", null, "alice@example.com", "1".repeat(51)
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Email resource phone must be 50 characters or fewer");
+
+        verify(resourceRepository, never()).save(any(Resource.class));
+    }
+
+    @Test
+    @DisplayName("create email: a valid-format email over 200 chars is rejected")
+    void rejectsEmailResourceEmailOverLimit() {
+        when(goalService.findById(1L)).thenReturn(goal(1L));
+        String longEmail = "a".repeat(195) + "@b.com"; // valid format, length 201
+
+        assertThatThrownBy(() -> resourceService.create(1L, new CreateResourceInput(
+                null, "email", null, null, null, null,
+                "Alice", null, longEmail, null
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Email resource email must be 200 characters or fewer");
 
         verify(resourceRepository, never()).save(any(Resource.class));
     }

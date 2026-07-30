@@ -25,6 +25,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TargetService {
 
+    // Mirror the entity column limits (Target.title/unit, ChecklistItem.text) so an
+    // over-length value fails with a clear message instead of a DB truncation error.
+    public static final int MAX_TARGET_TITLE_LENGTH = 200;
+    public static final int MAX_TARGET_UNIT_LENGTH = 50;
+    public static final int MAX_CHECKLIST_ITEM_TEXT_LENGTH = 500;
+
     private final TargetRepository targetRepository;
     private final ChecklistItemRepository checklistItemRepository;
     private final GoalService goalService;
@@ -159,6 +165,10 @@ public class TargetService {
         if (title != null) {
             String normalized = title.trim();
             if (normalized.isEmpty()) throw new IllegalArgumentException("Target title is required");
+            if (normalized.length() > MAX_TARGET_TITLE_LENGTH) {
+                throw new IllegalArgumentException(
+                        "Target title must be " + MAX_TARGET_TITLE_LENGTH + " characters or fewer");
+            }
             target.setTitle(normalized);
         }
         if (type != null)       target.setType(normalizeType(type));
@@ -167,7 +177,13 @@ public class TargetService {
         if (start != null)      target.setStart(start);
         if (current != null)    target.setCurrent(current);
         if (total != null)      target.setTotal(total);
-        if (unit != null)       target.setUnit(unit);
+        if (unit != null) {
+            if (unit.length() > MAX_TARGET_UNIT_LENGTH) {
+                throw new IllegalArgumentException(
+                        "Target unit must be " + MAX_TARGET_UNIT_LENGTH + " characters or fewer");
+            }
+            target.setUnit(unit);
+        }
         if (done != null)       target.setDone(done);
     }
 
@@ -184,6 +200,10 @@ public class TargetService {
                     : existingById.get(parsedId);
             if (item == null) {
                 throw new IllegalArgumentException("Checklist item not found: " + input.id());
+            }
+            if (input.text() != null && input.text().length() > MAX_CHECKLIST_ITEM_TEXT_LENGTH) {
+                throw new IllegalArgumentException(
+                        "Checklist item must be " + MAX_CHECKLIST_ITEM_TEXT_LENGTH + " characters or fewer");
             }
             item.setTarget(target);
             item.setText(input.text());

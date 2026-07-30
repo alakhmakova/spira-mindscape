@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
+import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { targetProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
@@ -100,18 +101,22 @@ export function TargetsSection({
   const [deadlineTo, setDeadlineTo] = useState("");
   const [achievedFrom, setAchievedFrom] = useState("");
   const [achievedTo, setAchievedTo] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Default to hiding done targets — the list leads with what's left to do. Switch
+  // to "All"/"Done" via the Status filter.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("not-done");
   const [sortField, setSortField] = useState<SortField>("deadline");
   const [sortDesc, setSortDesc] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isDefaultSort = sortField === "deadline" && !sortDesc;
+  // "not-done" is the default view, so it isn't counted as an active filter — only
+  // deviating from it (All / Done) or setting a date range lights the filter chip.
   const filtersActive =
     !!deadlineFrom ||
     !!deadlineTo ||
     !!achievedFrom ||
     !!achievedTo ||
-    statusFilter !== "all";
+    statusFilter !== "not-done";
   const hasAnyActive = !!search.trim() || filtersActive || !isDefaultSort;
 
   const resetFilters = () => {
@@ -119,7 +124,7 @@ export function TargetsSection({
     setDeadlineTo("");
     setAchievedFrom("");
     setAchievedTo("");
-    setStatusFilter("all");
+    setStatusFilter("not-done");
   };
 
   const processedTargets = useMemo(() => {
@@ -822,6 +827,8 @@ export function DesktopTargetsTable({
                     onChange={(title) => updateTarget(goal.id, t.id, { title })}
                     placeholder="Untitled target"
                     ariaLabel="Edit target title"
+                    maxLength={FIELD_LIMITS.targetTitle}
+                    maxLengthLabel="Target title"
                     className={cn(
                       "block w-full font-medium text-sm",
                       done
@@ -1173,6 +1180,8 @@ export function TargetRow({
           value={target.title}
           onChange={(title) => onUpdate({ title } as Partial<Target>)}
           ariaLabel="Edit target title"
+          maxLength={FIELD_LIMITS.targetTitle}
+          maxLengthLabel="Target title"
           className={cn(
             "block w-full text-base font-medium",
             done ? "line-through text-muted-foreground" : "text-foreground",
@@ -1347,6 +1356,9 @@ function NumericBody({
           onChange={(v) =>
             onUpdate({ unit: v || undefined } as Partial<Target>)
           }
+          onInvalid={setValidationMessage}
+          maxLength={FIELD_LIMITS.targetUnit}
+          maxLengthLabel="Unit"
           ariaLabel="Unit"
           className="ml-0.5"
         />
@@ -1402,6 +1414,8 @@ function InlineEditable({
   numeric,
   onInvalid,
   className,
+  maxLength,
+  maxLengthLabel = "This field",
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -1410,6 +1424,8 @@ function InlineEditable({
   numeric?: boolean;
   onInvalid?: (message: string) => void;
   className?: string;
+  maxLength?: number;
+  maxLengthLabel?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -1434,6 +1450,15 @@ function InlineEditable({
         onInvalid?.("Enter a non-negative whole number.");
         return;
       }
+    }
+
+    if (maxLength !== undefined && text.length > maxLength) {
+      // Over the server limit — revert and report, so nothing invalid reaches the store.
+      e.currentTarget.textContent = value;
+      onInvalid?.(
+        `${maxLengthLabel} must be ${maxLength} characters or fewer.`,
+      );
+      return;
     }
 
     if (e.currentTarget.textContent !== text) {
@@ -1710,6 +1735,8 @@ function ChecklistEditor({
                 )
               }
               ariaLabel="Edit subtask"
+              maxLength={FIELD_LIMITS.checklistText}
+              maxLengthLabel="Task"
               className={cn(
                 "flex-1 text-sm truncate",
                 it.done && "line-through text-muted-foreground",
@@ -1777,10 +1804,13 @@ function ChecklistAddInput({
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const overBy =
+    draft.trim().length > FIELD_LIMITS.checklistText ? draft.trim().length : 0;
 
   const commit = () => {
     const text = draft.trim();
     if (!text) return;
+    if (text.length > FIELD_LIMITS.checklistText) return; // too long — blocked, message shown
     onAdd(text);
     setDraft("");
     inputRef.current?.focus();
@@ -1828,13 +1858,23 @@ function ChecklistAddInput({
           {draft.trim() && (
             <button
               onClick={commit}
-              className="ml-1 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 shrink-0"
+              disabled={overBy > 0}
+              className="ml-1 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 shrink-0 disabled:opacity-40"
             >
               Add
             </button>
           )}
         </div>
       </div>
+      {overBy > 0 && (
+        <p
+          className="mt-1 text-[13px] font-medium text-destructive"
+          role="alert"
+        >
+          Task is too long — max {FIELD_LIMITS.checklistText} characters (you
+          have {overBy}). Trim it to add.
+        </p>
+      )}
     </div>
   );
 }
@@ -1910,8 +1950,13 @@ function NewTargetForm({
     return null;
   })();
 
+  const titleMessage = lengthError(title, FIELD_LIMITS.targetTitle, "Title");
+  const unitMessage = lengthError(unit, FIELD_LIMITS.targetUnit, "Unit");
+
   const canSubmit =
     !!title.trim() &&
+    !titleMessage &&
+    !unitMessage &&
     (type !== "checklist" || checklistItems.length >= 1) &&
     (type !== "numeric" || numericMessage === null);
 
@@ -2030,14 +2075,36 @@ function NewTargetForm({
         </div>
 
         <div>
-          <label className="text-sm font-semibold block mb-1.5">
-            Title <span className="text-destructive">*</span>
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-semibold">
+              Title <span className="text-destructive">*</span>
+            </label>
+            {title.length >= FIELD_LIMITS.targetTitle - 20 && (
+              <span
+                className={cn(
+                  "num text-xs tabular-nums",
+                  title.length >= FIELD_LIMITS.targetTitle
+                    ? "text-destructive font-semibold"
+                    : "text-muted-foreground",
+                )}
+              >
+                {title.length}/{FIELD_LIMITS.targetTitle}
+              </span>
+            )}
+          </div>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Outbound applications"
           />
+          {titleMessage && (
+            <p
+              className="text-xs font-medium text-destructive mt-1.5"
+              role="alert"
+            >
+              {titleMessage}
+            </p>
+          )}
         </div>
         {type === "numeric" && (
           <div className="grid grid-cols-3 gap-3">
@@ -2081,6 +2148,14 @@ function NewTargetForm({
                 role="alert"
               >
                 {numericMessage}
+              </p>
+            )}
+            {unitMessage && (
+              <p
+                className="col-span-3 text-xs font-medium text-destructive"
+                role="alert"
+              >
+                {unitMessage}
               </p>
             )}
           </div>
@@ -2185,42 +2260,58 @@ function NewTargetForm({
 function NewTaskInlineInput({ onAdd }: { onAdd: (text: string) => void }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const overBy =
+    draft.trim().length > FIELD_LIMITS.checklistText ? draft.trim().length : 0;
 
   const commit = () => {
-    if (!draft.trim()) return;
-    onAdd(draft.trim());
+    const text = draft.trim();
+    if (!text) return;
+    if (text.length > FIELD_LIMITS.checklistText) return; // too long — blocked, message shown
+    onAdd(text);
     setDraft("");
     inputRef.current?.focus();
   };
 
   return (
-    <div className="flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary min-h-[40px]">
-      <div className="w-10 shrink-0 flex items-center justify-center border-r border-border bg-secondary/30">
-        <Plus className="h-4 w-4 text-muted-foreground" />
+    <div>
+      <div className="flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary min-h-[40px]">
+        <div className="w-10 shrink-0 flex items-center justify-center border-r border-border bg-secondary/30">
+          <Plus className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div className="flex-1 flex items-center px-3 py-1 gap-2">
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              }
+            }}
+            placeholder="Add task… (Enter to confirm)"
+            className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/75 min-h-[38px]"
+          />
+          {draft.trim() && (
+            <button
+              onClick={commit}
+              disabled={overBy > 0}
+              className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
+            >
+              Add
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex-1 flex items-center px-3 py-1 gap-2">
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commit();
-            }
-          }}
-          placeholder="Add task… (Enter to confirm)"
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/75 min-h-[38px]"
-        />
-        {draft.trim() && (
-          <button
-            onClick={commit}
-            className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors"
-          >
-            Add
-          </button>
-        )}
-      </div>
+      {overBy > 0 && (
+        <p
+          className="mt-1 text-[13px] font-medium text-destructive"
+          role="alert"
+        >
+          Task is too long — max {FIELD_LIMITS.checklistText} characters (you
+          have {overBy}). Trim it to add.
+        </p>
+      )}
     </div>
   );
 }

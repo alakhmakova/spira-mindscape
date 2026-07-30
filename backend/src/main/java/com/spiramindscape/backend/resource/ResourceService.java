@@ -26,6 +26,7 @@ public class ResourceService {
     public static final int MAX_NOTE_BODY_LENGTH = 50_000;
     public static final int MAX_RESOURCE_LABEL_LENGTH = 200;
     public static final int MAX_LINK_URL_LENGTH = 1_000;
+    public static final int MAX_CONTACT_PHONE_LENGTH = 50;
 
     private static final Set<String> ALLOWED_FILE_MIME_TYPES = Set.of("application/pdf");
     private static final Set<String> COMMON_CREATE_FIELDS = Set.of("type");
@@ -254,10 +255,16 @@ public class ResourceService {
         if (!resource.getEmail().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
             throw new IllegalArgumentException("Email resource email must be valid");
         }
+        validateLabelLength(resource.getEmail(), "Email resource email");
         if (!hasText(resource.getName())) {
             resource.setName(resource.getEmail());
         }
         validateLabelLength(resource.getName(), "Email resource name");
+        validateLabelLength(resource.getRole(), "Email resource role");
+        if (resource.getPhone() != null && resource.getPhone().length() > MAX_CONTACT_PHONE_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Email resource phone must be " + MAX_CONTACT_PHONE_LENGTH + " characters or fewer");
+        }
     }
 
     private void requireText(String value, String message) {

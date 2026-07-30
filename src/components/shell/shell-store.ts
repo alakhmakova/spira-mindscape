@@ -37,7 +37,9 @@ export const useShellFilters = create<State>((set) => ({
   deadlineFrom: "",
   deadlineTo: "",
   confidence: "",
-  status: "all",
+  // Default to hiding achieved goals — the overview leads with what's still in
+  // motion. Users can switch to "All"/"Achieved" via the Status filter.
+  status: "not-achieved",
   viewMode: "cards",
   setQuery: (query) => set({ query }),
   setSort: (sort) => set({ sort }),
@@ -48,6 +50,12 @@ export const useShellFilters = create<State>((set) => ({
   setConfidence: (confidence) => set({ confidence }),
   setStatus: (status) => set({ status }),
   resetFilters: () =>
-    set({ deadlineFrom: "", deadlineTo: "", confidence: "", status: "all" }),
+    set({
+      deadlineFrom: "",
+      deadlineTo: "",
+      confidence: "",
+      // Reset returns to the default view (not-achieved), not "All".
+      status: "not-achieved",
+    }),
   setViewMode: (viewMode) => set({ viewMode }),
 }));
