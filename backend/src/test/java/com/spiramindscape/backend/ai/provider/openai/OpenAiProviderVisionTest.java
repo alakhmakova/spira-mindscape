@@ -40,4 +40,27 @@ class OpenAiProviderVisionTest {
         assertThat(imagePart.get("image_url").get("url").asText())
                 .isEqualTo("data:image/jpeg;base64,BBBB");
     }
+
+    /**
+     * A directly-attached image (BUG-017) rides on the user turn as its {@code images}
+     * — the same VisionSupport path adds a follow-up user {@code image_url} message.
+     */
+    @Test
+    void userMessageImageAddsFollowUpUserImageMessage() throws Exception {
+        LlmMessage msg = new LlmMessage(
+                "user", "what's in this?", null, null,
+                List.of(new LlmImage("image/png", "CCCC")));
+
+        JsonNode body = mapper.readTree(provider.buildRequestBody(List.of(msg), null, List.of()));
+
+        JsonNode messages = body.get("messages");
+        assertThat(messages).hasSize(2); // the user text + a follow-up user image message
+        assertThat(messages.get(0).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(0).get("content").asText()).isEqualTo("what's in this?");
+
+        JsonNode imagePart = messages.get(1).get("content").get(0);
+        assertThat(imagePart.get("type").asText()).isEqualTo("image_url");
+        assertThat(imagePart.get("image_url").get("url").asText())
+                .isEqualTo("data:image/png;base64,CCCC");
+    }
 }

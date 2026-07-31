@@ -2,11 +2,15 @@ package com.spiramindscape.backend.ai;
 
 import com.spiramindscape.backend.ai.chat.AiChatService;
 import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
+import com.spiramindscape.backend.ai.chat.transcript.AiChatTranscriptService;
+import com.spiramindscape.backend.ai.chat.transcript.dto.SaveTranscriptRequest;
+import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptDto;
 import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
 import com.spiramindscape.backend.ai.model.AiModelService;
+import com.spiramindscape.backend.ai.preference.AiPreferenceService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.proposal.dto.ProposalDto;
 import jakarta.validation.Valid;
@@ -49,18 +53,24 @@ public class AiController {
     private final AiModelService modelService;
     private final AiProposalService proposalService;
     private final GoalMemoryService goalMemoryService;
+    private final AiChatTranscriptService transcriptService;
+    private final AiPreferenceService preferenceService;
 
     public AiController(
             AiKeyService keyService,
             AiChatService chatService,
             AiModelService modelService,
             AiProposalService proposalService,
-            GoalMemoryService goalMemoryService) {
+            GoalMemoryService goalMemoryService,
+            AiChatTranscriptService transcriptService,
+            AiPreferenceService preferenceService) {
         this.keyService = keyService;
         this.chatService = chatService;
         this.modelService = modelService;
         this.proposalService = proposalService;
         this.goalMemoryService = goalMemoryService;
+        this.transcriptService = transcriptService;
+        this.preferenceService = preferenceService;
     }
 
     // ── Key management ────────────────────────────────────────────────────────
@@ -184,5 +194,52 @@ public class AiController {
             @PathVariable Long goalId, @RequestBody SaveMemoryRequest request) {
         goalMemoryService.append(goalId, request.summary());
         return ResponseEntity.ok(Map.of("status", "saved"));
+    }
+
+    // ── Chat transcript sync (cross-device) ───────────────────────────────────
+
+    /**
+     * The current user's stored chat transcript for a scope ({@code goalId}
+     * omitted = the global chat). Returned so a device can pick up a
+     * conversation started on another device. Empty {@code "[]"} when none.
+     */
+    @GetMapping("/chat/transcript")
+    public TranscriptDto getTranscript(@RequestParam(required = false) Long goalId) {
+        return transcriptService.get(goalId);
+    }
+
+    /** Upsert (last write wins) the current user's transcript for a scope. */
+    @PutMapping("/chat/transcript")
+    public TranscriptDto saveTranscript(@RequestBody @Valid SaveTranscriptRequest request) {
+        return transcriptService.save(request.goalId(), request.content());
+    }
+
+    /** Clear the current user's transcript for a scope ("New chat"). */
+    @DeleteMapping("/chat/transcript")
+    public ResponseEntity<Map<String, String>> clearTranscript(
+            @RequestParam(required = false) Long goalId) {
+        transcriptService.clear(goalId);
+        return ResponseEntity.ok(Map.of("status", "cleared"));
+    }
+
+    // ── Preferences (cross-device) ────────────────────────────────────────────
+
+    public record AiPreferencesDto(String provider) {}
+
+    public record SavePreferencesRequest(
+            @jakarta.validation.constraints.Pattern(
+                    regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|anthropic|openai|mistral|gemini")
+            String provider) {}
+
+    /** The current user's saved chat provider (null if none chosen yet). */
+    @GetMapping("/preferences")
+    public AiPreferencesDto getPreferences() {
+        return new AiPreferencesDto(preferenceService.getProvider());
+    }
+
+    /** Persist the current user's selected chat provider so it follows them. */
+    @PutMapping("/preferences")
+    public AiPreferencesDto savePreferences(@RequestBody @Valid SavePreferencesRequest request) {
+        return new AiPreferencesDto(preferenceService.setProvider(request.provider()));
     }
 }

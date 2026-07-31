@@ -4,6 +4,7 @@ import com.spiramindscape.backend.goal.Goal;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,6 +28,7 @@ public class Target {
     private String type;
 
     @NotBlank
+    @Size(max = 200)
     @Column(length = 200)
     private String title;
 
@@ -39,6 +41,7 @@ public class Target {
     @Column(name = "total_value")
     private Double total;
 
+    @Size(max = 50)
     @Column(length = 50)
     private String unit;
 

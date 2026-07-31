@@ -370,6 +370,53 @@ class TargetServiceTest {
                 .hasMessageContaining("Numeric target current cannot be set on create");
     }
 
+    // ─── length limits (mirror the entity column limits) ─────────────────────
+
+    @Test
+    @DisplayName("create: title over 200 chars is rejected with a clear message")
+    void rejectsTargetTitleOverLimit() {
+        when(goalService.findById(1L)).thenReturn(goal(1L));
+        String longTitle = "a".repeat(201);
+
+        assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
+                longTitle, "binary", null, null, null, null, null, null, null
+        ), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Target title must be 200 characters or fewer");
+
+        verify(targetRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("create: unit over 50 chars is rejected with a clear message")
+    void rejectsTargetUnitOverLimit() {
+        when(goalService.findById(1L)).thenReturn(goal(1L));
+        String longUnit = "u".repeat(51);
+
+        assertThatThrownBy(() -> targetService.create(1L, new CreateTargetInput(
+                "Read pages", "numeric", null, 0d, null, 10d, longUnit, null, null
+        ), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Target unit must be 50 characters or fewer");
+
+        verify(targetRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("create: a title exactly at the 200-char limit is accepted")
+    void acceptsTargetTitleAtLimit() {
+        Goal goal = goal(1L);
+        when(goalService.findById(1L)).thenReturn(goal);
+        when(targetRepository.save(any(Target.class))).thenAnswer(inv -> inv.getArgument(0));
+        String maxTitle = "a".repeat(200);
+
+        Target target = targetService.create(1L, new CreateTargetInput(
+                maxTitle, "binary", null, null, null, null, null, null, null
+        ), Map.of());
+
+        assertThat(target.getTitle()).hasSize(200);
+    }
+
     // ─── numeric create: missing / null / negative / equal ───────────────────
 
     @Test
