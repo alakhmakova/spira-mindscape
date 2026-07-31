@@ -249,6 +249,19 @@ public class AnthropicProvider implements LlmProvider {
             return msg;
         }
 
+        // Plain message with directly-attached image(s) (BUG-017): Anthropic
+        // takes image blocks inline in the content array, alongside the text.
+        if (m.hasImages()) {
+            List<Map<String, Object>> blocks = new ArrayList<>();
+            if (m.content() != null && !m.content().isBlank()) {
+                blocks.add(Map.of("type", "text", "text", m.content()));
+            }
+            blocks.addAll(VisionSupport.anthropicImageBlocks(m.images()));
+            msg.put("role", m.role());
+            msg.put("content", blocks);
+            return msg;
+        }
+
         // plain text
         msg.put("role", m.role());
         msg.put("content", m.content());

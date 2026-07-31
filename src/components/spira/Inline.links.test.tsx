@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 import { InlineText } from "./Inline";
 
@@ -43,5 +43,51 @@ describe("InlineText URL auto-linking", () => {
     );
     expect(screen.getByText("Add something…")).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+});
+
+describe("InlineText paste length guard", () => {
+  const pasteUrl = (url: string) => {
+    // Enter edit mode (the display span → textarea), then paste a pure URL.
+    fireEvent.click(screen.getByRole("textbox", { name: "Edit strategy" }));
+    const textarea = screen.getByRole("textbox", { name: "Edit strategy" });
+    fireEvent.paste(textarea, { clipboardData: { getData: () => url } });
+  };
+
+  it("refuses a pasted URL that would exceed maxLength — no commit, clear message", () => {
+    const onChange = vi.fn();
+    render(
+      <InlineText
+        value=""
+        onChange={onChange}
+        ariaLabel="Edit strategy"
+        maxLength={30}
+        maxLengthLabel="Strategy"
+      />,
+    );
+
+    pasteUrl("https://example.com/" + "a".repeat(60)); // well over 30 chars
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/too long to save here/i)).toBeInTheDocument();
+  });
+
+  it("commits a pasted URL that fits within maxLength", () => {
+    const onChange = vi.fn();
+    render(
+      <InlineText
+        value=""
+        onChange={onChange}
+        ariaLabel="Edit strategy"
+        maxLength={100}
+      />,
+    );
+
+    pasteUrl("https://example.com/x");
+
+    expect(onChange).toHaveBeenCalledWith("https://example.com/x");
+    expect(
+      screen.queryByText(/too long to save here/i),
+    ).not.toBeInTheDocument();
   });
 });

@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfidenceStepper } from "./Confidence";
 import { useSpira } from "@/lib/spira/store";
 import type { Confidence } from "@/lib/spira/types";
+import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
+import { cn } from "@/lib/utils";
 import { DeadlinePopover } from "./DeadlinePopover";
 
 function FormBody({ onDone }: { onDone: () => void }) {
@@ -22,8 +24,16 @@ function FormBody({ onDone }: { onDone: () => void }) {
   const [confidence, setConfidence] = useState<Confidence>(5);
   const [deadline, setDeadline] = useState<string>("");
 
+  const titleMessage = lengthError(title, FIELD_LIMITS.goalTitle, "Title");
+  const descriptionMessage = lengthError(
+    description,
+    FIELD_LIMITS.goalDescription,
+    "Description",
+  );
+  const canSubmit = !!title.trim() && !titleMessage && !descriptionMessage;
+
   const submit = (publish = true) => {
-    if (!title.trim()) return;
+    if (!canSubmit) return;
     addGoal({
       title: title.trim(),
       description,
@@ -56,18 +66,57 @@ function FormBody({ onDone }: { onDone: () => void }) {
         id="new-goal-scroll-container"
         className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0"
       >
-        <Field label="Title" required>
+        <Field
+          label="Title"
+          required
+          hintRight={
+            title.length >= FIELD_LIMITS.goalTitle - 20 ? (
+              <span
+                className={cn(
+                  "num text-xs tabular-nums",
+                  title.length >= FIELD_LIMITS.goalTitle
+                    ? "text-destructive font-semibold"
+                    : "text-muted-foreground",
+                )}
+              >
+                {title.length}/{FIELD_LIMITS.goalTitle}
+              </span>
+            ) : undefined
+          }
+        >
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Launch Spira to first 50 users"
             className="text-base"
           />
+          {titleMessage && (
+            <p
+              className="text-xs font-medium text-destructive mt-1.5"
+              role="alert"
+            >
+              {titleMessage}
+            </p>
+          )}
         </Field>
 
         <Field
           label="Description"
           hint="Specific, measurable, achievable, relevant, time-bound."
+          hintRight={
+            description.length >= FIELD_LIMITS.goalDescription - 100 ? (
+              <span
+                className={cn(
+                  "num text-xs tabular-nums",
+                  description.length >= FIELD_LIMITS.goalDescription
+                    ? "text-destructive font-semibold"
+                    : "text-muted-foreground",
+                )}
+              >
+                {description.length}/{FIELD_LIMITS.goalDescription}
+              </span>
+            ) : undefined
+          }
         >
           <Textarea
             value={description}
@@ -75,6 +124,14 @@ function FormBody({ onDone }: { onDone: () => void }) {
             placeholder="What does success look like?"
             className="min-h-28"
           />
+          {descriptionMessage && (
+            <p
+              className="text-xs font-medium text-destructive mt-1.5"
+              role="alert"
+            >
+              {descriptionMessage}
+            </p>
+          )}
         </Field>
 
         <Field
@@ -118,7 +175,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={() => submit(true)}
-          disabled={!title.trim()}
+          disabled={!canSubmit}
           className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 disabled:opacity-40 transition-colors"
         >
           Create goal

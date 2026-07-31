@@ -52,10 +52,15 @@ export async function createGoal(page: Page, title: string) {
   ).toBeVisible();
 }
 
-/** All option cards in the Options section (identified by their drag handle). */
+/**
+ * All option cards in the Options section. Identified by the per-card rating
+ * button, which is present on every card regardless of selection or reorder
+ * mode (reordering is now a whole-card drag toggled from the section header, so
+ * there is no per-card drag handle to key off).
+ */
 export function optionCards(page: Page) {
   return page.locator("li", {
-    has: page.getByRole("button", { name: "Drag to reorder strategy" }),
+    has: page.getByRole("button", { name: "Rate strategy" }),
   });
 }
 

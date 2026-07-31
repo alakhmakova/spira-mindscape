@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { X, ArrowUp } from "lucide-react";
+import { X, ArrowUp, Paperclip } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -21,7 +21,7 @@ import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
 import type { AiAction, Goal } from "@/lib/spira/types";
-import { toast } from "sonner";
+import { toast, type ExternalToast } from "sonner";
 import {
   streamChat,
   saveApiKey,
@@ -32,7 +32,13 @@ import {
   rejectProposal,
   saveSessionMemory,
   listGoalProposals,
+  getTranscript,
+  putTranscript,
+  deleteTranscript,
+  getAiProvider,
+  saveAiProvider,
   type HistoryEntry,
+  type ChatAttachment,
 } from "./ai-api";
 import {
   type ProposalKind,
@@ -48,6 +54,31 @@ import {
   proposalFromToolArgs,
 } from "./proposal-logic";
 
+// Chat toasts are positioned per device: on MOBILE the assistant is a bottom
+// sheet whose composer sits at the bottom, so top-center is clearest; on DESKTOP
+// the panel is a left column and the bottom-right corner (sonner's default) reads
+// best. Decided per call from the current viewport (< 768px = mobile, matching
+// `useIsMobile`). Scoped to this panel; toasts elsewhere keep their default.
+const chatToastPosition = (): "top-center" | "bottom-right" =>
+  typeof window !== "undefined" && window.innerWidth < 768
+    ? "top-center"
+    : "bottom-right";
+
+const chatToast = {
+  success: (message: string, opts?: ExternalToast) =>
+    toast.success(message, {
+      position: chatToastPosition(),
+      className: "spira-chat-toast",
+      ...opts,
+    }),
+  error: (message: string, opts?: ExternalToast) =>
+    toast.error(message, {
+      position: chatToastPosition(),
+      className: "spira-chat-toast",
+      ...opts,
+    }),
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type Msg = {
@@ -60,6 +91,8 @@ type Msg = {
   /** Ephemeral progress line (GROW library indexing). Display-only: never part
    *  of content, so it can't leak into the transcript or the model history. */
   status?: string;
+  /** Files attached to this (user) message — shown as chips; not persisted. */
+  attachments?: ChatAttachment[];
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -298,27 +331,59 @@ function loadTranscript(scopeKey: string): Msg[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(scopeKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as Msg[];
-    return Array.isArray(parsed) ? parsed : [];
+    return parseTranscript(raw) ?? [];
   } catch {
     return [];
   }
 }
 
-function saveTranscript(scopeKey: string, msgs: Msg[]) {
-  if (typeof window === "undefined") return;
+/** Parses a stored transcript JSON string into messages, or null if unusable. */
+function parseTranscript(content: string | null | undefined): Msg[] | null {
+  if (!content) return null;
   try {
-    // Persist only settled messages (skip the in-flight streaming placeholder).
-    const settled = msgs.filter((m) => !m.streaming).slice(-CHAT_MAX_MESSAGES);
-    if (settled.length === 0) {
-      window.localStorage.removeItem(scopeKey);
-    } else {
-      window.localStorage.setItem(scopeKey, JSON.stringify(settled));
-    }
+    const parsed = JSON.parse(content) as Msg[];
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
-    /* quota or serialization error — non-fatal */
+    return null;
   }
+}
+
+/**
+ * The messages to persist: settled only (no in-flight streaming placeholder),
+ * capped, with attachment file bytes stripped — only names/labels survive, so a
+ * stored transcript stays small (localStorage quota + the synced server blob).
+ */
+function messagesForStore(msgs: Msg[]): Msg[] {
+  return msgs
+    .filter((m) => !m.streaming)
+    .slice(-CHAT_MAX_MESSAGES)
+    .map((m) =>
+      m.attachments?.length
+        ? {
+            ...m,
+            attachments: m.attachments.map((a) => ({ ...a, dataUrl: "" })),
+          }
+        : m,
+    );
+}
+
+/**
+ * Writes the transcript to localStorage and returns the JSON that was stored, so
+ * the caller can also push it to the server (cross-device sync) without
+ * re-serialising.
+ */
+function saveTranscript(scopeKey: string, msgs: Msg[]): string {
+  const settled = messagesForStore(msgs);
+  const json = JSON.stringify(settled);
+  if (typeof window !== "undefined") {
+    try {
+      if (settled.length === 0) window.localStorage.removeItem(scopeKey);
+      else window.localStorage.setItem(scopeKey, json);
+    } catch {
+      /* quota or serialization error — non-fatal; the server copy still syncs */
+    }
+  }
+  return json;
 }
 
 type Suggestion = { id: string; icon: string; text: string };
@@ -600,7 +665,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const lastSyncError = useRef(syncError);
   useEffect(() => {
     if (syncError && syncError !== lastSyncError.current) {
-      toast.error(syncError);
+      chatToast.error(syncError);
     }
     lastSyncError.current = syncError;
   }, [syncError]);
@@ -622,7 +687,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           ...(conf ? { confidence: conf } : {}),
           ...(iso ? { deadline: iso } : {}),
         });
-        toast.success("Goal created");
+        chatToast.success("Goal created");
         return;
       }
       // ── Goal-level ops by id (work from the All-Goals page, no current goal) ──
@@ -635,14 +700,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             updateGoal(p.goalId, {
               confidence: c as import("@/lib/spira/types").Confidence,
             });
-            toast.success("Goal confidence updated");
+            chatToast.success("Goal confidence updated");
           }
         } else if (p.field === "deadline") {
           updateGoal(p.goalId, { deadline: normalizeDeadline(v) });
-          toast.success("Goal deadline updated");
+          chatToast.success("Goal deadline updated");
         } else {
           updateGoal(p.goalId, { title: (v ?? "").trim().slice(0, 200) });
-          toast.success("Goal renamed");
+          chatToast.success("Goal renamed");
         }
         return;
       }
@@ -655,7 +720,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const gid = p.goalId ?? context.goalId;
         if (gid && goals.some((x) => x.id === gid))
           setPendingDelete({ kind: "goal", id: gid });
-        else toast.error("I couldn't find that goal to delete.");
+        else chatToast.error("I couldn't find that goal to delete.");
         return;
       }
       if (p.kind === "delete_target") {
@@ -667,7 +732,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         if (gid && p.itemId && g?.targets.some((t) => t.id === p.itemId)) {
           setPendingDelete({ kind: "target", id: p.itemId, goalId: gid });
         } else {
-          toast.error(
+          chatToast.error(
             "I can only delete a whole target. Options, obstacles, actions and checklist items are removed with the × next to the item.",
           );
         }
@@ -682,7 +747,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         case "edit":
           if (p.field === "title" || p.field === "description") {
             updateGoal(goal.id, { [p.field]: p.title });
-            toast.success("Goal updated");
+            chatToast.success("Goal updated");
           }
           break;
         case "confidence": {
@@ -691,14 +756,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             updateGoal(goal.id, {
               confidence: c as import("@/lib/spira/types").Confidence,
             });
-            toast.success("Confidence updated");
+            chatToast.success("Confidence updated");
           }
           break;
         }
         case "deadline": {
           const iso = normalizeDeadline(p.rawValue || p.title);
           updateGoal(goal.id, { deadline: iso });
-          toast.success("Deadline updated");
+          chatToast.success("Deadline updated");
           break;
         }
         case "target":
@@ -719,7 +784,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               items,
               ...(iso ? { deadline: iso } : {}),
             });
-            toast.success("Checklist added");
+            chatToast.success("Checklist added");
           } else if (p.targetType === "numeric" && p.total) {
             const total = Number(p.total);
             const cur = Number(p.current ?? "0");
@@ -737,7 +802,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 updateTarget(goal.id, created.id, { current: cur });
               }
             });
-            toast.success("Target added");
+            chatToast.success("Target added");
           } else {
             // Binary. To create an already-done target, create then mark done via
             // the real id (the backend forbids creating a binary target as done).
@@ -750,7 +815,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               if (created && p.done)
                 updateTarget(goal.id, created.id, { done: true });
             });
-            toast.success(p.done ? "Target added & completed" : "Target added");
+            chatToast.success(
+              p.done ? "Target added & completed" : "Target added",
+            );
           }
           break;
         }
@@ -762,15 +829,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             p.title,
             p.done ? (created) => selectOption(goal.id, created.id) : undefined,
           );
-          toast.success(p.done ? "Option added & selected" : "Option added");
+          chatToast.success(
+            p.done ? "Option added & selected" : "Option added",
+          );
           break;
         case "obstacle":
           addReality(goal.id, "obstacles", p.title);
-          toast.success("Obstacle added");
+          chatToast.success("Obstacle added");
           break;
         case "action":
           addReality(goal.id, "actions", p.title);
-          toast.success("Action added");
+          chatToast.success("Action added");
           break;
         case "note":
           addResource(goal.id, {
@@ -778,7 +847,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             title: label(p.title),
             body: p.body ?? "",
           });
-          toast.success("Note saved");
+          chatToast.success("Note saved");
           break;
         case "link": {
           const url = (p.patch?.url ?? "").trim();
@@ -786,7 +855,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // "the card did nothing") — tell the user. To rename an existing link the AI must
           // use edit_link with its id, not create a new one.
           if (!url) {
-            toast.error(
+            chatToast.error(
               "A link needs a web address (URL). To rename an existing link, ask me to edit it.",
             );
             break;
@@ -794,7 +863,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // Empty title is intentional — the backend derives a label from the domain.
           const linkTitle = (p.patch?.title ?? "").trim().slice(0, 200);
           addResource(goal.id, { type: "link", title: linkTitle, url });
-          toast.success("Link added");
+          chatToast.success("Link added");
           break;
         }
         case "email": {
@@ -808,7 +877,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             ...(p.patch?.role ? { role: p.patch.role } : {}),
             ...(p.patch?.phone ? { phone: p.patch.phone } : {}),
           });
-          toast.success("Contact added");
+          chatToast.success("Contact added");
           break;
         }
 
@@ -818,7 +887,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // Text is required — never let an "edit" blank it out (the AI must use delete_* to
           // remove things, not erase the text).
           if (!p.title.trim()) {
-            toast.error("A target needs a name — use delete to remove it.");
+            chatToast.error("A target needs a name — use delete to remove it.");
             break;
           }
           const iso = normalizeDeadline(p.deadline);
@@ -826,35 +895,37 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             title: p.title,
             ...(iso ? { deadline: iso } : {}),
           });
-          toast.success("Target updated");
+          chatToast.success("Target updated");
           break;
         }
         case "edit_option":
           if (!p.itemId) break;
           if (!p.title.trim()) {
-            toast.error("An option needs text — use delete to remove it.");
+            chatToast.error("An option needs text — use delete to remove it.");
             break;
           }
           updateOption(goal.id, p.itemId, { text: p.title });
-          toast.success("Option updated");
+          chatToast.success("Option updated");
           break;
         case "edit_obstacle":
           if (!p.itemId) break;
           if (!p.title.trim()) {
-            toast.error("An obstacle needs text — use delete to remove it.");
+            chatToast.error(
+              "An obstacle needs text — use delete to remove it.",
+            );
             break;
           }
           updateReality(goal.id, "obstacles", p.itemId, p.title);
-          toast.success("Obstacle updated");
+          chatToast.success("Obstacle updated");
           break;
         case "edit_action":
           if (!p.itemId) break;
           if (!p.title.trim()) {
-            toast.error("An action needs text — use delete to remove it.");
+            chatToast.error("An action needs text — use delete to remove it.");
             break;
           }
           updateReality(goal.id, "actions", p.itemId, p.title);
-          toast.success("Action updated");
+          chatToast.success("Action updated");
           break;
         case "edit_note":
           if (p.itemId) {
@@ -862,7 +933,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               title: label(p.title),
               body: p.body ?? "",
             });
-            toast.success("Note updated");
+            chatToast.success("Note updated");
           }
           break;
         case "edit_link":
@@ -872,7 +943,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               p.itemId,
               p.patch as Partial<import("@/lib/spira/types").Resource>,
             );
-            toast.success("Link updated");
+            chatToast.success("Link updated");
           }
           break;
         case "edit_email":
@@ -882,7 +953,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               p.itemId,
               p.patch as Partial<import("@/lib/spira/types").Resource>,
             );
-            toast.success("Contact updated");
+            chatToast.success("Contact updated");
           }
           break;
 
@@ -890,7 +961,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         case "complete_target":
           if (p.itemId) {
             updateTarget(goal.id, p.itemId, { done: p.done !== false });
-            toast.success("Target updated");
+            chatToast.success("Target updated");
           }
           break;
         case "target_progress": {
@@ -898,14 +969,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           const n = Number(p.rawValue ?? p.title);
           if (!Number.isNaN(n)) {
             updateTarget(goal.id, p.itemId, { current: n });
-            toast.success("Progress updated");
+            chatToast.success("Progress updated");
           }
           break;
         }
         case "select_option":
           if (p.itemId) {
             selectOption(goal.id, p.itemId);
-            toast.success("Option selected");
+            chatToast.success("Option selected");
           }
           break;
         case "checklist_item": {
@@ -927,7 +998,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 : i,
             );
             updateTarget(goal.id, parent.id, { items });
-            toast.success("Checklist updated");
+            chatToast.success("Checklist updated");
           }
           break;
         }
@@ -935,7 +1006,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           if (!p.itemId) break;
           const parent = goal.targets.find((t) => t.id === p.itemId);
           if (!parent || parent.type !== "checklist") {
-            toast.error("Sub-tasks can only be added to a checklist target");
+            chatToast.error(
+              "Sub-tasks can only be added to a checklist target",
+            );
             break;
           }
           const iso = normalizeDeadline(p.deadline);
@@ -948,7 +1021,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           updateTarget(goal.id, parent.id, {
             items: [...parent.items, newItem],
           });
-          toast.success("Sub-task added");
+          chatToast.success("Sub-task added");
           break;
         }
 
@@ -956,8 +1029,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         case "delete_option":
           if (p.itemId && goal.options.some((o) => o.id === p.itemId)) {
             removeOption(goal.id, p.itemId);
-            toast.success("Option deleted");
-          } else toast.error("I couldn't find that option to delete.");
+            chatToast.success("Option deleted");
+          } else chatToast.error("I couldn't find that option to delete.");
           break;
         case "delete_obstacle":
           if (
@@ -965,14 +1038,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             goal.reality.obstacles.some((o) => o.id === p.itemId)
           ) {
             removeReality(goal.id, "obstacles", p.itemId);
-            toast.success("Obstacle deleted");
-          } else toast.error("I couldn't find that obstacle to delete.");
+            chatToast.success("Obstacle deleted");
+          } else chatToast.error("I couldn't find that obstacle to delete.");
           break;
         case "delete_action":
           if (p.itemId && goal.reality.actions.some((a) => a.id === p.itemId)) {
             removeReality(goal.id, "actions", p.itemId);
-            toast.success("Action deleted");
-          } else toast.error("I couldn't find that action to delete.");
+            chatToast.success("Action deleted");
+          } else chatToast.error("I couldn't find that action to delete.");
           break;
         case "delete_checklist_item": {
           if (!p.itemId) break;
@@ -984,8 +1057,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             updateTarget(goal.id, parent.id, {
               items: parent.items.filter((i) => i.id !== p.itemId),
             });
-            toast.success("Sub-task deleted");
-          } else toast.error("I couldn't find that checklist item to delete.");
+            chatToast.success("Sub-task deleted");
+          } else
+            chatToast.error("I couldn't find that checklist item to delete.");
           break;
         }
       }
@@ -1058,7 +1132,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           },
           (created) => onRef({ kind: "goal", goalId: created.id }),
         );
-        toast.success("Goal created");
+        chatToast.success("Goal created");
         return;
       }
       // target / task — applyProposal handles all three target shapes; the target lives
@@ -1110,6 +1184,24 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   });
 
   const stopRef = useRef(false);
+  // Cross-device transcript sync (BUG-018): true while we're pulling the server's
+  // copy for a scope, so the persist effect doesn't push a stale local copy back
+  // and clobber a newer conversation from another device. Starts true so the very
+  // first mount waits for the server before any push.
+  const hydratingRef = useRef(true);
+  // The next persist should NOT push to the server (used by "New chat", which
+  // deletes the server row — the resulting empty state must not re-create it,
+  // and by adopting a polled server copy — which must not echo back).
+  const skipServerPutRef = useRef(false);
+  // The server `updatedAt` we last saw/wrote, so the poll only adopts a copy that
+  // is genuinely newer (from another device), never re-adopting our own writes.
+  const lastSeenUpdatedRef = useRef<string | null>(null);
+  // Latest `busy` for async callbacks (a resolved server fetch must see the
+  // current value, not the one captured when the fetch started).
+  const busyRef = useRef(busy);
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
   const endedRef = useRef(false);
   // The timer ran out and the closing turn was requested — guards double-sends
   // while the seconds keep ticking past zero.
@@ -1143,9 +1235,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   // Load saved keys on mount
   useEffect(() => {
-    listApiKeys()
+    // Load the configured keys AND the user's server-saved provider together, so
+    // the active provider follows the user across devices (BUG-018 follow-up).
+    Promise.all([listApiKeys(), getAiProvider()])
       .then(
-        (keys: Array<{ provider: string; hint: string; model: string }>) => {
+        ([keys, serverProvider]: [
+          Array<{ provider: string; hint: string; model: string }>,
+          string | null,
+        ]) => {
           if (!keys.length) return;
           setProviders((ps) =>
             ps.map((p) => {
@@ -1161,20 +1258,20 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           );
           const tav = keys.find((k) => k.provider === "TAVILY");
           if (tav) setTavily({ connected: true, hint: tav.hint });
-          // Active chat provider must be an LLM — never Tavily (a search key).
-          // Honour the user's last choice if that provider still has a key;
-          // otherwise fall back to the first available LLM key.
-          const saved = readSavedProvider();
-          const savedHasKey =
-            !!saved &&
-            saved !== "TAVILY" &&
-            keys.some((k) => k.provider === saved);
-          if (!savedHasKey) {
-            const firstLlm = keys.find((k) => k.provider !== "TAVILY");
-            if (firstLlm) {
-              setActiveProv(firstLlm.provider);
-              saveActiveProvider(firstLlm.provider);
-            }
+          // Active chat provider must be an LLM with a key (never Tavily — a
+          // search key). Prefer the SERVER-saved choice (cross-device), then this
+          // device's last choice, then the first available LLM key.
+          const hasKey = (p?: string | null) =>
+            !!p && p !== "TAVILY" && keys.some((k) => k.provider === p);
+          const local = readSavedProvider();
+          const chosen = hasKey(serverProvider)
+            ? serverProvider
+            : hasKey(local)
+              ? local
+              : keys.find((k) => k.provider !== "TAVILY")?.provider;
+          if (chosen) {
+            setActiveProv(chosen);
+            saveActiveProvider(chosen); // refresh this device's local cache
           }
         },
       )
@@ -1201,6 +1298,46 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
+  // Cross-device sync (BUG-018): pull the server's transcript for this scope on
+  // mount and whenever the scope changes. The server is the shared source of
+  // truth (last write wins). If the server has nothing for this scope yet, seed
+  // it from this device's local history so another device can pick it up. GROW
+  // is ephemeral and never synced.
+  useEffect(() => {
+    if (inGrow) return;
+    const goalId = context.goalId;
+    const scopeAtFetch = scopeKey;
+    hydratingRef.current = true;
+    let cancelled = false;
+    getTranscript(goalId)
+      .then((server) => {
+        if (cancelled || scopeAtFetch !== chatScopeKey(context.goalId)) return;
+        if (busyRef.current) return; // don't stomp a send the user just started
+        lastSeenUpdatedRef.current = server?.updatedAt ?? null;
+        const serverMsgs = parseTranscript(server?.content);
+        if (serverMsgs && serverMsgs.length > 0) {
+          skipServerPutRef.current = true; // adopting must not echo back to the server
+          setMsgs(serverMsgs);
+          saveTranscript(scopeAtFetch, serverMsgs); // refresh the local cache
+        } else {
+          const local = loadTranscript(scopeAtFetch);
+          if (local.length > 0)
+            putTranscript(goalId, JSON.stringify(messagesForStore(local))).then(
+              (ts) => {
+                if (ts) lastSeenUpdatedRef.current = ts; // record our own seed
+              },
+            );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) hydratingRef.current = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
+
   // Persist regular chat after each settled turn. Skipping while `busy` avoids
   // a localStorage write per streamed token (the streaming placeholder is
   // excluded from storage anyway). Deps intentionally exclude scopeKey: on a
@@ -1208,8 +1345,63 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // new scopeKey captured — so we never write one scope's messages into another.
   useEffect(() => {
     if (busy) return;
-    saveTranscript(scopeKey, msgs);
+    const json = saveTranscript(scopeKey, msgs);
+    // Push to the server for cross-device sync — but not while hydrating (would
+    // clobber a newer copy from another device) or right after "New chat"
+    // deleted the server row (the resulting empty state must not re-create it).
+    if (inGrow || hydratingRef.current) return;
+    if (skipServerPutRef.current) {
+      skipServerPutRef.current = false;
+      return;
+    }
+    putTranscript(context.goalId, json).then((ts) => {
+      if (ts) lastSeenUpdatedRef.current = ts; // record our own write
+    });
   }, [msgs, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Near-real-time cross-device sync: while the panel is open, poll the server
+  // for this scope and adopt a copy that is genuinely newer (another device sent
+  // a turn). This component only mounts while the panel is open, so the interval
+  // is naturally scoped to when the chat is visible. Turn-based updates make a
+  // few-second poll effectively live without websocket infrastructure. Guards:
+  // never adopt mid-stream (`busy`) or during hydration, skip background tabs,
+  // and set `skipServerPutRef` so an adopted copy isn't echoed back (no ping-pong).
+  useEffect(() => {
+    if (inGrow) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled || busyRef.current || hydratingRef.current) return;
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      )
+        return;
+      const scopeAtPoll = scopeKey;
+      const server = await getTranscript(context.goalId);
+      if (
+        cancelled ||
+        !server ||
+        !server.updatedAt ||
+        scopeAtPoll !== chatScopeKey(context.goalId) ||
+        busyRef.current ||
+        hydratingRef.current
+      )
+        return;
+      if (server.updatedAt === lastSeenUpdatedRef.current) return; // nothing new
+      const serverMsgs = parseTranscript(server.content);
+      if (!serverMsgs) return;
+      lastSeenUpdatedRef.current = server.updatedAt;
+      skipServerPutRef.current = true; // adopting must not echo back
+      setMsgs(serverMsgs);
+      saveTranscript(scopeAtPoll, serverMsgs);
+    };
+    const interval = window.setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, inGrow]);
 
   // ── pending proposal restore ──────────────────────────────────────────────
   // A card can vanish from the UI while its proposal is still PENDING on the
@@ -1281,22 +1473,34 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // data. Past mistakes in the conversation stop leaking into the model.
   const newChat = () => {
     if (busy) return;
+    // The empty state that follows must NOT re-push to the server — we're
+    // deleting the row, and cross-device sync should clear it everywhere.
+    skipServerPutRef.current = true;
     setMsgs([]);
     try {
       window.localStorage.removeItem(scopeKey);
     } catch {
       /* ignore */
     }
-    toast.success(
+    deleteTranscript(context.goalId);
+    chatToast.success(
       "Started a fresh chat — only the goal's data is in context now",
     );
   };
 
   // ── regular chat ─────────────────────────────────────────────────────────
 
-  const sendChat = (text: string) => {
+  const sendChat = (text: string, attachments?: ChatAttachment[]) => {
     if (busy) return;
-    setMsgs((p) => [...p, { id: uid(), role: "user", content: text }]);
+    setMsgs((p) => [
+      ...p,
+      {
+        id: uid(),
+        role: "user",
+        content: text,
+        ...(attachments?.length ? { attachments } : {}),
+      },
+    ]);
     setBusy(true);
     stopRef.current = false;
 
@@ -1328,6 +1532,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       history,
       provider: activeProv,
       sessionType: "chat",
+      attachments,
       onToken: (tok) => {
         if (stopRef.current) return;
         accumulated += tok;
@@ -1410,7 +1615,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               : m,
           ),
         );
-        toast.error(msg);
+        chatToast.error(msg);
       },
     });
   };
@@ -1452,7 +1657,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       if (reviseTokenRef.current !== token) return;
       reviseTokenRef.current++;
       finish();
-      toast.error("The AI took too long — the card is unchanged. Try again.");
+      chatToast.error(
+        "The AI took too long — the card is unchanged. Try again.",
+      );
     }, 90_000);
     const stillActive = () =>
       reviseTokenRef.current === token && !stopRef.current;
@@ -1554,7 +1761,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           err === "NETWORK"
             ? "Backend unreachable — is it running?"
             : err || "AI error. Try again.";
-        toast.error(msg);
+        chatToast.error(msg);
       },
     });
   };
@@ -1586,7 +1793,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // silently overwritten. The pending card is on screen; decide there first.
     if (memoryDraft) {
       setMode("chat");
-      toast.error(
+      chatToast.error(
         "Finish the previous session first — save or discard its result below.",
       );
       return;
@@ -1663,7 +1870,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           setShowProvider(true);
           return;
         }
-        toast.error(err || "AI error.");
+        chatToast.error(err || "AI error.");
       },
     });
   };
@@ -1796,7 +2003,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               : m,
           ),
         );
-        toast.error(msg);
+        chatToast.error(msg);
         // Even if the goodbye failed, the session is over — don't strand the user.
         if (wrapUp) finishGrow();
       },
@@ -1867,7 +2074,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       },
       onError: (err) => {
         setMemoryRevising(false);
-        toast.error(
+        chatToast.error(
           err === "NO_KEY" ? "No API key configured." : err || "AI error.",
         );
       },
@@ -1907,7 +2114,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (save && context.goalId && memoryDraft?.trim()) {
       saved = true;
       saveSessionMemory(context.goalId, memoryDraft).catch(() =>
-        toast.error("Couldn't save the session memory — it won't carry over."),
+        chatToast.error(
+          "Couldn't save the session memory — it won't carry over.",
+        ),
       );
     }
     setMode("chat");
@@ -2018,15 +2227,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       );
       setActiveProv(provId);
       saveActiveProvider(provId);
-      toast.success(`${provId} key saved`);
+      saveAiProvider(provId); // sync the choice across devices
+      chatToast.success(`${provId} key saved`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save key");
+      chatToast.error(e instanceof Error ? e.message : "Failed to save key");
     }
   };
 
   const handleActivateProvider = (id: string) => {
     setActiveProv(id);
     saveActiveProvider(id);
+    saveAiProvider(id); // sync the choice across devices
   };
 
   const handleSaveTavily = async (raw: string) => {
@@ -2034,9 +2245,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     try {
       await saveApiKey("TAVILY", raw);
       setTavily({ connected: true, hint });
-      toast.success("Web search connected");
+      chatToast.success("Web search connected");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save key");
+      chatToast.error(e instanceof Error ? e.message : "Failed to save key");
     }
   };
 
@@ -2047,7 +2258,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     try {
       await updateKeyModel(provId, model);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update model");
+      chatToast.error(
+        e instanceof Error ? e.message : "Failed to update model",
+      );
     }
   };
 
@@ -2282,6 +2495,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           if (m.role === "user") {
             return (
               <div key={m.id} className="group flex flex-col items-end gap-1">
+                {m.attachments && m.attachments.length > 0 && (
+                  <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
+                    {m.attachments.map((a, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#083f3a] shadow-sm"
+                      >
+                        <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                        <span className="truncate">{a.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#083f3a] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#006d67]/25 selection:text-[#083f3a]">
                   {m.content}
                 </div>
@@ -2410,7 +2636,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             </div>
           )}
           <Composer
-            onSend={inGrow ? sendGrow : sendChat}
+            onSend={(text, attachments) =>
+              inGrow ? sendGrow(text) : sendChat(text, attachments)
+            }
+            allowAttachments={!inGrow}
             placeholder={
               inGrow
                 ? "Answer in your own words…"
@@ -2497,10 +2726,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   deleteGoal(pendingDelete.id);
                   if (context.goalId === pendingDelete.id)
                     navigate({ to: "/" });
-                  toast.success("Goal deleted");
+                  chatToast.success("Goal deleted");
                 } else if (pendingDelete.goalId) {
                   removeTarget(pendingDelete.goalId, pendingDelete.id);
-                  toast.success("Target deleted");
+                  chatToast.success("Target deleted");
                 }
                 setPendingDelete(null);
               }}
@@ -4830,6 +5059,27 @@ function CopyButton({
 
 // ── Composer ───────────────────────────────────────────────────────────────
 
+/** Files the composer accepts as direct attachments (BUG-017). */
+const ATTACH_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/gif,application/pdf," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx";
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024; // 5 MB, matching resource uploads
+const ATTACH_MAX_COUNT = 6; // matches the backend ChatRequest cap
+
+function isAttachableType(mime: string, name: string): boolean {
+  if (mime.startsWith("image/")) {
+    return ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
+      mime,
+    );
+  }
+  return (
+    mime === "application/pdf" ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.toLowerCase().endsWith(".docx")
+  );
+}
+
 function Composer({
   onSend,
   placeholder,
@@ -4838,8 +5088,9 @@ function Composer({
   initialValue,
   onDraftChange,
   leftAction,
+  allowAttachments,
 }: {
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: ChatAttachment[]) => void;
   placeholder: string;
   busy: boolean;
   onStop: () => void;
@@ -4850,9 +5101,20 @@ function Composer({
   /** Rendered inside the input pill, left of the textarea (e.g. the GROW
    *  session starter). */
   leftAction?: ReactNode;
+  /** Show the paperclip to attach files directly to the message (regular chat). */
+  allowAttachments?: boolean;
 }) {
   const [v, setV] = useState(initialValue ?? "");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachError, setAttachError] = useState("");
+  // Reads in flight (FileReader is async). Send waits for these to reach 0 so a
+  // file picked just before hitting Enter isn't silently dropped.
+  const [reading, setReading] = useState(0);
+  // Synchronous slot accounting (committed + in-flight): a ref, not state, so two
+  // rapid picks can't both read a stale count and blow past ATTACH_MAX_COUNT.
+  const claimedRef = useRef(0);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -4861,11 +5123,61 @@ function Composer({
     el.style.height = Math.min(el.scrollHeight, 128) + "px";
   }, [v]);
 
+  const resetAttachments = () => {
+    setAttachments([]);
+    setAttachError("");
+    setReading(0);
+    claimedRef.current = 0;
+  };
+
+  const addFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const errors = new Set<string>(); // distinct reasons, so one bad file doesn't hide another
+    for (const f of Array.from(files)) {
+      if (claimedRef.current >= ATTACH_MAX_COUNT) {
+        errors.add(`You can attach up to ${ATTACH_MAX_COUNT} files.`);
+        break;
+      }
+      if (!isAttachableType(f.type, f.name)) {
+        errors.add("Only images, PDF, or DOCX files can be attached.");
+        continue;
+      }
+      if (f.size > ATTACH_MAX_BYTES) {
+        errors.add("Each file must be 5 MB or smaller.");
+        continue;
+      }
+      claimedRef.current += 1;
+      setReading((n) => n + 1);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setReading((n) => n - 1);
+        setAttachments((prev) => [
+          ...prev,
+          { name: f.name, mime: f.type, dataUrl: String(reader.result) },
+        ]);
+      };
+      reader.onerror = () => {
+        setReading((n) => n - 1);
+        claimedRef.current = Math.max(0, claimedRef.current - 1);
+        setAttachError(`Couldn't read "${f.name}". Try again.`);
+      };
+      reader.readAsDataURL(f);
+    }
+    setAttachError(errors.size ? Array.from(errors).join(" ") : "");
+    if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+    claimedRef.current = Math.max(0, claimedRef.current - 1);
+  };
+
   const fire = () => {
     const t = v.trim();
-    if (!t) return;
-    onSend(t);
+    if (!t || reading > 0) return; // wait for any in-flight file reads to finish
+    onSend(t, attachments.length ? attachments : undefined);
     setV("");
+    resetAttachments();
     onDraftChange?.("");
   };
 
@@ -4875,6 +5187,32 @@ function Composer({
   return (
     <div className="px-3 pb-3 pt-1 sm:px-4 sm:pb-4">
       <div className="rounded-2xl border border-white/35 bg-white px-3 pt-2.5 pb-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-2">
+            {attachments.map((a, i) => (
+              <span
+                key={i}
+                className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#083f3a]/15 bg-[#083f3a]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#083f3a]"
+              >
+                <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                <span className="truncate">{a.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(i)}
+                  aria-label={`Remove ${a.name}`}
+                  className="shrink-0 grid h-4 w-4 place-items-center rounded-full text-[#083f3a]/50 hover:bg-[#083f3a]/10 hover:text-[#083f3a]"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {attachError && (
+          <p className="pb-1.5 text-[12px] text-[#EF523C]" role="alert">
+            {attachError}
+          </p>
+        )}
         <textarea
           ref={ref}
           value={v}
@@ -4893,6 +5231,30 @@ function Composer({
           className="w-full bg-transparent resize-none outline-none text-[14.5px] leading-[1.45] text-[#083f3a] placeholder:text-[#083f3a]/40 max-h-32 px-1 py-1"
         />
         <div className="flex items-center gap-2 pt-1">
+          {allowAttachments && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept={ATTACH_ACCEPT}
+                onChange={(e) => addFiles(e.target.files)}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={
+                  busy || attachments.length + reading >= ATTACH_MAX_COUNT
+                }
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#006d67] hover:bg-[#006d67]/10 disabled:opacity-40 transition-colors"
+                title="Attach a file (image, PDF, or DOCX)"
+                aria-label="Attach a file"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+            </>
+          )}
           {leftAction}
           <span className="flex-1" />
           {busy ? (
@@ -4906,9 +5268,9 @@ function Composer({
           ) : (
             <button
               onClick={fire}
-              disabled={!v.trim()}
+              disabled={!v.trim() || reading > 0}
               className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white disabled:opacity-40 hover:bg-[#005b56] transition-colors"
-              title="Send"
+              title={reading > 0 ? "Waiting for attachments…" : "Send"}
             >
               <ArrowUp className="h-4 w-4" />
             </button>

@@ -20,6 +20,7 @@ import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
+import { FIELD_LIMITS } from "@/lib/spira/limits";
 import { OptionsList } from "@/components/spira/OptionsList";
 import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
@@ -66,6 +67,7 @@ function GoalWorkspace() {
   const [newResource, setNewResource] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [optionsReordering, setOptionsReordering] = useState(false);
 
   useEffect(() => {
     setContext({ goalId });
@@ -128,12 +130,16 @@ function GoalWorkspace() {
           <AutoTextarea
             required
             requiredMessage="The goal name is required"
+            maxLength={FIELD_LIMITS.goalTitle}
+            maxLengthLabel="Goal name"
             value={goal.title}
             onChange={(v) => updateGoal(goal.id, { title: v })}
             className="spira-goal-title font-heading text-3xl sm:text-4xl text-foreground w-full leading-[1.1]"
             placeholder="Untitled goal"
           />
           <AutoTextarea
+            maxLength={FIELD_LIMITS.goalDescription}
+            maxLengthLabel="Description"
             value={goal.description}
             onChange={(v) => updateGoal(goal.id, { description: v })}
             placeholder="Specific, measurable, achievable, relevant, time-bound."
@@ -182,6 +188,8 @@ function GoalWorkspace() {
                   onUpdate={(id, t) => updateReality(goal.id, "actions", id, t)}
                   onRemove={(id) => removeReality(goal.id, "actions", id)}
                   marker="check"
+                  maxLength={FIELD_LIMITS.realityText}
+                  maxLengthLabel="Action"
                 />
               </div>
               <div className="p-5 sm:p-6 bg-[#fff2df]">
@@ -197,6 +205,8 @@ function GoalWorkspace() {
                   onRemove={(id) => removeReality(goal.id, "obstacles", id)}
                   marker="warn"
                   tone="warning"
+                  maxLength={FIELD_LIMITS.realityText}
+                  maxLengthLabel="Obstacle"
                 />
               </div>
             </div>
@@ -226,8 +236,22 @@ function GoalWorkspace() {
             title="Options"
             hint="Strategies — pick one to commit"
             count={goal.options.length}
+            action={
+              goal.options.length > 1 ? (
+                <button
+                  onClick={() => setOptionsReordering((v) => !v)}
+                  className="inline-flex items-center px-3 h-9 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary/90"
+                >
+                  {optionsReordering ? "Save" : "Reorder"}
+                </button>
+              ) : undefined
+            }
           >
-            <OptionsList goal={goal} />
+            <OptionsList
+              goal={goal}
+              reordering={optionsReordering}
+              onReorderingChange={setOptionsReordering}
+            />
           </Section>
         </div>
 

@@ -86,8 +86,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
+  // "not-achieved" is the default view, so it isn't counted as an active filter —
+  // only deviating from it (All / Only achieved) or setting a date/confidence lights
+  // the "Filters on" chip and the reset button.
   const filtersActive = Boolean(
-    deadlineFrom || deadlineTo || confidence || status !== "all",
+    deadlineFrom || deadlineTo || confidence || status !== "not-achieved",
   );
   const sortActive = sort !== "recent" || sortDirection !== "desc";
   // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)

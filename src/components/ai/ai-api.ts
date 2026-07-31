@@ -70,12 +70,21 @@ async function friendlyError(res: Response, fallback: string): Promise<string> {
 
 export type HistoryEntry = { role: "user" | "assistant"; content: string };
 
+/**
+ * A file attached directly to a chat message (BUG-017): an image, PDF, or DOCX.
+ * `dataUrl` is a `data:<mime>;base64,…` URL. Ephemeral — sent with this message
+ * only, never saved as a resource.
+ */
+export type ChatAttachment = { name: string; mime: string; dataUrl: string };
+
 export type StreamChatParams = {
   goalId?: string;
   message: string;
   history: HistoryEntry[];
   provider?: string;
   sessionType?: "chat" | "grow";
+  /** Files attached directly to this message (images/PDF/DOCX). */
+  attachments?: ChatAttachment[];
   /** GROW only: session length the user picked, in minutes. */
   sessionTotalMinutes?: number;
   /** GROW only: seconds left on the timer; <= 0 tells the coach to close now. */
@@ -96,6 +105,7 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
     history,
     provider = "ANTHROPIC",
     sessionType = "chat",
+    attachments,
     sessionTotalMinutes,
     sessionRemainingSeconds,
     onToken,
@@ -117,6 +127,7 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         history,
         provider,
         sessionType,
+        attachments: attachments?.length ? attachments : null,
         sessionTotalMinutes: sessionTotalMinutes ?? null,
         sessionRemainingSeconds: sessionRemainingSeconds ?? null,
       }),
@@ -277,6 +288,108 @@ export async function updateKeyModel(provider: string, model: string) {
     );
   }
   return res.json();
+}
+
+// ── Provider preference sync (cross-device) ─────────────────────────────────
+
+/** The current user's saved chat provider (null if none chosen). Best-effort. */
+export async function getAiProvider(): Promise<string | null> {
+  try {
+    const res = await fetch(`${AI_BASE}/preferences`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { provider: string | null };
+    return body.provider ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the selected chat provider so it follows the user across devices. */
+export async function saveAiProvider(provider: string): Promise<void> {
+  try {
+    await fetch(`${AI_BASE}/preferences`, {
+      method: "PUT",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ provider }),
+    });
+  } catch {
+    /* best-effort — local choice still applies on this device */
+  }
+}
+
+// ── Chat transcript sync (cross-device) ─────────────────────────────────────
+
+/** A stored transcript for one scope. `content` is the JSON array of messages. */
+export type StoredTranscript = {
+  goalId: number | null;
+  content: string;
+  updatedAt: string | null;
+};
+
+const transcriptUrl = (goalId?: string) =>
+  `${AI_BASE}/chat/transcript${goalId ? `?goalId=${parseInt(goalId, 10)}` : ""}`;
+
+/**
+ * Fetch the current user's stored transcript for a scope (a goal, or the global
+ * chat when `goalId` is omitted). Best-effort: returns null on any failure so the
+ * chat still works offline from its local cache.
+ */
+export async function getTranscript(
+  goalId?: string,
+): Promise<StoredTranscript | null> {
+  try {
+    const res = await fetch(transcriptUrl(goalId), { credentials: "include" });
+    if (!res.ok) return null;
+    return (await res.json()) as StoredTranscript;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist the current user's transcript for a scope (last write wins). `content`
+ * is the JSON array of messages (attachment file bytes already stripped).
+ * Best-effort: a failure never blocks the chat.
+ */
+export async function putTranscript(
+  goalId: string | undefined,
+  content: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${AI_BASE}/chat/transcript`, {
+      method: "PUT",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        goalId: goalId ? parseInt(goalId, 10) : null,
+        content,
+      }),
+    });
+    if (!res.ok) return null;
+    // Return the server's new `updatedAt` so the caller can record it and avoid
+    // re-adopting its own write during polling.
+    const body = (await res.json()) as StoredTranscript;
+    return body.updatedAt ?? null;
+  } catch {
+    /* best-effort — local cache still holds the transcript */
+    return null;
+  }
+}
+
+/** Clear the current user's stored transcript for a scope ("New chat"). */
+export async function deleteTranscript(goalId?: string): Promise<void> {
+  try {
+    await fetch(transcriptUrl(goalId), {
+      method: "DELETE",
+      credentials: "include",
+      headers: mutationHeaders(),
+    });
+  } catch {
+    /* best-effort */
+  }
 }
 
 // ── GROW session memory ─────────────────────────────────────────────────────
