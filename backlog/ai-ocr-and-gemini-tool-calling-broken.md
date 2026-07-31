@@ -145,6 +145,40 @@ There is currently **no diagnostic logging** in `GeminiProvider` (Mistral has a
 - Mistral: surface a clearer "this model can't view images — pick a Pixtral model" message on the
   vision-not-supported error, and document the Pixtral requirement.
 
+## Follow-up: multi-step web-search request returns "no response" (2026-07-31)
+
+The user, on prod with Gemini, sent: *"Для Product Calorie List найди в интернете калорийность
+продуктов 20-23 и запиши в список, ищи шведские продукты из магазина ICA"* and got **no response**.
+
+**Investigation (local repro):**
+- Gemini itself works: the same prompt (proper UTF-8) returned a proposal. (An earlier `?`-garbled
+  reply was a shell-encoding artifact of `curl`, not the app — the app handles UTF-8 correctly.)
+- The backend diagnostic confirmed the thought_signature fix works
+  (`sawToolCalls=true, toolCallsEmitted=1, withThoughtSignature=1`).
+- **Root cause of "no response": the agentic loop.** A task that needs several web searches makes
+  the model call the looping tool `web_search` on *each* iteration. When it reached
+  `MAX_TOOL_ITERATIONS` (was **4**), the loop exited **right after a search** — the results were
+  fetched but the model never got a turn to use them — so **nothing was streamed** and the user got
+  a blank bubble. Empty/thinking-only turns and dropped (empty-args) tool calls had the same effect.
+
+**Fix (`ai/chat/AiChatService.java`):**
+- Raised `MAX_TOOL_ITERATIONS` 4 → **6** (more room for genuinely multi-step tasks).
+- After the cap, the loop now runs **one forced final turn** with the **proposal tool only (no
+  looping tools)**, so the model must finish — using what it gathered — and can still write to the
+  goal, instead of ending on an unanswered search.
+- `ensureNonEmpty(...)`: if a whole request produced **no text and no proposal**, stream a short
+  fallback (`EMPTY_RESPONSE_FALLBACK`) — the user can never get a blank "no response".
+- Frontend safety net (`AiPanel.tsx`): an empty `onDone` renders "I didn't get a response that
+  time — please try again." instead of an empty bubble.
+- Tests: `AiChatServiceAgenticLoopTest` — a search-every-turn model gets exactly one forced final
+  turn whose tools exclude `web_search` but include `propose_goal_change`; a model that answers
+  after one search adds no extra turn.
+
+**Note:** the local Gemini key hit its own **429 quota** during testing (heavy test traffic). A
+quota/rate-limit does surface as an error bubble already; if the user's prod key is free-tier, an
+agentic (multi-call) task can exhaust it — worth checking their Gemini plan. The web-search agentic
+path still needs one live confirmation with a real Tavily + Gemini key.
+
 ## Resolution
 
 _(fill in once the live Gemini run confirms tools fire and the Mistral message is added — files

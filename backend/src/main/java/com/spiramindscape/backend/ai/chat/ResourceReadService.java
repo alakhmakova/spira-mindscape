@@ -46,8 +46,11 @@ public class ResourceReadService {
         String type = r.getType() == null ? "" : r.getType();
         return switch (type) {
             case "note" -> {
-                String body = stripHtml(r.getBody() == null ? "" : r.getBody());
-                yield body.isBlank() ? "(empty note)" : truncate(body, NOTE_MAX_CHARS);
+                // Return the note's HTML (not stripped text) so the model can SEE the
+                // existing formatting and preserve it when asked to edit the note —
+                // stripping it here is why edits used to come back as plain text.
+                String html = r.getBody() == null ? "" : r.getBody();
+                yield html.isBlank() ? "(empty note)" : truncate(html, NOTE_MAX_CHARS);
             }
             case "link"  -> r.getUrl() == null ? "(no URL)" : "URL: " + r.getUrl();
             case "email" -> contactDetails(r);

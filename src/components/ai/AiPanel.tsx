@@ -1578,7 +1578,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const finalProposals = [...others, ...creates];
         const content =
           accumulated.trim() ||
-          (finalProposals.length ? "I've prepared this for your review." : "");
+          (finalProposals.length
+            ? "I've prepared this for your review."
+            : // Safety net: the backend already streams a fallback, but never leave
+              // an empty assistant bubble ("no response") if a turn returns nothing.
+              "I didn't get a response that time — please try again.");
         setMsgs((p) =>
           p.map((m) =>
             m.id === id
@@ -1964,7 +1968,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const finalProposals = [...others, ...creates];
         const content =
           accumulated.trim() ||
-          (finalProposals.length ? "I've prepared this for your review." : "");
+          (finalProposals.length
+            ? "I've prepared this for your review."
+            : // Safety net: the backend already streams a fallback, but never leave
+              // an empty assistant bubble ("no response") if a turn returns nothing.
+              "I didn't get a response that time — please try again.");
         setGmsgs((p) =>
           p.map((m) =>
             m.id === id
@@ -5063,8 +5071,62 @@ function CopyButton({
 const ATTACH_ACCEPT =
   "image/png,image/jpeg,image/webp,image/gif,application/pdf," +
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx";
-const ATTACH_MAX_BYTES = 5 * 1024 * 1024; // 5 MB, matching resource uploads
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024; // 5 MB — applies to PDF/DOCX (not downscaled)
+// Images are downscaled+recompressed before storage, so we accept a larger
+// original (a phone photo is easily 3-8 MB) but still refuse an absurd one that
+// could OOM the decode on a constrained mobile browser.
+const IMAGE_MAX_INPUT_BYTES = 25 * 1024 * 1024;
+// Longest edge we keep. Vision models downscale to ~1.5-2k px anyway, so a phone
+// photo (4000px) shrinks ~6x — cutting a multi-MB image to a few hundred KB and
+// avoiding the out-of-memory crash on mobile.
+const IMAGE_MAX_DIM = 1600;
+const IMAGE_JPEG_QUALITY = 0.8;
 const ATTACH_MAX_COUNT = 6; // matches the backend ChatRequest cap
+
+/** Reads a file to a base64 data URL (used for PDF/DOCX, which aren't downscaled). */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Downscales + recompresses an image to a JPEG data URL bounded by
+ * {@link IMAGE_MAX_DIM}. This is what keeps a large phone photo from spiking
+ * memory: instead of holding a multi-MB base64 string (in state, the message,
+ * and the request body at once) we keep a few-hundred-KB JPEG. Falls back to the
+ * raw file if the browser can't decode it. Returns the data URL and its MIME.
+ */
+async function downscaleImage(
+  file: File,
+): Promise<{ dataUrl: string; mime: string }> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(
+      1,
+      IMAGE_MAX_DIM / Math.max(bitmap.width, bitmap.height),
+    );
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+    const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
+    canvas.width = 0; // release the backing bitmap promptly
+    canvas.height = 0;
+    return { dataUrl, mime: "image/jpeg" };
+  } catch {
+    // Older browser / undecodable image: fall back to the raw bytes.
+    return { dataUrl: await readFileAsDataUrl(file), mime: file.type };
+  }
+}
 
 function isAttachableType(mime: string, name: string): boolean {
   if (mime.startsWith("image/")) {
@@ -5142,26 +5204,33 @@ function Composer({
         errors.add("Only images, PDF, or DOCX files can be attached.");
         continue;
       }
-      if (f.size > ATTACH_MAX_BYTES) {
+      const isImage = f.type.startsWith("image/");
+      // Images are downscaled below, so they may exceed the 5 MB doc cap (a phone
+      // photo does) — only reject a truly huge one. PDF/DOCX keep the 5 MB cap.
+      if (isImage && f.size > IMAGE_MAX_INPUT_BYTES) {
+        errors.add("That image is too large.");
+        continue;
+      }
+      if (!isImage && f.size > ATTACH_MAX_BYTES) {
         errors.add("Each file must be 5 MB or smaller.");
         continue;
       }
       claimedRef.current += 1;
       setReading((n) => n + 1);
-      const reader = new FileReader();
-      reader.onload = () => {
-        setReading((n) => n - 1);
-        setAttachments((prev) => [
-          ...prev,
-          { name: f.name, mime: f.type, dataUrl: String(reader.result) },
-        ]);
-      };
-      reader.onerror = () => {
-        setReading((n) => n - 1);
-        claimedRef.current = Math.max(0, claimedRef.current - 1);
-        setAttachError(`Couldn't read "${f.name}". Try again.`);
-      };
-      reader.readAsDataURL(f);
+      // Downscale images (keeps memory low on phones); read PDF/DOCX as-is.
+      const load = isImage
+        ? downscaleImage(f)
+        : readFileAsDataUrl(f).then((dataUrl) => ({ dataUrl, mime: f.type }));
+      load
+        .then(({ dataUrl, mime }) => {
+          setReading((n) => n - 1);
+          setAttachments((prev) => [...prev, { name: f.name, mime, dataUrl }]);
+        })
+        .catch(() => {
+          setReading((n) => n - 1);
+          claimedRef.current = Math.max(0, claimedRef.current - 1);
+          setAttachError(`Couldn't read "${f.name}". Try again.`);
+        });
     }
     setAttachError(errors.size ? Array.from(errors).join(" ") : "");
     if (fileRef.current) fileRef.current.value = ""; // allow re-picking the same file
