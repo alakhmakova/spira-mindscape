@@ -41,4 +41,28 @@ class AnthropicProviderVisionTest {
         assertThat(image.get("source").get("media_type").asText()).isEqualTo("image/png");
         assertThat(image.get("source").get("data").asText()).isEqualTo("AAAA");
     }
+
+    /**
+     * A directly-attached image (BUG-017) on a plain user message is rendered as
+     * inline image block(s) alongside the text in the content array.
+     */
+    @Test
+    void userMessageImageBecomesInlineImageBlock() throws Exception {
+        LlmMessage msg = new LlmMessage(
+                "user", "what's in this?", null, null,
+                List.of(new LlmImage("image/png", "DDDD")));
+
+        JsonNode body = mapper.readTree(provider.buildRequestBody(List.of(msg), null, List.of()));
+
+        JsonNode messages = body.get("messages");
+        assertThat(messages).hasSize(1); // single user message carrying text + image
+        JsonNode content = messages.get(0).get("content");
+        assertThat(content.isArray()).isTrue();
+        assertThat(content.get(0).get("type").asText()).isEqualTo("text");
+        assertThat(content.get(0).get("text").asText()).isEqualTo("what's in this?");
+        JsonNode image = content.get(content.size() - 1);
+        assertThat(image.get("type").asText()).isEqualTo("image");
+        assertThat(image.get("source").get("media_type").asText()).isEqualTo("image/png");
+        assertThat(image.get("source").get("data").asText()).isEqualTo("DDDD");
+    }
 }

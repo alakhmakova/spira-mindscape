@@ -586,3 +586,13 @@
   -webkit-user-select: text !important;
   cursor: text;
 }
+
+/* Chat toasts (see AiPanel `chatToast`): on desktop the default sonner width
+   (~356px) wraps longer messages onto two lines. Widen them so a typical chat
+   toast fits on one line. Mobile keeps sonner's default width (its top-center
+   toast already reads well). */
+@media (min-width: 768px) {
+  .spira-chat-toast {
+    --width: 460px;
+  }
+}

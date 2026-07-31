@@ -48,6 +48,10 @@ public class AppUser implements Serializable {
     @Column(name = "role", nullable = false)
     private String role = "USER";
 
+    /** The chat provider the user last selected, synced across devices. Nullable. */
+    @Column(name = "preferred_ai_provider", length = 32)
+    private String preferredAiProvider;
+
     /**
      * Google OAuth refresh token, AES-256-GCM encrypted (see {@code EncryptionService}).
      * Null until the user grants offline access. Used to mint fresh Drive access
