@@ -110,6 +110,12 @@ public class GeminiProvider implements LlmProvider {
         Map<Integer, String> toolIds = new HashMap<>();
         Map<Integer, String> toolNames = new HashMap<>();
         Map<Integer, StringBuilder> toolArgs = new HashMap<>();
+        // Gemini 2.5 attaches an `extra_content` (holding the function call's
+        // thought_signature) that must be echoed back verbatim on the follow-up
+        // turn, or a multi-turn tool call (read_resource / web_search) is rejected.
+        Map<Integer, String> toolExtra = new HashMap<>();
+        final boolean[] sawToolCalls = {false};
+        final String[] firstToolChunk = {null}; // kept only to diagnose a missing signature
 
         try {
             lines.forEach(line -> {
@@ -129,11 +135,23 @@ public class GeminiProvider implements LlmProvider {
                     if (!text.isEmpty()) onToken.accept(text);
 
                     JsonNode toolCalls = delta.path("tool_calls");
-                    if (toolCalls.isArray()) {
+                    if (toolCalls.isArray() && !toolCalls.isEmpty()) {
+                        sawToolCalls[0] = true;
                         for (JsonNode tc : toolCalls) {
+                            // Raw chunk logging (DEBUG) so we can confirm where Gemini
+                            // puts the thought_signature across API changes.
+                            log.debug("Gemini tool_call chunk: {}", tc);
+                            if (firstToolChunk[0] == null) firstToolChunk[0] = tc.toString();
                             int index = tc.path("index").asInt(0);
                             String id = tc.path("id").asText("");
                             if (!id.isEmpty()) toolIds.put(index, id);
+                            // Capture the thought_signature carrier if present on any chunk
+                            // for this call. Gemini surfaces it as `extra_content` on the
+                            // tool call in the OpenAI-compatibility layer.
+                            JsonNode extra = tc.path("extra_content");
+                            if (extra.isObject() && !extra.isEmpty()) {
+                                toolExtra.put(index, extra.toString());
+                            }
                             String name = tc.path("function").path("name").asText("");
                             if (!name.isEmpty()) {
                                 toolNames.put(index, name);
@@ -153,11 +171,29 @@ public class GeminiProvider implements LlmProvider {
                 }
             });
 
+            int emitted = 0;
             for (Map.Entry<Integer, String> entry : toolNames.entrySet()) {
                 String args = toolArgs.getOrDefault(entry.getKey(), new StringBuilder()).toString();
                 if (!args.isBlank()) {
-                    onToolCall.accept(new ToolCall(toolIds.get(entry.getKey()), entry.getValue(), args));
+                    // Gemini's OpenAI-compat stream sometimes omits the tool-call id.
+                    // Without one, the agentic loop's follow-up request would send a
+                    // tool result with a null tool_call_id and Gemini would reject it —
+                    // breaking web_search / read_url / read_resource. Synthesize a stable
+                    // id per index so the assistant echo and its tool_result still pair.
+                    String id = toolIds.get(entry.getKey());
+                    if (id == null || id.isBlank()) id = "gemini_call_" + entry.getKey();
+                    onToolCall.accept(new ToolCall(
+                            id, entry.getValue(), args, toolExtra.get(entry.getKey())));
+                    emitted++;
                 }
+            }
+            log.info("Gemini stream finished: sawToolCalls={}, toolCallsEmitted={}, withThoughtSignature={}",
+                    sawToolCalls[0], emitted, toolExtra.size());
+            // If Gemini sent tool calls but we found no thought_signature, dump the raw
+            // shape once so we can see exactly where it lives (diagnostic for BUG-016).
+            if (sawToolCalls[0] && toolExtra.isEmpty() && firstToolChunk[0] != null) {
+                log.warn("Gemini tool call had no extra_content/thought_signature; raw chunk: {}",
+                        firstToolChunk[0]);
             }
 
             onComplete.run();
@@ -231,6 +267,16 @@ public class GeminiProvider implements LlmProvider {
                 if (tc.id() != null) call.put("id", tc.id());
                 call.put("type", "function");
                 call.put("function", fn);
+                // Echo Gemini's thought_signature (carried in extra_content) back
+                // verbatim — required for a multi-turn tool call to be accepted.
+                if (tc.extraContentJson() != null && !tc.extraContentJson().isBlank()) {
+                    try {
+                        call.put("extra_content",
+                                objectMapper.readValue(tc.extraContentJson(), Map.class));
+                    } catch (Exception e) {
+                        log.debug("Could not attach Gemini extra_content: {}", e.getMessage());
+                    }
+                }
                 calls.add(call);
             }
             msg.put("role", "assistant");
