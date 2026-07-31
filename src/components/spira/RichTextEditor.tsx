@@ -38,6 +38,7 @@ import {
   Baseline,
   Eraser,
   Copy,
+  ClipboardPaste,
   Paintbrush,
   Type,
 } from "lucide-react";
@@ -201,6 +202,44 @@ function Toolbar({
 
   const clearFormatting = () => {
     editor.chain().focus().unsetAllMarks().clearNodes().run();
+  };
+
+  // Paste keeping formatting, regardless of how the OS/keyboard would paste.
+  // Reads the clipboard's HTML flavour (if any) and inserts it — TipTap parses it
+  // through the schema, so headings/bold/lists/links survive. On phones this is
+  // the reliable path: the keyboard's "quick paste" suggestion inserts plain text,
+  // but this button always takes the rich flavour. Falls back to plain text.
+  const pasteFromClipboard = async () => {
+    const clip = navigator.clipboard;
+    if (!clip) return;
+    // Prefer the rich (HTML) flavour via read(); fall back to plain text via
+    // readText() if read() is unsupported or blocked.
+    try {
+      const items = await clip.read();
+      for (const item of items) {
+        if (item.types.includes("text/html")) {
+          const html = await (await item.getType("text/html")).text();
+          editor.chain().focus().insertContent(html).run();
+          return;
+        }
+      }
+      for (const item of items) {
+        if (item.types.includes("text/plain")) {
+          const text = await (await item.getType("text/plain")).text();
+          editor.chain().focus().insertContent(text).run();
+          return;
+        }
+      }
+      return;
+    } catch {
+      // read() unsupported or denied — try plain text below.
+    }
+    try {
+      const text = await clip.readText();
+      if (text) editor.chain().focus().insertContent(text).run();
+    } catch {
+      // Clipboard blocked (denied permission / insecure context) — no-op.
+    }
   };
 
   const Btn = ({
@@ -528,6 +567,9 @@ function Toolbar({
         <Minus className="h-4 w-4" />
       </Btn>
       <Sep />
+      <Btn label="Paste (keep formatting)" onClick={pasteFromClipboard}>
+        <ClipboardPaste className="h-4 w-4" />
+      </Btn>
       <Btn label="Copy formatting" onClick={copyFormatting}>
         <Copy className="h-4 w-4" />
       </Btn>

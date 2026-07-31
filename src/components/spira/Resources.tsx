@@ -141,6 +141,34 @@ async function copyPlainText(text: string) {
   document.body.removeChild(textArea);
 }
 
+/**
+ * Copies rich text: writes BOTH an HTML and a plain-text flavour to the
+ * clipboard, so pasting into a rich editor (Word, Google Docs, email) keeps the
+ * note's formatting (headings, bold, lists, links) while plain editors still get
+ * clean text. Falls back to plain text where the async ClipboardItem API isn't
+ * available (older/insecure browsers).
+ */
+async function copyRichText(html: string, plainText: string) {
+  if (
+    navigator.clipboard &&
+    navigator.clipboard.write &&
+    typeof ClipboardItem !== "undefined"
+  ) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plainText], { type: "text/plain" }),
+        }),
+      ]);
+      return;
+    } catch (err) {
+      console.warn("clipboard.write (rich text) failed, using plain text", err);
+    }
+  }
+  await copyPlainText(plainText);
+}
+
 async function copyImageToClipboard(dataUrl: string, title?: string) {
   if (navigator.clipboard && navigator.clipboard.write) {
     try {
@@ -281,7 +309,9 @@ function ResourceCard({
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (r.type === "note") {
-      run(() => copyPlainText(stripHtml(r.body)));
+      // Keep the note's formatting when pasting into a rich editor; plain-text
+      // flavour is included as a fallback.
+      run(() => copyRichText(r.body, stripHtml(r.body)));
     } else if (r.type === "link") {
       run(() => copyPlainText(r.url));
     } else if (r.type === "file" && r.mime.startsWith("image/")) {
@@ -567,7 +597,8 @@ function PreviewBody({
 
   const handleCopy = () => {
     if (resource.type === "note") {
-      run(() => copyPlainText(stripHtml(resource.body)));
+      // Keep the note's formatting when pasting into a rich editor (incl. another note).
+      run(() => copyRichText(resource.body, stripHtml(resource.body)));
     } else if (resource.type === "link") {
       run(() => copyPlainText(resource.url));
     } else if (resource.type === "file" && resource.mime.startsWith("image/")) {
@@ -1083,7 +1114,8 @@ function MobileNoteBody({
   const { copied, run } = useCopied();
 
   const handleCopy = () => {
-    run(() => copyPlainText(stripHtml(body)));
+    // Keep the note's formatting when pasting into a rich editor (incl. another note).
+    run(() => copyRichText(body, stripHtml(body)));
   };
 
   return (

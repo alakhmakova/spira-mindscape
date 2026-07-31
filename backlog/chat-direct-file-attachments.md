@@ -55,6 +55,27 @@ OCR case. (It still needs a **vision-capable** model to actually read an image.)
   its wire shape; PDF/DOCX text extraction; the security boundary (attachment text is fenced as
   untrusted).
 
+## Follow-up: attaching a phone photo crashes the app "low memory" (2026-07-31)
+
+The user, on a phone (responsive web), tried to **photograph an image** to attach in chat and got
+*"Unable to complete due to low memory"*, after which **Spira reloaded** (the browser tab crashed).
+Clearing phone storage didn't help.
+
+**Root cause:** a phone photo is large (~12 MP, several MB). The attach code read it straight to a
+base64 **data URL with no downscaling**, and that multi-MB string was then held in several places at
+once (the `FileReader` result → `attachments` state → the message → the request-body JSON). On a
+memory-constrained mobile browser tab that OOMs → the tab is killed and reloads.
+
+**Fix (`AiPanel.tsx`):** downscale + recompress images **client-side before storing** them.
+`downscaleImage()` decodes the file with `createImageBitmap`, draws it onto a canvas scaled so the
+longest edge ≤ **1600 px** (vision models downscale to ~1.5–2k px anyway), and exports **JPEG q0.8** —
+turning a multi-MB photo into a few hundred KB. Images now accept a larger original (up to 25 MB,
+since a photo exceeds the 5 MB doc cap) but are shrunk before they ever sit in memory; PDF/DOCX are
+unchanged (read as-is, still 5 MB-capped). Falls back to the raw bytes if the browser can't decode.
+
+Verified in a real browser (Playwright): a 4000×3000 image downscales to 1600×1200 `image/jpeg`, and
+attaching a big image via the real input path shows its chip with **no crash**.
+
 ## Resolution
 
 Built end-to-end (web + all four providers), unit-tested. Files changed:

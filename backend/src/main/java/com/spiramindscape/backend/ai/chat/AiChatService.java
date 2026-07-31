@@ -256,6 +256,20 @@ public class AiChatService {
             says "rename the link …" and a link with that name is in the context, that is
             edit_link with its id — not 'link'.
 
+            EDITING A NOTE — PRESERVE ITS CONTENT AND FORMATTING (critical):
+            edit_note REPLACES the note's whole body with the 'value' you send. So to edit a
+            note you MUST:
+            1. FIRST call read_resource with the note's id to get its CURRENT body — you receive
+               it as HTML (tags like <h2>, <p>, <ul><li>, <strong>, <a href>, and any style
+               attributes). That HTML IS the note's formatting.
+            2. Return in 'value' the COMPLETE updated note as HTML — the existing content PLUS
+               your change. Keep every part the user didn't ask to change, byte-for-byte where
+               possible, INCLUDING its formatting/markup.
+            NEVER send only the changed part (edit_note would erase everything else). NEVER strip
+            the formatting, re-flow it into plain text, or output Markdown — always return the
+            full HTML. Change only what the user asked; leave the rest and its markup intact.
+            If you didn't read the note first, do NOT propose edit_note — read it, then edit.
+
             CREATE A TARGET IN ITS FINAL STATE — in ONE proposal, not two. You cannot
             reference a target you are creating in the same message (it has no id yet), so
             do NOT create it and then try to complete/update it separately. Instead:
@@ -436,7 +450,11 @@ public class AiChatService {
                         + "'edit_target' — rename a target (use 'id', 'value'; optional 'deadline_value');\n"
                         + "'edit_option' — change option text (use 'id', 'value');\n"
                         + "'edit_obstacle'/'edit_action' — change reality text (use 'id', 'value');\n"
-                        + "'edit_note' — change a note (use 'id', 'title', 'value' for body).\n"
+                        + "'edit_note' — change a note (use 'id', 'title', 'value' for body). "
+                        + "This REPLACES the whole body, so first read_resource the note (you get "
+                        + "its current HTML) and put the COMPLETE updated note as HTML in 'value' — "
+                        + "existing content + your change, keeping all formatting. Never send only "
+                        + "the changed part and never strip the HTML formatting.\n"
                         + "'edit_link' — change a link resource: 'id' plus 'value' (new URL) and/or "
                         + "'title' (new label);\n"
                         + "'edit_email' — change a contact/email resource: 'id' plus any of 'title' "
@@ -601,8 +619,15 @@ public class AiChatService {
                                     "description", "The full http(s) URL to read.")),
                     "required", List.of("url")));
 
-    /** Safety cap on tool/agentic loop iterations within one request. */
-    private static final int MAX_TOOL_ITERATIONS = 4;
+    /** Safety cap on tool/agentic loop iterations within one request. Enough for
+     *  a multi-step task (e.g. several web searches) before a forced final turn. */
+    private static final int MAX_TOOL_ITERATIONS = 6;
+
+    /** Shown when a request somehow produces no text and no proposal, so the user
+     *  never gets a blank "no response" (see {@link #ensureNonEmpty}). */
+    private static final String EMPTY_RESPONSE_FALLBACK =
+            "I wasn't able to complete that in one go. Please try again, or break it "
+            + "into smaller steps (for example, search for one product at a time).";
 
     private final SafetyService safety;
     private final AbuseAuditLogger abuseAuditLogger;
@@ -851,6 +876,11 @@ public class AiChatService {
             SseEmitter emitter) {
 
         try {
+            // Tracks whether ANYTHING reached the user this request (a text token or
+            // a surfaced proposal). If a request ends having produced nothing, we
+            // stream a fallback so the user never sees a blank "no response".
+            boolean produced = false;
+
             for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
                 StringBuilder turnText = new StringBuilder();
                 List<ToolCall> calls = new ArrayList<>();
@@ -866,10 +896,14 @@ public class AiChatService {
                         error -> { failed.set(true); errorSse(emitter, error); });
 
                 if (failed.get()) return; // emitter already errored
+                if (turnText.length() > 0) produced = true;
 
                 // Surface goal-change proposals (these never loop on their own)
                 for (ToolCall c : calls) {
-                    if ("propose_goal_change".equals(c.name())) sendProposal(emitter, c, goalId);
+                    if ("propose_goal_change".equals(c.name())) {
+                        sendProposal(emitter, c, goalId);
+                        produced = true;
+                    }
                 }
 
                 // Result-producing tools we can actually fulfil this turn.
@@ -879,6 +913,7 @@ public class AiChatService {
                         || ("web_search".equals(c.name()) && tavilyKey != null));
 
                 if (!willLoop) {
+                    ensureNonEmpty(emitter, produced);
                     completeSse(emitter);
                     return;
                 }
@@ -890,11 +925,46 @@ public class AiChatService {
                 }
             }
 
-            // Iteration cap reached — close gracefully.
+            // Iteration cap reached while the model was still calling looping tools
+            // (e.g. searching for several products). Without this, the loop would end
+            // right after a search — results fetched but never used — and the user
+            // would get NOTHING. Give one FINAL turn that can still write to the goal
+            // (proposals) but has NO looping tools, so it must finish now.
+            StringBuilder finalText = new StringBuilder();
+            List<ToolCall> finalCalls = new ArrayList<>();
+            AtomicBoolean finalFailed = new AtomicBoolean(false);
+            provider.streamChat(
+                    messages,
+                    systemPrompt,
+                    PROPOSAL_TOOLS,
+                    token -> { finalText.append(token); sendToken(emitter, token); },
+                    finalCalls::add,
+                    () -> { },
+                    error -> { finalFailed.set(true); errorSse(emitter, error); });
+            if (finalFailed.get()) return;
+            if (finalText.length() > 0) produced = true;
+            for (ToolCall c : finalCalls) {
+                if ("propose_goal_change".equals(c.name())) {
+                    sendProposal(emitter, c, goalId);
+                    produced = true;
+                }
+            }
+
+            ensureNonEmpty(emitter, produced);
             completeSse(emitter);
         } catch (Exception e) {
             errorSse(emitter, e);
         }
+    }
+
+    /**
+     * Guarantees the user never gets a blank turn: if a whole request produced no
+     * text and no proposal (a thinking-only turn, a dropped/empty tool call, or an
+     * agentic loop that ran out of iterations mid-task), stream a short fallback so
+     * "no response" can't happen.
+     */
+    private void ensureNonEmpty(SseEmitter emitter, boolean produced) {
+        if (!produced) sendToken(emitter, EMPTY_RESPONSE_FALLBACK);
     }
 
     /**
