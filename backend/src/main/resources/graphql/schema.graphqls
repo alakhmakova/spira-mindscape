@@ -2,6 +2,14 @@ type Query {
     goals: [Goal!]!
     goalById(id: ID!): Goal
 
+    # A cheap change-signature for the current user's whole goal graph, used by
+    # background sync to avoid re-fetching the full `goals` payload when nothing
+    # changed. Format: "<maxUpdatedAtMicros>:<totalRowCount>" across goals and
+    # their nested reality/options/targets/checklist/resources. It changes on any
+    # insert, update (max advances) or delete (count changes), so a client can
+    # poll this and only run `goals` when the value differs from what it last saw.
+    goalsRevision: String!
+
     resourcesByGoal(goalId: ID!): [Resource!]!
     resourceById(id: ID!): Resource
 

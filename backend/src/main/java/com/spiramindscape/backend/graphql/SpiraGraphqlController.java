@@ -53,6 +53,11 @@ public class SpiraGraphqlController {
     }
 
     @QueryMapping
+    public String goalsRevision() {
+        return goalService.currentRevision();
+    }
+
+    @QueryMapping
     public List<Resource> resourcesByGoal(@Argument Long goalId) {
         return resourceService.findByGoal(goalId);
     }

@@ -996,7 +996,8 @@ private fun NumericBody(target: TargetItem.Numeric, actions: GoalWorkspaceAction
                 onCommit = { entered -> entered.toDoubleOrNull()?.let { actions.onSetNumeric(target.id, it.coerceIn(lo, hi)) } },
                 modifier = Modifier.width(72.dp),
                 textStyle = MaterialTheme.typography.titleMedium,
-                keyboardType = KeyboardType.Number,
+                // Decimal keyboard so a fractional value (e.g. 1.1) can be typed; ± still nudges by 1.
+                keyboardType = KeyboardType.Decimal,
                 required = true,
             )
             val meta = buildString {

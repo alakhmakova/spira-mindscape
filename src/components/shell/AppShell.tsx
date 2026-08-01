@@ -15,6 +15,7 @@ import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { useSpira } from "@/lib/spira/store";
 import { useAuth } from "@/lib/spira/auth";
+import { useActivityGate } from "@/lib/useActivityGate";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import {
   useShellFilters,
@@ -118,22 +119,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // it's visible so two open screens stay roughly in sync. refreshGoalsIfIdle is
   // silent and skips while local edits are in flight, so this never flashes UI
   // or clobbers unsaved work.
+  //
+  // Cost guard: the poll PAUSES after a few minutes without user interaction (via
+  // useActivityGate — pointer/key/wheel/touch all count, so reading-by-scroll keeps it
+  // alive), so a forgotten open tab stops hitting the backend and lets the (Neon)
+  // database scale to zero. Returning to the tab, or interacting after an idle stretch,
+  // refreshes at once so the first interaction still shows fresh cross-device data.
+  const isActive = useActivityGate(3 * 60_000, () => {
+    if (document.visibilityState === "visible") void refreshGoalsIfIdle();
+  });
   useEffect(() => {
     const refreshOnReturn = () => {
-      if (document.visibilityState === "visible") {
-        void refreshGoalsIfIdle();
-      }
+      if (document.visibilityState === "visible") void refreshGoalsIfIdle();
     };
     window.addEventListener("focus", refreshOnReturn);
     window.addEventListener("pageshow", refreshOnReturn);
     document.addEventListener("visibilitychange", refreshOnReturn);
 
-    const POLL_MS = 45_000;
     const poll = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && isActive()) {
         void refreshGoalsIfIdle();
       }
-    }, POLL_MS);
+    }, 45_000);
 
     return () => {
       window.removeEventListener("focus", refreshOnReturn);
@@ -141,7 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", refreshOnReturn);
       window.clearInterval(poll);
     };
-  }, [refreshGoalsIfIdle]);
+  }, [refreshGoalsIfIdle, isActive]);
 
   // ── Offline / online detection ──────────────────────────────────────────
   const [isOffline, setIsOffline] = useState(
