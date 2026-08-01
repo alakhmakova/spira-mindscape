@@ -1338,7 +1338,7 @@ function NumericBody({
         <InlineEditable
           value={String(target.current)}
           numeric
-          onChange={(v) => commitPatch({ current: parseInt(v, 10) })}
+          onChange={(v) => commitPatch({ current: parseFloat(v) })}
           onInvalid={setValidationMessage}
           ariaLabel="Current value"
         />
@@ -1346,7 +1346,7 @@ function NumericBody({
         <InlineEditable
           value={String(target.total)}
           numeric
-          onChange={(v) => commitPatch({ total: parseInt(v, 10) })}
+          onChange={(v) => commitPatch({ total: parseFloat(v) })}
           onInvalid={setValidationMessage}
           ariaLabel="Total value"
         />
@@ -1367,7 +1367,7 @@ function NumericBody({
           <InlineEditable
             value={String(target.start ?? 0)}
             numeric
-            onChange={(v) => commitPatch({ start: parseInt(v, 10) })}
+            onChange={(v) => commitPatch({ start: parseFloat(v) })}
             onInvalid={setValidationMessage}
             ariaLabel="Start value"
           />
@@ -1445,9 +1445,11 @@ function InlineEditable({
         onInvalid?.("Value is required.");
         return;
       }
-      if (!/^\d+$/.test(text)) {
+      // Allow decimals typed by hand (e.g. 1.1) — numeric targets are stored as Float on the
+      // server; only the ± steppers move in whole units. Reject negatives and non-numbers.
+      if (!/^\d+(\.\d+)?$/.test(text)) {
         e.currentTarget.textContent = value;
-        onInvalid?.("Enter a non-negative whole number.");
+        onInvalid?.("Enter a non-negative number.");
         return;
       }
     }
@@ -1941,8 +1943,11 @@ function NewTargetForm({
   const numericMessage = (() => {
     if (type !== "numeric") return null;
     if (!start.trim() || !total.trim()) return "Start and target are required.";
-    if (!/^\d+$/.test(start.trim()) || !/^\d+$/.test(total.trim())) {
-      return "Start and target must be non-negative whole numbers.";
+    if (
+      !/^\d+(\.\d+)?$/.test(start.trim()) ||
+      !/^\d+(\.\d+)?$/.test(total.trim())
+    ) {
+      return "Start and target must be non-negative numbers.";
     }
     if (parsedStart === parsedTotal) {
       return "Start and target must be different.";
@@ -2115,7 +2120,7 @@ function NewTargetForm({
               <Input
                 type="number"
                 min={0}
-                step={1}
+                step="any"
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
               />
@@ -2127,7 +2132,7 @@ function NewTargetForm({
               <Input
                 type="number"
                 min={0}
-                step={1}
+                step="any"
                 value={total}
                 onChange={(e) => setTotal(e.target.value)}
               />
