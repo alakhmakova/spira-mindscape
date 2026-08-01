@@ -87,6 +87,15 @@ type State = {
 
 const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/**
+ * The goal-graph change-signature last applied by a background refresh. The idle poll fetches
+ * the cheap `goalsRevision` first and skips the full `fetchGoals` when it is unchanged, so an
+ * open-but-idle tab stops re-downloading every goal each tick (a large cut in Neon egress).
+ * Only set when a snapshot is actually applied, so a poll interrupted by a local edit re-checks
+ * next time instead of masking a genuine cross-device change.
+ */
+let lastGoalsRevision: string | undefined;
+
 /** In-flight lazy file loads, keyed by resource id, so concurrent callers share one request. */
 const fileLoads = new Map<string, Promise<string>>();
 
@@ -121,6 +130,7 @@ function cancelDebouncedRemote(key: string) {
 export function __clearPendingWritesForTests() {
   for (const timer of syncTimers.values()) clearTimeout(timer);
   syncTimers.clear();
+  lastGoalsRevision = undefined;
 }
 
 function replaceGoal(goals: Goal[], goalId: string, next: Goal) {
@@ -217,9 +227,19 @@ export const useSpira = create<State>()((set, get) => ({
 
   loadGoals: async () => {
     if (get().isLoading || get().hasLoaded) return;
+    // A fresh load may be a new user session (e.g. after logout→login on the same tab). Drop any
+    // revision remembered for a previous user now (in case the load below fails); the successful
+    // path re-seeds it from this fetch.
+    lastGoalsRevision = undefined;
     set({ isLoading: true, syncError: undefined, syncErrorKind: undefined });
     try {
-      const goals = await spiraApi.fetchGoals();
+      // Seed the change-signature alongside the goals (fetched in parallel, so no extra latency)
+      // so the first background poll can skip a redundant full re-fetch right after load.
+      const [revision, goals] = await Promise.all([
+        spiraApi.fetchGoalsRevision(),
+        spiraApi.fetchGoals(),
+      ]);
+      lastGoalsRevision = revision;
       set({
         goals,
         isLoading: false,
@@ -251,7 +271,13 @@ export const useSpira = create<State>()((set, get) => ({
   refreshGoals: async () => {
     set({ isLoading: true, syncError: undefined, syncErrorKind: undefined });
     try {
-      const goals = await spiraApi.fetchGoals();
+      // Re-seed the change-signature with the goals (parallel — no extra latency) so a poll right
+      // after an explicit refresh doesn't redundantly re-fetch.
+      const [revision, goals] = await Promise.all([
+        spiraApi.fetchGoalsRevision(),
+        spiraApi.fetchGoals(),
+      ]);
+      lastGoalsRevision = revision;
       set({
         goals,
         isLoading: false,
@@ -285,12 +311,21 @@ export const useSpira = create<State>()((set, get) => ({
     if (state.goals.some((goal) => goal.id.startsWith("local-"))) return;
 
     try {
+      // Cheap change-check first: if the whole goal graph is unchanged since the last snapshot
+      // we applied, skip the full (potentially large) fetch entirely — this is what stops an
+      // idle open tab from re-downloading every goal on each poll.
+      const revision = await spiraApi.fetchGoalsRevision();
+      if (revision === lastGoalsRevision) return;
+
       const goals = await spiraApi.fetchGoals();
       // Re-check after the await: the user may have started editing mid-fetch, in
       // which case applying the server snapshot would clobber their local change.
       const latest = get();
       if (syncTimers.size > 0) return;
       if (latest.goals.some((goal) => goal.id.startsWith("local-"))) return;
+      // Record the revision only now that we're actually applying it, so a poll aborted above
+      // re-checks next time rather than masking a real change.
+      lastGoalsRevision = revision;
       set({
         goals,
         hasLoaded: true,

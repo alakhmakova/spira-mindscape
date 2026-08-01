@@ -505,6 +505,20 @@ export const spiraApi = {
     return data.goals.map(toGoal);
   },
 
+  /**
+   * A tiny change-signature for the whole goal graph ("<maxUpdatedAtMicros>:<count>").
+   * Background sync polls this instead of re-fetching every goal: only when it differs
+   * from the last seen value does it run the full `fetchGoals`, cutting outbound transfer.
+   */
+  async fetchGoalsRevision(): Promise<string> {
+    const data = await graphql<{ goalsRevision: string }>(`
+      query GoalsRevision {
+        goalsRevision
+      }
+    `);
+    return data.goalsRevision;
+  },
+
   async createGoal(input: CreateGoalInput): Promise<Goal> {
     const data = await graphql<{ createGoal: GraphqlGoal }>(
       `

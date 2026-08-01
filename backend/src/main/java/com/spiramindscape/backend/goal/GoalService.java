@@ -5,10 +5,12 @@ import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -25,11 +27,63 @@ public class GoalService {
     private final OptionRepository optionRepository;
     private final ConfidenceHistoryRepository confidenceHistoryRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final EntityManager entityManager;
+
+    /**
+     * One aggregate per table in the goal graph: the latest {@code updatedAt} and the row count,
+     * owner-scoped. Combined they form {@link #currentRevision()} — {@code max} catches edits,
+     * {@code count} catches inserts/deletes. Confidence history is intentionally omitted: a
+     * confidence change also updates the parent goal, so {@code goal.updatedAt} already covers it.
+     *
+     * <p>Kept as six separate JPQL aggregates rather than one native {@code UNION}/multi-subselect
+     * query on purpose: JPQL has no UNION, and hand-written SQL here would have to juggle the
+     * reserved {@code option} table name plus H2-vs-Postgres differences in {@code GREATEST}/NULL
+     * and epoch handling. These are tiny indexed {@code count}/{@code max} scans, so the extra
+     * round-trips are cheap, and portability + null-safety are worth more than saving them. Revisit
+     * only if this shows up as real DB load.
+     */
+    private static final List<String> REVISION_AGGREGATES = List.of(
+            "SELECT max(g.updatedAt), count(g) FROM Goal g WHERE g.user.id = :userId",
+            "SELECT max(o.updatedAt), count(o) FROM Option o WHERE o.goal.user.id = :userId",
+            "SELECT max(t.updatedAt), count(t) FROM Target t WHERE t.goal.user.id = :userId",
+            "SELECT max(c.updatedAt), count(c) FROM ChecklistItem c WHERE c.target.goal.user.id = :userId",
+            "SELECT max(r.updatedAt), count(r) FROM RealityItem r WHERE r.goal.user.id = :userId",
+            "SELECT max(res.updatedAt), count(res) FROM Resource res WHERE res.goal.user.id = :userId");
 
     @Transactional(readOnly = true)
     public List<Goal> findAll() {
         Long userId = currentUserProvider.getCurrentUser().getId();
         return goalRepository.findByUserIdOrderByCreatedAtAsc(userId);
+    }
+
+    /**
+     * A cheap change-signature for the current user's entire goal graph, backing the
+     * {@code goalsRevision} query. Lets background sync poll a few scalars instead of re-fetching
+     * the full {@code goals} payload every time — a large cut in outbound data transfer. Format:
+     * {@code "<maxUpdatedAtMicros>:<totalRowCount>"}; {@code "0:0"} when the user has no goals.
+     */
+    @Transactional(readOnly = true)
+    public String currentRevision() {
+        Long userId = currentUserProvider.getCurrentUser().getId();
+        Instant maxUpdated = null;
+        long totalCount = 0;
+        for (String jpql : REVISION_AGGREGATES) {
+            Object[] row = (Object[]) entityManager.createQuery(jpql)
+                    .setParameter("userId", userId)
+                    .getSingleResult();
+            Instant updated = (Instant) row[0];
+            if (updated != null && (maxUpdated == null || updated.isAfter(maxUpdated))) {
+                maxUpdated = updated;
+            }
+            totalCount += ((Number) row[1]).longValue();
+        }
+        // Microsecond resolution (not millis): shrinks the window in which a same-instant edit on
+        // another device could share the last-seen max and be skipped by the client's
+        // change-check. Postgres timestamptz is microsecond-precise.
+        long micros = maxUpdated == null
+                ? 0L
+                : maxUpdated.getEpochSecond() * 1_000_000L + maxUpdated.getNano() / 1_000;
+        return micros + ":" + totalCount;
     }
 
     /**

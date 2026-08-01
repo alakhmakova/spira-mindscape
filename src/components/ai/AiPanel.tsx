@@ -19,6 +19,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
+import { useActivityGate } from "@/lib/useActivityGate";
 import { cn } from "@/lib/utils";
 import type { AiAction, Goal } from "@/lib/spira/types";
 import { toast, type ExternalToast } from "sonner";
@@ -372,6 +373,32 @@ function messagesForStore(msgs: Msg[]): Msg[] {
  * the caller can also push it to the server (cross-device sync) without
  * re-serialising.
  */
+/**
+ * Carries local attachment bytes (`dataUrl`) into a transcript adopted from the server. The stored
+ * / synced transcript strips file bytes (see {@link messagesForStore}), so when the cross-device
+ * poll adopts the server copy it would otherwise blank out an image we still hold in memory — and
+ * an image chip only previews while its bytes are present. Match by message id + attachment index
+ * (guarded by name) and keep the local bytes wherever the incoming copy has none.
+ */
+function mergeAttachmentBytes(prev: Msg[], next: Msg[]): Msg[] {
+  const prevById = new Map(prev.map((m) => [m.id, m]));
+  return next.map((m) => {
+    if (!m.attachments?.length) return m;
+    const old = prevById.get(m.id);
+    if (!old?.attachments?.length) return m;
+    return {
+      ...m,
+      attachments: m.attachments.map((a, i) => {
+        if (a.dataUrl) return a;
+        const prevA = old.attachments![i];
+        return prevA?.dataUrl && prevA.name === a.name
+          ? { ...a, dataUrl: prevA.dataUrl }
+          : a;
+      }),
+    };
+  });
+}
+
 function saveTranscript(scopeKey: string, msgs: Msg[]): string {
   const settled = messagesForStore(msgs);
   const json = JSON.stringify(settled);
@@ -645,6 +672,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     title: string;
     body: string;
     html?: boolean;
+    // When set, the modal shows this image (a data: URL) instead of text — used to
+    // preview an image file attached to a chat message.
+    image?: string;
   } | null>(null);
   const addTarget = useSpira((s) => s.addTarget);
   const updateGoal = useSpira((s) => s.updateGoal);
@@ -1366,6 +1396,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // few-second poll effectively live without websocket infrastructure. Guards:
   // never adopt mid-stream (`busy`) or during hydration, skip background tabs,
   // and set `skipServerPutRef` so an adopted copy isn't echoed back (no ping-pong).
+  //
+  // Cost guard (mirrors the goals poll in AppShell via useActivityGate): each tick fetches
+  // the whole transcript, so a chat left open but idle would keep hitting the DB every 4s and
+  // keep the (Neon) compute awake for nothing. The gate pauses polling after a few minutes
+  // without user interaction (pointer/key/wheel/touch — reading-by-scroll counts) and, on
+  // resume, replays the latest poll at once. Trade-off: while idle, a message sent from ANOTHER
+  // device isn't adopted here until you interact — acceptable for a personal app, and
+  // focus/visibility elsewhere still refresh.
+  const transcriptPollRef = useRef<() => void>(() => {});
+  const isChatActive = useActivityGate(3 * 60_000, () =>
+    transcriptPollRef.current(),
+  );
   useEffect(() => {
     if (inGrow) return;
     let cancelled = false;
@@ -1376,6 +1418,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         document.visibilityState !== "visible"
       )
         return;
+      if (!isChatActive()) return; // idle: let the DB rest
       const scopeAtPoll = scopeKey;
       const server = await getTranscript(context.goalId);
       if (
@@ -1392,16 +1435,20 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       if (!serverMsgs) return;
       lastSeenUpdatedRef.current = server.updatedAt;
       skipServerPutRef.current = true; // adopting must not echo back
-      setMsgs(serverMsgs);
+      // Keep any local image bytes the server copy dropped, so an image attached this session
+      // still previews after a sync tick adopts the (stripped) server transcript.
+      setMsgs((prev) => mergeAttachmentBytes(prev, serverMsgs));
       saveTranscript(scopeAtPoll, serverMsgs);
     };
+    transcriptPollRef.current = () => void poll();
     const interval = window.setInterval(poll, 4000);
     return () => {
       cancelled = true;
+      transcriptPollRef.current = () => {};
       window.clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, inGrow]);
+  }, [scopeKey, inGrow, isChatActive]);
 
   // ── pending proposal restore ──────────────────────────────────────────────
   // A card can vanish from the UI while its proposal is still PENDING on the
@@ -2505,15 +2552,38 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               <div key={m.id} className="group flex flex-col items-end gap-1">
                 {m.attachments && m.attachments.length > 0 && (
                   <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
-                    {m.attachments.map((a, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#083f3a] shadow-sm"
-                      >
-                        <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
-                        <span className="truncate">{a.name}</span>
-                      </span>
-                    ))}
+                    {m.attachments.map((a, i) => {
+                      const chipClass =
+                        "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#083f3a] shadow-sm";
+                      // Image attachments open a preview on click; the dataUrl survives only
+                      // in-session (it's stripped before the transcript is persisted), so a
+                      // reloaded chat falls back to a plain, non-clickable chip.
+                      const canPreview =
+                        a.mime.startsWith("image/") && !!a.dataUrl;
+                      return canPreview ? (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() =>
+                            setContentModal({
+                              title: a.name,
+                              body: "",
+                              image: a.dataUrl,
+                            })
+                          }
+                          aria-label={`Preview ${a.name}`}
+                          className={`${chipClass} cursor-zoom-in transition-colors hover:bg-white`}
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                          <span className="truncate">{a.name}</span>
+                        </button>
+                      ) : (
+                        <span key={i} className={chipClass}>
+                          <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                          <span className="truncate">{a.name}</span>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#083f3a] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#006d67]/25 selection:text-[#083f3a]">
@@ -2648,6 +2718,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               inGrow ? sendGrow(text) : sendChat(text, attachments)
             }
             allowAttachments={!inGrow}
+            onPreviewImage={(name, dataUrl) =>
+              setContentModal({ title: name, body: "", image: dataUrl })
+            }
             placeholder={
               inGrow
                 ? "Answer in your own words…"
@@ -2751,6 +2824,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           title={contentModal.title}
           body={contentModal.body}
           html={contentModal.html}
+          image={contentModal.image}
           onClose={() => setContentModal(null)}
         />
       )}
@@ -2764,11 +2838,13 @@ function ContentModal({
   title,
   body,
   html,
+  image,
   onClose,
 }: {
   title: string;
   body: string;
   html?: boolean;
+  image?: string;
   onClose: () => void;
 }) {
   // Close on Escape, like the other overlays.
@@ -2803,9 +2879,16 @@ function ContentModal({
           </button>
         </div>
         <div className="px-5 py-4 overflow-y-auto text-[14px] leading-[1.6] text-[#083f3a]/85 [overflow-wrap:anywhere]">
-          {/* Notes are stored as HTML (TipTap) — render them formatted, like the app's
-              note view; goal descriptions are plain text → Markdown. */}
-          {html ? (
+          {/* An attached image previews as the image itself; notes are stored as HTML
+              (TipTap) → render formatted like the note view; goal descriptions are
+              plain text → Markdown. */}
+          {image ? (
+            <img
+              src={image}
+              alt={title}
+              className="mx-auto max-h-full max-w-full rounded-lg object-contain"
+            />
+          ) : html ? (
             <div
               className="tiptap-content prose prose-sm max-w-none"
               dangerouslySetInnerHTML={{ __html: body }}
@@ -5094,17 +5177,88 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Downscales + recompresses an image to a JPEG data URL bounded by
- * {@link IMAGE_MAX_DIM}. This is what keeps a large phone photo from spiking
- * memory: instead of holding a multi-MB base64 string (in state, the message,
- * and the request body at once) we keep a few-hundred-KB JPEG. Falls back to the
- * raw file if the browser can't decode it. Returns the data URL and its MIME.
+ * Reads an image's pixel dimensions straight from its file header (PNG IHDR / JPEG SOF), reading
+ * only the first bytes — no full decode. Lets {@link downscaleImage} ask the browser to decode a
+ * camera photo directly at reduced resolution instead of materialising the full-size bitmap first
+ * (the peak that OOMs constrained phones). Returns null for formats it can't cheaply measure.
+ */
+async function readImageSize(
+  file: File,
+): Promise<{ w: number; h: number } | null> {
+  try {
+    const buf = await file.slice(0, 64 * 1024).arrayBuffer();
+    const b = new Uint8Array(buf);
+    const dv = new DataView(buf);
+    // PNG: 8-byte signature, then IHDR (width @16, height @20, big-endian).
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+      return { w: dv.getUint32(16), h: dv.getUint32(20) };
+    }
+    // JPEG: FF D8, then walk segments to a Start-Of-Frame marker (FFC0–FFCF, minus DHT/JPG/DAC).
+    if (b[0] === 0xff && b[1] === 0xd8) {
+      let o = 2;
+      while (o + 9 < b.length) {
+        if (b[o] !== 0xff) {
+          o++;
+          continue;
+        }
+        const marker = b[o + 1];
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          marker !== 0xc4 &&
+          marker !== 0xc8 &&
+          marker !== 0xcc
+        ) {
+          return { h: dv.getUint16(o + 5), w: dv.getUint16(o + 7) };
+        }
+        const len = dv.getUint16(o + 2);
+        if (len < 2) break;
+        o += 2 + len;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/**
+ * Downscales + recompresses an image to a JPEG data URL bounded by {@link IMAGE_MAX_DIM}. This is
+ * what keeps a large phone photo from spiking memory: instead of holding a multi-MB base64 string
+ * (in state, the message, and the request body at once) we keep a few-hundred-KB JPEG. When the
+ * header gives us the dimensions we decode straight to the reduced size ({@code resizeWidth}/
+ * {@code resizeHeight}) so the full bitmap is never materialised — the key to not OOMing a camera
+ * capture on mobile. Returns the data URL and its MIME.
  */
 async function downscaleImage(
   file: File,
 ): Promise<{ dataUrl: string; mime: string }> {
+  const dims = await readImageSize(file);
+  let bitmap: ImageBitmap;
   try {
-    const bitmap = await createImageBitmap(file);
+    if (dims && Math.max(dims.w, dims.h) > IMAGE_MAX_DIM) {
+      const scale = IMAGE_MAX_DIM / Math.max(dims.w, dims.h);
+      bitmap = await createImageBitmap(file, {
+        resizeWidth: Math.max(1, Math.round(dims.w * scale)),
+        resizeHeight: Math.max(1, Math.round(dims.h * scale)),
+        resizeQuality: "medium",
+      });
+    } else {
+      bitmap = await createImageBitmap(file);
+    }
+  } catch {
+    // Couldn't decode. Keeping the raw bytes is fine for a small file, but for a large one it
+    // would only pile more base64 onto the memory pressure that likely caused this — refuse
+    // instead, so the composer shows an error rather than risking an OOM.
+    if (file.size > ATTACH_MAX_BYTES) {
+      throw new Error("Image too large to process on this device");
+    }
+    return { dataUrl: await readFileAsDataUrl(file), mime: file.type };
+  }
+  try {
+    // A draw-time scale is the safety net for the path where the header was unreadable and the
+    // bitmap came back full-size; when we pre-resized above, the bitmap is already ≤ IMAGE_MAX_DIM
+    // so this is ~1:1.
     const scale = Math.min(
       1,
       IMAGE_MAX_DIM / Math.max(bitmap.width, bitmap.height),
@@ -5117,14 +5271,12 @@ async function downscaleImage(
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
     ctx.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close?.();
     const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
     canvas.width = 0; // release the backing bitmap promptly
     canvas.height = 0;
     return { dataUrl, mime: "image/jpeg" };
-  } catch {
-    // Older browser / undecodable image: fall back to the raw bytes.
-    return { dataUrl: await readFileAsDataUrl(file), mime: file.type };
+  } finally {
+    bitmap.close?.();
   }
 }
 
@@ -5151,6 +5303,7 @@ function Composer({
   onDraftChange,
   leftAction,
   allowAttachments,
+  onPreviewImage,
 }: {
   onSend: (text: string, attachments?: ChatAttachment[]) => void;
   placeholder: string;
@@ -5165,6 +5318,8 @@ function Composer({
   leftAction?: ReactNode;
   /** Show the paperclip to attach files directly to the message (regular chat). */
   allowAttachments?: boolean;
+  /** Preview an attached image before sending (opens in the panel-level modal). */
+  onPreviewImage?: (name: string, dataUrl: string) => void;
 }) {
   const [v, setV] = useState(initialValue ?? "");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -5258,23 +5413,45 @@ function Composer({
       <div className="rounded-2xl border border-white/35 bg-white px-3 pt-2.5 pb-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pb-2">
-            {attachments.map((a, i) => (
-              <span
-                key={i}
-                className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#083f3a]/15 bg-[#083f3a]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#083f3a]"
-              >
-                <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
-                <span className="truncate">{a.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(i)}
-                  aria-label={`Remove ${a.name}`}
-                  className="shrink-0 grid h-4 w-4 place-items-center rounded-full text-[#083f3a]/50 hover:bg-[#083f3a]/10 hover:text-[#083f3a]"
+            {attachments.map((a, i) => {
+              // Images preview on click (bytes are in hand before sending); the ✕ removes.
+              const canPreview = a.mime.startsWith("image/") && !!a.dataUrl;
+              const label = (
+                <>
+                  <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                  <span className="truncate">{a.name}</span>
+                </>
+              );
+              return (
+                <span
+                  key={i}
+                  className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#083f3a]/15 bg-[#083f3a]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#083f3a]"
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
+                  {canPreview ? (
+                    <button
+                      type="button"
+                      onClick={() => onPreviewImage?.(a.name, a.dataUrl)}
+                      aria-label={`Preview ${a.name}`}
+                      className="inline-flex min-w-0 items-center gap-1.5 cursor-zoom-in"
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      {label}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(i)}
+                    aria-label={`Remove ${a.name}`}
+                    className="shrink-0 grid h-4 w-4 place-items-center rounded-full text-[#083f3a]/50 hover:bg-[#083f3a]/10 hover:text-[#083f3a]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              );
+            })}
           </div>
         )}
         {attachError && (
