@@ -73,8 +73,8 @@ fun NewTargetSheet(
 
         when (type) {
             "numeric" -> {
-                SpiraTextField(start, { start = it }, "Start (optional)", keyboardType = KeyboardType.Number)
-                SpiraTextField(total, { total = it }, "Target", keyboardType = KeyboardType.Number)
+                SpiraTextField(start, { start = it }, "Start (optional)", keyboardType = KeyboardType.Decimal)
+                SpiraTextField(total, { total = it }, "Target", keyboardType = KeyboardType.Decimal)
                 SpiraTextField(unit, { unit = it }, "Unit (optional)")
             }
             "checklist" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

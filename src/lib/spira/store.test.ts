@@ -425,6 +425,8 @@ describe("useSpira refreshGoalsIfIdle (cross-device freshness)", () => {
     // The bug: loadGoals() no-ops once hasLoaded is true, so a change made on another
     // device never appeared without a reload. refreshGoalsIfIdle must bypass that guard.
     const serverGoal: Goal = { ...goalFixture(), title: "Renamed on desktop" };
+    // A fresh revision (nothing seen yet) means the change-check passes through to a full fetch.
+    vi.spyOn(spiraApi, "fetchGoalsRevision").mockResolvedValue("rev-1");
     const fetchGoals = vi
       .spyOn(spiraApi, "fetchGoals")
       .mockResolvedValue([serverGoal]);
@@ -435,6 +437,42 @@ describe("useSpira refreshGoalsIfIdle (cross-device freshness)", () => {
     expect(useSpira.getState().goals[0].title).toBe("Renamed on desktop");
     // Silent refresh must not flip the loading banner on.
     expect(useSpira.getState().isLoading).toBe(false);
+  });
+
+  it("skips the full goals fetch when the revision is unchanged (the egress cut)", async () => {
+    const fetchRevision = vi
+      .spyOn(spiraApi, "fetchGoalsRevision")
+      .mockResolvedValue("rev-42");
+    const fetchGoals = vi
+      .spyOn(spiraApi, "fetchGoals")
+      .mockResolvedValue([{ ...goalFixture(), title: "From server" }]);
+
+    // First poll: revision is new → full fetch runs and is applied.
+    await useSpira.getState().refreshGoalsIfIdle();
+    expect(fetchGoals).toHaveBeenCalledTimes(1);
+    expect(useSpira.getState().goals[0].title).toBe("From server");
+
+    // Second poll: same revision → only the tiny revision query runs, no full fetch.
+    await useSpira.getState().refreshGoalsIfIdle();
+    expect(fetchRevision).toHaveBeenCalledTimes(2);
+    expect(fetchGoals).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-fetches when the revision changes (a genuine cross-device update)", async () => {
+    vi.spyOn(spiraApi, "fetchGoalsRevision")
+      .mockResolvedValueOnce("rev-1")
+      .mockResolvedValueOnce("rev-2");
+    const fetchGoals = vi
+      .spyOn(spiraApi, "fetchGoals")
+      .mockResolvedValueOnce([{ ...goalFixture(), title: "First" }])
+      .mockResolvedValueOnce([{ ...goalFixture(), title: "Second" }]);
+
+    await useSpira.getState().refreshGoalsIfIdle();
+    expect(useSpira.getState().goals[0].title).toBe("First");
+
+    await useSpira.getState().refreshGoalsIfIdle();
+    expect(fetchGoals).toHaveBeenCalledTimes(2);
+    expect(useSpira.getState().goals[0].title).toBe("Second");
   });
 
   it("skips the refresh while a debounced write is in flight (never clobbers an edit)", async () => {
