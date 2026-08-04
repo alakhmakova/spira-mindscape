@@ -137,10 +137,13 @@ fun ConfidenceStepper(value: Int, onChange: (Int) -> Unit, modifier: Modifier = 
     }
 }
 
-/** The date picker dialog shared by [DeadlineField] and [DeadlineLinkField]. */
+/**
+ * The one date picker in the app — used by [DeadlineField], [DeadlineLinkField], the target card's
+ * calendar tile and the task rows. "Clear" removes the date; "OK" keeps whatever is selected.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeadlinePickerDialog(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
+fun DeadlinePickerDialog(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
     // Seed the calendar with the CURRENT deadline (not "today") so editing an existing date
     // opens where the user would expect it, rather than always jumping to today's month.
     val initialMillis = value?.let {
@@ -157,7 +160,16 @@ private fun DeadlinePickerDialog(value: String?, onChange: (String?) -> Unit, on
                 onDismiss()
             }) { Text("OK") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            Row {
+                // Clearing a date must be reachable from wherever the picker opens — the calendar
+                // tile and the task rows have no separate "Clear" affordance beside them.
+                if (value != null) {
+                    TextButton(onClick = { onChange(null); onDismiss() }) { Text("Clear") }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
     ) { DatePicker(state = stateDp) }
 }
 

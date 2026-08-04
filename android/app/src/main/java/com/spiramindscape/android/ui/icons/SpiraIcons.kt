@@ -161,6 +161,32 @@ object SpiraIcons {
     val Eraser = lucide(
         "m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21 M22 21H7 M5 11l9 9",
     )
+
+    // ── Target card: progress lock, deadlines, tasks, attachments ────────────
+    val Lock = lucide(
+        "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M7 11V7a5 5 0 0 1 10 0v4",
+    )
+    val LockOpen = lucide(
+        "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M7 11V7a5 5 0 0 1 9.9-1",
+    )
+    val Calendar = lucide(
+        "M8 2v4 M16 2v4 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M3 10h18",
+    )
+    val CalendarPlus = lucide(
+        "M8 2v4 M16 2v4 M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8 M3 10h18 " +
+            "M16 19h6 M19 16v6",
+    )
+    val CirclePlus = lucide("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z M8 12h8 M12 8v8")
+    val CircleCheck = lucide("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z m9 12 2 2 4-4")
+    val Paperclip = lucide(
+        "m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57" +
+            "a2 2 0 0 1-2.83-2.83l8.49-8.48",
+    )
+    val ArrowUpRight = lucide("M7 7h10v10 M7 17 17 7")
+    val Info = lucide("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z M12 16v-4 M12 8h.01")
+    val TriangleAlert = lucide(
+        "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3 M12 9v4 M12 17h.01",
+    )
 }
 
 private fun lucide(pathData: String): ImageVector =

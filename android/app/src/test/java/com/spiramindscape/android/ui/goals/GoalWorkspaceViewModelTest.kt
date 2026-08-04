@@ -6,7 +6,10 @@ import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.apollographql.apollo.api.Optional
 import com.spiramindscape.android.data.goals.FakeGoalsRepository
+import com.spiramindscape.android.data.goals.OptionItem
+import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.data.goals.TargetItem
+import com.spiramindscape.android.data.goals.TextItem
 import com.spiramindscape.android.graphql.type.CreateTargetInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -170,6 +173,51 @@ class GoalWorkspaceViewModelTest {
         val content = vm.state.value as GoalUiState.Content
         assertEquals(9, content.goal.confidence)
         assertTrue(content.goal.confidenceHistory.any { it.confidence == 9 })
+    }
+
+    /**
+     * Deleting a resource that is attached inline must first rewrite every element that references
+     * it — otherwise the goal is left holding `{{res:id}}` tokens pointing at nothing.
+     */
+    @Test
+    fun `removeResource detaches the resource everywhere before deleting it`() = runTest(dispatcher) {
+        val attached = GoalDetail(
+            id = "g1", title = "Goal", description = "", confidence = 5, deadline = null,
+            progress = 0f, achieved = false,
+            actions = listOf(TextItem("a1", "Read {{res:7}} tonight")),
+            obstacles = emptyList(),
+            options = listOf(OptionItem("o1", "Apply via {{res:7}}", selected = false)),
+            targets = listOf(TargetItem.Binary("t1", "Prepare {{res:7}}", 0f, null, false, done = false)),
+            resources = listOf(ResourceItem(id = "7", type = "note", title = "Job ad")),
+        )
+        val optionWrites = mutableListOf<String>()
+        val realityWrites = mutableListOf<String>()
+        val titleWrites = mutableListOf<String>()
+        val deleted = mutableListOf<String>()
+        val repo = object : FakeGoalsRepository() {
+            override suspend fun getGoal(id: String): GoalDetail = attached
+            override suspend fun setOptionText(goalId: String, optionId: String, text: String) {
+                optionWrites += text
+            }
+            override suspend fun updateReality(goalId: String, kind: String, itemId: String, text: String) {
+                realityWrites += text
+            }
+            override suspend fun setTargetTitle(targetId: String, title: String): TargetItem {
+                titleWrites += title
+                return TargetItem.Binary(targetId, title, 0f, null, false, done = false)
+            }
+            override suspend fun removeResource(id: String) { deleted += id }
+        }
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+
+        vm.removeResource("7")
+        advanceUntilIdle()
+
+        assertEquals(listOf("Apply via Job ad"), optionWrites)
+        assertEquals(listOf("Read Job ad tonight"), realityWrites)
+        assertEquals(listOf("Prepare Job ad"), titleWrites)
+        assertEquals(listOf("7"), deleted)
     }
 
     @Test
