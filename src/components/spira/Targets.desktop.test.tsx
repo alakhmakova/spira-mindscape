@@ -66,13 +66,17 @@ describe("DesktopTargetsTable — side panel only opens via Status column", () =
     const goal = goalFixture([checklistTarget]);
     render(<DesktopTargetsTable goal={goal} />);
 
-    expect(screen.queryByPlaceholderText("Add task…")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add task" }),
+    ).not.toBeInTheDocument();
 
     await user.click(
       screen.getByRole("textbox", { name: "Edit target title" }),
     );
 
-    expect(screen.queryByPlaceholderText("Add task…")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add task" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not open a panel when clicking the progress cell", async () => {
@@ -106,6 +110,12 @@ describe("DesktopTargetsTable — side panel only opens via Status column", () =
 
     await user.click(screen.getByRole("button", { name: "Tasks" }));
 
-    expect(screen.getByPlaceholderText("Add task…")).toBeInTheDocument();
+    // The panel's add control starts as a link and expands into the input on click.
+    const addTask = screen.getByRole("button", { name: "Add task" });
+    expect(addTask).toBeInTheDocument();
+    await user.click(addTask);
+    expect(
+      screen.getByPlaceholderText("Add task… (Enter to confirm)"),
+    ).toBeInTheDocument();
   });
 });

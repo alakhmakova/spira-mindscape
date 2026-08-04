@@ -2,7 +2,11 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, X, Calendar, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
-import { goalProgress } from "@/lib/spira/progress";
+import {
+  formatPercent,
+  goalProgress,
+  goalProgressSteps,
+} from "@/lib/spira/progress";
 import { ConfidencePill } from "./Confidence";
 import { getConfidenceColor } from "./confidence-color";
 import { ProgressBar } from "./ProgressBar";
@@ -88,7 +92,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
               <ProgressBar value={progress} />
             </div>
             <span className="text-xs font-bold text-foreground num shrink-0">
-              {Math.round(progress * 100)}%
+              {formatPercent(progress, goalProgressSteps(goal))}%
             </span>
           </div>
         </div>

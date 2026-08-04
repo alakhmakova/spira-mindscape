@@ -36,6 +36,38 @@ public final class VisionSupport {
     }
 
     /**
+     * Mistral chat models that can actually LOOK at an image. Unlike Anthropic, OpenAI and
+     * Gemini — whose current chat line-ups are multimodal throughout — most Mistral models are
+     * text-only, including the default {@code mistral-large-latest}. Sending a picture to one
+     * of those is worse than useless: the provider drops it, the turn still says an image was
+     * attached, and the model answers as if it had seen it (BUG-027).
+     */
+    private static final Set<String> MISTRAL_VISION_FAMILIES =
+            Set.of("pixtral", "mistral-medium", "mistral-small", "magistral");
+
+    /** Model families that are not chat models at all (or predate vision) — never send images. */
+    private static final Set<String> BLIND_FAMILIES =
+            Set.of("gpt-3.5", "text-embedding", "embedding", "whisper", "tts-", "codestral",
+                    "ministral", "open-mistral", "open-mixtral");
+
+    /**
+     * Can this provider/model pair actually see an image?
+     *
+     * <p>Deliberately conservative for Mistral (an allow-list — most of its models are blind)
+     * and permissive for the providers whose chat models are multimodal across the board. A
+     * blank model means the provider's own default.
+     */
+    public static boolean modelCanSeeImages(ProviderType provider, String model) {
+        String m = (model == null ? "" : model.trim().toLowerCase());
+        if (provider == ProviderType.MISTRAL) {
+            if (m.isBlank()) return false; // default is mistral-large-latest — text-only
+            return MISTRAL_VISION_FAMILIES.stream().anyMatch(m::contains);
+        }
+        if (provider == ProviderType.TAVILY) return false;
+        return BLIND_FAMILIES.stream().noneMatch(m::contains);
+    }
+
+    /**
      * Parses a {@code data:<mime>;base64,<payload>} URL into an {@link LlmImage}
      * (mime + raw base64 payload, no prefix). Returns {@code null} if the input
      * is not a base64 data URL of a supported vision MIME type.

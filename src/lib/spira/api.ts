@@ -94,6 +94,8 @@ type GraphqlTarget = {
   items: GraphqlChecklistItem[];
   deadline?: string | null;
   achievedAt?: string | null;
+  progressLocked?: boolean | null;
+  createdAt?: string | null;
 };
 
 type GraphqlResource = {
@@ -191,6 +193,8 @@ const GOAL_FIELDS = `
     done
     deadline
     achievedAt
+    progressLocked
+    createdAt
     items { id text done deadline achievedAt }
   }
   confidenceHistory { confidence at }
@@ -207,6 +211,8 @@ const TARGET_FIELDS = `
   done
   deadline
   achievedAt
+  progressLocked
+  createdAt
   items { id text done deadline achievedAt }
 `;
 
@@ -335,6 +341,8 @@ function toTarget(target: GraphqlTarget): Target {
     title: target.title,
     deadline: target.deadline ?? undefined,
     achievedAt: target.achievedAt ?? undefined,
+    progressLocked: target.progressLocked ?? undefined,
+    createdAt: target.createdAt ?? undefined,
   };
 
   if (target.type === "binary") {
@@ -489,6 +497,8 @@ function targetInput(
     total: "total" in target ? target.total : undefined,
     unit: "unit" in target ? target.unit : undefined,
     done: "done" in target ? target.done : undefined,
+    progressLocked:
+      "progressLocked" in target ? target.progressLocked : undefined,
     items: "items" in target ? checklistInput(target.items) : undefined,
   });
 }
