@@ -10,8 +10,10 @@ mutation UpdateTarget($id: ID!, $input: UpdateTargetInput!) {
     unit
     done
     progress
+    progressLocked
     deadline
     achievedAt
-    items { id text done }
+    createdAt
+    items { id text done deadline achievedAt }
   }
 }

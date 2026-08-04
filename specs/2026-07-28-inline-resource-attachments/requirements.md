@@ -12,7 +12,9 @@ This is the durable fix for the "long URL → over the field limit → optimisti
 `sync failed` banner" problem (see `src/lib/spira/limits.ts`): the URL lives in the resource
 (limit 1000), the field keeps a short reference.
 
-Status: **built on the web (2026-08-01)** — steps 1–4 below. **Android parity is still open.**
+Status: **built on the web (2026-08-01)** — steps 1–4 below — and **on Android (2026-08-04)**,
+step 5. The overflow auto-convert modal (a too-long pasted URL becoming a link resource) is the
+one piece the Android client still lacks.
 
 Code that implements it:
 
@@ -152,10 +154,9 @@ tokens:
 
 ## 6. Non-goals / later
 
-- **Android parity** — still to do: mirror the inline link, the ⋮ menu + picker, the overflow modal and
-  the delete warning in Compose (`InlineEditText`, the Android menu kit, Apollo). The token format
-  and the server data are already shared, so an Android client that doesn't know about tokens would
-  show the raw `{{res:id}}` text — that is the main reason to keep parity close behind.
+- **Overflow auto-convert on Android** — a too-long pasted URL is not yet swapped for a link
+  resource there. Android inline fields simply cap at the server limit instead. The rest of the
+  feature (inline links, the ⋮ menu + picker, the delete degrade) shipped on 2026-08-04.
 - **Backend** — no schema change for the token itself (text stays a string); only the existing
   resource create/delete endpoints are reused. A server-side referential sweep for step 5 is
   optional/later.
@@ -169,7 +170,12 @@ tokens:
    a swap is possible; the message remains for URLs that can't be swapped).
 3. ✅ Per-element ⋯ menu + resource picker (attach existing).
 4. ✅ Delete-attached-resource warning + token→plain-text degrade.
-5. ⬜ Android parity.
+5. ✅ Android parity (2026-08-04) — `ui/util/InlineLinks.kt` (the Kotlin port of `links.ts`),
+   `ui/util/ResourceDetach.kt` (the port of `resources.ts`), and
+   `ui/components/InlineResources.kt` (`InlineRichText` read/edit field, `ElementActionsMenu`,
+   `AttachResourceButton`, `ResourcePickerSheet`). Tapping an inline link opens the resource the
+   way its kind wants: a link goes to the browser, a note to the note editor, a file to the
+   full-screen viewer, a contact to the mail app. The overflow auto-convert modal is not ported.
 
 Tests: `src/lib/spira/links.test.ts` (token parsing), `src/lib/spira/resources.test.ts` (detach
 planning, per-resource scoping, limit truncation), `src/components/spira/Inline.resources.test.tsx`

@@ -20,6 +20,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.spiramindscape.android.ui.components.LocalInlineResources
+import com.spiramindscape.android.ui.components.ResourcePickerSheet
 import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
 import com.spiramindscape.android.ui.icons.SpiraIcons
@@ -52,8 +58,21 @@ fun OptionMenuSheet(
     onRemoveActive: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    /** The option's current text — resources it already references are left out of the picker. */
+    optionText: String = "",
+    onAttach: (resourceId: String) -> Unit = {},
 ) {
+    var pickerOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    if (pickerOpen) {
+        ResourcePickerSheet(
+            attachedTo = optionText,
+            onDismiss = { pickerOpen = false; onDismiss() },
+            onPick = { pickerOpen = false; onAttach(it); onDismiss() },
+        )
+        return
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -82,6 +101,14 @@ fun OptionMenuSheet(
                     label = "Make active",
                     sub = "Pursue this option for the goal",
                     onClick = onMakeActive,
+                )
+            }
+            if (LocalInlineResources.current != null) {
+                OptionMenuItem(
+                    icon = SpiraIcons.Paperclip,
+                    label = "Attach resource",
+                    sub = "Add a link to a note, file, link or contact",
+                    onClick = { pickerOpen = true },
                 )
             }
             OptionMenuItem(

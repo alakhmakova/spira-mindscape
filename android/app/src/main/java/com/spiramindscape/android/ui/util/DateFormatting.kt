@@ -44,6 +44,44 @@ fun deadlineCountdownParts(iso: String?): DeadlineCountdownParts {
     }
 }
 
+/**
+ * Everything a target card needs to print one deadline: the full date, a countdown phrase, and
+ * the month/day split the calendar tile prints on its illustrated page. Mirrors the web
+ * `formatDeadlineInfo` in `src/components/spira/Targets.tsx`. Null when there is no date.
+ */
+data class DeadlineInfo(
+    val dateStr: String,
+    val countdown: String,
+    val isOverdue: Boolean,
+    val monthLabel: String,
+    val dayLabel: String,
+)
+
+fun deadlineInfo(iso: String?, completed: Boolean = false): DeadlineInfo? {
+    if (iso == null) return null
+    val date = try {
+        Instant.parse(iso).atZone(ZoneOffset.UTC).toLocalDate()
+    } catch (e: Exception) {
+        return null
+    }
+    val days = ChronoUnit.DAYS.between(java.time.LocalDate.now(), date)
+    val countdown = when {
+        completed -> "achieved"
+        days == 0L -> "due today"
+        days == 1L -> "1 day left"
+        days > 1 -> "$days days left"
+        days == -1L -> "1 day overdue"
+        else -> "${-days} days overdue"
+    }
+    return DeadlineInfo(
+        dateStr = date.format(DateTimeFormatter.ofPattern("MMM d, yyyy")),
+        countdown = countdown,
+        isOverdue = !completed && days < 0,
+        monthLabel = date.format(DateTimeFormatter.ofPattern("MMM")),
+        dayLabel = date.dayOfMonth.toString(),
+    )
+}
+
 /** "Nov 1, 2026" (matches the web's date link format). */
 fun formatDeadlineDate(iso: String): String = try {
     Instant.parse(iso).atZone(ZoneOffset.UTC).toLocalDate()

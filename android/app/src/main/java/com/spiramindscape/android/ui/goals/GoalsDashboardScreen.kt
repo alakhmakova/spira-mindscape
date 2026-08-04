@@ -48,6 +48,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +94,16 @@ fun GoalsRoute(user: AuthUser, onGoalClick: (String) -> Unit, onLogout: () -> Un
         applyGoalView(allGoals, query, sortKey, sortAscending, status, deadlineFilter)
     }
 
+    // Sort and filters are a standing preference, remembered across sessions (web parity: they
+    // live in localStorage there). The search box deliberately starts empty every time.
+    val viewPreferences = rememberGoalViewPreferences()
+    LaunchedEffect(viewPreferences) {
+        viewModel.sortKey.value = viewPreferences.sort
+        viewModel.sortAscending.value = viewPreferences.ascending
+        viewModel.statusFilter.value = viewPreferences.status
+        viewModel.deadlineFilter.value = viewPreferences.deadline
+    }
+
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         onPauseOrDispose { }
@@ -107,12 +118,16 @@ fun GoalsRoute(user: AuthUser, onGoalClick: (String) -> Unit, onLogout: () -> Un
         onQueryChange = { viewModel.query.value = it },
         sortKey = sortKey,
         sortAscending = sortAscending,
-        onSortChange = { viewModel.sortKey.value = it },
-        onToggleSortDir = { viewModel.sortAscending.value = !viewModel.sortAscending.value },
+        onSortChange = { viewModel.sortKey.value = it; viewPreferences.sort = it },
+        onToggleSortDir = {
+            val next = !viewModel.sortAscending.value
+            viewModel.sortAscending.value = next
+            viewPreferences.ascending = next
+        },
         status = status,
-        onStatusChange = { viewModel.statusFilter.value = it },
+        onStatusChange = { viewModel.statusFilter.value = it; viewPreferences.status = it },
         deadlineFilter = deadlineFilter,
-        onDeadlineFilterChange = { viewModel.deadlineFilter.value = it },
+        onDeadlineFilterChange = { viewModel.deadlineFilter.value = it; viewPreferences.deadline = it },
         creating = creating,
         onCreateGoal = { title, description, confidence, deadline ->
             viewModel.createGoal(title, description, confidence, deadline)

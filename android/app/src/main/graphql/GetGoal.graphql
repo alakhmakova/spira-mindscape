@@ -36,9 +36,11 @@ query GetGoal($id: ID!) {
       unit
       done
       progress
+      progressLocked
       deadline
       achievedAt
-      items { id text done }
+      createdAt
+      items { id text done deadline achievedAt }
     }
     resources {
       id

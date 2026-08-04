@@ -12,6 +12,9 @@ import com.spiramindscape.android.graphql.type.ChecklistItemInput
 import com.spiramindscape.android.graphql.type.CreateResourceInput
 import com.spiramindscape.android.graphql.type.CreateTargetInput
 import com.spiramindscape.android.graphql.type.UpdateResourceInput
+import com.spiramindscape.android.ui.util.DetachPatch
+import com.spiramindscape.android.ui.util.planResourceDetach
+import com.spiramindscape.android.ui.util.resourceDisplayName
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,7 +108,17 @@ class GoalWorkspaceViewModel(
 
     fun removeChecklistTask(targetId: String, itemId: String) {
         val target = checklistTarget(targetId) ?: return
+        // A checklist target must keep at least one task — the server rejects an empty list, and
+        // an emptied checklist has no meaning. The card surfaces this; here we simply refuse.
+        if (target.items.size <= 1) return
         val newItems = target.items.filterNot { it.id == itemId }
+        applyTargetUpdate { repository.setChecklistItems(targetId, newItems) }
+    }
+
+    /** Set (or clear, with null) one task's own deadline. */
+    fun setChecklistTaskDeadline(targetId: String, itemId: String, deadline: String?) {
+        val target = checklistTarget(targetId) ?: return
+        val newItems = target.items.map { if (it.id == itemId) it.copy(deadline = deadline) else it }
         applyTargetUpdate { repository.setChecklistItems(targetId, newItems) }
     }
 
@@ -159,6 +172,23 @@ class GoalWorkspaceViewModel(
 
     fun setTargetTitle(targetId: String, title: String) =
         applyTargetUpdate { repository.setTargetTitle(targetId, title) }
+
+    /** The padlock on a target card: pin progress so a stray tap can't nudge it. */
+    fun setTargetProgressLocked(targetId: String, locked: Boolean) =
+        applyTargetUpdate { repository.setTargetProgressLocked(targetId, locked) }
+
+    fun setTargetDeadline(targetId: String, deadline: String?) =
+        applyTargetUpdate { repository.setTargetDeadline(targetId, deadline) }
+
+    fun setTargetNumbers(
+        targetId: String,
+        current: Double? = null,
+        total: Double? = null,
+        start: Double? = null,
+    ) = applyTargetUpdate { repository.setTargetNumbers(targetId, current, total, start) }
+
+    fun setTargetUnit(targetId: String, unit: String?) =
+        applyTargetUpdate { repository.setTargetUnit(targetId, unit) }
 
     fun addTarget(
         title: String,
@@ -295,11 +325,44 @@ class GoalWorkspaceViewModel(
         }) { repository.updateResource(id, input) }
     }
 
-    // Optimistic: drop the resource from the list immediately (reverting on failure), so deleting
-    // feels instant rather than waiting for a round-trip + refetch.
-    fun removeResource(id: String) = editGoal(
-        { g -> g.copy(resources = g.resources.filter { it.id != id }) },
-    ) { repository.removeResource(id) }
+    /**
+     * Delete a resource — and first detach it from every element whose text references it, so no
+     * `{{res:id}}` is left pointing at something that no longer exists. Each reference becomes the
+     * resource's name, so the sentence keeps reading (web parity: `planResourceDetach`).
+     *
+     * Optimistic on the list itself, so deleting feels instant; the detach writes go through the
+     * server one element at a time and the goal is refetched at the end.
+     */
+    fun removeResource(id: String) {
+        val content = _state.value as? GoalUiState.Content ?: return
+        val goal = content.goal
+        val label = goal.resources.firstOrNull { it.id == id }
+            ?.let { resourceDisplayName(it) }
+            .orEmpty()
+        val patches = planResourceDetach(goal, id, label)
+
+        setContent(goal.copy(resources = goal.resources.filter { it.id != id }))
+        viewModelScope.launch {
+            try {
+                for (patch in patches) {
+                    when (patch) {
+                        is DetachPatch.Option -> repository.setOptionText(goalId, patch.optionId, patch.text)
+                        is DetachPatch.Reality ->
+                            repository.updateReality(goalId, patch.kind, patch.itemId, patch.text)
+                        is DetachPatch.TargetTitle -> repository.setTargetTitle(patch.targetId, patch.title)
+                        is DetachPatch.Checklist -> repository.setChecklistItems(patch.targetId, patch.items)
+                    }
+                }
+                repository.removeResource(id)
+                // The detached text was rewritten server-side; pull it back so the cards show the
+                // resource's name as plain words instead of the token they still hold locally.
+                if (patches.isNotEmpty()) setContent(repository.getGoal(goalId))
+            } catch (e: Exception) {
+                // Something didn't land — resync rather than leaving a half-detached goal on screen.
+                load()
+            }
+        }
+    }
 
     // ---- helpers ----
 
