@@ -19,6 +19,27 @@ images are usually fine; camera captures are the trigger.
 2. Take a full-resolution photo and attach it.
 3. Observe a low-memory error / the image failing to attach.
 
+## New evidence (2026-08-03) — the fix did NOT settle it
+
+The owner reports the crash **still comes back** after the memory-safe decode shipped, on and off
+as before, and suspects it may be tied to Gemini. Asked what they actually see: **the page dies and
+reloads, with a system toast from the phone.**
+
+That reframes everything below. A renderer killed by the OS never reaches a `catch`, so none of the
+app's own messages ("Couldn't read …", "Image too large to process on this device") belong to this
+crash — they are a different, survivable failure. Nothing reaches the server either, so the Gemini
+suspicion, if real, points at a long streamed answer rather than at attachment. And a serious
+alternative cause is still untested: on Android the camera app is heavy enough that the low-memory
+killer can evict a background browser tab **while the photo is being taken** — before any of our
+code runs, where no decode limit could help.
+
+The suspected cause below is therefore still *suspected*, and so is the value of `IMAGE_MAX_DIM`.
+The two candidate causes need opposite fixes and are indistinguishable with what the app records
+today. **Diagnosis plan: `specs/2026-08-03-attachment-crash-diagnostics/requirements.md`** —
+crash-surviving breadcrumbs in `localStorage`, reported after the reload, plus `adb logcat` /
+`chrome://crashes` from the device, plus three no-code experiments (gallery vs camera, camera-app
+first, provider by provider) that can settle it before any code is written.
+
 ## Root cause (suspected — needs on-device confirmation)
 
 `downscaleImage` decodes the **whole** image before shrinking it:

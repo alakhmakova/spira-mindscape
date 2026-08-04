@@ -25,14 +25,15 @@ test.describe("Options — active radio + drag reorder", () => {
     ).toBeVisible();
   });
 
-  test("deleting via the trash button removes the card", async ({ page }) => {
+  test("deleting via the card's ⋯ menu removes the card", async ({ page }) => {
     await createGoal(page, `E2E delete ${Date.now()}`);
     await addOptions(page, ["Keep me", "Remove me"]);
 
-    await page
-      .locator("li", { hasText: "Remove me" })
-      .getByRole("button", { name: "Remove" })
-      .click();
+    // The ⋮ menu only appears once the card is hovered or focused, so hover it first.
+    const card = page.locator("li", { hasText: "Remove me" });
+    await card.hover();
+    await card.getByRole("button", { name: "Strategy actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete option" }).click();
 
     await expect(page.locator("li", { hasText: "Remove me" })).toHaveCount(0);
     await expect(page.locator("li", { hasText: "Keep me" })).toBeVisible();

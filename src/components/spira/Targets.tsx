@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import {
   AlertTriangle,
   Calendar,
+  CalendarPlus,
   Check,
+  CirclePlus,
   CircleCheck,
   Minus,
   Plus,
@@ -12,11 +14,19 @@ import {
   Trash2,
   TriangleAlert,
   X,
+  Lock,
+  LockOpen,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
-import { targetProgress } from "@/lib/spira/progress";
+import {
+  formatPercent,
+  isProgressLocked,
+  progressSteps,
+  targetProgress,
+} from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
@@ -45,12 +55,160 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Section } from "@/components/spira/Section";
 import { InlineText } from "@/components/spira/Inline";
+import {
+  AttachResourceButton,
+  ElementActionsMenu,
+  REVEAL_ON_ROW_ACTIVITY,
+  appendResourceToken,
+  useIsSingleLine,
+  useReadableText,
+  useTallText,
+} from "@/components/spira/inline-resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { Switch } from "@/components/ui/switch";
+import { celebrate } from "@/lib/spira/celebrate";
+import {
+  useShellFilters,
+  type TargetStatusFilter,
+} from "@/components/shell/shell-store";
 
 type SortField = "title" | "deadline" | "progress";
-type StatusFilter = "all" | "done" | "not-done";
+type StatusFilter = TargetStatusFilter;
 
-const OVERDUE_RED = "#d13239";
+/** Guava-600 — the brand's destructive tone (CLAUDE.md), used for an overdue deadline. */
+const OVERDUE_RED = "#EF523C";
+
+/**
+ * Once a target is achieved, any link in its title (a web URL or an attached resource) drops from
+ * teal to Salt-800: the work is done, so the link is a reference, not a call to action. It stays
+ * underlined and clickable — only the colour is dialled back. Descendant selectors, because the
+ * links are rendered deep inside `InlineText`.
+ */
+const ACHIEVED_LINK_TONE = (done: boolean) =>
+  done ? "[&_a]:text-[#6C6C72] [&_button]:text-[#6C6C72]" : "";
+
+/** Is this deadline in the past and not yet met? Used by the task row's deadline badge. */
+function deadlineOverdue(iso: string | undefined, done: boolean): boolean {
+  return !!formatDeadlineInfo(iso, done)?.isOverdue;
+}
+
+/** Shown wherever a locked target's progress is edited — always names the way out. */
+const PROGRESS_LOCKED_MESSAGE =
+  "This target is locked. Unlock it to change its progress.";
+
+/** Refuse a progress edit on a locked target, and say why. */
+function warnProgressLocked() {
+  toast.error(PROGRESS_LOCKED_MESSAGE);
+}
+
+/**
+ * The padlock on a target: pinned progress can't be nudged by a stray tap. An achieved target
+ * starts locked; anything else starts open. Either way the toggle records an explicit choice, so
+ * a finished target can be reopened to correct it.
+ */
+function ProgressLockButton({
+  locked,
+  onToggle,
+  className,
+  iconClassName,
+}: {
+  locked: boolean;
+  onToggle: (next: boolean) => void;
+  className?: string;
+  iconClassName?: string;
+}) {
+  const Icon = locked ? Lock : LockOpen;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(!locked);
+      }}
+      aria-pressed={locked}
+      aria-label={locked ? "Unlock progress" : "Lock progress"}
+      title={
+        locked
+          ? "Progress is locked — click to unlock"
+          : "Lock progress so it can't be changed by accident"
+      }
+      className={cn(
+        "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
+        locked
+          ? "text-primary hover:bg-primary-soft"
+          : "text-muted-foreground/60 hover:text-foreground",
+        className,
+      )}
+    >
+      <Icon className={cn("h-4 w-4", iconClassName)} />
+    </button>
+  );
+}
+
+/** The four states of the deadline tile, as illustrations. Each carries its own outline and
+ *  colour, so the tile itself draws no frame. */
+const TILE_ART = {
+  done: "/images/party-popper.png",
+  overdue: "/images/calendar-overdue.png",
+  dated: "/images/calendar-date.png",
+  empty: "/images/calendar-add.png",
+} as const;
+
+/**
+ * The deadline as a compact calendar tile — month above, the day in big digits — so a card reads
+ * its date at a glance instead of parsing a line of prose. Same footprint in every state (a
+ * popper once achieved, a calendar with a plus when no date is set), so the row never jumps.
+ *
+ * The date is printed ON the illustrated page: the artwork leaves its paper blank for exactly
+ * that, which is why the text sits in an absolutely-positioned block rather than in the flow.
+ */
+function DeadlineTile({
+  info,
+  done,
+}: {
+  info: ReturnType<typeof formatDeadlineInfo>;
+  done: boolean;
+}) {
+  const overdue = !!info?.isOverdue && !done;
+  const art = done
+    ? TILE_ART.done
+    : overdue
+      ? TILE_ART.overdue
+      : info
+        ? TILE_ART.dated
+        : TILE_ART.empty;
+
+  return (
+    <span className="relative block h-16 w-16 shrink-0 cursor-pointer text-center">
+      <img
+        src={art}
+        alt=""
+        aria-hidden="true"
+        className="h-16 w-16 select-none"
+        draggable={false}
+      />
+      {!done && info && (
+        // The date is centred on the PAPER, not on the tile — and the two calendars are drawn at
+        // different tilts, so the overdue one needs its own nudge: its page sits ~5% to the left
+        // (the badge hangs off the right edge). The date stays black in both: the red badge is
+        // what says "overdue", and red digits on a warm page only muddy it.
+        <span
+          className={cn(
+            "absolute inset-x-0 bottom-[4%] flex flex-col items-center leading-none text-foreground",
+            overdue && "-translate-x-[3px]",
+          )}
+        >
+          <span className="text-[9px] font-semibold uppercase tracking-wide">
+            {info.monthLabel}
+          </span>
+          <span className="num text-lg font-bold tabular-nums">
+            {info.dayLabel}
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 function formatDeadlineInfo(iso: string | undefined, completed = false) {
   if (!iso) return null;
@@ -82,7 +240,10 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
           : diffDays === -1
             ? "1 day overdue"
             : `${Math.abs(diffDays)} days overdue`;
-  return { dateStr, countdown, isOverdue };
+  // Split parts for the calendar tile (month above, day in big digits).
+  const monthLabel = deadline.toLocaleDateString("en-US", { month: "short" });
+  const dayLabel = String(deadline.getDate());
+  return { dateStr, countdown, isOverdue, monthLabel, dayLabel };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -101,22 +262,35 @@ export function TargetsSection({
   const [deadlineTo, setDeadlineTo] = useState("");
   const [achievedFrom, setAchievedFrom] = useState("");
   const [achievedTo, setAchievedTo] = useState("");
-  // Default to hiding done targets — the list leads with what's left to do. Switch
-  // to "All"/"Done" via the Status filter.
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("not-done");
+  // The status choice is a stored preference (see shell-store): it survives navigation and
+  // reloads, and only changes when the user picks something else.
+  const statusFilter = useShellFilters((s) => s.targetStatus);
+  const setStatusFilter = useShellFilters((s) => s.setTargetStatus);
   const [sortField, setSortField] = useState<SortField>("deadline");
   const [sortDesc, setSortDesc] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Celebrate a target crossing the line. This lives here, not on the card: completing a target
+  // filters its row out of the list, so the row unmounts before any effect of its own could run.
+  const achievedCount = goal.targets.filter(
+    (t) => targetProgress(t) >= 1,
+  ).length;
+  const previousAchieved = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      previousAchieved.current !== null &&
+      achievedCount > previousAchieved.current
+    ) {
+      celebrate();
+    }
+    previousAchieved.current = achievedCount;
+  }, [achievedCount]);
+
   const isDefaultSort = sortField === "deadline" && !sortDesc;
-  // "not-done" is the default view, so it isn't counted as an active filter — only
-  // deviating from it (All / Done) or setting a date range lights the filter chip.
+  // The status is a standing preference, not a filter — only the date ranges light the chip and
+  // only they are cleared by "Reset filters".
   const filtersActive =
-    !!deadlineFrom ||
-    !!deadlineTo ||
-    !!achievedFrom ||
-    !!achievedTo ||
-    statusFilter !== "not-done";
+    !!deadlineFrom || !!deadlineTo || !!achievedFrom || !!achievedTo;
   const hasAnyActive = !!search.trim() || filtersActive || !isDefaultSort;
 
   const resetFilters = () => {
@@ -124,7 +298,7 @@ export function TargetsSection({
     setDeadlineTo("");
     setAchievedFrom("");
     setAchievedTo("");
-    setStatusFilter("not-done");
+    // The status filter is deliberately left alone — it is the user's choice, not a filter.
   };
 
   const processedTargets = useMemo(() => {
@@ -805,37 +979,51 @@ export function DesktopTargetsTable({
                 Progress <SortIcon field="progress" />
               </div>
             </TableHead>
-            <TableHead className="w-[10%] text-right pr-6">Delete</TableHead>
+            <TableHead className="w-[10%] text-right pr-6">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {displayTargets.map((t) => {
             const progress = targetProgress(t);
             const done = progress >= 1;
+            const locked = isProgressLocked(t);
             return (
               <TableRow
                 key={t.id}
                 id={`target-desktop-${t.id}`}
                 className={cn(
-                  "scroll-mt-24 transition-colors bg-white",
-                  done ? "hover:bg-[#e5f4f3]" : "hover:bg-[#fff2df]",
+                  "group scroll-mt-24 transition-colors bg-white",
+                  done ? "hover:bg-[#E0F2F5]" : "hover:bg-[#fff2df]",
                 )}
               >
                 <TableCell className="pl-6">
-                  <InlineText
-                    value={t.title}
-                    onChange={(title) => updateTarget(goal.id, t.id, { title })}
-                    placeholder="Untitled target"
-                    ariaLabel="Edit target title"
-                    maxLength={FIELD_LIMITS.targetTitle}
-                    maxLengthLabel="Target title"
-                    className={cn(
-                      "block w-full font-medium text-sm",
-                      done
-                        ? "line-through text-muted-foreground"
-                        : "text-foreground",
-                    )}
-                  />
+                  {/* `w-fit` keeps the padlock hugging the title instead of drifting out to the
+                      column's edge; the title still wraps when it runs out of room. */}
+                  <div className="flex w-fit max-w-full items-center gap-1">
+                    <InlineText
+                      value={t.title}
+                      onChange={(title) =>
+                        updateTarget(goal.id, t.id, { title })
+                      }
+                      placeholder="Untitled target"
+                      ariaLabel="Edit target title"
+                      maxLength={FIELD_LIMITS.targetTitle}
+                      maxLengthLabel="Target title"
+                      className={cn(
+                        "block min-w-0 text-sm font-medium text-foreground",
+                        ACHIEVED_LINK_TONE(done),
+                      )}
+                    />
+                    {/* The padlock is always visible — it is state, not a hidden action. */}
+                    <ProgressLockButton
+                      locked={locked}
+                      onToggle={(next) =>
+                        updateTarget(goal.id, t.id, { progressLocked: next })
+                      }
+                      className="h-5 w-5 shrink-0"
+                      iconClassName="h-3.5 w-3.5"
+                    />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <span
@@ -886,7 +1074,9 @@ export function DesktopTargetsTable({
                       >
                         <DropdownMenuItem
                           onClick={() =>
-                            updateTarget(goal.id, t.id, { done: false })
+                            locked
+                              ? warnProgressLocked()
+                              : updateTarget(goal.id, t.id, { done: false })
                           }
                           className="text-sm"
                         >
@@ -894,7 +1084,9 @@ export function DesktopTargetsTable({
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() =>
-                            updateTarget(goal.id, t.id, { done: true })
+                            locked
+                              ? warnProgressLocked()
+                              : updateTarget(goal.id, t.id, { done: true })
                           }
                           className="text-sm"
                         >
@@ -929,7 +1121,7 @@ export function DesktopTargetsTable({
                       <div
                         className={cn(
                           "h-2 w-2 rounded-full shrink-0",
-                          done ? "bg-success" : "bg-[#B8A9D4]",
+                          done ? "bg-success" : "bg-[#8DD3D4]",
                         )}
                       ></div>
                       <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
@@ -945,18 +1137,31 @@ export function DesktopTargetsTable({
                       className="w-full max-w-[80px]"
                     />
                     <span className="text-xs font-semibold num tabular-nums text-foreground/80 min-w-[3ch] text-right">
-                      {Math.round(progress * 100)}%
+                      {formatPercent(progress, progressSteps(t))}%
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="text-right pr-6">
-                  <button
-                    onClick={() => setConfirmTarget(t)}
-                    className="text-foreground opacity-100 hover:text-destructive p-1.5 rounded-md transition-colors inline-flex"
-                    title="Delete target"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <TableCell className="pr-6">
+                  <div className="flex items-center justify-end">
+                    <ElementActionsMenu
+                      ariaLabel="Target actions"
+                      deleteLabel="Delete target"
+                      attachedTo={t.title}
+                      onDelete={() => setConfirmTarget(t)}
+                      onAttach={(resourceId) => {
+                        const next = appendResourceToken(
+                          t.title,
+                          resourceId,
+                          FIELD_LIMITS.targetTitle,
+                        );
+                        if (next) updateTarget(goal.id, t.id, { title: next });
+                      }}
+                      className={cn(
+                        REVEAL_ON_ROW_ACTIVITY,
+                        "inline-flex rounded-md p-1.5 text-foreground hover:text-primary",
+                      )}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -1008,6 +1213,7 @@ export function DesktopTargetsTable({
                           updateTarget(goal.id, target.id, patch)
                         }
                         progress={targetProgress(target)}
+                        locked={isProgressLocked(target)}
                       />
                     </div>
                   );
@@ -1058,6 +1264,10 @@ export function DesktopTargetsTable({
         onChange={(items) =>
           editingTasksFor && updateTarget(goal.id, editingTasksFor, { items })
         }
+        locked={(() => {
+          const target = goal.targets.find((t) => t.id === editingTasksFor);
+          return target ? isProgressLocked(target) : false;
+        })()}
       />
     </div>
   );
@@ -1074,12 +1284,14 @@ function TargetDeleteConfirm({
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
+  // Quote the title as prose — an attached resource reads as its name, never as a raw tag.
+  const title = useReadableText(target?.title ?? "");
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete this target?"
-      description={`Are you sure you want to permanently delete "${target?.title ?? "this target"}"? Progress and checklist tasks inside it will be removed. You can't undo this.`}
+      description={`Are you sure you want to permanently delete "${title || "this target"}"? Progress and checklist tasks inside it will be removed. You can't undo this.`}
       confirmLabel="Yes, delete"
       cancelLabel="No, go back"
       onConfirm={onConfirm}
@@ -1087,6 +1299,12 @@ function TargetDeleteConfirm({
   );
 }
 
+/**
+ * A target on mobile: a card with the deadline on the left, the (inline-editable) title beside it
+ * and the padlock on the right; a hairline progress strip across the card; and a full-width
+ * "Update progress" footer on Kale-200 that reveals the type-specific progress controls plus the
+ * target's own actions menu. Modelled on the reference card the owner supplied (2026-08-02).
+ */
 export function TargetRow({
   target,
   onUpdate,
@@ -1096,189 +1314,225 @@ export function TargetRow({
   onUpdate: (patch: Partial<Target>) => void;
   onRemove: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const progress = targetProgress(target);
   const done = progress >= 1;
+  const locked = isProgressLocked(target);
+  const { ref: titleRef, tall: tallTitle } = useTallText<HTMLDivElement>(3);
+  // What the numbers say while they're being typed — the card's own percentage follows the
+  // bar inside it, so the two never disagree mid-edit. Null whenever nothing is being typed.
+  const [previewProgress, setPreviewProgress] = useState<number | null>(null);
 
   const displayIso =
     done && target.achievedAt ? target.achievedAt : target.deadline;
   const deadlineInfo = formatDeadlineInfo(displayIso, done);
+  const createdLabel = target.createdAt
+    ? `Created · ${new Date(target.createdAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })}`
+    : "";
 
   return (
     <li
       id={`target-mobile-${target.id}`}
       className={cn(
-        "surface-card scroll-mt-24 overflow-hidden",
-        done && "!bg-[#e5f4f3] !border-[#b8dad8]",
+        // No `overflow-hidden`: the padlock badge deliberately hangs off the corner, the way the
+        // rating smiley does on an option card.
+        // An achieved target is NOT tinted: the tile's tick, the caption and the 100% footer
+        // already say so, and a coloured head made the list noisy.
+        "surface-card relative scroll-mt-24",
       )}
     >
-      <div className="p-4 sm:p-5">
-        {/* Top row: deadline/completed + trash */}
-        <div className="flex items-start justify-between gap-3 mb-2.5">
-          <DeadlinePopover
-            iso={target.deadline}
-            achievedAt={target.achievedAt}
-            completed={done}
-            onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
-            renderTrigger={() =>
-              deadlineInfo ? (
-                <span
-                  className="inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer hover:opacity-70 transition-opacity"
-                  style={{
-                    color: done
-                      ? "var(--color-success)"
-                      : deadlineInfo.isOverdue
-                        ? OVERDUE_RED
-                        : "var(--color-muted-foreground)",
-                  }}
-                >
-                  {done ? (
-                    <CircleCheck
-                      className="h-3.5 w-3.5 shrink-0"
-                      strokeWidth={2}
-                    />
-                  ) : deadlineInfo.isOverdue ? (
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                  ) : (
-                    <Calendar className="h-3 w-3 shrink-0 opacity-70" />
-                  )}
-                  {done ? "Completed" : "Deadline"} {deadlineInfo.dateStr}
-                  {!done && (
-                    <>
-                      <span className="w-px h-3 bg-border/60 shrink-0" />
-                      <span
-                        className={cn(
-                          "font-semibold",
-                          deadlineInfo.isOverdue
-                            ? "text-[#d13239]"
-                            : "text-foreground/70",
-                        )}
-                      >
-                        {deadlineInfo.countdown}
-                      </span>
-                    </>
-                  )}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
-                  <Calendar className="h-3 w-3 shrink-0" />
-                  Set deadline
-                </span>
-              )
-            }
-          />
-          <button
-            onClick={onRemove}
-            className="shrink-0 text-muted-foreground hover:text-destructive p-2 -m-1 rounded-md"
-            aria-label="Delete target"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      {/* Padlock stuck on the card's corner — always present, never in the content flow. */}
+      <ProgressLockButton
+        locked={locked}
+        onToggle={(next) =>
+          onUpdate({ progressLocked: next } as Partial<Target>)
+        }
+        className="absolute -right-2 -top-2 z-10 h-7 w-7 rounded-full border border-border bg-surface shadow-sm"
+        iconClassName="h-3.5 w-3.5"
+      />
 
-        {/* Title */}
-        <InlineText
-          value={target.title}
-          onChange={(title) => onUpdate({ title } as Partial<Target>)}
-          ariaLabel="Edit target title"
-          maxLength={FIELD_LIMITS.targetTitle}
-          maxLengthLabel="Target title"
-          className={cn(
-            "block w-full text-base font-medium",
-            done ? "line-through text-muted-foreground" : "text-foreground",
-          )}
+      {/* Head: the deadline tile, then the title. The tile centres beside a short title and
+          moves to the top once the title runs past three lines. */}
+      <div
+        className={cn(
+          "flex gap-3 p-4",
+          tallTitle ? "items-start" : "items-center",
+        )}
+      >
+        <DeadlinePopover
+          iso={target.deadline}
+          achievedAt={target.achievedAt}
+          completed={done}
+          onChange={(next) => onUpdate({ deadline: next } as Partial<Target>)}
+          renderTrigger={() => <DeadlineTile info={deadlineInfo} done={done} />}
         />
 
-        {/* Body */}
-        {target.type === "numeric" && (
-          <NumericBody
-            target={target}
-            onUpdate={onUpdate}
-            progress={progress}
-          />
-        )}
-
-        {target.type === "binary" && (
-          <button
-            onClick={() => onUpdate({ done: !target.done } as Partial<Target>)}
+        <div ref={titleRef} className="min-w-0 flex-1">
+          <InlineText
+            value={target.title}
+            onChange={(title) => onUpdate({ title } as Partial<Target>)}
+            ariaLabel="Edit target title"
+            maxLength={FIELD_LIMITS.targetTitle}
+            maxLengthLabel="Target title"
             className={cn(
-              "mt-4 flex items-stretch overflow-hidden rounded-md border transition-colors min-h-[44px] w-full",
-              target.done
-                ? "border-primary"
-                : "border-border hover:border-primary/50",
+              "text-base font-medium text-foreground",
+              ACHIEVED_LINK_TONE(done),
+            )}
+          />
+          <p
+            className={cn(
+              "mt-1 text-[11px] font-semibold",
+              done
+                ? "text-primary"
+                : deadlineInfo?.isOverdue
+                  ? "text-[#EF523C]"
+                  : "text-muted-foreground",
             )}
           >
-            <div
-              className={cn(
-                "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
-                target.done
-                  ? "bg-primary-soft border-primary"
-                  : "bg-surface border-border hover:bg-secondary/50",
-              )}
-            >
-              <div
-                className={cn(
-                  "h-4 w-4 rounded-sm border-2 grid place-items-center transition-colors",
-                  target.done
-                    ? "bg-primary border-primary"
-                    : "border-border-strong",
-                )}
-              >
-                {target.done && (
-                  <Check
-                    className="h-3 w-3 text-primary-foreground"
-                    strokeWidth={3}
-                  />
-                )}
-              </div>
-            </div>
-            <div className="flex-1 flex items-center px-3 bg-surface">
+            {done && deadlineInfo
+              ? `Completed · ${deadlineInfo.dateStr}`
+              : deadlineInfo
+                ? deadlineInfo.countdown
+                : createdLabel}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress strip — the page-scroll bar's shape, carrying this target's progress. */}
+      <div className="h-[5px] w-full overflow-hidden bg-[#EAEAEA]">
+        <div
+          className="h-full bg-primary transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.round(progress * 100)}%` }}
+        />
+      </div>
+
+      {/* Footer: reveals the progress controls for this target's type. The label alone carries
+          the state — no chevron. */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={cn(
+          "flex w-full items-center justify-center bg-[#E0F2F5] px-4 py-3 text-[15px] font-semibold text-primary transition-colors hover:bg-[#8DD3D4]/40",
+          // The card no longer clips its children (the padlock hangs off the corner), so the
+          // footer rounds its own bottom — unless the expanded panel sits below it.
+          !expanded && "rounded-b-lg",
+        )}
+      >
+        {done
+          ? "100%"
+          : expanded
+            ? `${formatPercent(previewProgress ?? progress, progressSteps(target))}% progress`
+            : "Update progress"}
+      </button>
+
+      {expanded && (
+        <div className="rounded-b-lg border-t border-border/60 bg-surface px-4 pb-4 pt-3">
+          {target.type === "numeric" && (
+            <NumericBody
+              target={target}
+              onUpdate={onUpdate}
+              progress={progress}
+              locked={locked}
+              onPreviewProgress={setPreviewProgress}
+            />
+          )}
+
+          {target.type === "binary" && (
+            <label className="flex w-full cursor-pointer items-center justify-between gap-3 py-0.5">
               <span
                 className={cn(
                   "text-sm",
                   target.done
                     ? "text-muted-foreground"
-                    : "text-foreground font-medium",
+                    : "font-medium text-foreground",
                 )}
               >
                 {target.done ? "Done" : "Mark done"}
               </span>
-            </div>
-          </button>
-        )}
-
-        {target.type === "checklist" && (
-          <>
-            <ChecklistEditor
-              items={target.items}
-              onChange={(items) => onUpdate({ items } as Partial<Target>)}
-              compact
-              hideCountdown
-            />
-            <div className="mt-1">
-              <NewTaskInlineInput
-                onAdd={(text) =>
-                  onUpdate({
-                    items: [
-                      ...target.items,
-                      {
-                        id: Math.random().toString(36).slice(2, 9),
-                        text,
-                        done: false,
-                      },
-                    ],
-                  } as Partial<Target>)
-                }
+              <Switch
+                checked={target.done}
+                onCheckedChange={(next) => {
+                  if (locked) {
+                    warnProgressLocked();
+                    return;
+                  }
+                  onUpdate({ done: next } as Partial<Target>);
+                }}
+                aria-label={target.done ? "Mark not done" : "Mark done"}
               />
-            </div>
-            <div className="mt-4 flex items-center gap-3">
-              <ProgressBar value={progress} className="flex-1" />
-              <span className="num text-xs text-muted-foreground font-semibold">
-                {Math.round(progress * 100)}%
-              </span>
-            </div>
-          </>
-        )}
-      </div>
+            </label>
+          )}
+
+          {target.type === "checklist" && (
+            <>
+              <ChecklistEditor
+                items={target.items}
+                onChange={(items) => onUpdate({ items } as Partial<Target>)}
+                compact
+                hideCountdown
+                locked={locked}
+              />
+              <div className="mt-4">
+                <AddTaskControl
+                  compact
+                  onAdd={(text) => {
+                    if (locked) {
+                      warnProgressLocked();
+                      return;
+                    }
+                    onUpdate({
+                      items: [
+                        ...target.items,
+                        {
+                          id: Math.random().toString(36).slice(2, 9),
+                          text,
+                          done: false,
+                        },
+                      ],
+                    } as Partial<Target>);
+                  }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* The target's own actions, spelled out rather than hidden behind a ⋯ menu. */}
+          <AttachResourceButton
+            className="mt-4"
+            attachedTo={target.title}
+            onAttach={(resourceId) => {
+              const next = appendResourceToken(
+                target.title,
+                resourceId,
+                FIELD_LIMITS.targetTitle,
+              );
+              if (next) onUpdate({ title: next } as Partial<Target>);
+            }}
+          />
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="h-10 rounded-md border border-border px-5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary/60"
+            >
+              {/* It collapses the panel; nothing is discarded — every edit here saves as it is
+                  made, so "Cancel" promised an undo that never existed. */}
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="h-10 rounded-md bg-[#222525] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#525257]"
+            >
+              Delete target
+            </button>
+          </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -1287,14 +1541,42 @@ function NumericBody({
   target,
   onUpdate,
   progress,
+  locked = false,
+  onPreviewProgress,
 }: {
   target: Extract<Target, { type: "numeric" }>;
   onUpdate: (patch: Partial<Target>) => void;
   progress: number;
+  /** Progress is pinned: the numbers are read-only (the unit and title are not). */
+  locked?: boolean;
+  /** The typed-but-not-yet-saved progress, so an enclosing card can show the same number
+   *  (null once editing ends). */
+  onPreviewProgress?: (p: number | null) => void;
 }) {
   const [validationMessage, setValidationMessage] = useState<string | null>(
     null,
   );
+  // What the bar shows WHILE the user is typing. The value itself still commits on blur/Enter
+  // (never per keystroke) — but without this the bar sits still until focus moves, which on a
+  // large target reads as "progress is broken": typing 4000 against 1 900 000 changes nothing
+  // visible until you tab away.
+  const [preview, setPreview] = useState<number | null>(null);
+  const setPreviewProgress = (p: number | null) => {
+    setPreview(p);
+    onPreviewProgress?.(p);
+  };
+  const previewFrom = (field: "current" | "total" | "start", raw: string) => {
+    const text = raw.trim();
+    // Only a plainly valid number previews; anything else (empty, "1.", "-2") leaves the bar
+    // where it was rather than flashing a nonsense value.
+    if (locked || !/^\d+(\.\d+)?$/.test(text)) {
+      setPreviewProgress(null);
+      return;
+    }
+    const next = { ...target, [field]: parseFloat(text) };
+    setPreviewProgress(validatePatch(next) ? null : targetProgress(next));
+  };
+  const shownProgress = preview ?? progress;
   const start = target.start ?? 0;
   const minValue = Math.min(start, target.total);
   const maxValue = Math.max(start, target.total);
@@ -1322,6 +1604,10 @@ function NumericBody({
   const commitPatch = (
     patch: Partial<Extract<Target, { type: "numeric" }>>,
   ) => {
+    if (locked) {
+      setValidationMessage(PROGRESS_LOCKED_MESSAGE);
+      return;
+    }
     const message = validatePatch(patch);
     if (message) {
       setValidationMessage(message);
@@ -1332,13 +1618,19 @@ function NumericBody({
   };
 
   return (
-    <div className="mt-4 space-y-2">
+    <div
+      className="mt-4 space-y-2"
+      // Focus leaving the editors ends the preview: by then the value has either committed
+      // (the store already holds it) or been reverted, so `progress` is the truth again.
+      onBlur={() => setPreviewProgress(null)}
+    >
       {/* Inline-editable current / total / unit — centered above the bar */}
       <div className="flex items-center justify-center gap-1 num font-semibold tabular-nums text-sm text-foreground">
         <InlineEditable
           value={String(target.current)}
           numeric
           onChange={(v) => commitPatch({ current: parseFloat(v) })}
+          onTyping={(raw) => previewFrom("current", raw)}
           onInvalid={setValidationMessage}
           ariaLabel="Current value"
         />
@@ -1347,6 +1639,7 @@ function NumericBody({
           value={String(target.total)}
           numeric
           onChange={(v) => commitPatch({ total: parseFloat(v) })}
+          onTyping={(raw) => previewFrom("total", raw)}
           onInvalid={setValidationMessage}
           ariaLabel="Total value"
         />
@@ -1368,6 +1661,7 @@ function NumericBody({
             value={String(target.start ?? 0)}
             numeric
             onChange={(v) => commitPatch({ start: parseFloat(v) })}
+            onTyping={(raw) => previewFrom("start", raw)}
             onInvalid={setValidationMessage}
             ariaLabel="Start value"
           />
@@ -1389,9 +1683,9 @@ function NumericBody({
         >
           <Minus className="h-4 w-4" />
         </button>
-        <ProgressBar value={progress} className="flex-1" />
-        <span className="num text-xs font-semibold tabular-nums text-foreground/80 min-w-[3ch] text-right">
-          {Math.round(progress * 100)}%
+        <ProgressBar value={shownProgress} className="flex-1" />
+        <span className="num text-xs font-semibold tabular-nums text-foreground/80 min-w-[4ch] text-right">
+          {formatPercent(shownProgress, progressSteps(target))}%
         </span>
         <button
           onClick={() => commitPatch({ current: target.current + 1 })}
@@ -1409,6 +1703,7 @@ function NumericBody({
 function InlineEditable({
   value,
   onChange,
+  onTyping,
   placeholder,
   ariaLabel,
   numeric,
@@ -1419,6 +1714,8 @@ function InlineEditable({
 }: {
   value: string;
   onChange: (v: string) => void;
+  /** Every keystroke, for a live *preview* only — the value still commits on blur/Enter. */
+  onTyping?: (raw: string) => void;
   placeholder?: string;
   ariaLabel: string;
   numeric?: boolean;
@@ -1488,6 +1785,7 @@ function InlineEditable({
       role="textbox"
       aria-label={ariaLabel}
       onBlur={handleBlur}
+      onInput={(e) => onTyping?.(e.currentTarget.textContent || "")}
       onKeyDown={handleKeyDown}
       data-placeholder={placeholder}
       className={cn(
@@ -1508,6 +1806,7 @@ function TasksResizableSheet({
   items,
   title,
   onChange,
+  locked = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1528,6 +1827,8 @@ function TasksResizableSheet({
       achievedAt?: string;
     }[],
   ) => void;
+  /** The target's progress is pinned — tasks can be renamed but not ticked. */
+  locked?: boolean;
 }) {
   const [width, setWidth] = useState<number>(() => {
     if (typeof window === "undefined") return TASKS_DEFAULT_WIDTH;
@@ -1626,18 +1927,34 @@ function TasksResizableSheet({
               compact ? "px-2 pt-0" : "px-6 pt-0",
             )}
           >
+            {locked && (
+              <p className="mb-2 flex items-center gap-2 rounded-md bg-secondary/60 px-3 py-2 text-[13px] text-muted-foreground">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                {PROGRESS_LOCKED_MESSAGE} Task names stay editable; ticking,
+                adding and removing tasks are paused.
+              </p>
+            )}
             <ChecklistEditor
               items={items}
               onChange={onChange}
               compact={compact}
               hideCountdown={compact}
+              locked={locked}
             />
           </div>
 
-          {/* Sticky bottom input — chat-style */}
-          <ChecklistAddInput
+          {/* Pinned to the bottom of the panel, with the panel's own gutters. */}
+          <AddTaskControl
             compact={compact}
-            onAdd={(text) =>
+            className={cn(
+              "shrink-0 bg-surface",
+              compact ? "px-2 py-2" : "px-4 py-3",
+            )}
+            onAdd={(text) => {
+              if (locked) {
+                warnProgressLocked();
+                return;
+              }
               onChange([
                 ...items,
                 {
@@ -1645,8 +1962,8 @@ function TasksResizableSheet({
                   text,
                   done: false,
                 },
-              ])
-            }
+              ]);
+            }}
           />
         </div>
       </SheetContent>
@@ -1654,137 +1971,42 @@ function TasksResizableSheet({
   );
 }
 
+type ChecklistItemShape = {
+  id: string;
+  text: string;
+  done: boolean;
+  deadline?: string;
+  achievedAt?: string;
+};
+
 function ChecklistEditor({
   items,
   onChange,
   compact = false,
   hideCountdown = false,
+  locked = false,
 }: {
-  items: {
-    id: string;
-    text: string;
-    done: boolean;
-    deadline?: string;
-    achievedAt?: string;
-  }[];
-  onChange: (
-    items: {
-      id: string;
-      text: string;
-      done: boolean;
-      deadline?: string;
-      achievedAt?: string;
-    }[],
-  ) => void;
+  items: ChecklistItemShape[];
+  onChange: (items: ChecklistItemShape[]) => void;
   compact?: boolean;
+  /** Accepted for call-site symmetry with the compact layouts; the row hides the countdown itself. */
   hideCountdown?: boolean;
+  /** Progress is pinned: ticking tasks is refused (with a message); their text stays editable. */
+  locked?: boolean;
 }) {
   const [lastItemError, setLastItemError] = useState(false);
   return (
-    <div className={cn("space-y-1", !compact && "mt-4")}>
+    <div className={cn("space-y-0.5", !compact && "mt-4")}>
       {items.map((it) => (
-        <div
-          id={`task-${it.id}`}
+        <ChecklistRow
           key={it.id}
-          className={cn(
-            "flex scroll-mt-24 items-stretch overflow-hidden rounded-md border transition-colors group/task",
-            compact ? "min-h-[40px]" : "min-h-[44px]",
-            it.done
-              ? "border-primary"
-              : "border-border hover:border-primary/50",
-          )}
-        >
-          {/* Same simple checkbox as the note editor's task list (teal accent), kept in its own
-              divider cell (border-r) so it stays visually separated from the task text. */}
-          <label
-            className={cn(
-              "shrink-0 flex items-center justify-center border-r cursor-pointer transition-colors",
-              compact ? "w-10" : "w-12",
-              it.done
-                ? "bg-primary-soft border-primary"
-                : "bg-surface border-border hover:bg-secondary/50",
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={it.done}
-              onChange={() =>
-                onChange(
-                  items.map((i) =>
-                    i.id === it.id ? { ...i, done: !i.done } : i,
-                  ),
-                )
-              }
-              aria-label={
-                it.done ? "Mark subtask not done" : "Mark subtask done"
-              }
-              className="h-4 w-4 cursor-pointer"
-              style={{ accentColor: "var(--color-primary)" }}
-            />
-          </label>
-
-          <div
-            className={cn(
-              "flex-1 flex items-center min-w-0 gap-1 bg-surface",
-              compact ? "px-2 py-1" : "px-3 py-1.5",
-            )}
-          >
-            <InlineText
-              value={it.text}
-              onChange={(text) =>
-                onChange(
-                  items.map((i) => (i.id === it.id ? { ...i, text } : i)),
-                )
-              }
-              ariaLabel="Edit subtask"
-              maxLength={FIELD_LIMITS.checklistText}
-              maxLengthLabel="Task"
-              className={cn(
-                "flex-1 text-sm truncate",
-                it.done && "line-through text-muted-foreground",
-              )}
-            />
-            {/* Fixed-width deadline column – keeps icons aligned */}
-            <div
-              className={cn(
-                "shrink-0 flex items-center",
-                compact ? "w-7" : "w-[6.5rem]",
-              )}
-            >
-              <DeadlinePopover
-                iso={it.deadline}
-                achievedAt={it.achievedAt}
-                completed={it.done}
-                variant={compact ? "icon" : "icon-text"}
-                size="sm"
-                hideDaysLeft
-                placeholder="Set deadline"
-                onChange={(next) =>
-                  onChange(
-                    items.map((i) =>
-                      i.id === it.id ? { ...i, deadline: next } : i,
-                    ),
-                  )
-                }
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                if (items.length <= 1) {
-                  setLastItemError(true);
-                  return;
-                }
-                setLastItemError(false);
-                onChange(items.filter((i) => i.id !== it.id));
-              }}
-              className="text-muted-foreground hover:text-destructive p-1 rounded shrink-0"
-              aria-label="Remove subtask"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+          item={it}
+          items={items}
+          onChange={onChange}
+          compact={compact}
+          locked={locked}
+          onLastItemError={setLastItemError}
+        />
       ))}
       {lastItemError && items.length <= 1 && (
         <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
@@ -1796,18 +2018,180 @@ function ChecklistEditor({
   );
 }
 
-/** Sticky chat-style input pinned to the bottom of the tasks panel */
-function ChecklistAddInput({
+/**
+ * One checklist task, in the "Steps" shape the owner asked for: no card, no border — a round
+ * check on the left, the text beside it, and the row's controls (deadline, ⋯) on the right. Done
+ * tasks grey out and strike through; a resource link inside them never does (see `ResourceLink`).
+ */
+function ChecklistRow({
+  item: it,
+  items,
+  onChange,
   compact,
-  onAdd,
+  locked,
+  onLastItemError,
 }: {
+  item: ChecklistItemShape;
+  items: ChecklistItemShape[];
+  onChange: (items: ChecklistItemShape[]) => void;
   compact: boolean;
-  onAdd: (text: string) => void;
+  locked: boolean;
+  onLastItemError: (value: boolean) => void;
 }) {
+  const { ref: textRef, singleLine } = useIsSingleLine<HTMLDivElement>();
+  const overdue = deadlineOverdue(it.deadline, it.done);
+
+  const toggle = () => {
+    if (locked) {
+      warnProgressLocked();
+      return;
+    }
+    onChange(items.map((i) => (i.id === it.id ? { ...i, done: !i.done } : i)));
+  };
+
+  return (
+    <div
+      id={`task-${it.id}`}
+      className={cn(
+        // `group` powers the reveal-on-hover ⋯; the row is plain text, not a card.
+        "group flex scroll-mt-24 gap-2.5",
+        singleLine ? "items-center" : "items-start",
+        compact ? "py-1" : "py-1.5",
+      )}
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        role="checkbox"
+        aria-checked={it.done}
+        aria-label={it.done ? "Mark subtask not done" : "Mark subtask done"}
+        className={cn(
+          "shrink-0 rounded-full transition-colors",
+          !singleLine && "mt-0.5",
+          it.done ? "text-primary" : "text-border-strong hover:text-primary/70",
+        )}
+      >
+        <CircleCheck
+          className={compact ? "h-[18px] w-[18px]" : "h-5 w-5"}
+          strokeWidth={2}
+          fill={it.done ? "currentColor" : "none"}
+          stroke={it.done ? "#FFFFFF" : "currentColor"}
+        />
+      </button>
+
+      <div ref={textRef} className="min-w-0 flex-1">
+        <InlineText
+          value={it.text}
+          onChange={(text) =>
+            onChange(items.map((i) => (i.id === it.id ? { ...i, text } : i)))
+          }
+          ariaLabel="Edit subtask"
+          maxLength={FIELD_LIMITS.checklistText}
+          maxLengthLabel="Task"
+          className={cn(
+            compact ? "text-sm" : "text-[15px]",
+            it.done && "line-through text-muted-foreground",
+          )}
+        />
+      </div>
+
+      {/* Deadline and ⋮ are always visible on a task row: with a fixed control column on the
+          right there is nothing for them to overlap, and a task is worked on far more often than
+          an option or a reality item. */}
+      <DeadlinePopover
+        iso={it.deadline}
+        achievedAt={it.achievedAt}
+        completed={it.done}
+        variant="icon"
+        size="sm"
+        hideDaysLeft
+        placeholder="Set deadline"
+        renderTrigger={() => (
+          <span
+            className={cn(
+              "grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md transition-colors",
+              !singleLine && "mt-0.5",
+              it.deadline
+                ? overdue
+                  ? "text-[#EF523C]"
+                  : "text-primary"
+                : "text-muted-foreground/70",
+            )}
+            title={it.deadline ? "Change the deadline" : "Set a deadline"}
+          >
+            {it.deadline ? (
+              <Calendar className="h-4 w-4" />
+            ) : (
+              <CalendarPlus className="h-4 w-4" />
+            )}
+          </span>
+        )}
+        onChange={(next) =>
+          onChange(
+            items.map((i) => (i.id === it.id ? { ...i, deadline: next } : i)),
+          )
+        }
+      />
+
+      <ElementActionsMenu
+        ariaLabel="Subtask actions"
+        deleteLabel="Delete task"
+        attachedTo={it.text}
+        onDelete={() => {
+          if (locked) {
+            warnProgressLocked();
+            return;
+          }
+          if (items.length <= 1) {
+            onLastItemError(true);
+            return;
+          }
+          onLastItemError(false);
+          onChange(items.filter((i) => i.id !== it.id));
+        }}
+        onAttach={(resourceId) => {
+          const next = appendResourceToken(
+            it.text,
+            resourceId,
+            FIELD_LIMITS.checklistText,
+          );
+          if (next)
+            onChange(
+              items.map((i) => (i.id === it.id ? { ...i, text: next } : i)),
+            );
+        }}
+        orientation="vertical"
+        className={cn("shrink-0 rounded p-1", !singleLine && "mt-0.5")}
+        iconClassName="h-3.5 w-3.5"
+      />
+    </div>
+  );
+}
+
+/**
+ * Adding a task: a circled + and a link, which swaps itself for an input on click. One component
+ * behind every entry point (the mobile card, the tasks panel and the create-target sheet) so the
+ * layouts can't drift apart again. Enter commits and keeps the field open for the next task;
+ * Escape, or leaving it empty, collapses back to the link.
+ */
+function AddTaskControl({
+  onAdd,
+  compact = false,
+  className,
+}: {
+  onAdd: (text: string) => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const overBy =
     draft.trim().length > FIELD_LIMITS.checklistText ? draft.trim().length : 0;
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
 
   const commit = () => {
     const text = draft.trim();
@@ -1818,55 +2202,70 @@ function ChecklistAddInput({
     inputRef.current?.focus();
   };
 
-  return (
-    <div
-      className={cn("shrink-0 bg-surface", compact ? "px-2 py-2" : "px-4 py-3")}
-    >
-      <div
+  const plus = (
+    <CirclePlus
+      className={cn(
+        "shrink-0 text-primary",
+        compact ? "h-4 w-4" : "h-[18px] w-[18px]",
+      )}
+    />
+  );
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
         className={cn(
-          "flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary",
+          "flex items-center gap-2 py-1 text-left font-semibold text-primary transition-colors hover:text-primary/80",
+          compact ? "text-sm" : "text-[15px]",
+          className,
         )}
       >
-        {/* Plus icon left column */}
-        <div
-          className={cn(
-            "shrink-0 flex items-center justify-center border-r border-border bg-secondary/30",
-            compact ? "w-10" : "w-12",
-          )}
-        >
-          <Plus className="h-4 w-4 text-muted-foreground" />
-        </div>
+        {plus}
+        Add task
+      </button>
+    );
+  }
 
-        {/* Text input */}
-        <div
+  return (
+    <div className={className}>
+      <div className="flex items-center gap-2 py-1">
+        {plus}
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+            if (e.key === "Escape") {
+              setDraft("");
+              setOpen(false);
+            }
+          }}
+          onBlur={() => {
+            if (!draft.trim()) setOpen(false);
+          }}
+          placeholder="Add task… (Enter to confirm)"
           className={cn(
-            "flex-1 flex items-center gap-2 px-3 py-1",
-            compact ? "py-1" : "py-1",
+            "min-w-0 flex-1 border-b border-border bg-transparent pb-1 outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary",
+            compact ? "text-sm" : "text-base",
           )}
-        >
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-            }}
-            placeholder="Add task…"
-            className={cn(
-              "flex-1 bg-transparent outline-none placeholder:text-muted-foreground/75",
-              compact ? "text-sm min-h-[36px]" : "text-base min-h-[40px]",
-            )}
-          />
-          {draft.trim() && (
-            <button
-              onClick={commit}
-              disabled={overBy > 0}
-              className="ml-1 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 shrink-0 disabled:opacity-40"
-            >
-              Add
-            </button>
-          )}
-        </div>
+        />
+        {draft.trim() && (
+          <button
+            onMouseDown={(e) => e.preventDefault()} // keep focus so onBlur can't collapse first
+            onClick={commit}
+            disabled={overBy > 0}
+            aria-label="Add"
+            className="shrink-0 rounded-full text-primary transition-colors hover:text-primary/80 disabled:opacity-40"
+          >
+            <CirclePlus className="h-5 w-5" />
+          </button>
+        )}
       </div>
       {overBy > 0 && (
         <p
@@ -2049,7 +2448,9 @@ function NewTargetForm({
                   className={cn(
                     "w-12 shrink-0 flex items-center justify-center border-r transition-colors",
                     type === opt.v
-                      ? "bg-primary-soft border-primary"
+                      ? // Same tint as the selected slot on an Options card — this control is the
+                        // same pattern, so it must not read as a different shade of teal.
+                        "bg-[oklch(0.95_0.032_180)] border-primary"
                       : "bg-surface border-border group-hover:bg-secondary/50",
                   )}
                 >
@@ -2213,7 +2614,7 @@ function NewTargetForm({
                   must have at least one item
                 </p>
               )}
-              <NewTaskInlineInput
+              <AddTaskControl
                 onAdd={(text) =>
                   setChecklistItems((prev) => [
                     ...prev,
@@ -2259,64 +2660,5 @@ function NewTargetForm({
         </button>
       </div>
     </>
-  );
-}
-
-function NewTaskInlineInput({ onAdd }: { onAdd: (text: string) => void }) {
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const overBy =
-    draft.trim().length > FIELD_LIMITS.checklistText ? draft.trim().length : 0;
-
-  const commit = () => {
-    const text = draft.trim();
-    if (!text) return;
-    if (text.length > FIELD_LIMITS.checklistText) return; // too long — blocked, message shown
-    onAdd(text);
-    setDraft("");
-    inputRef.current?.focus();
-  };
-
-  return (
-    <div>
-      <div className="flex items-stretch overflow-hidden rounded-md border border-border bg-surface transition-colors focus-within:border-primary min-h-[40px]">
-        <div className="w-10 shrink-0 flex items-center justify-center border-r border-border bg-secondary/30">
-          <Plus className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="flex-1 flex items-center px-3 py-1 gap-2">
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                commit();
-              }
-            }}
-            placeholder="Add task… (Enter to confirm)"
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/75 min-h-[38px]"
-          />
-          {draft.trim() && (
-            <button
-              onClick={commit}
-              disabled={overBy > 0}
-              className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
-            >
-              Add
-            </button>
-          )}
-        </div>
-      </div>
-      {overBy > 0 && (
-        <p
-          className="mt-1 text-[13px] font-medium text-destructive"
-          role="alert"
-        >
-          Task is too long — max {FIELD_LIMITS.checklistText} characters (you
-          have {overBy}). Trim it to add.
-        </p>
-      )}
-    </div>
   );
 }

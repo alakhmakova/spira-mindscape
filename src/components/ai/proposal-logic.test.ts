@@ -8,7 +8,10 @@ import {
   createAspects,
   createSummary,
   applyExcludedAspects,
+  buildHistory,
+  editDisplay,
   fmtDeadline,
+  proposalContext,
 } from "./proposal-logic";
 
 // These cover the pure logic behind the AI proposal cards — the parts where bugs cost us
@@ -243,6 +246,165 @@ describe("createSummary — the structural one-liner under a create", () => {
 
   it("is undefined for a goal (no structural summary)", () => {
     expect(createSummary(makeProposal({ kind: "new_goal" }))).toBeUndefined();
+  });
+});
+
+describe("proposalContext — what a revise sends the model", () => {
+  it("keeps a description edit in full, not the card's clipped preview", () => {
+    const long = "Build a weekly rhythm. ".repeat(30);
+    const ctx = proposalContext(
+      makeProposal({ kind: "edit", field: "description", title: long }),
+    );
+    // The card shows ~120 chars; the model must see all of it, or the next revise
+    // re-proposes from a truncated text and the user's earlier change disappears.
+    expect(ctx).toContain(long.trim());
+    expect(ctx).toContain("kind: edit (description)");
+  });
+
+  it("keeps every checklist item of a target create", () => {
+    const ctx = proposalContext(
+      makeProposal({
+        kind: "target",
+        title: "Run the weekly rhythm",
+        targetType: "checklist",
+        items: [
+          { text: "Week 1 — plan" },
+          { text: "Week 2 — review", done: true },
+          { text: "Week 3 — adjust", deadline: "2026-08-20" },
+        ],
+      }),
+    );
+    expect(ctx).toContain("Week 1 — plan");
+    expect(ctx).toContain("Week 2 — review (done)");
+    expect(ctx).toContain("Week 3 — adjust (due 2026-08-20)");
+  });
+
+  it("keeps the numeric measure, the deadline and a note body", () => {
+    const numeric = proposalContext(
+      makeProposal({
+        kind: "target",
+        title: "Run 100 km",
+        targetType: "numeric",
+        current: "12",
+        total: "100",
+        unit: "km",
+        deadline: "2026-09-01",
+      }),
+    );
+    expect(numeric).toContain("measure: 12 / 100 km");
+    expect(numeric).toContain("deadline: 2026-09-01");
+
+    const note = proposalContext(
+      makeProposal({
+        kind: "note",
+        title: "Retro",
+        body: "<p>What worked</p>",
+      }),
+    );
+    expect(note).toContain("<p>What worked</p>");
+  });
+
+  it("omits empty fields and stays bounded", () => {
+    const bare = proposalContext(
+      makeProposal({ kind: "option", title: "Batch the planning" }),
+    );
+    expect(bare).toBe("kind: option\ntitle: Batch the planning");
+
+    const huge = proposalContext(
+      makeProposal({ kind: "note", title: "Big", body: "x".repeat(20_000) }),
+    );
+    expect(huge.length).toBeLessThanOrEqual(4000);
+  });
+});
+
+describe("buildHistory — the transcript as the model sees it", () => {
+  const msg = (role: string, content: string, extra = {}) => ({
+    role,
+    content,
+    ...extra,
+  });
+
+  it("keeps real turns and drops notices, errors, empties and in-flight text", () => {
+    expect(
+      buildHistory([
+        msg("user", "hi"),
+        msg("assistant", "hello"),
+        msg("system", "session ended"),
+        msg("assistant", "boom", { error: true }),
+        msg("user", "   "),
+        msg("assistant", "half a repl", { streaming: true }),
+      ]),
+    ).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+    ]);
+  });
+
+  it("merges consecutive same-role turns", () => {
+    // A cancelled or failed card revise leaves the user's request unanswered — two user
+    // turns in a row, which the providers are replayed verbatim.
+    expect(
+      buildHistory([
+        msg("user", "extend the description"),
+        msg("assistant", "here it is"),
+        msg("user", "make it shorter"),
+        msg("user", "and in English"),
+      ]),
+    ).toEqual([
+      { role: "user", content: "extend the description" },
+      { role: "assistant", content: "here it is" },
+      { role: "user", content: "make it shorter\n\nand in English" },
+    ]);
+  });
+});
+
+describe("editDisplay — a goal edit never stretches its card", () => {
+  const long = "Build a weekly rhythm. ".repeat(30);
+
+  it("shows a description as a one-line preview with the full text behind it", () => {
+    const d = editDisplay(
+      makeProposal({ kind: "edit", field: "description", title: long }),
+    );
+    expect(d.headline).toBe("New description");
+    // Short enough to stay on a line or two — the card must not grow past the panel,
+    // which is what left Accept/Dismiss unreachable.
+    expect(d.detail!.length).toBeLessThanOrEqual(120);
+    // …and nothing is lost: the whole text is what "Read full content" opens, and what
+    // gets saved.
+    expect(d.body).toBe(long);
+  });
+
+  it("collapses newlines in the preview so it stays one line", () => {
+    const d = editDisplay(
+      makeProposal({
+        kind: "edit",
+        field: "description",
+        title: "First line\n\nSecond line",
+      }),
+    );
+    expect(d.detail).toBe("First line Second line");
+  });
+
+  it("keeps a short title edit as the headline", () => {
+    const d = editDisplay(
+      makeProposal({
+        kind: "edit",
+        field: "title",
+        title: "Launch Spira to 50 users",
+        detail: "New title",
+      }),
+    );
+    expect(d.headline).toBe("Launch Spira to 50 users");
+    expect(d.detail).toBe("New title");
+    expect(d.body).toBeUndefined();
+  });
+
+  it("clips an over-long title edit", () => {
+    const d = editDisplay(
+      makeProposal({ kind: "edit", field: "title", title: long }),
+    );
+    expect(d.headline.length).toBe(120);
+    expect(d.headline.endsWith("…")).toBe(true);
   });
 });
 

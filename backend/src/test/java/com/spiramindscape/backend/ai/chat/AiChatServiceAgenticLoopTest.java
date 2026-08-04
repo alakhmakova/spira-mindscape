@@ -7,6 +7,7 @@ import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
 import com.spiramindscape.backend.ai.provider.ProviderType;
+import com.spiramindscape.backend.ai.provider.mistral.MistralOcrService;
 import com.spiramindscape.backend.ai.provider.ToolCall;
 import com.spiramindscape.backend.ai.provider.ToolSpec;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
@@ -62,6 +63,7 @@ class AiChatServiceAgenticLoopTest {
     @Mock private UrlReadService urlReadService;
     @Mock private GrowLibraryService growLibrary;
     @Mock private GoalMemoryService goalMemory;
+    @Mock private MistralOcrService mistralOcr;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -70,7 +72,7 @@ class AiChatServiceAgenticLoopTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, growLibrary, goalMemory);
+                urlReadService, growLibrary, goalMemory, mistralOcr);
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
         lenient().when(goalContextBuilder.build(any())).thenReturn("");

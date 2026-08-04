@@ -144,6 +144,9 @@ public class TargetService {
         validateNumericUpdateInput(target, input, rawInput);
         applyFields(target, input.title(), null, input.deadline(), input.achievedAt(),
                 input.start(), input.current(), input.total(), input.unit(), input.done());
+        if (input.progressLocked() != null) {
+            target.setProgressLocked(input.progressLocked());
+        }
         if (deadlineProvided && input.deadline() == null) {
             target.setDeadline(null);
         }

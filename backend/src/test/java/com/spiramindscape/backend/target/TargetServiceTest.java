@@ -792,6 +792,40 @@ class TargetServiceTest {
     }
 
     @Test
+    @DisplayName("update: progressLocked is persisted in both directions")
+    void updatesProgressLocked() {
+        Target target = binaryTarget(10L, goal(1L), true);
+        when(targetRepository.findById(10L)).thenReturn(Optional.of(target));
+        when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Target locked = targetService.update(10L, new UpdateTargetInput(
+                null, null, null, null, null, null, null, null, true, null
+        ), false, Map.of());
+        assertThat(locked.getProgressLocked()).isTrue();
+
+        Target unlocked = targetService.update(10L, new UpdateTargetInput(
+                null, null, null, null, null, null, null, null, false, null
+        ), false, Map.of());
+        assertThat(unlocked.getProgressLocked()).isFalse();
+    }
+
+    @Test
+    @DisplayName("update: omitting progressLocked leaves the user's choice untouched")
+    void leavesProgressLockedAloneWhenAbsent() {
+        Target target = binaryTarget(10L, goal(1L), false);
+        target.setProgressLocked(true);
+        when(targetRepository.findById(10L)).thenReturn(Optional.of(target));
+        when(targetRepository.save(any(Target.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Target result = targetService.update(10L, new UpdateTargetInput(
+                "Renamed", null, null, null, null, null, null, null, null
+        ), false, Map.of());
+
+        assertThat(result.getProgressLocked()).isTrue();
+        assertThat(result.getTitle()).isEqualTo("Renamed");
+    }
+
+    @Test
     void rejectsBinaryTargetCreatedAlreadyDone() {
         when(goalService.findById(1L)).thenReturn(goal(1L));
 

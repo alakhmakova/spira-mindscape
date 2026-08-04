@@ -54,6 +54,14 @@ public class Target {
     @Column(name = "achieved_at")
     private Instant achievedAt;
 
+    /**
+     * Whether the user has pinned this target's progress. NULL means "not decided": the client
+     * then locks an achieved target and leaves an unfinished one unlocked. TRUE/FALSE are explicit
+     * choices that survive the target crossing (or falling back below) completion.
+     */
+    @Column(name = "progress_locked")
+    private Boolean progressLocked;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "goal_id", nullable = false)
     private Goal goal;

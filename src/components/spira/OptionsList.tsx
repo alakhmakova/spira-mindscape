@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
-import { Plus, Smile, Frown, X, Info } from "lucide-react";
+import { Plus, Smile, Frown, Info, CirclePlus } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
 import { cn } from "@/lib/utils";
 import { InlineText } from "./Inline";
+import {
+  ElementActionsMenu,
+  REVEAL_ACTIVE,
+  REVEAL_ON_ROW_HOVER,
+  appendResourceToken,
+  rowControlPlacement,
+  useIsSingleLine,
+} from "@/components/spira/inline-resources";
 
 // Vertical gap between cards (Tailwind space-y-3 = 0.75rem = 12px). Added to each card's
 // measured height to get the drag "step" — the distance the pointer travels to shuffle one slot.
@@ -255,9 +263,10 @@ export function OptionsList({
                 <button
                   onClick={add}
                   disabled={draftOverBy > 0}
-                  className="ml-2 mr-1 shrink-0 rounded-md bg-primary/10 px-2 py-1 text-sm font-medium text-primary hover:bg-primary/20 disabled:opacity-40"
+                  aria-label="Add"
+                  className="ml-2 mr-1 shrink-0 rounded-full text-primary transition-colors hover:text-primary/80 disabled:opacity-40"
                 >
-                  Add
+                  <CirclePlus className="h-5 w-5" />
                 </button>
               )}
             </div>
@@ -305,9 +314,13 @@ function OptionRow({
   onCycleStatus: () => void;
   onStartDrag: (e: React.PointerEvent) => void;
 }) {
+  const { ref: textRef, singleLine } = useIsSingleLine<HTMLDivElement>();
+  // True while the strategy text itself holds focus — what reveals the ⋯ menu (see below).
+  const [editing, setEditing] = useState(false);
   // Rating — one button that cycles on tap: none (grey smile) → good_idea (Guava smile) →
-  // didnt_work (Kale frown) → none. Floated top-right inside the text (see InlineText). In
-  // reorder mode it's inert (pointer-events-none) so a tap on it starts the card drag instead.
+  // didnt_work (Kale frown) → none. It sits on the card's top-right EDGE as a circle badge; the
+  // ⋮ actions menu lives inside the card instead. In reorder mode it's inert
+  // (pointer-events-none) so a tap on it starts the card drag instead.
   const smiley = (
     <button
       onClick={(e) => {
@@ -317,7 +330,7 @@ function OptionRow({
       aria-label="Rate strategy"
       aria-pressed={opt.status === "good_idea" || opt.status === "didnt_work"}
       className={cn(
-        "grid h-8 w-8 place-items-center rounded-md transition-colors",
+        "absolute -right-2 -top-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface shadow-sm transition-colors",
         reordering && "pointer-events-none",
         opt.status === "good_idea"
           ? "text-[#F45D48]" // Guava (like)
@@ -327,11 +340,41 @@ function OptionRow({
       )}
     >
       {opt.status === "didnt_work" ? (
-        <Frown className="h-[18px] w-[18px]" />
+        <Frown className="h-4 w-4" />
       ) : (
-        <Smile className="h-[18px] w-[18px]" />
+        <Smile className="h-4 w-4" />
       )}
     </button>
+  );
+
+  // Actions — a horizontal ⋯ menu floating over the card (no reserved column, so the strategy gets
+  // the full width): centred beside a one-line strategy, up in the corner once it wraps. It sits
+  // as far right as it can (`right-5`) without sliding under the rating badge, whose left edge is
+  // exactly there — overlapping the text is fine, overlapping the smiley is not.
+  //
+  // It appears on hover, and on tapping the STRATEGY TEXT (with the editing caret) — deliberately
+  // not on focus anywhere in the row, or tapping the rating badge or the select radio would pop it
+  // open too. Gone entirely while reordering.
+  const actionsMenu = reordering ? null : (
+    <ElementActionsMenu
+      ariaLabel="Strategy actions"
+      deleteLabel="Delete option"
+      attachedTo={opt.text}
+      onDelete={onRemove}
+      onAttach={(resourceId) => {
+        const next = appendResourceToken(
+          opt.text,
+          resourceId,
+          FIELD_LIMITS.optionText,
+        );
+        if (next) onEditText(next);
+      }}
+      className={cn(
+        editing ? REVEAL_ACTIVE : REVEAL_ON_ROW_HOVER,
+        "absolute right-5 z-10 grid h-7 w-7 place-items-center rounded-md bg-surface/90 p-0",
+        rowControlPlacement(singleLine),
+      )}
+    />
   );
 
   return (
@@ -358,16 +401,8 @@ function OptionRow({
             : "border-border hover:border-primary/50",
       )}
     >
-      {/* Delete — a circle-✕ badge on the top-right corner; hidden while reordering. */}
-      {!reordering && (
-        <button
-          onClick={onRemove}
-          aria-label="Remove strategy"
-          className="absolute -right-2 -top-2 z-10 grid h-6 w-6 place-items-center rounded-full border border-border bg-surface text-muted-foreground shadow-sm transition-colors hover:text-destructive"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
+      {/* Rating badge on the card's top-right edge. */}
+      {smiley}
 
       {/* Left slot — the active radio (single-select); inert while reordering. */}
       <button
@@ -376,7 +411,9 @@ function OptionRow({
           "w-12 shrink-0 flex items-center justify-center border-r transition-colors rounded-l-md",
           reordering && "pointer-events-none",
           opt.selected
-            ? "bg-primary-soft border-primary"
+            ? // The option slot keeps its original tint (pre-palette-pass) at the owner's request;
+              // `--primary-soft` is now Kale-200 and is used by targets/tasks instead.
+              "bg-[oklch(0.95_0.032_180)] border-primary"
             : "bg-surface border-border hover:bg-secondary/50",
         )}
         aria-label={opt.selected ? "Deselect strategy" : "Select strategy"}
@@ -393,21 +430,28 @@ function OptionRow({
         </div>
       </button>
 
-      {/* Right section — the strategy text with the rating smiley floated top-right, so line 1
-          sits beside it and lines 2+ wrap underneath (no reserved empty column). */}
-      <div className="min-h-[48px] min-w-0 flex-1 rounded-r-md bg-surface py-3 pr-3 pl-4">
-        <InlineText
-          value={opt.text}
-          onChange={onEditText}
-          maxLength={FIELD_LIMITS.optionText}
-          maxLengthLabel="Strategy"
-          clampLines={3}
-          forceCollapsed={isDragging || reordering}
-          readOnly={reordering}
-          floatTopRight={smiley}
-          className="text-base font-medium leading-relaxed"
-          ariaLabel="Edit strategy"
-        />
+      {/* Right section — the strategy text gets the full width; the ⋮ menu floats over its
+          top-right corner only while the card is hovered or focused. */}
+      <div className="relative min-h-[48px] min-w-0 flex-1 rounded-r-md bg-surface py-3 pr-3 pl-4">
+        {actionsMenu}
+        {/* onFocus/onBlur here are focusin/focusout — they fire for the inline editor inside. */}
+        <div
+          ref={textRef}
+          onFocus={() => setEditing(true)}
+          onBlur={() => setEditing(false)}
+        >
+          <InlineText
+            value={opt.text}
+            onChange={onEditText}
+            maxLength={FIELD_LIMITS.optionText}
+            maxLengthLabel="Strategy"
+            clampLines={3}
+            forceCollapsed={isDragging || reordering}
+            readOnly={reordering}
+            className="text-base font-medium leading-relaxed"
+            ariaLabel="Edit strategy"
+          />
+        </div>
       </div>
     </li>
   );

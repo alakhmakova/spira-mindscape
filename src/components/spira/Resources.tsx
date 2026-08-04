@@ -1,10 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  FileText,
-  LinkIcon,
-  Paperclip,
-  Mail,
   Trash2,
   ExternalLink,
   Download,
@@ -17,9 +13,23 @@ import {
   X,
   ChevronRight,
   Loader2,
+  Info,
 } from "lucide-react";
-import type { Goal, Resource, ResourceInput } from "@/lib/spira/types";
+import type { Goal, Resource, ResourceInput, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
+import {
+  countResourceAttachments,
+  planResourceDetach,
+  resourceDisplayName,
+  titleFromUrl,
+} from "@/lib/spira/resources";
+import { isSafeHttpUrl } from "@/lib/spira/links";
+import { resourceTypeMeta } from "@/components/spira/resource-meta";
+import {
+  InlineResourcesContextProvider,
+  type InlineResourcesValue,
+} from "@/components/spira/inline-resources";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -44,12 +54,7 @@ import {
 } from "@/components/spira/note-export";
 import { toast } from "sonner";
 
-const typeMeta = {
-  note: { icon: FileText, label: "Note" },
-  link: { icon: LinkIcon, label: "Link" },
-  file: { icon: Paperclip, label: "File" },
-  email: { icon: Mail, label: "Email" },
-} as const;
+const typeMeta = resourceTypeMeta;
 
 const MAX_RESOURCE_FILE_BYTES = 5 * 1024 * 1024;
 // Single source of truth for the resource label cap (mirrors the server); see limits.ts.
@@ -70,30 +75,6 @@ function validResourceUrl(value: string) {
 
 function validResourceEmail(value: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
-}
-
-function titleFromUrl(url: string) {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-    return host.split(".")[0] || host;
-  } catch {
-    return url;
-  }
-}
-
-function nameFromEmail(email: string) {
-  return email.trim();
-}
-
-function resourceDisplayName(resource: Resource) {
-  if (resource.type === "note") return resource.title.trim() || "Untitled note";
-  if (resource.type === "link")
-    return resource.title.trim() || titleFromUrl(resource.url);
-  if (resource.type === "file") return resource.title.trim() || "Untitled file";
-  return (
-    resource.name?.trim() ||
-    (resource.email ? nameFromEmail(resource.email) : "Email")
-  );
 }
 
 /* ── helpers: copy & download ─────────────────────── */
@@ -252,6 +233,10 @@ export function ResourcesList({ goal }: { goal: Goal }) {
   const removeResource = useSpira((s) => s.removeResource);
   const loadResourceFile = useSpira((s) => s.loadResourceFile);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // A resource that is attached inside other elements can't just vanish — confirm first, then
+  // degrade every `{{res:id}}` chip to plain text so the sentences still read.
+  const [pendingDelete, setPendingDelete] = useState<Resource | null>(null);
+  const detach = useDetachResource(goal);
 
   if (goal.resources.length === 0) {
     return (
@@ -272,10 +257,14 @@ export function ResourcesList({ goal }: { goal: Goal }) {
             // card's copy/download actions.
             loadFile={() => loadResourceFile(goal.id, r.id)}
             onOpen={() => {
-              if (r.type === "link") window.open(r.url, "_blank");
+              if (r.type === "link" && isSafeHttpUrl(r.url))
+                window.open(r.url, "_blank", "noopener,noreferrer");
               else setPreviewId(r.id);
             }}
-            onRemove={() => removeResource(goal.id, r.id)}
+            onRemove={() => {
+              if (countResourceAttachments(goal, r.id) > 0) setPendingDelete(r);
+              else removeResource(goal.id, r.id);
+            }}
           />
         ))}
       </div>
@@ -285,7 +274,135 @@ export function ResourcesList({ goal }: { goal: Goal }) {
         resourceId={previewId}
         onClose={() => setPreviewId(null)}
       />
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="This resource is attached"
+        description={
+          pendingDelete ? (
+            <span className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>
+                {(() => {
+                  const count = countResourceAttachments(
+                    goal,
+                    pendingDelete.id,
+                  );
+                  return `"${resourceDisplayName(pendingDelete)}" is attached in ${count} ${
+                    count === 1 ? "place" : "places"
+                  } on this goal. Deleting it turns each of those links into plain text — the words stay, only the link to the resource is lost.`;
+                })()}
+              </span>
+            </span>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Yes, delete"
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          detach(pendingDelete);
+          removeResource(goal.id, pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
     </>
+  );
+}
+
+/**
+ * Rewrites every element of the goal that references a resource so the token becomes plain text
+ * (the resource's title). Used right before the resource itself is deleted.
+ */
+function useDetachResource(goal: Goal) {
+  const updateOption = useSpira((s) => s.updateOption);
+  const updateReality = useSpira((s) => s.updateReality);
+  const updateTarget = useSpira((s) => s.updateTarget);
+
+  return (resource: Resource) => {
+    for (const patch of planResourceDetach(
+      goal,
+      resource.id,
+      resourceDisplayName(resource),
+    )) {
+      if (patch.kind === "option") {
+        updateOption(goal.id, patch.optionId, { text: patch.text });
+      } else if (patch.kind === "reality") {
+        updateReality(goal.id, patch.realityKind, patch.itemId, patch.text);
+      } else if (patch.kind === "targetTitle") {
+        updateTarget(goal.id, patch.targetId, { title: patch.title });
+      } else {
+        updateTarget(goal.id, patch.targetId, {
+          items: patch.items,
+        } as Partial<Target>);
+      }
+    }
+  };
+}
+
+/**
+ * Makes a goal's resources available to every inline field inside it: chips resolve their title,
+ * the ⋯ menus can attach one, and an over-limit URL can become a link resource. Also owns the
+ * preview panel a chip opens (see specs/2026-07-28-inline-resource-attachments/requirements.md).
+ */
+export function InlineResourcesProvider({
+  goal,
+  children,
+}: {
+  goal: Goal;
+  children: React.ReactNode;
+}) {
+  const addResource = useSpira((s) => s.addResource);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const resources = goal.resources;
+
+  const value = useMemo<InlineResourcesValue>(
+    () => ({
+      goalId: goal.id,
+      resources,
+      createLinkResource: (url) =>
+        new Promise<string | null>((resolve) => {
+          // `addResource` returns a temp id synchronously and hands back the persisted resource
+          // (with its server id) in the callback — only that id may go into a token.
+          const timeout = setTimeout(() => resolve(null), 15000);
+          addResource(
+            goal.id,
+            { type: "link", title: titleFromUrl(url), url },
+            (created) => {
+              clearTimeout(timeout);
+              resolve(created.id);
+            },
+          );
+        }),
+      openResource: (id, mode = "open") => {
+        const resource = resources.find((r) => r.id === id);
+        if (!resource) return;
+        // Only http(s) may be navigated to — a stored javascript:/data: URL falls through to the
+        // preview panel instead of being opened.
+        if (
+          mode === "open" &&
+          resource.type === "link" &&
+          isSafeHttpUrl(resource.url)
+        ) {
+          window.open(resource.url, "_blank", "noopener,noreferrer");
+          return;
+        }
+        setPreviewId(id);
+      },
+    }),
+    [goal.id, resources, addResource],
+  );
+
+  return (
+    <InlineResourcesContextProvider value={value}>
+      {children}
+      <ResourcePreview
+        goalId={goal.id}
+        resourceId={previewId}
+        onClose={() => setPreviewId(null)}
+      />
+    </InlineResourcesContextProvider>
   );
 }
 
@@ -1543,7 +1660,7 @@ function Form({
       const cleanEmail = email.trim();
       payload = {
         type: "email",
-        name: name.trim() || nameFromEmail(cleanEmail),
+        name: name.trim() || cleanEmail,
         role,
         email: cleanEmail,
         phone,
