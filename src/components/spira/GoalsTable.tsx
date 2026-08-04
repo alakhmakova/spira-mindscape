@@ -3,7 +3,12 @@ import { useState } from "react";
 import { Check, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
 import { differenceInCalendarDays, isPast, format } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
-import { goalProgress, targetProgress } from "@/lib/spira/progress";
+import {
+  formatPercent,
+  goalProgress,
+  goalProgressSteps,
+  targetProgress,
+} from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
@@ -422,7 +427,7 @@ function TimelineRow({
               tone="primary"
             />
             <span className="num text-[11px] font-bold tabular-nums text-muted-foreground/60">
-              {Math.round(item.progress * 100)}%
+              {formatPercent(item.progress, goalProgressSteps(item.goal))}%
             </span>
           </div>
         )}

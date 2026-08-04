@@ -9,15 +9,35 @@ import {
 } from "react";
 import {
   Plus,
-  X,
   CircleCheck,
+  CirclePlus,
   CircleX,
+  Info,
   TriangleAlert,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { splitUrls, isSafeHttpUrl } from "@/lib/spira/links";
+import {
+  splitInline,
+  isSafeHttpUrl,
+  hasResourceTag,
+  resourceToken,
+  RESOURCE_TOKEN_BUDGET,
+} from "@/lib/spira/links";
+import {
+  ElementActionsMenu,
+  REVEAL_ON_ROW_ACTIVITY,
+  ResourceLink,
+  rowControlPlacement,
+  useIsSingleLine,
+  appendResourceToken,
+  namesToTokens,
+  tokensToNames,
+  useInlineResources,
+} from "@/components/spira/inline-resources";
+import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { titleFromUrl } from "@/lib/spira/resources";
 
 type Item = { id: string; text: string };
 type Variant = "default" | "onPrimary";
@@ -101,14 +121,15 @@ export function InlineList({
             <button
               onClick={add}
               disabled={overBy > 0}
+              aria-label="Add"
               className={cn(
-                "ml-2 mr-1 shrink-0 text-sm font-medium rounded-md px-2 py-1 disabled:opacity-40",
+                "ml-2 mr-1 shrink-0 rounded-full transition-colors disabled:opacity-40",
                 tone === "warning"
-                  ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                  : "bg-primary/10 text-primary hover:bg-primary/20",
+                  ? "text-destructive hover:text-destructive/80"
+                  : "text-primary hover:text-primary/80",
               )}
             >
-              Add
+              <CirclePlus className="h-5 w-5" />
             </button>
           )}
         </div>
@@ -128,45 +149,87 @@ export function InlineList({
 
       <ul className="space-y-2">
         {items.map((it) => (
-          <li
+          <InlineListRow
             key={it.id}
-            className={cn(
-              "group flex items-start gap-3 rounded-md px-2 py-2 transition-colors",
-              onPrimary
-                ? "hover:bg-primary-foreground/10"
-                : "hover:bg-white/60",
-            )}
-          >
-            <Marker kind={marker} tone={tone} variant={variant} />
-            <InlineText
-              value={it.text}
-              onChange={(next) => next.trim() && onUpdate(it.id, next.trim())}
-              maxLength={maxLength}
-              maxLengthLabel={maxLengthLabel}
-              className={cn(
-                "flex-1 text-left text-[15px] leading-relaxed",
-                onPrimary && "text-primary-foreground",
-              )}
-              ariaLabel="Edit item"
-            />
-            <div className="flex">
-              <button
-                onClick={() => onRemove(it.id)}
-                className={cn(
-                  "p-1",
-                  onPrimary
-                    ? "text-primary-foreground/70 hover:text-destructive-foreground"
-                    : "text-muted-foreground hover:text-destructive",
-                )}
-                aria-label="Remove"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </li>
+            item={it}
+            marker={marker}
+            tone={tone}
+            variant={variant}
+            maxLength={maxLength}
+            maxLengthLabel={maxLengthLabel}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+          />
         ))}
       </ul>
     </div>
+  );
+}
+
+/** One reality item: text on the left, a ⋮ menu floating on the right (see `InlineList`). */
+function InlineListRow({
+  item,
+  marker,
+  tone,
+  variant,
+  maxLength,
+  maxLengthLabel,
+  onUpdate,
+  onRemove,
+}: {
+  item: Item;
+  marker: "dot" | "check" | "warn";
+  tone: "default" | "warning";
+  variant: Variant;
+  maxLength?: number;
+  maxLengthLabel?: string;
+  onUpdate: (id: string, text: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const onPrimary = variant === "onPrimary";
+  const { ref, singleLine } = useIsSingleLine<HTMLDivElement>();
+
+  return (
+    <li
+      className={cn(
+        "group relative flex items-start gap-3 rounded-md px-2 py-2 transition-colors",
+        onPrimary ? "hover:bg-primary-foreground/10" : "hover:bg-white/60",
+      )}
+    >
+      <Marker kind={marker} tone={tone} variant={variant} />
+      <div ref={ref} className="min-w-0 flex-1">
+        <InlineText
+          value={item.text}
+          onChange={(next) => next.trim() && onUpdate(item.id, next.trim())}
+          maxLength={maxLength}
+          maxLengthLabel={maxLengthLabel}
+          className={cn(
+            "text-left text-[15px] leading-relaxed",
+            onPrimary && "text-primary-foreground",
+          )}
+          ariaLabel="Edit item"
+        />
+      </div>
+      {/* Floats over the row instead of taking a column of its own — centred beside a one-line
+          item, up in the corner once the text wraps — and only shows once the row is hovered or
+          focused (tabbing in reveals it alongside the editing caret). */}
+      <ElementActionsMenu
+        ariaLabel="Item actions"
+        attachedTo={item.text}
+        onDelete={() => onRemove(item.id)}
+        onAttach={(resourceId) => {
+          const next = appendResourceToken(item.text, resourceId, maxLength);
+          if (next) onUpdate(item.id, next);
+        }}
+        className={cn(
+          REVEAL_ON_ROW_ACTIVITY,
+          "absolute right-1",
+          rowControlPlacement(singleLine),
+          onPrimary &&
+            "text-primary-foreground/70 hover:text-primary-foreground",
+        )}
+      />
+    </li>
   );
 }
 
@@ -178,6 +241,12 @@ export function InlineList({
  * text, so a URL is edited/deleted like any other text — tap the link opens it, tapping the rest
  * of the field enters edit mode. `min-w-0` + `overflow-wrap:anywhere` keep a long URL wrapping
  * inside its card instead of overflowing it.
+ *
+ * An attached resource is stored as a `{{res:id}}` token in the same plain text and rendered as a
+ * link (see `ResourceLink`). When a value with a URL is over the field's limit, the field
+ * offers to turn that URL into a link resource so only the short chip stays — the durable fix for
+ * "long URL → over the limit → sync banner"
+ * (specs/2026-07-28-inline-resource-attachments/requirements.md).
  */
 export function InlineText({
   value,
@@ -191,7 +260,6 @@ export function InlineText({
   maxLengthLabel = "This field",
   clampLines,
   forceCollapsed = false,
-  floatTopRight,
   readOnly = false,
 }: {
   value: string;
@@ -211,9 +279,6 @@ export function InlineText({
   clampLines?: number;
   /** Force the clamped (collapsed) view regardless of the toggle — e.g. while dragging. */
   forceCollapsed?: boolean;
-  /** Node floated to the top-right of the read view; inline text wraps under it (line 1 beside
-   *  it, lines 2+ below). Hidden while editing (it would overlap the textarea). */
-  floatTopRight?: ReactNode;
   /** When true, the field is display-only: clicking/focusing never enters edit mode. */
   readOnly?: boolean;
 }) {
@@ -224,9 +289,18 @@ export function InlineText({
   const [overflowing, setOverflowing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState(false);
-  // Shown when a pure-URL paste would push the field over its maxLength — the paste is
-  // refused (not truncated, not committed) so an over-length URL never reaches the store.
+  // Shown when a pure-URL paste would push the field over its maxLength and the URL can't be
+  // turned into a resource — the paste is refused (not truncated, not committed) so an
+  // over-length URL never reaches the store.
   const [pasteError, setPasteError] = useState<string | null>(null);
+  // The over-limit URL awaiting the user's "turn it into a link resource?" answer, together with
+  // the full text it came from (the URL is swapped for the resource's token on confirm).
+  const [convert, setConvert] = useState<{ url: string; text: string } | null>(
+    null,
+  );
+  // A URL the user already declined to convert — don't re-ask on every blur.
+  const declinedUrlRef = useRef<string | null>(null);
+  const resourcesCtx = useInlineResources();
   // Set before a programmatic blur (Escape / paste-commit) so the blur handler doesn't
   // double-commit a stale draft.
   const skipCommitRef = useRef(false);
@@ -242,9 +316,16 @@ export function InlineText({
     el.style.height = el.scrollHeight + "px";
   };
 
+  // While editing, a resource tag reads `{{res:Job ad}}` — the resource's NAME, not the id it is
+  // stored under. `toStored` maps it back on every commit, so what reaches the store is always the
+  // id form (and a tag naming something unknown degrades to plain text rather than dangling).
+  const resources = resourcesCtx?.resources ?? [];
+  const toEditable = (text: string) => tokensToNames(text, resources);
+  const toStored = (text: string) => namesToTokens(text, resources);
+
   const enterEdit = () => {
     if (readOnly) return; // display-only (e.g. reorder mode): never enter edit
-    setDraft(value);
+    setDraft(toEditable(value));
     setPasteError(null);
     setEditing(true);
   };
@@ -259,18 +340,42 @@ export function InlineText({
     autoSize(el);
   }, [editing]);
 
-  const commit = (raw: string) => {
-    const trimmed = raw.trim();
+  /**
+   * The URL worth turning into a link resource for an over-limit `text`: the longest one whose
+   * replacement by a resource token would bring the value back under the limit. Null when there
+   * is none (or nowhere to create resources), in which case the plain "too long" message stands.
+   */
+  const canConvert = (url: string, text: string) =>
+    maxLength !== undefined &&
+    !!resourcesCtx &&
+    url !== declinedUrlRef.current &&
+    isSafeHttpUrl(url) &&
+    text.length - url.length + RESOURCE_TOKEN_BUDGET <= maxLength;
+
+  const convertibleUrl = (text: string): string | null => {
+    const urls = splitInline(text)
+      .filter((seg) => seg.type === "url")
+      .map((seg) => seg.url)
+      .sort((a, b) => b.length - a.length);
+    return urls.find((url) => canConvert(url, text)) ?? null;
+  };
+
+  /** Commit a value that is ALREADY in the stored (id) form — see `commit` for the draft path. */
+  const commitStored = (stored: string) => {
+    const trimmed = stored.trim();
     if (!trimmed) {
       // Never save empty — revert to the last good value; flag required fields.
       setEditing(false);
-      setDraft(value);
+      setDraft(toEditable(value));
       if (required) setError(true);
       return;
     }
     if (maxLength !== undefined && trimmed.length > maxLength) {
       // Too long — do NOT save or truncate. Stay in edit mode so the user can trim
       // (the live "too long" message below explains why); Escape discards.
+      // If a URL is what makes it too long, offer to move it out into a link resource.
+      const url = convertibleUrl(trimmed);
+      if (url) setConvert({ url, text: trimmed });
       return;
     }
     setEditing(false);
@@ -278,6 +383,10 @@ export function InlineText({
     setError(false);
     if (trimmed !== value) onChange(trimmed);
   };
+
+  // The draft path: map the editable (name) tags back to ids first, so the length check, the
+  // store, and the server all see the same string.
+  const commit = (raw: string) => commitStored(toStored(raw));
 
   // Measure whether the read view exceeds the clamp, so the "Show more" toggle only appears when
   // the text actually overflows. `scrollHeight` reports the full content height even while the
@@ -308,9 +417,15 @@ export function InlineText({
       const start = el.selectionStart ?? draft.length;
       const end = el.selectionEnd ?? draft.length;
       const next = draft.slice(0, start) + pasted + draft.slice(end);
+      const storedNext = toStored(next);
       // The <textarea maxLength> attribute doesn't cap this programmatic path, so guard it here:
       // refuse the paste rather than truncate the URL or push an over-length value to the server.
-      if (maxLength !== undefined && next.length > maxLength) {
+      // A link that only fails because of its length can instead become a link resource — ask.
+      if (maxLength !== undefined && storedNext.length > maxLength) {
+        if (canConvert(pasted, storedNext)) {
+          setConvert({ url: pasted, text: next });
+          return;
+        }
         setPasteError(
           `That link is too long to save here (max ${maxLength} characters).`,
         );
@@ -322,6 +437,50 @@ export function InlineText({
       commit(next);
     }
   };
+
+  // Turn the pending URL into a `link` resource and keep only its token in the text. The token
+  // MUST carry the id the server assigned (handed back by `createLinkResource`) — the optimistic
+  // temp id is swapped out moments later and would leave a dangling reference.
+  const runConvert = async () => {
+    if (!convert || !resourcesCtx) return;
+    const pending = convert;
+    setConvert(null);
+    const resourceId = await resourcesCtx.createLinkResource(pending.url);
+    if (!resourceId) return; // the store surfaces the failure; the text is left untouched
+    // Map the draft's existing name tags to ids FIRST, then splice in the new token: the resource
+    // was created a moment ago, so this render's `resources` doesn't know it yet and mapping the
+    // fresh token would drop it to plain text.
+    const next = toStored(pending.text).replace(
+      pending.url,
+      resourceToken(resourceId),
+    );
+    setPasteError(null);
+    setDraft(next);
+    commitStored(next);
+  };
+
+  const convertDialog = (
+    <ConfirmDialog
+      open={!!convert}
+      onOpenChange={(open) => {
+        if (!open) {
+          declinedUrlRef.current = convert?.url ?? null;
+          setConvert(null);
+        }
+      }}
+      title="That link is too long to save here"
+      description={`Keep it as a resource instead? The link is saved under "${
+        convert ? titleFromUrl(convert.url) : ""
+      }" in this goal's Resources, and the text keeps a short chip you can tap to open it.`}
+      confirmLabel="Yes, save as a resource"
+      cancelLabel="No, I'll shorten it"
+      tone="primary"
+      onConfirm={() => void runConvert()}
+    />
+  );
+
+  // The limit applies to what gets stored, so measure the id form, not the longer name form.
+  const storedDraftLength = toStored(draft).trim().length;
 
   if (editing) {
     // A real <textarea> (not contentEditable) so the Android IME can't desync and duplicate text.
@@ -354,7 +513,7 @@ export function InlineText({
             }
             if (e.key === "Escape") {
               skipCommitRef.current = true;
-              setDraft(value);
+              setDraft(toEditable(value));
               setError(false);
               e.currentTarget.blur();
             }
@@ -368,22 +527,34 @@ export function InlineText({
           </span>
         ) : (
           maxLength !== undefined &&
-          draft.trim().length > maxLength && (
+          storedDraftLength > maxLength && (
             <span className="mt-1 text-[13px] font-medium text-destructive no-underline not-italic">
               {maxLengthLabel} is too long — max {maxLength} characters (you
-              have {draft.trim().length}). Trim it to save.
+              have {storedDraftLength}). Trim it to save.
             </span>
           )
         )}
+        {/* Editing is plain text, so an attached resource shows as a raw tag — say so, or a
+            `{{res:…}}` in the middle of a sentence looks like a bug. */}
+        {hasResourceTag(draft) && (
+          <span className="mt-1 flex items-start gap-1.5 text-[13px] text-muted-foreground no-underline not-italic">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              An attached resource shows here as a tag with its name — delete
+              the whole tag to detach it.
+            </span>
+          </span>
+        )}
+        {convertDialog}
       </span>
     );
   }
 
   const isEmpty = value.trim() === "";
-  const segments = splitUrls(value);
+  const segments = splitInline(value);
   const collapsed = clampLines !== undefined && (forceCollapsed || !expanded);
-  // A `max-height` of N line-heights (`lh`) clamps to N lines while letting inline text wrap
-  // around the internal `floatTopRight` element — which `-webkit-line-clamp` would not.
+  // A `max-height` of N line-heights (`lh`) clamps to N lines; `-webkit-line-clamp` would fight
+  // the inline links and the absolutely-positioned row menu that float over this text.
   const clampStyle: CSSProperties | undefined =
     collapsed && overflowing
       ? { maxHeight: `${clampLines}lh`, overflow: "hidden" }
@@ -411,11 +582,6 @@ export function InlineText({
             readOnly ? "cursor-[inherit]" : "cursor-text",
           )}
         >
-          {/* Floated top-right slot (e.g. the rating smiley): text wraps under it. Placed first so
-              inline content flows around it; not shown in edit mode (the edit branch omits it). */}
-          {floatTopRight && (
-            <span className="float-right ml-2 -mt-1 mb-1">{floatTopRight}</span>
-          )}
           {isEmpty ? (
             <span className="text-muted-foreground/75">{placeholder}</span>
           ) : (
@@ -423,8 +589,10 @@ export function InlineText({
               {segments.map((seg, i) =>
                 seg.type === "text" ? (
                   <span key={i}>{seg.value}</span>
-                ) : (
+                ) : seg.type === "url" ? (
                   <UrlLink key={i} url={seg.url} />
+                ) : (
+                  <ResourceLink key={i} id={seg.id} />
                 ),
               )}
             </>
@@ -461,6 +629,7 @@ export function InlineText({
           {requiredMessage}
         </span>
       )}
+      {convertDialog}
     </span>
   );
 }

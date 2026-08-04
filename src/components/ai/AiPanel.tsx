@@ -49,8 +49,11 @@ import {
   fmtDeadline,
   dedupCreates,
   isOptionActivate,
+  buildHistory,
   createAspects,
   createSummary,
+  editDisplay,
+  proposalContext,
   applyExcludedAspects,
   proposalFromToolArgs,
 } from "./proposal-logic";
@@ -94,6 +97,9 @@ type Msg = {
   status?: string;
   /** Files attached to this (user) message — shown as chips; not persisted. */
   attachments?: ChatAttachment[];
+  /** Set on a user message that came from a card's "Edit" box: the headline of the card
+   *  being revised, shown as a caption above the bubble so the request is traceable. */
+  revisedLabel?: string;
 };
 
 type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
@@ -1553,17 +1559,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
     // Only real conversation turns belong in history — drop system notices,
     // GROW end-cards, and empty placeholders (Anthropic rejects empty content).
-    const history: HistoryEntry[] = msgs
-      .filter(
-        (m) =>
-          (m.role === "user" || m.role === "assistant") &&
-          m.content.trim() &&
-          !m.error,
-      )
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+    const history: HistoryEntry[] = buildHistory(msgs);
 
     const id = uid();
     setMsgs((p) => [
@@ -1677,9 +1673,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   };
 
   // Revise a proposal "in place": when the user types a change on a card ("Type a change for
-  // the AI…"), DON'T spawn a new chat turn / new card. Re-ask the model, then swap the new
-  // proposal into the SAME message slot (keeping its id) so the original card simply updates.
-  // No visible "Revise your proposed…" user bubble, no pile of duplicate cards.
+  // the AI…"), DON'T spawn a new card. Re-ask the model, then swap the new proposal into the
+  // SAME message slot (keeping its id) so the original card simply updates — never a pile of
+  // duplicate cards.
+  //
+  // The request itself IS written to the transcript (a user bubble captioned with the card's
+  // name, then the AI's reply): the user can see what they asked for, and — because the
+  // transcript is the model's history — a later revise still sees the earlier requests. The
+  // model is also given the WHOLE current proposal (`proposalContext`), not the card's clipped
+  // headline, so an earlier change can't be dropped just because the prompt never showed it.
   const reviseInPlace = (
     targetMsgId: string,
     targetProposalId: string,
@@ -1702,15 +1704,33 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       setRevising((r) => (r && r.token === token ? null : r));
       setBusy(false);
     };
+    /** A failed revise reads as a bubble in the conversation, like a failed chat turn — the
+     *  user's request is visible above it, so a silent toast would leave it unanswered. */
+    const failWith = (text: string) =>
+      setList((ms) => [
+        ...ms,
+        { id: uid(), role: "assistant" as const, content: text, error: true },
+      ]);
+
+    // The request goes into the transcript straight away — before the answer, and whatever
+    // the answer turns out to be.
+    setList((ms) => [
+      ...ms,
+      {
+        id: uid(),
+        role: "user" as const,
+        content: instruction,
+        revisedLabel: headline,
+      },
+    ]);
+
     // Safety net: a revise must never leave the card frozen with no way out. If the stream
     // never completes, recover automatically.
     const timer = setTimeout(() => {
       if (reviseTokenRef.current !== token) return;
       reviseTokenRef.current++;
       finish();
-      chatToast.error(
-        "The AI took too long — the card is unchanged. Try again.",
-      );
+      failWith("The AI took too long — the card is unchanged. Try again.");
     }, 90_000);
     const stillActive = () =>
       reviseTokenRef.current === token && !stopRef.current;
@@ -1718,24 +1738,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // The old server-side proposal row is superseded — drop it (the new one gets its own id).
     if (p.serverId != null) rejectProposal(p.serverId).catch(() => {});
 
-    const history: HistoryEntry[] = curList
-      .filter(
-        (m) =>
-          (m.role === "user" || m.role === "assistant") &&
-          m.content.trim() &&
-          !m.error,
-      )
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+    // Earlier requests on this card are ordinary turns in here now, so the model sees them.
+    const history: HistoryEntry[] = buildHistory(curList);
 
     const label = (KIND_META[p.kind]?.label ?? "change").toLowerCase();
-    const disp = proposalDisplay(p, goal);
-    const ctx = disp.detail
-      ? `${disp.headline} (${disp.detail})`
-      : disp.headline;
-    const message = `Revise your proposed ${label} "${ctx}": ${instruction}. Re-propose it with the change applied — one proposal.`;
+    // A re-proposal REPLACES the old one, so the model must repeat what it isn't changing —
+    // anything it leaves out is something the user silently loses.
+    const message =
+      `Revise the ${label} you proposed. Keep everything the user has already asked for and ` +
+      `apply only the new change on top of it.\n\nCurrent proposal:\n${proposalContext(p)}\n\n` +
+      `New change: ${instruction}\n\n` +
+      `Re-propose it with the change applied — one proposal, complete: repeat every field you ` +
+      `are not changing.`;
 
     let accumulated = "";
     const pendingProposals: Proposal[] = [];
@@ -1793,26 +1807,32 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           status: "pending",
         };
         const extras = rest.map((r) => ({ ...r, status: "pending" as const }));
-        setList((ms) =>
-          ms.map((m) => {
+        // Close the exchange with a reply, so the user's request isn't left hanging and the
+        // transcript stays a real conversation (the model's own words when it wrote any).
+        const reply =
+          accumulated.trim() ||
+          `Updated «${proposalDisplay(replaced, goal).headline}».`;
+        setList((ms) => [
+          ...ms.map((m) => {
             if (m.id !== targetMsgId) return m;
             const nextProposals = (m.proposals ?? []).flatMap((pr) =>
               pr.id === targetProposalId ? [replaced, ...extras] : [pr],
             );
             return { ...m, proposals: nextProposals };
           }),
-        );
+          { id: uid(), role: "assistant" as const, content: reply },
+        ]);
         finish();
       },
       onError: (err) => {
         clearTimeout(timer);
         if (reviseTokenRef.current !== token) return;
         finish();
-        const msg =
+        failWith(
           err === "NETWORK"
             ? "Backend unreachable — is it running?"
-            : err || "AI error. Try again.";
-        chatToast.error(msg);
+            : err || "AI error. Try again.",
+        );
       },
     });
   };
@@ -1941,17 +1961,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     setBusy(true);
     stopRef.current = false;
 
-    const history: HistoryEntry[] = gmsgs
-      .filter(
-        (m) =>
-          (m.role === "user" || m.role === "assistant") &&
-          m.content.trim() &&
-          !m.error,
-      )
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+    const history: HistoryEntry[] = buildHistory(gmsgs);
 
     const id = uid();
     setGmsgs((p) => [
@@ -2550,6 +2560,16 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           if (m.role === "user") {
             return (
               <div key={m.id} className="group flex flex-col items-end gap-1">
+                {/* A change typed on a proposal card — say which card it belongs to, so the
+                    request reads as part of the conversation and not as a stray message. */}
+                {m.revisedLabel && (
+                  <span className="flex max-w-[86%] items-center gap-1.5 pr-1 text-[12px] text-white/60">
+                    <Ic path={PATHS.pencil} size={12} className="shrink-0" />
+                    <span className="truncate">
+                      Change to «{m.revisedLabel}»
+                    </span>
+                  </span>
+                )}
                 {m.attachments && m.attachments.length > 0 && (
                   <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
                     {m.attachments.map((a, i) => {
@@ -2697,7 +2717,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
           the user's commitments, and those cards must stay actionable. */}
       {!revising && pendingMsg && (
-        <div className="px-3 pb-3 pt-1 shrink-0">
+        // Cap the card area and let it scroll: a proposal can be tall (a stepper, a long
+        // preview), and without this the panel simply grew past its own bottom edge, so
+        // Accept/Dismiss became unreachable.
+        <div className="px-3 pb-3 pt-1 shrink-0 max-h-[60%] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20">
           {proposalGroupFor(pendingMsg)}
         </div>
       )}
@@ -3143,7 +3166,7 @@ function proposalDisplay(
 ): { headline: string; detail?: string; body?: string } {
   let headline = p.title;
   let detail = p.detail;
-  const body =
+  let body =
     p.kind === "note" || p.kind === "edit_note" || p.kind === "new_goal"
       ? p.body
       : undefined;
@@ -3151,6 +3174,13 @@ function proposalDisplay(
   const targetOf = (id?: string) => goal?.targets.find((t) => t.id === id);
 
   switch (p.kind) {
+    // A goal edit (new title / new description) — see `editDisplay`: a long description
+    // becomes a one-line preview plus "Read full content" instead of a card-stretching
+    // headline.
+    case "edit": {
+      ({ headline, detail, body } = editDisplay(p));
+      break;
+    }
     // (option's "make it active" is shown as its own checkbox — don't repeat it in the detail)
     case "select_option": {
       const opt = goal?.options.find((o) => o.id === p.itemId);
@@ -5236,15 +5266,27 @@ async function downscaleImage(
   const dims = await readImageSize(file);
   let bitmap: ImageBitmap;
   try {
+    // `imageOrientation: "from-image"` is stated rather than assumed: a phone photo carries its
+    // rotation in EXIF, and a sideways picture is markedly harder to read — for the user and for
+    // OCR alike (BUG-027). Browsers differ on the default; this pins it.
+    //
+    // Only ONE axis is constrained, because resizing happens AFTER that rotation: an EXIF
+    // quarter-turn swaps the axes, so passing both (computed from the pre-rotation header dims)
+    // would squash the picture. Capping the longer axis keeps the aspect ratio and errs towards
+    // more detail; the draw-time scale below still enforces the real cap.
     if (dims && Math.max(dims.w, dims.h) > IMAGE_MAX_DIM) {
-      const scale = IMAGE_MAX_DIM / Math.max(dims.w, dims.h);
+      const landscape = dims.w >= dims.h;
       bitmap = await createImageBitmap(file, {
-        resizeWidth: Math.max(1, Math.round(dims.w * scale)),
-        resizeHeight: Math.max(1, Math.round(dims.h * scale)),
+        ...(landscape
+          ? { resizeWidth: IMAGE_MAX_DIM }
+          : { resizeHeight: IMAGE_MAX_DIM }),
         resizeQuality: "medium",
+        imageOrientation: "from-image",
       });
     } else {
-      bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(file, {
+        imageOrientation: "from-image",
+      });
     }
   } catch {
     // Couldn't decode. Keeping the raw bytes is fine for a small file, but for a large one it

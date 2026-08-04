@@ -35,6 +35,38 @@ class VisionSupportTest {
         assertThat(VisionSupport.fromDataUrl(null)).isNull();
     }
 
+    /**
+     * Which model may be shown a picture (BUG-027). Getting this wrong is not cosmetic: an
+     * image sent to a blind model is dropped by the provider while the turn still announces
+     * it, and the model then answers as if it had seen it — a confident, fabricated reading.
+     */
+    @Test
+    void mistralVisionIsAnAllowListAndTheDefaultIsBlind() {
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "pixtral-large-latest")).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-medium-latest")).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-small-latest")).isTrue();
+
+        // The app's default, and what the user had selected when this was reported.
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-large-latest")).isFalse();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "codestral-latest")).isFalse();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "ministral-8b-latest")).isFalse();
+        // No model stored → the provider default (mistral-large-latest), which is blind.
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, null)).isFalse();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "  ")).isFalse();
+    }
+
+    @Test
+    void anthropicOpenAiAndGeminiChatModelsCanSee() {
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.ANTHROPIC, "claude-sonnet-4-6")).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.ANTHROPIC, null)).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.OPENAI, "gpt-4o")).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.GEMINI, "gemini-2.5-flash")).isTrue();
+
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.OPENAI, "gpt-3.5-turbo")).isFalse();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.OPENAI, "text-embedding-3-large")).isFalse();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.TAVILY, "whatever")).isFalse();
+    }
+
     @Test
     void buildsAnthropicImageBlock() {
         List<Map<String, Object>> blocks =

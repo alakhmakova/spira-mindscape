@@ -15,7 +15,11 @@ import {
   X,
 } from "lucide-react";
 import { useSpira } from "@/lib/spira/store";
-import { goalProgress } from "@/lib/spira/progress";
+import {
+  formatPercent,
+  goalProgress,
+  goalProgressSteps,
+} from "@/lib/spira/progress";
 import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
@@ -23,7 +27,11 @@ import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
 import { OptionsList } from "@/components/spira/OptionsList";
 import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
-import { ResourcesList, NewResourceSheet } from "@/components/spira/Resources";
+import {
+  ResourcesList,
+  NewResourceSheet,
+  InlineResourcesProvider,
+} from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
 import type { Confidence } from "@/lib/spira/types";
@@ -101,7 +109,9 @@ function GoalWorkspace() {
   };
 
   return (
-    <>
+    // Every inline field inside the workspace can resolve, attach, and open this goal's
+    // resources (chips, ⋯ menus, the over-limit URL → link resource flow).
+    <InlineResourcesProvider goal={goal}>
       <GoalNav />
       <div
         id="goal-top"
@@ -149,7 +159,11 @@ function GoalWorkspace() {
 
         {/* Three KPI cards: Progress · Confidence · Deadline */}
         <div className="spira-kpi-grid grid gap-4">
-          <ProgressKpi value={progress} onJump={jumpToTargets} />
+          <ProgressKpi
+            value={progress}
+            steps={goalProgressSteps(goal)}
+            onJump={jumpToTargets}
+          />
           <ConfidenceKpi
             value={goal.confidence}
             onChange={changeConfidence}
@@ -178,7 +192,7 @@ function GoalWorkspace() {
             }
           >
             <div className="spira-reality-grid grid gap-0 rounded-lg overflow-hidden border hairline">
-              <div className="spira-reality-primary p-5 sm:p-6 bg-[#e5f4f3] hairline">
+              <div className="spira-reality-primary p-5 sm:p-6 bg-[#E0F2F5] hairline">
                 <h3 className="font-medium text-lg mb-3">Actions taken</h3>
                 <InlineList
                   items={goal.reality.actions}
@@ -290,7 +304,7 @@ function GoalWorkspace() {
           }}
         />
       </div>
-    </>
+    </InlineResourcesProvider>
   );
 }
 
@@ -331,8 +345,17 @@ function KpiCard({
   );
 }
 
-function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
-  const pct = Math.round(value * 100);
+function ProgressKpi({
+  value,
+  steps,
+  onJump,
+}: {
+  value: number;
+  /** How many increments the goal's progress has — decides the decimals (`formatPercent`). */
+  steps: number;
+  onJump: () => void;
+}) {
+  const pct = formatPercent(value, steps);
   return (
     <KpiCard
       label="Progress"

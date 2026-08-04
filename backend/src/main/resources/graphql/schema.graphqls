@@ -107,6 +107,7 @@ type Target {
     deadline: String
     achievedAt: String
     progress: Float!
+    progressLocked: Boolean
     createdAt: String!
     updatedAt: String!
 }
@@ -182,6 +183,7 @@ input UpdateTargetInput {
     total: Float
     unit: String
     done: Boolean
+    progressLocked: Boolean
     items: [ChecklistItemInput!]
 }
 

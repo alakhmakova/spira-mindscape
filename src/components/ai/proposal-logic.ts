@@ -119,6 +119,90 @@ export function isOptionActivate(p: Proposal): boolean {
   return p.kind === "option" && !!p.done;
 }
 
+/** Upper bound on {@link proposalContext} — a revise prompt must stay bounded even when the
+ *  proposal carries a long note body or a 40-item checklist. */
+const PROPOSAL_CONTEXT_MAX_CHARS = 4000;
+
+/**
+ * Every populated field of a proposal, as labelled lines — what the model must see to revise
+ * one without dropping anything.
+ *
+ * The card's headline is a DISPLAY string: clipped (`truncate`), and blind to everything that
+ * lives outside `title` — a note's body, a checklist's items, the numeric measure, a deadline.
+ * Feeding that back as "your proposal" is what made the AI lose the user's earlier change on
+ * the next revise: it re-proposed from a summary that no longer contained it.
+ */
+export function proposalContext(p: Proposal): string {
+  const lines: string[] = [];
+  const add = (label: string, value?: string | null) => {
+    const v = (value ?? "").toString().trim();
+    if (v) lines.push(`${label}: ${v}`);
+  };
+
+  add("kind", p.kind + (p.field ? ` (${p.field})` : ""));
+  // The whole value, never clipped — this is the text being revised.
+  add(p.kind === "edit" && p.field ? `new ${p.field}` : "title", p.title);
+  add("description", p.body);
+  add("deadline", p.deadline);
+  if (p.done != null) add("done", String(p.done));
+  if (p.targetType) add("target type", p.targetType);
+  if (p.total)
+    add(
+      "measure",
+      `${p.current ?? 0} / ${p.total}${p.unit ? " " + p.unit : ""}`,
+    );
+  if (p.items?.length) {
+    lines.push("checklist items:");
+    p.items.forEach((it) =>
+      lines.push(
+        `  - ${it.text}${it.done ? " (done)" : ""}${it.deadline ? ` (due ${it.deadline})` : ""}`,
+      ),
+    );
+  }
+  if (p.patch) Object.entries(p.patch).forEach(([k, v]) => add(`  ${k}`, v));
+
+  const out = lines.join("\n");
+  return out.length > PROPOSAL_CONTEXT_MAX_CHARS
+    ? out.slice(0, PROPOSAL_CONTEXT_MAX_CHARS - 1) + "…"
+    : out;
+}
+
+/**
+ * The transcript as the model should see it: real user/assistant turns only (no error
+ * bubbles, no in-flight placeholder, no empties), with **consecutive same-role turns
+ * merged**.
+ *
+ * The merge matters because a card revise now writes the user's instruction into the
+ * transcript: if that turn fails or is cancelled, the transcript holds two user messages in a
+ * row. `AiChatService.buildMessages` replays history verbatim and no provider adapter
+ * normalises roles, so we normalise here.
+ */
+export function buildHistory(
+  msgs: {
+    role: string;
+    content: string;
+    error?: boolean;
+    streaming?: boolean;
+  }[],
+): { role: "user" | "assistant"; content: string }[] {
+  const out: { role: "user" | "assistant"; content: string }[] = [];
+  msgs
+    .filter(
+      (m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        m.content.trim() &&
+        !m.error &&
+        !m.streaming,
+    )
+    .forEach((m) => {
+      const role = m.role as "user" | "assistant";
+      const last = out[out.length - 1];
+      if (last && last.role === role) last.content += `\n\n${m.content}`;
+      else out.push({ role, content: m.content });
+    });
+  return out;
+}
+
 /**
  * The optional, individually-toggleable fields of a single create proposal. The entity
  * itself (its name) is always the first checkbox in the card; these are the extras the
@@ -151,6 +235,31 @@ export function createAspects(
     if (p.done) a.push({ id: "done", label: "Already done" });
   }
   return a;
+}
+
+/**
+ * How a goal edit ("edit": a new title or a new description) is shown on its card.
+ *
+ * The proposal carries the WHOLE new text in `title`. A rewritten description runs to
+ * several paragraphs, and printing it as the card's headline made the card taller than the
+ * panel — pushing Accept/Dismiss out of reach with nothing to scroll. So a description shows
+ * a one-line preview and moves the full text into `body`, which the card renders behind
+ * "Read full content" (the same treatment a note gets).
+ */
+export function editDisplay(p: Proposal): {
+  headline: string;
+  detail?: string;
+  body?: string;
+} {
+  const clip = (s: string, n: number) =>
+    s.length > n ? s.slice(0, n - 1) + "…" : s;
+  if (p.field === "description")
+    return {
+      headline: "New description",
+      detail: clip(p.title.replace(/\s+/g, " ").trim(), 120),
+      body: p.title,
+    };
+  return { headline: clip(p.title, 120), detail: p.detail };
 }
 
 /** Structural, non-toggleable summary of a create proposal (the numeric measure or

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { goalProgress, targetProgress } from "./progress";
+import {
+  formatPercent,
+  goalProgress,
+  goalProgressSteps,
+  isProgressLocked,
+  progressSteps,
+  targetProgress,
+} from "./progress";
 import type { Goal, Target } from "./types";
 
 describe("targetProgress", () => {
@@ -124,3 +131,93 @@ function goalWithTargets(targets: Target[]): Goal {
     targets,
   };
 }
+
+describe("isProgressLocked", () => {
+  it("locks an achieved target and leaves an unfinished one open by default", () => {
+    expect(isProgressLocked(binaryTarget(true))).toBe(true);
+    expect(isProgressLocked(binaryTarget(false))).toBe(false);
+  });
+
+  it("honours the user's explicit choice in both directions", () => {
+    expect(
+      isProgressLocked({ ...binaryTarget(true), progressLocked: false }),
+    ).toBe(false);
+    expect(
+      isProgressLocked({ ...binaryTarget(false), progressLocked: true }),
+    ).toBe(true);
+  });
+
+  it("treats a null (never decided) flag as no choice at all", () => {
+    expect(
+      isProgressLocked({ ...binaryTarget(true), progressLocked: null }),
+    ).toBe(true);
+  });
+});
+
+describe("formatPercent", () => {
+  // A 0 → 1 900 000 SEK savings target: 1 900 000 possible increments.
+  const SEK = 1_900_000;
+
+  it("shows the decimals a big target needs — whole percent hides weeks of saving", () => {
+    // The reported case: 10 000 and 20 000 both printed "1%".
+    expect(formatPercent(10_000 / SEK, SEK)).toBe("0.53");
+    expect(formatPercent(20_000 / SEK, SEK)).toBe("1.05");
+    expect(formatPercent(4_000 / SEK, SEK)).toBe("0.21");
+    expect(formatPercent(240_000 / SEK, SEK)).toBe("12.63");
+  });
+
+  it("stays whole where a whole percent is the truth", () => {
+    // A four-task checklist moves in 25% steps — decimals would be noise.
+    expect(formatPercent(0.5, 4)).toBe("50");
+    expect(formatPercent(0.25, 4)).toBe("25");
+    // Trailing zeros are trimmed even when the target is fine-grained.
+    expect(formatPercent(0.5, SEK)).toBe("50");
+    // A 200-step target: one step is half a percent, so one decimal.
+    expect(formatPercent(3 / 200, 200)).toBe("1.5");
+  });
+
+  it("never claims 0 or 100 unless it is true", () => {
+    expect(formatPercent(0, SEK)).toBe("0");
+    expect(formatPercent(1, SEK)).toBe("100");
+    expect(formatPercent(1 / SEK, SEK)).toBe("<0.01");
+    expect(formatPercent((SEK - 1) / SEK, SEK)).toBe(">99.99");
+    // Even a coarse target escalates rather than print a false 0.
+    expect(formatPercent(0.0004, 4)).toBe("0.04");
+  });
+
+  it("clamps out-of-range input", () => {
+    expect(formatPercent(-0.5, SEK)).toBe("0");
+    expect(formatPercent(4, SEK)).toBe("100");
+  });
+
+  it("falls back to whole percent when the resolution is unknown", () => {
+    expect(formatPercent(0.126)).toBe("13");
+    // Still escalates rather than print a false zero — just one decimal at a time.
+    expect(formatPercent(0.0021)).toBe("0.2");
+  });
+});
+
+describe("progressSteps / goalProgressSteps", () => {
+  const numeric = (start: number, total: number): Target => ({
+    id: "n",
+    type: "numeric",
+    title: "Save",
+    current: start,
+    start,
+    total,
+  });
+
+  it("counts a target's increments", () => {
+    expect(progressSteps(numeric(0, 1_900_000))).toBe(1_900_000);
+    // A countdown target measures the same distance.
+    expect(progressSteps(numeric(500, 0))).toBe(500);
+    expect(progressSteps(binaryTarget(false))).toBe(1);
+  });
+
+  it("a goal takes the finest target, divided across the mean", () => {
+    const goal = goalWithTargets([numeric(0, 1_000), binaryTarget(false)]);
+    // Two targets, the finer one with 1 000 steps → each step moves the mean by 1/2 000.
+    expect(goalProgressSteps(goal)).toBe(2_000);
+    expect(goalProgressSteps(goalWithTargets([]))).toBe(0);
+  });
+});
