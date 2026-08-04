@@ -187,7 +187,9 @@
 
   --primary: oklch(0.51 0.092 194);
   --primary-foreground: oklch(0.99 0 0);
-  --primary-soft: oklch(0.95 0.032 180);
+  /* Kale-200 — the brand tint behind a selected option, a done task's checkbox cell
+     and the target card's "Update progress" footer. Keep them identical. */
+  --primary-soft: #E0F2F5;
   --brand-orange: oklch(0.735 0.123 76);
   --brand-orange-soft: oklch(0.94 0.045 80);
 

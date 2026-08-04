@@ -8,6 +8,11 @@ export type ChecklistItem = {
   achievedAt?: string;
 };
 
+/**
+ * `progressLocked` pins a target's progress against accidental edits. `undefined`/`null` means the
+ * user hasn't decided, and an achieved target counts as locked (see `isProgressLocked`); `true` /
+ * `false` are explicit choices. The title, unit and deadline stay editable either way.
+ */
 export type Target =
   | {
       id: string;
@@ -19,6 +24,8 @@ export type Target =
       unit?: string;
       deadline?: string;
       achievedAt?: string;
+      createdAt?: string;
+      progressLocked?: boolean | null;
     }
   | {
       id: string;
@@ -27,6 +34,8 @@ export type Target =
       done: boolean;
       deadline?: string;
       achievedAt?: string;
+      createdAt?: string;
+      progressLocked?: boolean | null;
     }
   | {
       id: string;
@@ -35,6 +44,8 @@ export type Target =
       items: ChecklistItem[];
       deadline?: string;
       achievedAt?: string;
+      createdAt?: string;
+      progressLocked?: boolean | null;
     };
 
 export type Resource =

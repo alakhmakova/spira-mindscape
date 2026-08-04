@@ -4,25 +4,29 @@ Let users **attach resources to any inline-text element** (strategy options, rea
 actions/obstacles, checklist tasks, and target titles). Two capabilities:
 
 1. A URL that is too long to store inline can be turned into a **link resource**, leaving only a
-   short titled **chip** in the field.
+   short **link** (the resource's name) in the field.
 2. Any of those elements can have an existing resource attached from a menu, inserting the same
-   chip.
+   link.
 
 This is the durable fix for the "long URL → over the field limit → optimistic card → top-of-page
-`sync failed` banner" problem (see `src/lib/spira/limits.ts` and
-`specs/.../` field-limit notes): the URL lives in the resource (limit 1000), the field keeps a short
-reference.
+`sync failed` banner" problem (see `src/lib/spira/limits.ts`): the URL lives in the resource
+(limit 1000), the field keeps a short reference.
 
-Status: **design only — not yet implemented.** Web first; Android parity later.
+Status: **built on the web (2026-08-01)** — steps 1–4 below. **Android parity is still open.**
 
-Primary code to touch when building:
-- `src/components/spira/Inline.tsx` — `InlineText` (rendering + commit), extend `splitUrls`/`UrlLink`.
-- `src/lib/spira/links.ts` — `splitUrls` (add a resource-token segment type).
-- `src/components/spira/OptionsList.tsx`, `Targets.tsx` (checklist items + target title),
-  `routes/goals.$goalId.tsx` (reality `InlineList`) — swap the ✕ affordance for a ⋯ menu.
-- `src/lib/spira/store.ts` — reuse `addResource(id, input, onCreated)` and `removeResource`.
-- `src/components/spira/Resources.tsx` — reuse for editing an attached resource; add a resource picker.
-- `src/components/spira/ConfirmDialog.tsx` — reuse for the delete-attached-resource warning.
+Code that implements it:
+
+- `src/lib/spira/links.ts` — the token grammar: `splitInline` (text / URL / resource segments),
+  `resourceToken`, `hasResourceToken`, `referencesResource`, `replaceResourceToken`.
+- `src/lib/spira/resources.ts` — `resourceDisplayName` / `titleFromUrl` (shared with the Resources
+  section) and the pure detach planner `planResourceDetach` / `countResourceAttachments`.
+- `src/components/spira/inline-resources.tsx` — the goal-scoped context, `ResourceLink`,
+  `ElementActionsMenu` (the ⋯ / ⋮ menu) + its resource picker, `appendResourceToken`.
+- `src/components/spira/Resources.tsx` — `InlineResourcesProvider` (owns the preview panel a link
+  opens) and the delete-while-attached confirmation.
+- `src/components/spira/Inline.tsx` — inline-link rendering and the over-limit URL → resource flow.
+- Call sites: `OptionsList.tsx`, `Targets.tsx`, `Inline.tsx`'s `InlineList`,
+  `routes/goals.$goalId.tsx` (wraps the workspace in the provider).
 
 ---
 
@@ -40,78 +44,134 @@ Read {{res:42}} before the call
 - Chosen over a polymorphic `element_resource` association table because "element" spans several
   tables; a token works uniformly everywhere text is stored and allows multiple references per
   field with zero schema/migration work.
-- Rendering: extend `splitUrls` (in `links.ts`) to also emit a `{ type: "resource"; id }` segment,
-  and have `InlineText`'s renderer resolve it against the goal's `resources` to draw a **chip**
-  (the resource's title). Bare URLs keep rendering as today.
+- Rendering: `splitInline` (in `links.ts`) emits `{ type: "resource"; id }` segments, and
+  `InlineText` draws each as an **inline link**: the resource type's icon, its name underlined in
+  the app's primary Kale, and a diagonal ↗ arrow marking the jump-out. It renders `display: inline`
+  (not inline-flex) so it shares the surrounding text's baseline. Bare URLs render as before.
+- **Unresolved token** (resource deleted on another device, or the field rendered outside a goal
+  workspace): the link degrades to muted, non-clickable italic **"unavailable"** text — never the raw
+  token and never a broken link.
+- **Editing is plain text**, and the tag reads by **name** there — `{{res:Job ad}}`, not the stored
+  id. `tokensToNames` / `namesToTokens` (inline-resources.tsx) map between the two on entering edit
+  mode and on every commit; a tag naming something unknown degrades to plain text rather than being
+  stored as a dangling reference, and the field's length limit is measured on the **stored** (id)
+  form. A one-line hint with an ⓘ icon explains that deleting the whole tag detaches the resource.
 - **ID timing caveat:** `store.addResource` returns a **temp local id** synchronously and only later
   swaps in the server id (after `createResource` resolves), handing the persisted resource to the
   `onCreated` callback. The token MUST be written with the **resolved** id from `onCreated` — never
-  the temp id, which would dangle once the swap happens.
+  the temp id, which would dangle once the swap happens. `createLinkResource` in the provider wraps
+  that callback in a promise.
 
 ## 2. Auto-convert a URL — trigger is overflow only
 
-Do **not** auto-convert every pasted/typed URL (that would clutter Resources). Only when a committed
-value **contains a URL and exceeds the field's limit** (`FIELD_LIMITS.optionText` / `realityText` /
-`checklistText` / `targetTitle`):
+Do **not** auto-convert every pasted/typed URL (that would clutter Resources). Only when a value
+**contains a URL and exceeds the field's limit** (`FIELD_LIMITS.optionText` / `realityText` /
+`checklistText` / `targetTitle`) — on either path that hits the limit: a **pure-URL paste**, or a
+**commit** (blur / Enter) of an over-limit value.
 
-- Show a modal: *"That link is too long to save here. Create a link resource instead?"*
-- **Yes** → create a `link` resource (title defaults to the URL's domain) via
+- The offer is only made when swapping that URL for a token would actually bring the value back
+  under the limit (`RESOURCE_TOKEN_BUDGET` reserves room for the id); the longest such URL wins.
+  Otherwise the plain "too long" message stands.
+- Modal: *"That link is too long to save here — keep it as a resource instead?"* (teal/constructive
+  confirm, not the red destructive one).
+- **Yes** → create a `link` resource (title = the URL's domain) via
   `addResource(goalId, { type: "link", url, title: domain }, onCreated)`; in `onCreated`, replace
   the URL in the field with a `{{res:<real id>}}` token and commit.
-- **No** → revert; the value is **not** saved (the current stopgap message path).
+- **No** → nothing is saved; the field stays in edit mode with the "too long" message, and that URL
+  is **not** offered again (no nagging on every blur).
 
-This replaces the interim "too long to save here" stopgap in `InlineText.handlePaste` once built.
+## 3. Link interaction
 
-## 3. Chip interaction
-
-- **Click / tap** the chip → open the resource's target (for `link`, open the URL in a new tab;
+- **Click / tap** the link → open the resource's target (for `link`, open the URL in a new tab;
   other types open their preview).
-- **Long-press (mobile) / a menu item (desktop)** → open the resource for **editing** in the
-  Resources drawer (`Resources.tsx`). Editing the URL/title happens there, not inline.
+- **Long-press (mobile) / right-click (desktop)** → open the resource's **preview panel**, which is
+  where the title/URL/body are edited. The panel is owned by `InlineResourcesProvider`, so a link
+  anywhere in the workspace can open it.
 
 ## 4. Per-element attach menu
 
-Replace each element's delete **✕** with a **⋯ menu** containing:
-- **Delete** (the current remove action), and
-- **Attach resource** → opens a **picker** listing the goal's `resources`; selecting one inserts its
-  `{{res:id}}` chip at the caret / end of the field.
+Each element's delete **✕** became a **⋯ menu** (`ElementActionsMenu`, `vertical` for a ⋮
+trigger) containing:
 
-Applies to: **options, reality actions/obstacles, checklist tasks, and target title.**
-Does **NOT** apply to: **goal title, goal description** (owner decision — attaching a resource to a
-goal's own name/description is out of scope).
+- **Attach resource** → a **picker dialog** listing the goal's **not-yet-attached** resources
+  (icon + name + type; anything already referenced by this element is filtered out, so the same
+  resource can't land on the same place twice),
+  sized like `ConfirmDialog` (`w-[calc(100%-2rem)] max-w-[440px] sm:max-w-[600px]`) so it never runs
+  edge-to-edge on a phone; picking one inserts its `{{res:id}}` link, and
+- **Delete** (the element's existing remove action), in red.
 
-The menu must follow the existing menu conventions (white surface, rounded, hairline, shadow — see
-CLAUDE.md dropdown anatomy). Reuse the web dropdown primitives already used elsewhere.
+Applies to: **options, reality actions/obstacles, checklist tasks, and targets** — on a target the
+menu carries *Attach resource* + *Delete target* (mobile card and the desktop table, whose last
+column is now **Actions** instead of Delete). It does **not** apply to **goal title / description**
+(owner decision), nor to the checklist rows inside the *create-target* sheet (nothing to attach to
+before the target exists).
+
+Placement: the link is appended at the **end** of the field's text (the menu is used from the read
+view, so there is no caret). If the token wouldn't fit within the field's limit, the attach is
+refused with a toast rather than saving an over-length value.
+
+The menu follows the existing menu conventions — white surface, rounded, hairline, shadow — using
+the shared web dropdown primitives. It is **hidden until the row is hovered or focused**
+(`REVEAL_ON_ROW_ACTIVITY`): tabbing into a row reveals the menu at the same moment the inline
+editing caret appears. On options and reality items it floats over the text rather than reserving
+a column, so the text keeps the full width; while hidden it is `pointer-events-none` so it can't
+swallow a click meant for the text underneath.
+
+**Placement follows the text** (`useIsSingleLine` + `rowControlPlacement`): a row's floating
+controls sit **vertically centred** beside a one-line element and jump to the **top-right** as soon
+as the text wraps, so they never hover mid-paragraph. The same rule moves the checklist row's
+deadline control. On an option card the menu is additionally held clear of the rating badge on the
+card's corner (`right-9`) — overlapping the text is fine, overlapping the smiley is not.
+
+**Options card layout** (owner decision, 2026-08-02): the **⋮ menu sits inside the card**, floated
+top-right of the strategy text, and the **rating smiley moved out to the card's top-right edge** as
+the circle badge the menu used to occupy. The menu's delete item reads **"Delete option"**; the
+checklist one reads **"Delete task"**.
+
+Because the Options menu now renders *inside* an `InlineText` read view, `ElementActionsMenu` wraps
+itself in a `display: contents` span that stops click propagation — menus and dialogs are portalled
+in the DOM but still bubble through the React tree, which would otherwise drop the field into edit
+mode and unmount the open menu.
 
 ## 5. Deleting a resource that is attached
 
-When a resource is deleted (from the Resources tab or the chip's edit view) and it is referenced by
-one or more element tokens:
-- Show a **warning** via `ConfirmDialog`: it is attached inside other elements; deleting it will turn
-  those references into plain text.
-- On confirm: **replace each `{{res:id}}` token with plain text = the resource's title** (short,
-  always within the field limit, non-clickable). Nothing disappears and no broken link remains —
-  only the clickable reference is lost. (Owner decision, over "put back the full URL" and "remove
-  entirely".)
-- Finding the referencing elements: scan the goal's option/reality/checklist/target text for the
-  token. This is client-side (all of a goal's data is loaded); a backend sweep can be added later if
-  needed.
+When a resource is deleted from the Resources section and it is referenced by one or more element
+tokens:
+
+- Show a **warning** via `ConfirmDialog` (an ⓘ icon before the explanation): it is attached in N
+  places; deleting it will turn those references into plain text.
+- On confirm: **replace each `{{res:id}}` token with plain text = the resource's title** (truncated
+  if that would exceed the field's limit), then delete the resource. Nothing disappears and no
+  broken link remains — only the clickable reference is lost. (Owner decision, over "put back the
+  full URL" and "remove entirely".)
+- Finding the referencing elements: `planResourceDetach` scans the goal's option / reality /
+  checklist / target text for **that resource's** token (matching *any* token would inflate every
+  other resource's warning). This is client-side (all of a goal's data is loaded); a backend sweep
+  can be added later if needed.
+- A resource with **no** attachments is still deleted with no extra confirmation, as before.
 
 ## 6. Non-goals / later
 
-- **Android parity** — mirror after the web MVP lands (Compose `InlineEditText`, the Android menu
-  kit, Apollo). Out of scope for the first build.
-- **Backend** — no schema change for the token itself (text stays a string). Only reuse the existing
-  resource create/delete endpoints. A server-side referential sweep for step 5 is optional/later.
-- Attaching to goal title/description; multiple-resource batch attach; reordering chips.
+- **Android parity** — still to do: mirror the inline link, the ⋮ menu + picker, the overflow modal and
+  the delete warning in Compose (`InlineEditText`, the Android menu kit, Apollo). The token format
+  and the server data are already shared, so an Android client that doesn't know about tokens would
+  show the raw `{{res:id}}` text — that is the main reason to keep parity close behind.
+- **Backend** — no schema change for the token itself (text stays a string); only the existing
+  resource create/delete endpoints are reused. A server-side referential sweep for step 5 is
+  optional/later.
+- Attaching to goal title/description; multiple-resource batch attach; reordering links; inserting
+  a link at the caret while editing.
 
-## 7. Build order (suggested MVP)
+## 7. Build order (as built)
 
-1. Token model + renderer (`links.ts` segment + `InlineText` chip) — read-only display first.
-2. Overflow auto-convert modal (replaces the `handlePaste` stopgap).
-3. Per-element ⋯ menu + resource picker (attach existing).
-4. Delete-attached-resource warning + token→plain-text degrade.
-5. Then Android parity.
+1. ✅ Token model + renderer (`links.ts` segments + the `InlineText` inline link).
+2. ✅ Overflow auto-convert modal (replaces the `handlePaste` "too long" stopgap on the paths where
+   a swap is possible; the message remains for URLs that can't be swapped).
+3. ✅ Per-element ⋯ menu + resource picker (attach existing).
+4. ✅ Delete-attached-resource warning + token→plain-text degrade.
+5. ⬜ Android parity.
 
-Verify each step against pixels (CLAUDE.md rule #4) and add Vitest coverage for the token
-parse/render and the overflow/delete flows.
+Tests: `src/lib/spira/links.test.ts` (token parsing), `src/lib/spira/resources.test.ts` (detach
+planning, per-resource scoping, limit truncation), `src/components/spira/Inline.resources.test.tsx`
+(link render/open, raw token while editing, the convert modal, attaching from the menu), and the
+end-to-end flow in `e2e/resource-attachments.spec.ts`.

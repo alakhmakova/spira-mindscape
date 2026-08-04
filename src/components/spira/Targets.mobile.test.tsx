@@ -14,8 +14,23 @@ function checklistTargetFixture(): Extract<Target, { type: "checklist" }> {
   };
 }
 
+/**
+ * The mobile card keeps its progress controls behind "Update progress" (the reference-card
+ * layout), so every test opens that panel first.
+ */
+async function openProgress(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /Update progress/ }));
+}
+
+/** Adding a task starts as a link that expands into the input. */
+async function openAddTask(user: ReturnType<typeof userEvent.setup>) {
+  await openProgress(user);
+  await user.click(screen.getByRole("button", { name: "Add task" }));
+}
+
 describe("TargetRow (mobile) — manual checklist task entry", () => {
-  it("shows an 'Add task…' input for checklist targets", () => {
+  it("shows an 'Add task…' input for checklist targets", async () => {
+    const user = userEvent.setup();
     render(
       <TargetRow
         target={checklistTargetFixture()}
@@ -23,6 +38,7 @@ describe("TargetRow (mobile) — manual checklist task entry", () => {
         onRemove={vi.fn()}
       />,
     );
+    await openAddTask(user);
 
     expect(
       screen.getByPlaceholderText("Add task… (Enter to confirm)"),
@@ -37,6 +53,7 @@ describe("TargetRow (mobile) — manual checklist task entry", () => {
     render(
       <TargetRow target={target} onUpdate={onUpdate} onRemove={vi.fn()} />,
     );
+    await openAddTask(user);
 
     const input = screen.getByPlaceholderText("Add task… (Enter to confirm)");
     await user.type(input, "Buy domain name");
@@ -65,6 +82,7 @@ describe("TargetRow (mobile) — manual checklist task entry", () => {
     render(
       <TargetRow target={target} onUpdate={onUpdate} onRemove={vi.fn()} />,
     );
+    await openAddTask(user);
 
     const input = screen.getByPlaceholderText("Add task… (Enter to confirm)");
     await user.type(input, "Set up analytics{Enter}");
@@ -90,6 +108,7 @@ describe("TargetRow (mobile) — manual checklist task entry", () => {
         onRemove={vi.fn()}
       />,
     );
+    await openAddTask(user);
 
     const input: HTMLInputElement = screen.getByPlaceholderText(
       "Add task… (Enter to confirm)",
@@ -111,6 +130,7 @@ describe("TargetRow (mobile) — manual checklist task entry", () => {
         onRemove={vi.fn()}
       />,
     );
+    await openAddTask(user);
 
     const input = screen.getByPlaceholderText("Add task… (Enter to confirm)");
     await user.type(input, "   {Enter}");

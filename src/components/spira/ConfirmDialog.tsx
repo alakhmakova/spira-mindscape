@@ -8,11 +8,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type React from "react";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * Centered confirmation dialog. White card, hairline border, drop-shadow.
- * Cancel = neutral outlined ("No, go back"), Confirm = solid red destructive.
+ * Cancel = neutral outlined ("No, go back"), Confirm = solid red destructive —
+ * or solid teal (`tone="primary"`) when the action creates something rather than removes it.
  */
 export function ConfirmDialog({
   open,
@@ -21,14 +24,18 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Yes, remove",
   cancelLabel = "No, go back",
+  tone = "destructive",
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   title: string;
-  description: string;
+  /** Plain text, or a node when the explanation needs an icon or emphasis inside it. */
+  description: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** "destructive" (default) = red confirm; "primary" = teal, for a constructive action. */
+  tone?: "destructive" | "primary";
   onConfirm: () => void;
 }) {
   return (
@@ -56,7 +63,12 @@ export function ConfirmDialog({
             {cancelLabel}
           </AlertDialogCancel>
           <AlertDialogAction
-            className="h-10 px-5 rounded-md bg-[#d13239] text-white font-semibold hover:bg-[#b0292f]"
+            className={cn(
+              "h-10 px-5 rounded-md text-white font-semibold",
+              tone === "primary"
+                ? "bg-primary hover:bg-primary/90"
+                : "bg-[#d13239] hover:bg-[#b0292f]",
+            )}
             onClick={onConfirm}
           >
             {confirmLabel}

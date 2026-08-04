@@ -203,7 +203,7 @@ describe("OptionsList — add strategy", () => {
 // ── Remove strategy ──────────────────────────────────────────────────────────
 
 describe("OptionsList — remove strategy", () => {
-  it("removes the card via its Remove button", async () => {
+  it("removes the card via Delete in its ⋯ menu", async () => {
     const user = userEvent.setup();
     render(
       <OptionsList
@@ -215,8 +215,10 @@ describe("OptionsList — remove strategy", () => {
 
     const beta = screen.getByText("Beta").closest("li")!;
     await user.click(
-      within(beta).getByRole("button", { name: "Remove strategy" }),
+      within(beta).getByRole("button", { name: "Strategy actions" }),
     );
+    // The menu is portalled out of the card, so query it from the document.
+    await user.click(screen.getByRole("menuitem", { name: "Delete option" }));
 
     expect(store.removeOption).toHaveBeenCalledWith("goal-1", "o2");
   });
@@ -225,7 +227,7 @@ describe("OptionsList — remove strategy", () => {
 // ── Reorder mode ─────────────────────────────────────────────────────────────
 
 describe("OptionsList — reorder mode", () => {
-  it("hides the add field and Remove buttons and shows the drag hint", () => {
+  it("hides the add field and per-card menus and shows the drag hint", () => {
     render(
       <OptionsList
         goal={goalFixture([option("o1", "Alpha"), option("o2", "Beta")])}
@@ -238,7 +240,7 @@ describe("OptionsList — reorder mode", () => {
       screen.queryByPlaceholderText("Add a strategy…"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Remove strategy" }),
+      screen.queryByRole("button", { name: "Strategy actions" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Drag cards to reorder.")).toBeInTheDocument();
   });
