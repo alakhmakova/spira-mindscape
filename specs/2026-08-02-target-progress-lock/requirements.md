@@ -3,7 +3,7 @@
 A padlock on every target in **Will do**. Locking pins the target's **progress** so a stray tap
 can't move it; the target's **text stays editable** either way (title, unit, deadline, task names).
 
-Status: **built on the web (2026-08-02)**. Android parity is open.
+Status: **built on the web (2026-08-02)** and **on Android (2026-08-04)**.
 
 ## Behaviour
 
@@ -18,8 +18,10 @@ Status: **built on the web (2026-08-02)**. Android parity is open.
 - **What it never stops** — the target title, the unit, the deadline, task text, attaching
   resources, or deleting the target itself.
 - **Refusals explain themselves**: "This target is locked. Unlock it to change its progress." —
-  as a toast at the point of the tap, inline under the numeric editor, and as a banner at the top
-  of the tasks panel.
+  on the web as a toast at the point of the tap, inline under the numeric editor, and as a banner
+  at the top of the tasks panel. On Android the expanded card carries the same sentence (naming the
+  padlock) under its controls, and the controls themselves go inert — a phone has no toast surface
+  in the card, and a message that only appears after a refused tap is easy to miss.
 
 ## Storage
 
@@ -74,6 +76,19 @@ A title carrying a resource tag is quoted as prose in dialogs and toasts via `us
   `warnProgressLocked()`, and the `locked` prop threaded through `NumericBody`, `ChecklistEditor`
   and `TasksResizableSheet`.
 
-Tests: `TargetServiceTest` (persists both directions; an absent flag leaves the choice alone) and
-`progress.test.ts` (the default, the explicit override in both directions, and `null` as "no
-choice").
+### Android (2026-08-04)
+
+- `ui/util/Progress.kt` — `isProgressLocked`, `progressSteps`, `formatPercent`: the Kotlin port of
+  `progress.ts`, so both surfaces derive the default and the precision the same way.
+- `ui/goals/TargetCard.kt` — the whole card: `DeadlineTile` (the illustrated artwork under
+  `res/drawable-xxhdpi/tile_*.png`), `ProgressLockBadge`, the Kale-200 footer, the numeric editor
+  with its typing preview, the binary toggle, the "Steps"-shaped task rows and Close / Delete.
+- `data/goals/GoalDetail.kt`, `GoalsRepository.kt`, `ui/goals/GoalWorkspaceViewModel.kt` — the
+  `progressLocked` field on the wire plus `setTargetProgressLocked` / `setTargetDeadline` /
+  `setTargetNumbers` / `setTargetUnit` / `setChecklistTaskDeadline`.
+
+Tests: `TargetServiceTest` (persists both directions; an absent flag leaves the choice alone),
+`progress.test.ts` and its Kotlin twin `ui/util/ProgressTest.kt` (the default, the explicit
+override in both directions, and `null` as "no choice"), and `ui/goals/TargetCardTest.kt` (the
+footer, the fractional percentage, the padlock, and a locked target refusing progress while its
+text stays editable). `VisualCheckTargetCardTest` renders the four deadline states to a PNG.

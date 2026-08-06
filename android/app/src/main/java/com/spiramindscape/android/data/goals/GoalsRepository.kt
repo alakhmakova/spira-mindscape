@@ -55,6 +55,17 @@ interface GoalsRepository {
     suspend fun setTargetDone(targetId: String, done: Boolean): TargetItem
     suspend fun setTargetCurrent(targetId: String, current: Double): TargetItem
     suspend fun setChecklistItems(targetId: String, items: List<ChecklistItemModel>): TargetItem
+    /** The user's explicit progress lock — see `isProgressLocked` for what null means. */
+    suspend fun setTargetProgressLocked(targetId: String, locked: Boolean): TargetItem
+    suspend fun setTargetDeadline(targetId: String, deadline: String?): TargetItem
+    /** Numeric bounds and unit (the card edits current / total / start / unit in place). */
+    suspend fun setTargetNumbers(
+        targetId: String,
+        current: Double? = null,
+        total: Double? = null,
+        start: Double? = null,
+    ): TargetItem
+    suspend fun setTargetUnit(targetId: String, unit: String?): TargetItem
 
     // Goals
     suspend fun createGoal(title: String, description: String?, confidence: Int, deadline: String?): String
@@ -128,7 +139,10 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
                     id = t.id, type = t.type, title = t.title, progress = t.progress,
                     deadline = t.deadline, achievedAt = t.achievedAt, done = t.done,
                     current = t.current, total = t.total, start = t.start, unit = t.unit,
-                    items = t.items.map { ChecklistItemModel(it.id, it.text, it.done) },
+                    progressLocked = t.progressLocked, createdAt = t.createdAt,
+                    items = t.items.map {
+                        ChecklistItemModel(it.id, it.text, it.done, it.deadline, it.achievedAt)
+                    },
                 )
             },
             resources = g.resources.map {
@@ -159,11 +173,38 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
                             id = if (it.id.isBlank()) Optional.Absent else Optional.present(it.id),
                             text = it.text,
                             done = Optional.present(it.done),
+                            // `items` replaces the whole list, so a task's deadline has to be sent
+                            // back on every write or ticking one task would clear every date.
+                            deadline = Optional.present(it.deadline),
+                            achievedAt = Optional.present(it.achievedAt),
                         )
                     },
                 ),
             ),
         )
+
+    override suspend fun setTargetProgressLocked(targetId: String, locked: Boolean): TargetItem =
+        updateTarget(targetId, UpdateTargetInput(progressLocked = Optional.present(locked)))
+
+    override suspend fun setTargetDeadline(targetId: String, deadline: String?): TargetItem =
+        updateTarget(targetId, UpdateTargetInput(deadline = Optional.present(deadline)))
+
+    override suspend fun setTargetNumbers(
+        targetId: String,
+        current: Double?,
+        total: Double?,
+        start: Double?,
+    ): TargetItem = updateTarget(
+        targetId,
+        UpdateTargetInput(
+            current = Optional.presentIfNotNull(current),
+            total = Optional.presentIfNotNull(total),
+            start = Optional.presentIfNotNull(start),
+        ),
+    )
+
+    override suspend fun setTargetUnit(targetId: String, unit: String?): TargetItem =
+        updateTarget(targetId, UpdateTargetInput(unit = Optional.present(unit)))
 
     // ---- Goals ----
 
@@ -274,7 +315,8 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
             id = t.id, type = t.type, title = t.title, progress = t.progress,
             deadline = t.deadline, achievedAt = t.achievedAt, done = t.done,
             current = t.current, total = t.total, start = t.start, unit = t.unit,
-            items = t.items.map { ChecklistItemModel(it.id, it.text, it.done) },
+            progressLocked = t.progressLocked, createdAt = t.createdAt,
+            items = t.items.map { ChecklistItemModel(it.id, it.text, it.done, it.deadline, it.achievedAt) },
         )
     }
 
@@ -290,15 +332,24 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
         total: Double?,
         start: Double?,
         unit: String?,
+        progressLocked: Boolean?,
+        createdAt: String?,
         items: List<ChecklistItemModel>,
     ): TargetItem {
         val p = progress.toFloat().coerceIn(0f, 1f)
         val achieved = achievedAt != null
         return when (type) {
-            "binary" -> TargetItem.Binary(id, title, p, deadline, achieved, done ?: false)
-            "numeric" -> TargetItem.Numeric(id, title, p, deadline, achieved, current ?: 0.0, total, start, unit)
-            "checklist" -> TargetItem.Checklist(id, title, p, deadline, achieved, items)
-            else -> TargetItem.Other(id, title, p, deadline, achieved)
+            "binary" -> TargetItem.Binary(
+                id, title, p, deadline, achieved, done ?: false, progressLocked, achievedAt, createdAt,
+            )
+            "numeric" -> TargetItem.Numeric(
+                id, title, p, deadline, achieved, current ?: 0.0, total, start, unit,
+                progressLocked, achievedAt, createdAt,
+            )
+            "checklist" -> TargetItem.Checklist(
+                id, title, p, deadline, achieved, items, progressLocked, achievedAt, createdAt,
+            )
+            else -> TargetItem.Other(id, title, p, deadline, achieved, progressLocked, achievedAt, createdAt)
         }
     }
 }

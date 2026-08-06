@@ -56,6 +56,16 @@ val Salt1000 = Color(0xFF222525)
 
 val White = Color(0xFFFFFFFF)
 
+// ── Extended ramps ───────────────────────────────────────────────────────────
+// The full-resolution ramps (CLAUDE.md → "Extended ramps (also allowed)"). Only the steps
+// something actually uses are declared here — add more from the documented table as needed,
+// never an in-between shade of your own.
+
+val Brand1100 = Color(0xFF003737)          // deep teal copy on white, inside a teal panel
+val Success400 = Color(0xFF5FCD91)         // "connected" state dot
+val Warning300 = Color(0xFFFFDEA1)         // soft amber that reads on a teal ground
+val Warning400 = Color(0xFFEBAF00)         // "not connected" state dot
+
 // ── Semantic tokens (what components reference) ──────────────────────────────
 
 val SpiraTeal = Kale500                    // UI primary

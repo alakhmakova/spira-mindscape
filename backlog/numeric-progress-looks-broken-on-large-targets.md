@@ -98,3 +98,8 @@ Covered by unit tests in `src/lib/spira/progress.test.ts` — the reported 10 00
 coarse targets staying whole, trailing-zero trimming, the 0/100 guards, and `progressSteps` /
 `goalProgressSteps`. Verified in the browser on a real 1 900 000 SEK target, including typing
 digit by digit without leaving the field.
+
+Carried to Android on 2026-08-04: `android/.../ui/util/Progress.kt` is a line-for-line port, used
+by the target card's footer and numeric editor and by the goal header's progress figure, with the
+same cases asserted in `ui/util/ProgressTest.kt`. The typing preview came across too — the card's
+percentage and the bar both follow what is being typed, while the value still commits on blur/Done.

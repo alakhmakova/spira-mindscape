@@ -16,6 +16,17 @@ open class FakeGoalsRepository : GoalsRepository {
     override suspend fun setTargetCurrent(targetId: String, current: Double): TargetItem = throw NotImplementedError()
     override suspend fun setChecklistItems(targetId: String, items: List<ChecklistItemModel>): TargetItem =
         throw NotImplementedError()
+    override suspend fun setTargetProgressLocked(targetId: String, locked: Boolean): TargetItem =
+        throw NotImplementedError()
+    override suspend fun setTargetDeadline(targetId: String, deadline: String?): TargetItem =
+        throw NotImplementedError()
+    override suspend fun setTargetNumbers(
+        targetId: String,
+        current: Double?,
+        total: Double?,
+        start: Double?,
+    ): TargetItem = throw NotImplementedError()
+    override suspend fun setTargetUnit(targetId: String, unit: String?): TargetItem = throw NotImplementedError()
 
     override suspend fun createGoal(title: String, description: String?, confidence: Int, deadline: String?): String =
         throw NotImplementedError()

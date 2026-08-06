@@ -137,6 +137,25 @@ does **not** type — only asserts + Cancel) is kept enabled, mirroring the alre
 `advanceTimeBy(...)` only where an animation must progress, or `Espresso`/`ComposeTestRule`
 idling-resource tweaks), then re-enable the ignored test.
 
+## Also affected 2026-08-04 — `OptionsDragReorderTest` never finishes on the dev machine
+
+While bringing the Android target cards up to web parity, `OptionsDragReorderTest` stopped
+finishing: the Gradle test executor starts, prints nothing, and is still running after 10 minutes
+(no `AppNotIdleException`, no failure — it just hangs). Two experiments pinned it down:
+
+1. A **minimal repro** of the interaction the test drives — a `Box` with
+   `detectDragGesturesAfterLongPress` wrapping an `InlineRichText`, given the same
+   `down / advanceEventTime(700) / moveBy × 12 / up` gesture — **passes in ~1 minute**. So neither
+   the gesture composition nor the new inline-text read view is at fault.
+2. Running the test on **unmodified `main`** (`git stash -u`, same command, same machine) hangs
+   **exactly the same way**. It is a pre-existing environment problem, not a regression.
+
+So this class belongs to the same family as the `ModalBottomSheet` case below: a NATIVE-graphics
+Robolectric test that drives an animated `GoalWorkspaceScreen` and never reaches idle. Until the
+underlying cause is fixed, treat `OptionsDragReorderTest` as unreliable locally and rely on CI (or
+an emulator/Maestro run) for drag-and-drop coverage; the drag behaviour itself is exercised by
+`OptionsDragReorderTest`'s logic twin in `applyTargetView`-style unit tests and by hand on device.
+
 ## (Original, cross-test) Resolution notes
 
 Why not the alternatives: `mainClock.autoAdvance = false` (Google's usual answer for
