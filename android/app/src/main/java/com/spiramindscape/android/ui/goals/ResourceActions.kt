@@ -3,6 +3,8 @@ package com.spiramindscape.android.ui.goals
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -13,12 +15,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import androidx.core.text.HtmlCompat
+import com.spiramindscape.android.data.goals.ResourceItem
 import java.io.File
 
 /** Copy plain text to the clipboard. */
 fun copyPlainText(context: Context, label: String, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+/**
+ * Follow an inline resource link (a `{{res:id}}` token tapped inside a target title, a task, an
+ * option or a reality item) to the right place for its kind: a link goes to the site, a note opens
+ * the note editor, a file opens the full-screen viewer, and a contact opens the mail app.
+ * A resource that no longer exists opens nothing.
+ */
+fun openInlineResource(
+    context: Context,
+    resource: ResourceItem?,
+    onOpenFullScreen: (String) -> Unit,
+) {
+    if (resource == null) return
+    when (resource.type) {
+        "link" -> openExternalUri(context, resource.url)
+        "note" -> context.startActivity(
+            NoteEditorActivity.intent(context, resource.id, resource.title ?: "", resource.body ?: ""),
+        )
+        "file" -> onOpenFullScreen(resource.id)
+        else -> resource.email?.takeIf { it.isNotBlank() }?.let { openExternalUri(context, "mailto:$it") }
+    }
+}
+
+/** Open a URI in whatever app handles it; a missing/blank URI or no handler is a no-op. */
+fun openExternalUri(context: Context, uri: String?) {
+    if (uri.isNullOrBlank()) return
+    val normalized = if (uri.contains(":")) uri else "https://$uri"
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(normalized)))
+    }
 }
 
 /** Strip HTML (a note body) to readable plain text for copying. */

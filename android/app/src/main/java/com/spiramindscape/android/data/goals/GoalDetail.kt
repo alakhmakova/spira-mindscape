@@ -22,7 +22,14 @@ data class ConfidenceHistoryEntry(val id: String, val confidence: Int, val at: S
 
 data class TextItem(val id: String, val text: String)
 data class OptionItem(val id: String, val text: String, val selected: Boolean, val position: Int = 0)
-data class ChecklistItemModel(val id: String, val text: String, val done: Boolean)
+/** One checklist task. [deadline]/[achievedAt] are ISO instants, both optional (web parity). */
+data class ChecklistItemModel(
+    val id: String,
+    val text: String,
+    val done: Boolean,
+    val deadline: String? = null,
+    val achievedAt: String? = null,
+)
 
 /**
  * A resource, flat across its four kinds (`note` / `link` / `file` / `email`). The UI switches on
@@ -54,6 +61,19 @@ sealed interface TargetItem {
     val deadline: String?
     val achieved: Boolean
 
+    /**
+     * The user's explicit progress lock, or null when they never chose. Null means "follow the
+     * default": an achieved target locks itself so a stray tap can't undo it (see
+     * `com.spiramindscape.android.ui.util.isProgressLocked`).
+     */
+    val progressLocked: Boolean?
+
+    /** When the target was achieved — the date an achieved card prints on its tile. */
+    val achievedAt: String?
+
+    /** Fallback caption for a target with no deadline: "Created · <date>". */
+    val createdAt: String?
+
     data class Binary(
         override val id: String,
         override val title: String,
@@ -61,6 +81,9 @@ sealed interface TargetItem {
         override val deadline: String?,
         override val achieved: Boolean,
         val done: Boolean,
+        override val progressLocked: Boolean? = null,
+        override val achievedAt: String? = null,
+        override val createdAt: String? = null,
     ) : TargetItem
 
     data class Numeric(
@@ -73,6 +96,9 @@ sealed interface TargetItem {
         val total: Double?,
         val start: Double?,
         val unit: String?,
+        override val progressLocked: Boolean? = null,
+        override val achievedAt: String? = null,
+        override val createdAt: String? = null,
     ) : TargetItem
 
     data class Checklist(
@@ -82,6 +108,9 @@ sealed interface TargetItem {
         override val deadline: String?,
         override val achieved: Boolean,
         val items: List<ChecklistItemModel>,
+        override val progressLocked: Boolean? = null,
+        override val achievedAt: String? = null,
+        override val createdAt: String? = null,
     ) : TargetItem
 
     /** Unknown/other type — shown read-only. */
@@ -91,5 +120,8 @@ sealed interface TargetItem {
         override val progress: Float,
         override val deadline: String?,
         override val achieved: Boolean,
+        override val progressLocked: Boolean? = null,
+        override val achievedAt: String? = null,
+        override val createdAt: String? = null,
     ) : TargetItem
 }

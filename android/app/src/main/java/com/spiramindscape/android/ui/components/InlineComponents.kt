@@ -24,6 +24,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
@@ -57,23 +59,45 @@ fun InlineEditText(
     // explicitly for fields that should commit on Enter even while wrapping (e.g. a Reality item).
     imeAction: ImeAction = if (singleLine) ImeAction.Done else ImeAction.Default,
     textAlign: TextAlign = TextAlign.Start,
+    // Take focus (and raise the keyboard) as soon as the field appears — used where a read view
+    // swaps itself for the editor on tap, so the tap that opened it also lands the caret.
+    autoFocus: Boolean = false,
+    // Observes each keystroke WITHOUT committing — for a live preview (the numeric progress bar
+    // follows what is being typed). The value itself still commits on blur/Done only.
+    onTextChanged: (String) -> Unit = {},
     onFocusChanged: (Boolean) -> Unit = {},
 ) {
     var text by remember { mutableStateOf(value) }
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    // The last text this field actually sent out. Compared against instead of [value] so a commit
+    // is idempotent: a field that commits on Done and is then removed (the "Add task" row closes
+    // itself) would otherwise be committed a SECOND time by the dispose hook below — and the
+    // caller would get two identical writes, or two identical tasks.
+    var committed by remember { mutableStateOf(value) }
+
+    LaunchedEffect(autoFocus) { if (autoFocus) focusRequester.requestFocus() }
 
     // Adopt an external change to `value` only when the user is NOT editing — otherwise a
     // recomposition (progress recompute, another field's optimistic update, a refetch) must not
     // wipe the text the user is currently typing. This is the fix for "my edits aren't saved".
-    LaunchedEffect(value) { if (!focused) text = value }
+    LaunchedEffect(value) {
+        if (!focused) {
+            text = value
+            committed = value
+        }
+    }
 
     fun commit() {
         if (required && text.isBlank()) {
             text = value // revert — required fields never save empty
             return
         }
-        if (text != value) onCommit(text)
+        if (text != committed) {
+            committed = text
+            onCommit(text)
+        }
     }
 
     // If this row is disposed while still focused (e.g. scrolled away / navigated), commit the
@@ -81,12 +105,12 @@ fun InlineEditText(
     // focus off: a focused BasicTextField keeps its cursor blink animation running, and leaving
     // it dangling past disposal is what causes a cursor to "blink forever" — the field is gone,
     // but nothing ever told the animation to stop.
-    val pending = rememberUpdatedState(Triple(text, value, required))
+    val pending = rememberUpdatedState(Triple(text, committed, required))
     val wasFocused = rememberUpdatedState(focused)
     DisposableEffect(Unit) {
         onDispose {
-            val (t, v, req) = pending.value
-            if (t != v && !(req && t.isBlank())) onCommit(t)
+            val (t, last, req) = pending.value
+            if (t != last && !(req && t.isBlank())) onCommit(t)
             if (wasFocused.value) focusManager.clearFocus(force = true)
         }
     }
@@ -96,8 +120,9 @@ fun InlineEditText(
 
     BasicTextField(
         value = text,
-        onValueChange = { text = it },
+        onValueChange = { text = it; onTextChanged(it) },
         modifier = (if (centered) modifier.fillMaxWidth() else modifier)
+            .focusRequester(focusRequester)
             .onFocusChanged { state ->
                 if (focused && !state.isFocused) commit()
                 focused = state.isFocused

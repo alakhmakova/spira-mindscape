@@ -32,7 +32,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,17 +64,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -94,20 +89,25 @@ import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.data.goals.TargetItem
 import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.launch
-import com.spiramindscape.android.ui.components.AddItemRow
+import com.spiramindscape.android.ui.ai.WithAiAssistant
+import com.spiramindscape.android.ui.components.CelebrationOverlay
 import com.spiramindscape.android.ui.components.ConfidenceStepper
 import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.DeadlineLinkField
+import com.spiramindscape.android.ui.components.ElementActionsMenu
 import com.spiramindscape.android.ui.components.EmptyLine
 import com.spiramindscape.android.ui.components.FieldLabel
 import com.spiramindscape.android.ui.components.InlineEditText
+import com.spiramindscape.android.ui.components.InlineRichText
+import com.spiramindscape.android.ui.components.InlineResourcesValue
+import com.spiramindscape.android.ui.components.attachTo
+import com.spiramindscape.android.ui.components.ProvideInlineResources
 import com.spiramindscape.android.ui.components.SectionLabel
 import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
 import com.spiramindscape.android.ui.components.SpiraCard
 import com.spiramindscape.android.ui.components.SpiraTopBar
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
-import com.spiramindscape.android.ui.components.SpiraLinearProgress
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.icons.SpiraIcons
@@ -115,7 +115,10 @@ import com.spiramindscape.android.ui.theme.Guava300
 import com.spiramindscape.android.ui.theme.Kale200
 import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
+import com.spiramindscape.android.ui.util.FieldLimits
 import com.spiramindscape.android.ui.util.deadlineCountdownParts
+import com.spiramindscape.android.ui.util.formatPercent
+import com.spiramindscape.android.ui.util.goalProgressSteps
 import kotlin.math.roundToInt
 
 /**
@@ -137,11 +140,21 @@ data class GoalWorkspaceActions(
     val onDeleteGoal: () -> Unit = {},
     val onSetTargetDone: (targetId: String, done: Boolean) -> Unit = { _, _ -> },
     val onSetNumeric: (targetId: String, current: Double) -> Unit = { _, _ -> },
+    /** Current / total / start together — the card edits all three in place (null = unchanged). */
+    val onSetTargetNumbers: (
+        targetId: String, current: Double?, total: Double?, start: Double?,
+    ) -> Unit = { _, _, _, _ -> },
+    val onSetTargetUnit: (targetId: String, unit: String?) -> Unit = { _, _ -> },
     val onToggleChecklistItem: (targetId: String, itemId: String) -> Unit = { _, _ -> },
     val onAddChecklistTask: (targetId: String, text: String) -> Unit = { _, _ -> },
     val onUpdateChecklistTask: (targetId: String, itemId: String, text: String) -> Unit = { _, _, _ -> },
     val onRemoveChecklistTask: (targetId: String, itemId: String) -> Unit = { _, _ -> },
+    val onSetChecklistTaskDeadline: (
+        targetId: String, itemId: String, deadline: String?,
+    ) -> Unit = { _, _, _ -> },
     val onSetTargetTitle: (targetId: String, title: String) -> Unit = { _, _ -> },
+    val onSetTargetDeadline: (targetId: String, deadline: String?) -> Unit = { _, _ -> },
+    val onSetTargetProgressLocked: (targetId: String, locked: Boolean) -> Unit = { _, _ -> },
     val onAddTarget: (
         title: String, type: String, deadline: String?,
         start: Double?, total: Double?, unit: String?, checklist: List<String>,
@@ -189,45 +202,70 @@ fun GoalWorkspaceRoute(
         onPauseOrDispose { }
     }
 
-    GoalWorkspaceScreen(
-        state = state,
-        user = user,
-        allGoals = allGoals,
-        onLogout = onLogout,
-        onOpenGoal = onOpenGoal,
-        actions = GoalWorkspaceActions(
-            onBack = onBack,
-            onRetry = viewModel::load,
-            onSetGoalTitle = viewModel::setGoalTitle,
-            onSetGoalDescription = viewModel::setGoalDescription,
-            onSetConfidence = viewModel::setConfidence,
-            onSetDeadline = viewModel::setDeadline,
-            onDeleteGoal = { viewModel.deleteGoal(onDeleted = onBack) },
-            onSetTargetDone = viewModel::setTargetDone,
-            onSetNumeric = viewModel::setNumericCurrent,
-            onToggleChecklistItem = viewModel::toggleChecklistItem,
-            onAddChecklistTask = viewModel::addChecklistTask,
-            onUpdateChecklistTask = viewModel::updateChecklistTask,
-            onRemoveChecklistTask = viewModel::removeChecklistTask,
-            onSetTargetTitle = viewModel::setTargetTitle,
-            onAddTarget = viewModel::addTarget,
-            onDeleteTarget = viewModel::deleteTarget,
-            onAddReality = viewModel::addReality,
-            onUpdateReality = viewModel::updateReality,
-            onRemoveReality = viewModel::removeReality,
-            onAddOption = viewModel::addOption,
-            onSetOptionText = viewModel::setOptionText,
-            onSelectOption = viewModel::selectOption,
-            onDeselectOption = viewModel::deselectOption,
-            onRemoveOption = viewModel::removeOption,
-            onReorderOption = viewModel::reorderOptions,
-            onAddResource = viewModel::addResource,
-            onUpdateResource = { id, title, body, url, name, email, role, phone, mime, dataUrl ->
-                viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
-            },
-            onRemoveResource = viewModel::removeResource,
-        ),
+    // The assistant, scoped to this goal, swiped in from the right edge.
+    var assistantOpen by remember { mutableStateOf(false) }
+    val workspaceActions = GoalWorkspaceActions(
+        onBack = onBack,
+        onRetry = viewModel::load,
+        onSetGoalTitle = viewModel::setGoalTitle,
+        onSetGoalDescription = viewModel::setGoalDescription,
+        onSetConfidence = viewModel::setConfidence,
+        onSetDeadline = viewModel::setDeadline,
+        onDeleteGoal = { viewModel.deleteGoal(onDeleted = onBack) },
+        onSetTargetDone = viewModel::setTargetDone,
+        onSetNumeric = viewModel::setNumericCurrent,
+        onSetTargetNumbers = viewModel::setTargetNumbers,
+        onSetTargetUnit = viewModel::setTargetUnit,
+        onToggleChecklistItem = viewModel::toggleChecklistItem,
+        onAddChecklistTask = viewModel::addChecklistTask,
+        onUpdateChecklistTask = viewModel::updateChecklistTask,
+        onRemoveChecklistTask = viewModel::removeChecklistTask,
+        onSetChecklistTaskDeadline = viewModel::setChecklistTaskDeadline,
+        onSetTargetTitle = viewModel::setTargetTitle,
+        onSetTargetDeadline = viewModel::setTargetDeadline,
+        onSetTargetProgressLocked = viewModel::setTargetProgressLocked,
+        onAddTarget = viewModel::addTarget,
+        onDeleteTarget = viewModel::deleteTarget,
+        onAddReality = viewModel::addReality,
+        onUpdateReality = viewModel::updateReality,
+        onRemoveReality = viewModel::removeReality,
+        onAddOption = viewModel::addOption,
+        onSetOptionText = viewModel::setOptionText,
+        onSelectOption = viewModel::selectOption,
+        onDeselectOption = viewModel::deselectOption,
+        onRemoveOption = viewModel::removeOption,
+        onReorderOption = viewModel::reorderOptions,
+        onAddResource = viewModel::addResource,
+        onUpdateResource = { id, title, body, url, name, email, role, phone, mime, dataUrl ->
+            viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
+        },
+        onRemoveResource = viewModel::removeResource,
     )
+
+    WithAiAssistant(
+        goalId = goalId,
+        open = assistantOpen,
+        onOpenChange = { assistantOpen = it },
+        onApplyProposal = { proposal, excluded ->
+            val goal = (state as? GoalUiState.Content)?.goal
+            if (goal == null) {
+                "The goal is still loading — try again in a moment."
+            } else {
+                applyProposalToGoal(proposal, excluded, goal, workspaceActions)
+            }
+        },
+        goal = (state as? GoalUiState.Content)?.goal,
+    ) {
+        GoalWorkspaceScreen(
+            state = state,
+            user = user,
+            allGoals = allGoals,
+            onLogout = onLogout,
+            onOpenGoal = onOpenGoal,
+            onOpenAssistant = { assistantOpen = true },
+            actions = workspaceActions,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -239,6 +277,7 @@ fun GoalWorkspaceScreen(
     allGoals: List<GoalSummary> = emptyList(),
     onLogout: () -> Unit = {},
     onOpenGoal: (String) -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
 ) {
     var confirmDeleteGoal by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -251,9 +290,9 @@ fun GoalWorkspaceScreen(
     val rootFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(pagerState.currentPage) { rootFocusManager.clearFocus() }
     // Sort/filter in this header apply to the TARGETS tab.
-    var targetSort by remember { mutableStateOf(TargetSort.Name) }
-    var targetSortAscending by remember { mutableStateOf(true) }
-    var targetFilter by remember { mutableStateOf(TargetFilter.All) }
+    // The chosen sort/filter is remembered across sessions (web parity: the filters that persist
+    // in localStorage), so a user who only ever looks at open targets doesn't re-pick every visit.
+    val targetView = rememberTargetViewState()
     // The "add option" FAB (below, in this same Scaffold) opens a create form — like the goal and
     // target create sheets — rather than an inline draft card.
     var showNewOptionSheet by remember { mutableStateOf(false) }
@@ -291,7 +330,7 @@ fun GoalWorkspaceScreen(
                 SpiraTopBar(
                     onMenu = { scope.launch { drawerState.open() } },
                     onSearch = { searchOpen = true },
-                    onAssistant = { /* AI assistant — no screen yet */ },
+                    onAssistant = onOpenAssistant,
                     onProfile = { scope.launch { drawerState.open() } },
                     onBrandClick = actions.onBack, // SPIRA wordmark → back to All goals
                 )
@@ -343,21 +382,46 @@ fun GoalWorkspaceScreen(
                             Button(onClick = actions.onRetry) { Text("Try again") }
                         }
                     }
-                    is GoalUiState.Content -> HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                    ) { page ->
-                        GoalTabContent(
-                            goal = state.goal,
-                            tab = GoalTab.entries[page],
-                            actions = actions,
-                            targetSort = targetSort,
-                            targetSortAscending = targetSortAscending,
-                            targetFilter = targetFilter,
-                            onOpenFullResource = { fullScreenResourceId = it },
-                            realityKind = realityKind,
-                            onRealityKindChange = { realityKind = it },
+                    is GoalUiState.Content -> {
+                        // Everything inside the workspace can render `{{res:id}}` tokens as links
+                        // and offer "Attach resource" — outside a goal there is no list to pick
+                        // from, so inline fields degrade to plain text (LocalInlineResources = null).
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val inlineResources = remember(state.goal.resources) {
+                            InlineResourcesValue(
+                                resources = state.goal.resources,
+                                openResource = { id ->
+                                    openInlineResource(
+                                        context = context,
+                                        resource = state.goal.resources.firstOrNull { it.id == id },
+                                        onOpenFullScreen = { fullScreenResourceId = it },
+                                    )
+                                },
+                            )
+                        }
+                        // Celebrate a target crossing the line. It lives here, not on the card:
+                        // completing a target can filter its card out of the list, so the card
+                        // unmounts before any effect of its own could run.
+                        CelebrationOverlay(
+                            achievedCount = state.goal.targets.count { it.progress >= 1f },
+                            modifier = Modifier.fillMaxSize().zIndex(2f),
                         )
+                        ProvideInlineResources(inlineResources) {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize(),
+                            ) { page ->
+                                GoalTabContent(
+                                    goal = state.goal,
+                                    tab = GoalTab.entries[page],
+                                    actions = actions,
+                                    targetView = targetView,
+                                    onOpenFullResource = { fullScreenResourceId = it },
+                                    realityKind = realityKind,
+                                    onRealityKindChange = { realityKind = it },
+                                )
+                            }
+                        }
                     }
                 }
                 // FABs live directly in this full-width content box (not Scaffold's dedicated
@@ -572,9 +636,7 @@ private fun GoalTabContent(
     goal: GoalDetail,
     tab: GoalTab,
     actions: GoalWorkspaceActions,
-    targetSort: TargetSort,
-    targetSortAscending: Boolean,
-    targetFilter: TargetFilter,
+    targetView: TargetViewState,
     onOpenFullResource: (String) -> Unit = {},
     realityKind: String = "actions",
     onRealityKindChange: (String) -> Unit = {},
@@ -636,8 +698,27 @@ private fun GoalTabContent(
                             "and track your progress as you go.",
                     )
                 }
-                item { AddSectionButton("Add target") { showNewTarget = true } }
-                val visible = applyTargetView(goal.targets, targetSort, targetSortAscending, targetFilter)
+                item {
+                    // Sort and filter sit beside "Add target"; the choice is remembered between
+                    // visits, so the list opens the way it was left.
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TargetSortMenu(
+                            sort = targetView.sort,
+                            ascending = targetView.ascending,
+                            onSortChange = { targetView.sort = it },
+                            onToggleDir = { targetView.ascending = !targetView.ascending },
+                        )
+                        TargetFilterMenu(
+                            filter = targetView.filter,
+                            onChange = { targetView.filter = it },
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { showNewTarget = true }) { Text("Add target") }
+                    }
+                }
+                val visible = applyTargetView(
+                    goal.targets, targetView.sort, targetView.ascending, targetView.filter,
+                )
                 if (goal.targets.isEmpty()) item { EmptyLine("No targets yet.") }
                 else if (visible.isEmpty()) item { EmptyLine("No targets match the filter.") }
                 else items(visible, key = { "target-${it.id}" }) { target ->
@@ -704,45 +785,37 @@ private fun GoalTabIntro(
     }
 }
 
-/** A right-aligned "add" action row used under a tab's intro (Resources, Targets). */
-@Composable
-private fun AddSectionButton(text: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = onClick) { Text(text) }
-    }
-}
-
 @Composable
 private fun GoalHeader(goal: GoalDetail, actions: GoalWorkspaceActions) {
     var historyOpen by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Full title, same size as the "All goals" dashboard heading.
-        InlineEditText(
+        // Full title, same size as the "All goals" dashboard heading. Attached resources render
+        // as links here too — a goal's title can reference the brief it came from.
+        InlineRichText(
             value = goal.title,
             onCommit = actions.onSetGoalTitle,
             modifier = Modifier.fillMaxWidth(),
             placeholder = "Goal title",
             textStyle = MaterialTheme.typography.headlineMedium,
-            // Multiline so a long title wraps and is fully visible (no horizontal scrolling).
-            singleLine = false,
             required = true,
+            maxLength = FieldLimits.GOAL_TITLE,
         )
 
         StatCard(
-            statValue = "${(goal.progress * 100).roundToInt()}%",
+            statValue = "${formatPercent(goal.progress, goalProgressSteps(goal))}%",
             statCaption = if (goal.achieved) "Achieved" else "Progress across all targets",
         ) {
             FieldLabel("Description")
             Spacer(Modifier.height(6.dp))
-            InlineEditText(
+            InlineRichText(
                 value = goal.description,
                 onCommit = actions.onSetGoalDescription,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = "Add a description",
-                singleLine = false,
                 minLines = 2,
                 textStyle = MaterialTheme.typography.bodyMedium,
+                maxLength = FieldLimits.GOAL_DESCRIPTION,
             )
         }
 
@@ -937,120 +1010,6 @@ private fun ConfidenceHistoryRow(entry: ConfidenceHistoryEntry, delta: Int) {
     }
 }
 
-@Composable
-private fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions) {
-    var confirmDelete by remember { mutableStateOf(false) }
-    SpiraCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                InlineEditText(
-                    value = target.title,
-                    onCommit = { actions.onSetTargetTitle(target.id, it) },
-                    modifier = Modifier.weight(1f),
-                    placeholder = "Target title",
-                    // Target title: GCentra Medium (500) — matches the Options strategy weight.
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    required = true,
-                )
-                IconButton(onClick = { confirmDelete = true }) {
-                    Icon(SpiraIcons.Trash, contentDescription = "Delete target", tint = MaterialTheme.colorScheme.error)
-                }
-            }
-            when (target) {
-                is TargetItem.Binary -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = target.done, onCheckedChange = { actions.onSetTargetDone(target.id, it) })
-                    Text(if (target.done) "Done" else "Not done", style = MaterialTheme.typography.bodyMedium)
-                }
-                is TargetItem.Numeric -> NumericBody(target, actions)
-                is TargetItem.Checklist -> ChecklistBody(target, actions)
-                is TargetItem.Other -> ProgressRow(target.progress)
-            }
-        }
-    }
-    if (confirmDelete) {
-        ConfirmDialog(
-            title = "Delete this target?",
-            message = "\"${target.title}\" will be removed.",
-            confirmLabel = "Delete target",
-            onConfirm = { actions.onDeleteTarget(target.id) },
-            onDismiss = { confirmDelete = false },
-        )
-    }
-}
-
-@Composable
-private fun NumericBody(target: TargetItem.Numeric, actions: GoalWorkspaceActions) {
-    val start = target.start ?: 0.0
-    val total = target.total
-    val lo = if (total != null) minOf(start, total) else start
-    val hi = if (total != null) maxOf(start, total) else Double.MAX_VALUE
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { actions.onSetNumeric(target.id, (target.current - 1).coerceIn(lo, hi)) },
-                enabled = target.current > lo,
-            ) { Text("−") }
-            // Tap the number to type a value directly (for big jumps); ± is for small nudges.
-            InlineEditText(
-                value = trim(target.current),
-                onCommit = { entered -> entered.toDoubleOrNull()?.let { actions.onSetNumeric(target.id, it.coerceIn(lo, hi)) } },
-                modifier = Modifier.width(72.dp),
-                textStyle = MaterialTheme.typography.titleMedium,
-                // Decimal keyboard so a fractional value (e.g. 1.1) can be typed; ± still nudges by 1.
-                keyboardType = KeyboardType.Decimal,
-                required = true,
-            )
-            val meta = buildString {
-                target.total?.let { append("/ ${trim(it)}") }
-                target.unit?.let { append(" $it") }
-            }
-            Text(meta, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            OutlinedButton(
-                onClick = { actions.onSetNumeric(target.id, (target.current + 1).coerceIn(lo, hi)) },
-                enabled = total == null || target.current < hi,
-            ) { Text("+") }
-        }
-        ProgressRow(target.progress)
-    }
-}
-
-@Composable
-private fun ChecklistBody(target: TargetItem.Checklist, actions: GoalWorkspaceActions) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        target.items.forEach { item ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = item.done, onCheckedChange = { actions.onToggleChecklistItem(target.id, item.id) })
-                InlineEditText(
-                    value = item.text,
-                    onCommit = { actions.onUpdateChecklistTask(target.id, item.id, it) },
-                    modifier = Modifier.weight(1f),
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    required = true,
-                )
-                IconButton(onClick = { actions.onRemoveChecklistTask(target.id, item.id) }) {
-                    Icon(SpiraIcons.X, contentDescription = "Remove task", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        AddItemRow("Add task", onAdd = { actions.onAddChecklistTask(target.id, it) })
-        Spacer(Modifier.height(4.dp))
-        ProgressRow(target.progress)
-    }
-}
-
-@Composable
-private fun ProgressRow(progress: Float) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        SpiraLinearProgress(progress, Modifier.weight(1f))
-        Text(
-            "${(progress * 100).roundToInt()}%",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
 /**
  * The Reality tab: a short explanation of the GROW "reality" phase, an Actions/Obstacles
  * toggle, and the list for whichever is selected.
@@ -1172,25 +1131,21 @@ private fun RealityItemRow(
     onCommit: (String) -> Unit,
     onRemove: () -> Unit,
 ) {
-    // Long-press reveals the kebab; tapping it opens Delete/Exit. "Exit" (and picking Delete)
-    // both collapse back to the plain row — there must always be a way out of this mode without
+    // Long-press reveals the kebab; tapping it opens Attach resource / Delete. Dismissing the menu
+    // collapses back to the plain row — there must always be a way out of this mode without
     // deleting anything.
     var showKebab by remember { mutableStateOf(false) }
-    var menuExpanded by remember { mutableStateOf(false) }
-    var textFocused by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
     val interactionSource = remember { MutableInteractionSource() }
 
     Row(
         Modifier
             .fillMaxWidth()
-            // A short tap focuses the text field explicitly (routed through focusRequester so it
-            // doesn't fight the BasicTextField's own tap-to-place-cursor gesture); a long-press
-            // reveals the kebab menu instead of always showing it.
+            // A long-press anywhere on the row reveals the kebab menu instead of always showing
+            // it; the text itself handles its own tap (open a link, or start editing).
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = { focusRequester.requestFocus() },
+                onClick = { },
                 onLongClick = { showKebab = true },
             )
             .padding(vertical = 10.dp),
@@ -1203,58 +1158,30 @@ private fun RealityItemRow(
             modifier = Modifier.padding(top = 2.dp).size(18.dp),
         )
         Spacer(Modifier.width(10.dp))
-        Box(Modifier.weight(1f)) {
-            InlineEditText(
-                value = text,
-                onCommit = onCommit,
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                textStyle = MaterialTheme.typography.bodyMedium,
-                required = true,
-                singleLine = false,
-                imeAction = ImeAction.Done,
-                onFocusChanged = { textFocused = it },
-            )
-            // While unfocused, an overlay claims touches on the text itself so the row's
-            // long-press-to-delete works there too — a long-press landing directly on the
-            // BasicTextField would otherwise be swallowed by its own selection gesture. Once
-            // focused, the overlay steps aside so normal cursor placement/typing works.
-            if (!textFocused) {
-                Box(
-                    Modifier
-                        .matchParentSize()
-                        .combinedClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { focusRequester.requestFocus() },
-                            onLongClick = { showKebab = true },
-                        ),
-                )
-            }
-        }
+        // Inline-editable text that renders `{{res:id}}` attachments as links. A long press on it
+        // reveals the row's kebab (the read view would otherwise treat it as a tap-to-edit).
+        InlineRichText(
+            value = text,
+            onCommit = onCommit,
+            modifier = Modifier.weight(1f),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            required = true,
+            maxLength = FieldLimits.REALITY_TEXT,
+            onLongPress = { showKebab = true },
+        )
         if (showKebab) {
-            Box {
-                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        SpiraIcons.MoreVertical,
-                        contentDescription = "More options",
-                        tint = MaterialTheme.spiraExtras.mutedForeground,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                // Tapping outside the menu (or back) dismisses it — that's the "exit", so there's
-                // no explicit Exit item; the shared white dropdown handles it.
-                SpiraDropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false; showKebab = false },
-                ) {
-                    SpiraMenuItem(
-                        label = "Delete",
-                        icon = SpiraIcons.Trash,
-                        destructive = true,
-                        onClick = { onRemove(); menuExpanded = false; showKebab = false },
-                    )
-                }
-            }
+            // Tapping outside the menu (or back) dismisses it — that's the "exit", so there's no
+            // explicit Exit item; the shared white dropdown handles it.
+            ElementActionsMenu(
+                contentDescription = "More options",
+                attachedTo = text,
+                vertical = true,
+                onAttach = { resourceId ->
+                    showKebab = false
+                    attachTo(text, resourceId, FieldLimits.REALITY_TEXT)?.let(onCommit)
+                },
+                onDelete = { onRemove(); showKebab = false },
+            )
         }
     }
 }
@@ -1391,6 +1318,11 @@ private fun OptionsTabContent(
             onRemoveActive = { actions.onDeselectOption(menuOption.id); menuForId = null },
             onDelete = { actions.onRemoveOption(menuOption.id); menuForId = null },
             onDismiss = { menuForId = null },
+            optionText = menuOption.text,
+            onAttach = { resourceId ->
+                attachTo(menuOption.text, resourceId, FieldLimits.OPTION_TEXT)
+                    ?.let { actions.onSetOptionText(menuOption.id, it) }
+            },
         )
     }
 }
@@ -1399,9 +1331,10 @@ private fun OptionsTabContent(
  * One saved Option (design mockup): a white card with a centered serif "Option N" title ([N] is
  * just its position — it renumbers automatically after a reorder) and centered, inline-editable
  * strategy text. A **kebab (⋮)** in the top-right corner opens the [OptionMenuSheet] bottom sheet
- * (Make active / Remove active status / Delete). Cards are reordered by **long-press-and-drag**; a
- * short tap focuses the strategy text. The **active** option gets a Guava border, a full-width
- * "ACTIVE" Guava band across its top edge, and a Guava-toned title with a short underline.
+ * (Make active / Remove active status / Delete). Cards are reordered by **long-press-and-drag**
+ * from anywhere on the card, the strategy text included; a short tap on that text opens an attached
+ * resource, or starts editing. The **active** option gets a Guava border, a full-width "ACTIVE"
+ * Guava band across its top edge, and a Guava-toned title with a short underline.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1418,26 +1351,26 @@ private fun OptionCard(
     onDragEnd: () -> Unit,
 ) {
     val active = option.selected
-    var textFocused by remember { mutableStateOf(false) }
-    val textFocusRequester = remember { FocusRequester() }
 
     // Long-press-and-drag reorders (the parent owns the reorder math — this just streams the finger
-    // delta); a short tap focuses the strategy text. Both live in one shared modifier so the whole
-    // card responds.
+    // delta). The SAME modifier also goes on the strategy text: that text runs its own tap detector
+    // (open an attached resource, or start editing), which would otherwise swallow the gesture and
+    // make the card undraggable by its biggest surface. With both detectors on one node the tap
+    // cancels itself as soon as the drag starts consuming.
+    // True from the moment a drag starts until the finger comes up, so the release doesn't also
+    // read as a tap on the strategy text (see `tapSuppressed` on InlineRichText).
+    var dragging by remember { mutableStateOf(false) }
     val gestureMod = Modifier
         .pointerInput(option.id) {
             detectDragGesturesAfterLongPress(
-                onDragStart = { onDragStart() },
-                onDragEnd = { onDragEnd() },
-                onDragCancel = { onDragEnd() },
+                onDragStart = { dragging = true; onDragStart() },
+                onDragEnd = { dragging = false; onDragEnd() },
+                onDragCancel = { dragging = false; onDragEnd() },
                 onDrag = { change, amount ->
                     change.consume()
                     onDragBy(amount.y)
                 },
             )
-        }
-        .pointerInput(option.id) {
-            detectTapGestures(onTap = { textFocusRequester.requestFocus() })
         }
 
     val guava = MaterialTheme.colorScheme.tertiary       // Guava-500 accent (band / border)
@@ -1512,28 +1445,22 @@ private fun OptionCard(
                             )
                         }
                         Spacer(Modifier.height(10.dp))
-                        Box(Modifier.fillMaxWidth()) {
-                            InlineEditText(
-                                value = option.text,
-                                onCommit = onCommitText,
-                                modifier = Modifier.fillMaxWidth().focusRequester(textFocusRequester),
-                                placeholder = "What's this strategy?",
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 14.sp, lineHeight = 23.sp,
-                                ),
-                                required = true,
-                                singleLine = false,
-                                imeAction = ImeAction.Done,
-                                textAlign = TextAlign.Center,
-                                onFocusChanged = { textFocused = it },
-                            )
-                            // While unfocused, an overlay claims touches on the text so tap-to-focus
-                            // and long-press-to-drag work there too (a gesture landing on the
-                            // BasicTextField would otherwise be swallowed by its selection gesture).
-                            if (!textFocused) {
-                                Box(Modifier.matchParentSize().then(gestureMod))
-                            }
-                        }
+                        // The strategy text renders its `{{res:id}}` attachments as links — tapping
+                        // one opens the resource, tapping the words starts editing. The card is
+                        // dragged by long-pressing anywhere outside this text.
+                        InlineRichText(
+                            value = option.text,
+                            onCommit = onCommitText,
+                            modifier = Modifier.fillMaxWidth().then(gestureMod),
+                            placeholder = "What's this strategy?",
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp, lineHeight = 23.sp,
+                            ),
+                            required = true,
+                            maxLength = FieldLimits.OPTION_TEXT,
+                            textAlign = TextAlign.Center,
+                            tapSuppressed = { dragging },
+                        )
                     }
                 }
                 // Kebab (⋮) top-right — opens the bottom-sheet menu. Pushed below the band on
@@ -1571,4 +1498,3 @@ private fun Centered(content: @Composable () -> Unit) {
 }
 
 /** Show a number without a trailing ".0" for whole values. */
-private fun trim(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
