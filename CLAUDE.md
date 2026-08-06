@@ -255,8 +255,9 @@ Two brand colours, exact hexes (full tint ramps are in `Color.kt`):
 Supporting neutrals (backgrounds & greys): **Ginger** (warm), **Parsnip** (warm-grey),
 **Salt** (neutral grey ramp `Salt-200…Salt-1000`), and **White**.
 
-**Full brand palette — exact hexes (the ONLY colours allowed in product UI). Do not invent
-intermediate shades; if you need a colour, pick one of these.**
+**Full brand palette — exact hexes. Together with the extended ramps that follow, these are the
+ONLY colours allowed in product UI. Do not invent intermediate shades; if you need a colour, pick
+one from either table.**
 
 | Ramp | Values (light → dark) |
 |---|---|
@@ -269,6 +270,39 @@ intermediate shades; if you need a colour, pick one of these.**
 
 Typography colour is **Salt-1000 `#222525`** on light. Ginger/Parsnip have only the two light
 tints shown (there is no darker Ginger/Parsnip — for a stronger tone use Salt or Kale).
+
+#### Extended ramps (also allowed)
+
+The full-resolution ramps below are **equally allowed** in product UI and are the ones to reach for
+when a shade in the short palette above is too coarse — a hover state between two steps, a semantic
+state (success / error / warning / info), or a long neutral scale for text and dividers. They do
+**not** replace the palette above: both lists are valid, and everything already shipped in
+`Color.kt` / `styles.css` stays as it is.
+
+The two brand colours are the same colours in both lists — **`brand-800 #0A8080` is Kale-500** (the
+working primary) and **`reserved-600 #F45D48` is Guava-500** (the accent). `reserved` is the Guava
+family; it keeps its name from the brand source, and the **"never as a large fill" rule applies to
+every step of it**, not just to `600`.
+
+| Ramp | Values (light → dark) |
+|---|---|
+| **neutral** | `0 #FFFFFF` · `100 #FAFAFA` · `150 #F6F6F6` · `200 #F3F3F3` · `300 #E5E5E5` · `400 #D6D6D6` · `500 #C8C8C8` · `600 #BABABA` · `700 #ABABAB` · `800 #9F9F9F` · `900 #929292` · `1000 #858585` · `1100 #787878` · `1200 #6B6B6B` · `1300 #5F5F5F` · `1400 #535353` · `1500 #474746` · `1600 #3C3C3C` · `1700 #313131` · `1800 #262626` · `1900 #1C1C1C` |
+| **brand** (teal — working primary) | `100 #F9FDFC` · `150 #F0FCFB` · `200 #E5F4F3` · `300 #CCE8E7` · `400 #7EC5C4` · `500 #4CACAC` · `600 #3D9F9E` · `700 #2C9191` · **`800 #0A8080`** · `900 #007777` · `1000 #005C5C` · `1100 #003737` · `1200 #182928` |
+| **success** | `100 #F8FDF7` · `150 #ECFAEE` · `200 #E0F6E5` · `300 #BCEECE` · `400 #5FCD91` · `500 #40B178` · `600 #30A46C` · `700 #1B9660` · `800 #008954` · `900 #007A4B` · `1000 #005F39` · `1100 #003920` · `1200 #1C2920` |
+| **reserved** (coral accent = Guava) | `100 #FFFAF8` · `150 #FFF4F1` · `200 #FFEDEA` · `300 #FFDAD4` · `400 #FFA090` · `500 #FF725D` · **`600 #F45D48`** · `700 #E4523E` · `800 #D34533` · `900 #C23928` · `1000 #9F2013` · `1100 #680200` · `1200 #34211D` |
+| **error** | `100 #FFFBFB` · `150 #FFF4F3` · `200 #FFEDEB` · `300 #FFDAD7` · `400 #FF9F99` · `500 #FF716C` · `600 #FA5958` · `700 #E84D4C` · `800 #D74041` · `900 #C53336` · `1000 #A31821` · `1100 #68000C` · `1200 #34211F` |
+| **warning** | `100 #FFFBF7` · `150 #FEF5EC` · `200 #FFF2DF` · `300 #FFDEA1` · `400 #EBAF00` · `500 #C99500` · `600 #B98900` · `700 #A97D00` · `800 #997000` · `900 #896500` · `1000 #6B4E00` · `1100 #402D00` · `1200 #2D2416` |
+| **info** | `100 #FDFCFF` · `150 #F4F7FF` · `200 #EBF1FF` · `300 #D4E3FF` · `400 #8ABBFF` · `500 #56A0F9` · `600 #4793EA` · `700 #3686DC` · `800 #2279CE` · `900 #006CC1` · `1000 #005397` · `1100 #00315D` · `1200 #1E2633` |
+| **intelligence** (AI surfaces) | `100 #FEFBFF` · `150 #F9F5FE` · `200 #F4EEFD` · `300 #E6DFF9` · `400 #BDAEFF` · `500 #A28DFF` · `600 #957EF9` · `700 #8871EB` · `800 #7B63DD` · `900 #6E56CF` · `1000 #563CB5` · `1100 #320A93` · `1200 #272431` |
+
+Reading the steps: **100–300** are tints for backgrounds and hairlines, **400–700** are mid-tones
+for borders, icons and muted text, **800–1000** are the solid/on-white-text steps, and
+**1100–1200** are the deep shades. `success` / `error` / `warning` / `info` are **semantic** — use
+them for state (a saved confirmation, a validation error, an overdue warning, an informational
+note), not as decoration. `intelligence` is the assistant/AI accent.
+
+Everything in the "Colour rules" list below still applies to these ramps too — white stays the
+canvas, tints stay sparse, and `reserved` (Guava) is never a large fill.
 
 **Colour rules — do NOT break (these are the guidelines' "avoid" list):**
 
@@ -287,7 +321,8 @@ accent mark, not a fill (an allowed accent use of Guava).
 Semantic mapping already wired in `Color.kt` → `Theme.kt`: primary = Kale-500, accent/tertiary =
 Guava-500 (accent marks only, no large fills), foreground = Salt-1000, muted = Salt-800, border =
 Salt-500, background = Parsnip-100, Options page = Kale-500 (teal), cards/menus = White, destructive =
-Guava-600. (`success` stays a functional green — the brand palette has none.)
+Guava-600. (`success` is a functional green — new work should take it from the **success** ramp
+above rather than picking a fresh green.)
 
 > The type params above (**leading / tracking / alignment**) are **font-independent** — they're set
 > on the type scale (`Type.kt`) and per-usage alignment, so they hold no matter which heading font

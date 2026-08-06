@@ -66,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.spiramindscape.android.data.goals.GoalsStore
+import com.spiramindscape.android.ui.ai.WithAiAssistant
 import com.spiramindscape.android.ui.components.CircularProgress
 import com.spiramindscape.android.ui.components.EmptyState
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
@@ -109,33 +110,68 @@ fun GoalsRoute(user: AuthUser, onGoalClick: (String) -> Unit, onLogout: () -> Un
         onPauseOrDispose { }
     }
 
-    GoalsDashboardScreen(
-        state = state,
-        visibleGoals = visibleGoals,
-        hasAnyGoals = allGoals.isNotEmpty(),
-        user = user,
-        query = query,
-        onQueryChange = { viewModel.query.value = it },
-        sortKey = sortKey,
-        sortAscending = sortAscending,
-        onSortChange = { viewModel.sortKey.value = it; viewPreferences.sort = it },
-        onToggleSortDir = {
-            val next = !viewModel.sortAscending.value
-            viewModel.sortAscending.value = next
-            viewPreferences.ascending = next
-        },
-        status = status,
-        onStatusChange = { viewModel.statusFilter.value = it; viewPreferences.status = it },
-        deadlineFilter = deadlineFilter,
-        onDeadlineFilterChange = { viewModel.deadlineFilter.value = it; viewPreferences.deadline = it },
-        creating = creating,
-        onCreateGoal = { title, description, confidence, deadline ->
-            viewModel.createGoal(title, description, confidence, deadline)
-        },
-        onGoalClick = onGoalClick,
-        onRetry = viewModel::load,
-        onLogout = onLogout,
-    )
+    // The all-goals assistant: it can see every goal and start a new one.
+    var assistantOpen by remember { mutableStateOf(false) }
+
+    WithAiAssistant(
+        goalId = null,
+        open = assistantOpen,
+        onOpenChange = { assistantOpen = it },
+        onApplyProposal = { proposal, excluded -> applyGlobalProposal(proposal, excluded, viewModel) },
+    ) {
+        GoalsDashboardScreen(
+            state = state,
+            visibleGoals = visibleGoals,
+            hasAnyGoals = allGoals.isNotEmpty(),
+            user = user,
+            query = query,
+            onQueryChange = { viewModel.query.value = it },
+            sortKey = sortKey,
+            sortAscending = sortAscending,
+            onSortChange = { viewModel.sortKey.value = it; viewPreferences.sort = it },
+            onToggleSortDir = {
+                val next = !viewModel.sortAscending.value
+                viewModel.sortAscending.value = next
+                viewPreferences.ascending = next
+            },
+            status = status,
+            onStatusChange = { viewModel.statusFilter.value = it; viewPreferences.status = it },
+            deadlineFilter = deadlineFilter,
+            onDeadlineFilterChange = { viewModel.deadlineFilter.value = it; viewPreferences.deadline = it },
+            creating = creating,
+            onCreateGoal = { title, description, confidence, deadline ->
+                viewModel.createGoal(title, description, confidence, deadline)
+            },
+            onGoalClick = onGoalClick,
+            onRetry = viewModel::load,
+            onLogout = onLogout,
+            onOpenAssistant = { assistantOpen = true },
+        )
+    }
+}
+
+/**
+ * Applies a proposal from the all-goals chat. Only goal-level creation belongs here; anything
+ * scoped to one goal is applied inside that goal's own assistant, which has its data loaded.
+ */
+private fun applyGlobalProposal(
+    proposal: com.spiramindscape.android.data.ai.Proposal,
+    excluded: Set<String>,
+    viewModel: GoalsViewModel,
+): String? {
+    val p = com.spiramindscape.android.data.ai.applyExcludedAspects(proposal, excluded)
+    return when (p.kind) {
+        com.spiramindscape.android.data.ai.ProposalKind.NEW_GOAL -> {
+            viewModel.createGoal(
+                title = p.title,
+                description = p.body,
+                confidence = p.confidence ?: 5,
+                deadline = p.deadline,
+            )
+            null
+        }
+        else -> "Open that goal and ask there — I can only create goals from here."
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -161,6 +197,7 @@ fun GoalsDashboardScreen(
     onGoalClick: (String) -> Unit = {},
     onRetry: () -> Unit = {},
     onLogout: () -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -185,7 +222,7 @@ fun GoalsDashboardScreen(
                     SpiraTopBar(
                         onMenu = { scope.launch { drawerState.open() } },
                         onSearch = { searchOpen = true },
-                        onAssistant = { /* AI assistant — no screen yet */ },
+                        onAssistant = onOpenAssistant,
                         onProfile = { scope.launch { drawerState.open() } },
                     )
                 }

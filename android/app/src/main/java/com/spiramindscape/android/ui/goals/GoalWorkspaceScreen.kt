@@ -89,6 +89,7 @@ import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.data.goals.TargetItem
 import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.launch
+import com.spiramindscape.android.ui.ai.WithAiAssistant
 import com.spiramindscape.android.ui.components.CelebrationOverlay
 import com.spiramindscape.android.ui.components.ConfidenceStepper
 import com.spiramindscape.android.ui.components.ConfirmDialog
@@ -201,50 +202,70 @@ fun GoalWorkspaceRoute(
         onPauseOrDispose { }
     }
 
-    GoalWorkspaceScreen(
-        state = state,
-        user = user,
-        allGoals = allGoals,
-        onLogout = onLogout,
-        onOpenGoal = onOpenGoal,
-        actions = GoalWorkspaceActions(
-            onBack = onBack,
-            onRetry = viewModel::load,
-            onSetGoalTitle = viewModel::setGoalTitle,
-            onSetGoalDescription = viewModel::setGoalDescription,
-            onSetConfidence = viewModel::setConfidence,
-            onSetDeadline = viewModel::setDeadline,
-            onDeleteGoal = { viewModel.deleteGoal(onDeleted = onBack) },
-            onSetTargetDone = viewModel::setTargetDone,
-            onSetNumeric = viewModel::setNumericCurrent,
-            onSetTargetNumbers = viewModel::setTargetNumbers,
-            onSetTargetUnit = viewModel::setTargetUnit,
-            onToggleChecklistItem = viewModel::toggleChecklistItem,
-            onAddChecklistTask = viewModel::addChecklistTask,
-            onUpdateChecklistTask = viewModel::updateChecklistTask,
-            onRemoveChecklistTask = viewModel::removeChecklistTask,
-            onSetChecklistTaskDeadline = viewModel::setChecklistTaskDeadline,
-            onSetTargetTitle = viewModel::setTargetTitle,
-            onSetTargetDeadline = viewModel::setTargetDeadline,
-            onSetTargetProgressLocked = viewModel::setTargetProgressLocked,
-            onAddTarget = viewModel::addTarget,
-            onDeleteTarget = viewModel::deleteTarget,
-            onAddReality = viewModel::addReality,
-            onUpdateReality = viewModel::updateReality,
-            onRemoveReality = viewModel::removeReality,
-            onAddOption = viewModel::addOption,
-            onSetOptionText = viewModel::setOptionText,
-            onSelectOption = viewModel::selectOption,
-            onDeselectOption = viewModel::deselectOption,
-            onRemoveOption = viewModel::removeOption,
-            onReorderOption = viewModel::reorderOptions,
-            onAddResource = viewModel::addResource,
-            onUpdateResource = { id, title, body, url, name, email, role, phone, mime, dataUrl ->
-                viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
-            },
-            onRemoveResource = viewModel::removeResource,
-        ),
+    // The assistant, scoped to this goal, swiped in from the right edge.
+    var assistantOpen by remember { mutableStateOf(false) }
+    val workspaceActions = GoalWorkspaceActions(
+        onBack = onBack,
+        onRetry = viewModel::load,
+        onSetGoalTitle = viewModel::setGoalTitle,
+        onSetGoalDescription = viewModel::setGoalDescription,
+        onSetConfidence = viewModel::setConfidence,
+        onSetDeadline = viewModel::setDeadline,
+        onDeleteGoal = { viewModel.deleteGoal(onDeleted = onBack) },
+        onSetTargetDone = viewModel::setTargetDone,
+        onSetNumeric = viewModel::setNumericCurrent,
+        onSetTargetNumbers = viewModel::setTargetNumbers,
+        onSetTargetUnit = viewModel::setTargetUnit,
+        onToggleChecklistItem = viewModel::toggleChecklistItem,
+        onAddChecklistTask = viewModel::addChecklistTask,
+        onUpdateChecklistTask = viewModel::updateChecklistTask,
+        onRemoveChecklistTask = viewModel::removeChecklistTask,
+        onSetChecklistTaskDeadline = viewModel::setChecklistTaskDeadline,
+        onSetTargetTitle = viewModel::setTargetTitle,
+        onSetTargetDeadline = viewModel::setTargetDeadline,
+        onSetTargetProgressLocked = viewModel::setTargetProgressLocked,
+        onAddTarget = viewModel::addTarget,
+        onDeleteTarget = viewModel::deleteTarget,
+        onAddReality = viewModel::addReality,
+        onUpdateReality = viewModel::updateReality,
+        onRemoveReality = viewModel::removeReality,
+        onAddOption = viewModel::addOption,
+        onSetOptionText = viewModel::setOptionText,
+        onSelectOption = viewModel::selectOption,
+        onDeselectOption = viewModel::deselectOption,
+        onRemoveOption = viewModel::removeOption,
+        onReorderOption = viewModel::reorderOptions,
+        onAddResource = viewModel::addResource,
+        onUpdateResource = { id, title, body, url, name, email, role, phone, mime, dataUrl ->
+            viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
+        },
+        onRemoveResource = viewModel::removeResource,
     )
+
+    WithAiAssistant(
+        goalId = goalId,
+        open = assistantOpen,
+        onOpenChange = { assistantOpen = it },
+        onApplyProposal = { proposal, excluded ->
+            val goal = (state as? GoalUiState.Content)?.goal
+            if (goal == null) {
+                "The goal is still loading — try again in a moment."
+            } else {
+                applyProposalToGoal(proposal, excluded, goal, workspaceActions)
+            }
+        },
+        goal = (state as? GoalUiState.Content)?.goal,
+    ) {
+        GoalWorkspaceScreen(
+            state = state,
+            user = user,
+            allGoals = allGoals,
+            onLogout = onLogout,
+            onOpenGoal = onOpenGoal,
+            onOpenAssistant = { assistantOpen = true },
+            actions = workspaceActions,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -256,6 +277,7 @@ fun GoalWorkspaceScreen(
     allGoals: List<GoalSummary> = emptyList(),
     onLogout: () -> Unit = {},
     onOpenGoal: (String) -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
 ) {
     var confirmDeleteGoal by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -308,7 +330,7 @@ fun GoalWorkspaceScreen(
                 SpiraTopBar(
                     onMenu = { scope.launch { drawerState.open() } },
                     onSearch = { searchOpen = true },
-                    onAssistant = { /* AI assistant — no screen yet */ },
+                    onAssistant = onOpenAssistant,
                     onProfile = { scope.launch { drawerState.open() } },
                     onBrandClick = actions.onBack, // SPIRA wordmark → back to All goals
                 )
