@@ -4,6 +4,7 @@ import * as pdfjsLib from "pdfjs-dist";
 // Vite serves the worker as a same-origin asset (?url → hashed file under /assets),
 // so it satisfies the CSP without any external host.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -120,7 +121,7 @@ export function PdfViewer({
         void renderAll();
       })
       .catch((err) => {
-        console.error("PDF render failed", err);
+        logger.reportError(err, { kind: "render" });
         if (!cancelled) setStatus("error");
       });
     return () => {

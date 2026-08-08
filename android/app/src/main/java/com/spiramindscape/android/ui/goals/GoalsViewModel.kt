@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.goals.ApolloGoalsRepository
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.spiramindscape.android.data.goals.GoalsRepository
@@ -48,6 +49,14 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
     private val _creating = MutableStateFlow(false)
     val creating: StateFlow<Boolean> = _creating.asStateFlow()
 
+    /** A failure message for an action the user took, shown without wiping the goal list. */
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError: StateFlow<String?> = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
+
     val query = MutableStateFlow("")
     val sortKey = MutableStateFlow(SortKey.Recent)
     val sortAscending = MutableStateFlow(false)
@@ -80,6 +89,8 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
             GoalsStore.setAll(goals)
             GoalsUiState.Content(goals)
         } catch (e: Exception) {
+            // The user sees a friendly message; the real cause only exists here.
+            SpiraLog.w(TAG, "goals_load_failed", e)
             GoalsUiState.Error("Couldn't load your goals.")
         }
 
@@ -98,7 +109,10 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
                 _state.value = fetch()
                 onCreated(id)
             } catch (e: Exception) {
-                // keep the sheet open; the list is unchanged
+                // Keep the sheet open; the list is unchanged — but say why, or pressing
+                // Create simply appears to do nothing.
+                SpiraLog.w(TAG, "goal_create_failed", e)
+                _actionError.value = "Couldn't create this goal. Please try again."
             } finally {
                 _creating.value = false
             }
@@ -106,6 +120,8 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
     }
 
     companion object {
+        private const val TAG = "GoalsVM"
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer { GoalsViewModel(ApolloGoalsRepository(Network.apollo)) }
         }

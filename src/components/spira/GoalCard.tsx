@@ -16,7 +16,8 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { cn } from "@/lib/utils";
 
 /** Overdue red — same as "Yes, delete" button in ConfirmDialog */
-const OVERDUE_RED = "#d13239";
+/** error-800 — the palette's semantic red for an overdue state (CLAUDE.md extended ramps). */
+const OVERDUE_RED = "#D74041";
 
 function formatDeadlineInfo(iso: string | undefined, completed = false) {
   if (!iso) return null;

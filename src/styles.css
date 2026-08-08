@@ -575,7 +575,7 @@
 }
 /* White cards inside the panel (user bubbles, proposal cards, provider sheet) */
 .spira-ai-dark .bg-white ::selection {
-  background-color: rgba(0, 109, 103, 0.2);
+  background-color: rgba(0, 89, 97, 0.2);
 }
 
 /* Force text to be selectable in the AI panel message area.

@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/spira/auth";
 import { useActivityGate } from "@/lib/useActivityGate";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import {
+  useResetQueryOnNavigate,
   useShellFilters,
   type GoalStatusFilter,
   type SortDirection,
@@ -81,6 +82,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     resetFilters,
     viewMode,
   } = useShellFilters();
+
+  // A search is scoped to the screen it was typed on — see useResetQueryOnNavigate.
+  useResetQueryOnNavigate(path);
 
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 

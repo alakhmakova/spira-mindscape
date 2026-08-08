@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
@@ -87,3 +88,19 @@ export const useShellFilters = create<State>()(
     },
   ),
 );
+
+/**
+ * Empties the search box whenever the route changes.
+ *
+ * One `query` field backs two different searches — the dashboard's goal filter and the goal
+ * workspace header's goal switcher — so without this, filtering "All goals" and then opening one
+ * of the results carried that text straight into the opened goal's header (and its results
+ * dropdown). A search belongs to the screen it was typed on, on every surface: desktop, mobile
+ * web, and the Android app, whose workspace search is likewise screen-local.
+ */
+export function useResetQueryOnNavigate(pathname: string) {
+  const setQuery = useShellFilters((s) => s.setQuery);
+  useEffect(() => {
+    setQuery("");
+  }, [pathname, setQuery]);
+}

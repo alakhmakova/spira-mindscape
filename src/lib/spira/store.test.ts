@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { logger } from "../logger";
 import { SpiraApiError, spiraApi } from "./api";
 import { __clearPendingWritesForTests, useSpira } from "./store";
 import type { Goal, Resource } from "./types";
@@ -401,6 +402,84 @@ describe("useSpira resource sync errors", () => {
     expect(target.type === "checklist" && target.items[0].deadline).toBe(
       "2026-05-15T00:00:00.000Z",
     );
+  });
+});
+
+describe("useSpira error reporting", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    __clearPendingWritesForTests();
+    useSpira.setState({
+      goals: [goalFixture()],
+      chat: [],
+      isLoading: false,
+      hasLoaded: true,
+      syncError: undefined,
+      syncErrorKind: undefined,
+    });
+  });
+
+  it("reports a failed write while still showing the banner", async () => {
+    // setSyncError is the funnel for ~20 optimistic writes, so this is the hook that
+    // makes most save failures visible off-device. It must not replace the banner.
+    const reportError = vi
+      .spyOn(logger, "reportError")
+      .mockImplementation(() => {});
+    vi.spyOn(spiraApi, "createResource").mockRejectedValue(
+      new SpiraApiError("Sync failed", { status: 500 }),
+    );
+
+    useSpira
+      .getState()
+      .addResource("goal-1", { type: "note", title: "Note", body: "x" });
+
+    await vi.waitFor(() => {
+      expect(useSpira.getState().syncError).toBeDefined();
+    });
+    expect(reportError).toHaveBeenCalledWith(
+      expect.any(SpiraApiError),
+      expect.objectContaining({ kind: "api" }),
+    );
+  });
+
+  it("hands a 401 to the logger, which drops it as an expected session expiry", async () => {
+    // The logger owns that decision, so the store reports uniformly and the filtering
+    // lives in exactly one place.
+    const reportError = vi
+      .spyOn(logger, "reportError")
+      .mockImplementation(() => {});
+    vi.spyOn(spiraApi, "fetchGoalsRevision").mockRejectedValue(
+      new SpiraApiError("Unauthorized", { status: 401 }),
+    );
+    const replace = vi.fn();
+    vi.stubGlobal("location", { replace });
+
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    // A 401 short-circuits to the login redirect before any reporting happens.
+    expect(replace).toHaveBeenCalledWith("/login");
+    expect(reportError).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a failing background refresh to a local warning", async () => {
+    // Designed to fail quietly: a flaky connection would otherwise report on every poll.
+    const reportError = vi
+      .spyOn(logger, "reportError")
+      .mockImplementation(() => {});
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    vi.spyOn(spiraApi, "fetchGoalsRevision").mockRejectedValue(
+      new SpiraApiError("Unreachable", { kind: "network" }),
+    );
+
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    expect(warn).toHaveBeenCalled();
+    expect(reportError).not.toHaveBeenCalled();
+    // The visible data must survive a failed background poll.
+    expect(useSpira.getState().goals).toHaveLength(1);
+    expect(useSpira.getState().syncError).toBeUndefined();
   });
 });
 

@@ -3,6 +3,7 @@ package com.spiramindscape.android.ui.goals
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apollographql.apollo.api.Optional
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.goals.ChecklistItemModel
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.GoalsRepository
@@ -39,6 +40,19 @@ class GoalWorkspaceViewModel(
     private val _state = MutableStateFlow<GoalUiState>(GoalUiState.Loading)
     val state: StateFlow<GoalUiState> = _state.asStateFlow()
 
+    /**
+     * A one-off failure message for an action the user explicitly took, shown over the
+     * existing content instead of replacing it. Delete used to fail with no navigation, no
+     * message and no log — the screen simply did nothing, which reads as the app ignoring
+     * the tap. Cleared by [clearActionError] once shown.
+     */
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError: StateFlow<String?> = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
+
     init {
         load()
     }
@@ -49,6 +63,7 @@ class GoalWorkspaceViewModel(
             try {
                 setContent(repository.getGoal(goalId))
             } catch (e: Exception) {
+                SpiraLog.w(TAG, "goal_load_failed goalId=$goalId", e)
                 _state.value = GoalUiState.Error("Couldn't load this goal.")
             }
         }
@@ -60,7 +75,9 @@ class GoalWorkspaceViewModel(
             try {
                 setContent(repository.getGoal(goalId))
             } catch (e: Exception) {
-                // keep whatever is on screen
+                // Keep whatever is on screen — but a resume that silently never refreshes
+                // looks like stale data, not like a failure, so it must leave a trace.
+                SpiraLog.w(TAG, "goal_refresh_failed goalId=$goalId", e)
             }
         }
     }
@@ -163,7 +180,10 @@ class GoalWorkspaceViewModel(
                 GoalsStore.remove(goalId)
                 onDeleted()
             } catch (e: Exception) {
-                // Stay on the screen; nothing was deleted.
+                // Stay on the screen; nothing was deleted — and say so. Confirming a delete
+                // and having nothing happen is indistinguishable from a broken button.
+                SpiraLog.w(TAG, "goal_delete_failed goalId=$goalId", e)
+                _actionError.value = "Couldn't delete this goal. Please try again."
             }
         }
     }
@@ -359,6 +379,7 @@ class GoalWorkspaceViewModel(
                 if (patches.isNotEmpty()) setContent(repository.getGoal(goalId))
             } catch (e: Exception) {
                 // Something didn't land — resync rather than leaving a half-detached goal on screen.
+                SpiraLog.w(TAG, "resource_detach_failed goalId=$goalId", e)
                 load()
             }
         }
@@ -374,6 +395,11 @@ class GoalWorkspaceViewModel(
             try {
                 block()
             } catch (e: Exception) {
+                // Covers ~12 public edit methods, so this single line is where most silent
+                // save failures on this screen become visible. The reload hides the failure
+                // from the user by design (their edit just reverts), which is exactly why
+                // it needs recording.
+                SpiraLog.w(TAG, "goal_edit_failed goalId=$goalId", e)
                 load()
             }
         }
@@ -385,12 +411,14 @@ class GoalWorkspaceViewModel(
             try {
                 block()
             } catch (e: Exception) {
-                // fall through to a refetch either way — it resyncs to the server truth
+                // Fall through to a refetch either way — it resyncs to the server truth.
+                SpiraLog.w(TAG, "goal_mutation_failed goalId=$goalId", e)
             }
             try {
                 setContent(repository.getGoal(goalId))
             } catch (e: Exception) {
-                // keep the current content if the refetch itself fails
+                // Keep the current content if the refetch itself fails. Not logged: this is
+                // the retry of a retry, and the first failure above already told the story.
             }
         }
     }
@@ -399,7 +427,18 @@ class GoalWorkspaceViewModel(
         val content = _state.value as? GoalUiState.Content ?: return
         viewModelScope.launch {
             try {
-                val updated = block()
+                var updated = block()
+                // Reaching 100% pins the target AGAIN, even if it was deliberately unlocked
+                // before. The lock belongs to *being* complete, not to the first time it happened:
+                // an explicit `false` used to outlive the completion it was meant for, so after one
+                // unlock a target never re-locked however often it hit 100%. Only an explicit
+                // unlock needs clearing — an unset flag already locks itself at 100%.
+                val before = content.goal.targets.firstOrNull { it.id == updated.id }
+                if (before != null && before.progress < 1f &&
+                    updated.progress >= 1f && updated.progressLocked == false
+                ) {
+                    updated = repository.setTargetProgressLocked(updated.id, true)
+                }
                 val newTargets = content.goal.targets.map { if (it.id == updated.id) updated else it }
                 val progress =
                     if (newTargets.isEmpty()) 0f
@@ -409,12 +448,15 @@ class GoalWorkspaceViewModel(
                 )
             } catch (e: Exception) {
                 // Reconcile with the server on failure rather than leaving a wrong optimistic value.
+                SpiraLog.w(TAG, "target_update_failed goalId=$goalId", e)
                 load()
             }
         }
     }
 
     companion object {
+        private const val TAG = "GoalWorkspaceVM"
+
         fun factory(goalId: String, repository: GoalsRepository) =
             object : androidx.lifecycle.ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

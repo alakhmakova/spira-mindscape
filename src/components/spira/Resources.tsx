@@ -34,6 +34,7 @@ import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
@@ -104,7 +105,9 @@ async function copyPlainText(text: string) {
       await navigator.clipboard.writeText(text);
       return;
     } catch (err) {
-      console.warn("clipboard.writeText failed", err);
+      // Expected on some browsers/permission states — the execCommand path below is
+      // the fallback, so this is a dev-console note, not an incident.
+      logger.warn("clipboard.writeText failed, falling back", err);
     }
   }
   // Legacy fallback for HTTP / insecure contexts
@@ -117,7 +120,8 @@ async function copyPlainText(text: string) {
   try {
     document.execCommand("copy");
   } catch (err) {
-    console.error("Fallback copy failed", err);
+    // Both copy paths are now exhausted, so the user's copy silently did nothing.
+    logger.reportError(err, { kind: "render" });
   }
   document.body.removeChild(textArea);
 }
@@ -144,7 +148,8 @@ async function copyRichText(html: string, plainText: string) {
       ]);
       return;
     } catch (err) {
-      console.warn("clipboard.write (rich text) failed, using plain text", err);
+      // Degrades to plain text, which is a fine outcome — dev-console only.
+      logger.warn("clipboard.write (rich text) failed, using plain text", err);
     }
   }
   await copyPlainText(plainText);
@@ -223,7 +228,9 @@ function useCopied() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (err) {
-      console.error("Copy/download action failed:", err);
+      // The user pressed copy/download and nothing happened — no UI feedback either,
+      // so without this report the failure is invisible on both sides.
+      logger.reportError(err, { kind: "render" });
     }
   };
   return { copied, run } as const;
@@ -261,10 +268,9 @@ export function ResourcesList({ goal }: { goal: Goal }) {
                 window.open(r.url, "_blank", "noopener,noreferrer");
               else setPreviewId(r.id);
             }}
-            onRemove={() => {
-              if (countResourceAttachments(goal, r.id) > 0) setPendingDelete(r);
-              else removeResource(goal.id, r.id);
-            }}
+            // Always ask. Deleting an UNATTACHED resource used to happen on the spot, with no
+            // confirmation at all — the one case where the loss is silent and irreversible.
+            onRemove={() => setPendingDelete(r)}
           />
         ))}
       </div>
@@ -278,26 +284,35 @@ export function ResourcesList({ goal }: { goal: Goal }) {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}
-        title="This resource is attached"
+        title="Delete this resource?"
         description={
-          pendingDelete ? (
-            <span className="flex items-start gap-2">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <span>
-                {(() => {
-                  const count = countResourceAttachments(
-                    goal,
-                    pendingDelete.id,
-                  );
-                  return `"${resourceDisplayName(pendingDelete)}" is attached in ${count} ${
-                    count === 1 ? "place" : "places"
-                  } on this goal. Deleting it turns each of those links into plain text — the words stay, only the link to the resource is lost.`;
-                })()}
-              </span>
-            </span>
-          ) : (
-            ""
-          )
+          pendingDelete
+            ? (() => {
+                const name = resourceDisplayName(pendingDelete);
+                const count = countResourceAttachments(goal, pendingDelete.id);
+                // The name is set bold in both wordings — the same rule the goal and target
+                // dialogs follow, so what is about to go is never buried in a sentence.
+                const named = (
+                  <strong className="font-semibold">&quot;{name}&quot;</strong>
+                );
+                return count > 0 ? (
+                  <span className="flex items-start gap-2">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span>
+                      {named} is attached in {count}{" "}
+                      {count === 1 ? "place" : "places"} on this goal. Deleting
+                      it turns each of those links into plain text — the words
+                      stay, only the link to the resource is lost.
+                    </span>
+                  </span>
+                ) : (
+                  <span>
+                    {named} will be permanently deleted. You can&apos;t undo
+                    this.
+                  </span>
+                );
+              })()
+            : ""
         }
         confirmLabel="Yes, delete"
         onConfirm={() => {

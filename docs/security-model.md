@@ -201,6 +201,25 @@ can quote to support) and *no* internal details. The full error is logged
 server-side against that id. GraphQL has its own equivalent
 (`graphql/GraphQlExceptionHandler.java`).
 
+That correlation id is the request's **`traceId`** (`logging/RequestLogContextFilter.java`), held
+in the SLF4J MDC for the whole request and stamped on every log line — so the id a user quotes
+finds the entire request, not just the one line where it failed. The filter clears the MDC in a
+`finally` block: Tomcat pools threads, and a missed clear would put one user's id (and `userId`)
+onto another user's log line.
+
+**One endpoint is deliberately unauthenticated and CSRF-exempt:** `POST /api/client-errors`
+(`web/ClientErrorController.java`), which receives JavaScript errors from the browser. It must be
+public because the SPA shell renders for logged-out users — a login-page error is exactly the kind
+we could not otherwise see — and CSRF-exempt because `navigator.sendBeacon`, the only transport
+that survives a page crash, cannot set the `X-XSRF-TOKEN` header. It is safe because **its only
+effect is writing a log line**: there is nothing a forged request could change. Three compensating
+controls bound the abuse: the body is a fixed-field `record` (no `Map<String,Object>`, no
+`@JsonAnySetter`, so arbitrary data cannot be smuggled in), every field is length-capped by bean
+validation, and `RateLimitFilter` throttles the path to 10/min per caller.
+
+What must never be logged (secrets, tokens, and the user's own text) is listed in
+`docs/logging.md` §2 and enforced by a source-scanning test, `LoggingConventionTest`.
+
 ---
 
 ## 10. Web hardening headers

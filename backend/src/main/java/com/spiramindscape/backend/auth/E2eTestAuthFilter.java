@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -42,6 +43,21 @@ public class E2eTestAuthFilter extends OncePerRequestFilter {
 
     public E2eTestAuthFilter(AppUserRepository appUserRepository) {
         this.appUserRepository = appUserRepository;
+    }
+
+    /**
+     * A startup tripwire — the sibling of the one in {@link LocalDevAuthFilter}. This
+     * filter authenticates anyone who sends an {@code X-E2E-Auth} header, so its presence
+     * in production would be a complete authentication bypass. Logging it once at startup
+     * makes that alertable in Cloud Logging instead of silent.
+     */
+    @jakarta.annotation.PostConstruct
+    void warnThatAuthIsBypassed() {
+        LoggerFactory.getLogger("security.auth").warn(
+                // ASCII only - see the sibling note in LocalDevAuthFilter.
+                "auth_bypass_filter_active filter=E2eTestAuthFilter profile=e2e header={} "
+                        + "- any request with this header is authenticated; this MUST NOT appear "
+                        + "in production", HEADER);
     }
 
     @Override

@@ -5,6 +5,7 @@ import {
   goalProgress,
   goalProgressSteps,
   isProgressLocked,
+  relockOnCompletion,
   progressSteps,
   targetProgress,
 } from "./progress";
@@ -151,6 +152,41 @@ describe("isProgressLocked", () => {
     expect(
       isProgressLocked({ ...binaryTarget(true), progressLocked: null }),
     ).toBe(true);
+  });
+});
+
+describe("relockOnCompletion", () => {
+  const unlocked = (done: boolean): Target => ({
+    ...binaryTarget(done),
+    id: "t",
+    progressLocked: false,
+  });
+
+  it("re-locks a target that was deliberately unlocked earlier", () => {
+    // The bug: one unlock used to outlive the completion it was meant for, so the target never
+    // locked itself again however often it hit 100%.
+    expect(
+      relockOnCompletion(unlocked(false), unlocked(true)).progressLocked,
+    ).toBe(true);
+  });
+
+  it("leaves an unlock alone when the update doesn't complete the target", () => {
+    expect(
+      relockOnCompletion(unlocked(false), unlocked(false)).progressLocked,
+    ).toBe(false);
+  });
+
+  it("lets a target that is already complete stay unlocked, so it can be corrected", () => {
+    expect(
+      relockOnCompletion(unlocked(true), unlocked(true)).progressLocked,
+    ).toBe(false);
+  });
+
+  it("writes nothing when the flag was never set — 100% already locks itself", () => {
+    const before = binaryTarget(false);
+    const after = binaryTarget(true);
+    expect(relockOnCompletion(before, after)).toBe(after);
+    expect(isProgressLocked(after)).toBe(true);
   });
 });
 

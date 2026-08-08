@@ -109,5 +109,57 @@ class GoalsViewModelTest {
         assertEquals(Triple("New goal", 8, null), createdWith) // blank description → null
         val content = vm.state.value as GoalsUiState.Content
         assertTrue(content.goals.any { it.id == "g2" })
+        assertEquals(null, vm.actionError.value)
+    }
+
+    @Test
+    fun `a failed createGoal explains itself instead of leaving the sheet silent`() =
+        runTest(dispatcher) {
+            // Pressing Create and having nothing happen — no goal, no message — reads as a
+            // broken button. The list must survive so the user can retry.
+            var navigated = false
+            val repo = object : FakeGoalsRepository() {
+                override suspend fun getGoals(): List<GoalSummary> = listOf(goal)
+                override suspend fun createGoal(
+                    title: String,
+                    description: String?,
+                    confidence: Int,
+                    deadline: String?,
+                ): String = throw GoalsException("network down")
+            }
+            val vm = GoalsViewModel(repo)
+            vm.load()
+            advanceUntilIdle()
+
+            vm.createGoal("New goal", null, 8, null) { navigated = true }
+            advanceUntilIdle()
+
+            assertEquals(false, navigated)
+            assertEquals("Couldn't create this goal. Please try again.", vm.actionError.value)
+            // The button must be usable again, not stuck in its in-flight state.
+            assertEquals(false, vm.creating.value)
+            assertTrue(vm.state.value is GoalsUiState.Content)
+        }
+
+    @Test
+    fun `dismissing the create failure clears it`() = runTest(dispatcher) {
+        val repo = object : FakeGoalsRepository() {
+            override suspend fun getGoals(): List<GoalSummary> = listOf(goal)
+            override suspend fun createGoal(
+                title: String,
+                description: String?,
+                confidence: Int,
+                deadline: String?,
+            ): String = throw GoalsException("network down")
+        }
+        val vm = GoalsViewModel(repo)
+        vm.load()
+        advanceUntilIdle()
+        vm.createGoal("New goal", null, 8, null)
+        advanceUntilIdle()
+
+        vm.clearActionError()
+
+        assertEquals(null, vm.actionError.value)
     }
 }

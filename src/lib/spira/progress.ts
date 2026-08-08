@@ -17,9 +17,30 @@ export function targetProgress(t: Target): number {
  * Whether a target's progress is pinned. An achieved target locks itself so a stray tap can't
  * undo it; anything else is open unless the user locked it deliberately. Either way the user's
  * explicit choice (`progressLocked`) wins, so a finished target can be unlocked to correct it.
+ *
+ * Note this is only the *reading* rule. Re-locking on completion is an event, not a fallback —
+ * see {@link relockOnCompletion}.
  */
 export function isProgressLocked(t: Target): boolean {
   return t.progressLocked ?? targetProgress(t) >= 1;
+}
+
+/**
+ * Reaching 100% pins a target **again**, even if it was deliberately unlocked before.
+ *
+ * The lock belongs to *being* complete, not to the first time it happened. Left to
+ * {@link isProgressLocked} alone the `>= 1` branch is only consulted while `progressLocked` is
+ * unset, so the moment the user toggled the padlock the explicit `false` won permanently and the
+ * target never locked itself again however often it was completed.
+ *
+ * Only the **transition** re-locks: unlocking a target that is already at 100% still sticks, so a
+ * finished target can be corrected without the lock closing under the user's hands. An unset flag
+ * needs no write either — it already locks itself at 100%.
+ */
+export function relockOnCompletion(before: Target, after: Target): Target {
+  if (after.progressLocked !== false) return after;
+  if (targetProgress(before) >= 1 || targetProgress(after) < 1) return after;
+  return { ...after, progressLocked: true };
 }
 
 /**

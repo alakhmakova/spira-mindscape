@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.auth;
 
 import com.spiramindscape.backend.ai.crypto.EncryptionService;
+import com.spiramindscape.backend.logging.AuthAuditLogger;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -34,14 +35,17 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final AppUserRepository appUserRepository;
     private final EncryptionService encryptionService;
+    private final AuthAuditLogger authAuditLogger;
 
     public OAuth2LoginSuccessHandler(OAuth2AuthorizedClientService authorizedClientService,
                                      AppUserRepository appUserRepository,
                                      EncryptionService encryptionService,
+                                     AuthAuditLogger authAuditLogger,
                                      @Value("${app.frontend.url}") String frontendUrl) {
         this.authorizedClientService = authorizedClientService;
         this.appUserRepository = appUserRepository;
         this.encryptionService = encryptionService;
+        this.authAuditLogger = authAuditLogger;
         setDefaultTargetUrl(frontendUrl);
         setAlwaysUseDefaultTargetUrl(true);
     }
@@ -50,6 +54,9 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
         captureRefreshToken(authentication);
+        if (authentication != null && authentication.getPrincipal() instanceof AppUserOidcUser principal) {
+            authAuditLogger.signInSucceeded(AuthAuditLogger.Method.WEB, principal.getAppUser().getId());
+        }
         super.onAuthenticationSuccess(request, response, authentication);
     }
 
@@ -75,7 +82,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             appUserRepository.save(user);
         } catch (Exception e) {
             // Never block login because refresh-token capture failed.
-            log.warn("Could not capture Google refresh token: {}", e.getMessage());
+            log.warn("Could not capture Google refresh token", e);
         }
     }
 }

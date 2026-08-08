@@ -1,5 +1,6 @@
 package com.spiramindscape.android.ui.ai
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,9 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,10 +54,17 @@ import com.spiramindscape.android.data.ai.ChatRole
 import com.spiramindscape.android.data.ai.Proposal
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.ui.components.InlineEditText
+import com.spiramindscape.android.ui.components.SpiraBadge
+import com.spiramindscape.android.ui.components.SpiraBadgeTone
+import com.spiramindscape.android.ui.components.SpiraDropdownMenu
+import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.goals.copyPlainText
+import com.spiramindscape.android.ui.icons.SpiraArt
 import com.spiramindscape.android.ui.icons.SpiraIcons
+import com.spiramindscape.android.ui.theme.Brand1100
 import com.spiramindscape.android.ui.theme.Guava300
-import com.spiramindscape.android.ui.theme.Kale300
+import com.spiramindscape.android.ui.theme.Intelligence300
+import com.spiramindscape.android.ui.theme.Intelligence500
 import com.spiramindscape.android.ui.theme.Kale600
 
 /**
@@ -98,8 +107,10 @@ fun AiChatScreen(
     Column(
         modifier
             .fillMaxSize()
-            .background(Kale600)
-            .statusBarsPadding(),
+            .background(PANEL_GROUND)
+            // The panel is a drawer now, not a screen: it never reaches the status bar, so it
+            // pads for its own grab handle instead of for the system inset.
+            .padding(top = 14.dp),
     ) {
         PanelHeader(
             inGrow = inGrow,
@@ -208,8 +219,14 @@ internal val WHITE_35 = Color.White.copy(alpha = 0.35f)
 internal val WHITE_20 = Color.White.copy(alpha = 0.20f)
 internal val WHITE_10 = Color.White.copy(alpha = 0.10f)
 
-/** Dark type on the white bubbles and composer, kept in the Kale family as the web has it. */
-internal val ON_WHITE = Kale600
+/**
+ * The panel's ground: **Kale-600** `#005961` — sampled straight from the reference the owner
+ * supplied. (brand-1200 was tried and came back too dark for a surface this size.)
+ */
+internal val PANEL_GROUND = Kale600
+
+/** Dark type on the white bubbles and composer — brand-1100, the same step the web uses. */
+internal val ON_WHITE = Brand1100
 
 /**
  * The wordmark and the panel's actions. In a GROW session the right-hand side becomes the timer
@@ -230,7 +247,11 @@ private fun PanelHeader(
         Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+        // The tag is centred against the wordmark, not sat on its baseline: at 27sp and 16sp a
+        // shared baseline hangs the small text off the bottom of the large one. Centring reads as
+        // one lockup. (Both carry lineHeight == fontSize, so their boxes are their letters and
+        // centring the boxes centres what you see.)
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "spira",
                 style = MaterialTheme.typography.bodyLarge,
@@ -247,7 +268,6 @@ private fun PanelHeader(
                 fontSize = 16.sp,
                 lineHeight = 16.sp,
                 color = WHITE_74,
-                modifier = Modifier.padding(bottom = 1.dp),
             )
         }
 
@@ -272,42 +292,39 @@ private fun PanelHeader(
                 )
             }
         } else {
+            // "New chat" is shaped like every other add-action in the app — a circled plus and a
+            // plain label. There is no close ✕ beside it: the panel is a drawer, so it is put away
+            // by swiping it down, tapping the page above it, or the back gesture.
             if (canClear) {
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(9.dp))
                         .clickable(enabled = !busy, onClick = onNewChat)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        SpiraIcons.Plus,
+                        SpiraIcons.CirclePlus,
                         contentDescription = null,
                         tint = if (busy) WHITE_35 else WHITE_74,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(17.dp),
                     )
-                    Spacer(Modifier.size(6.dp))
+                    Spacer(Modifier.size(7.dp))
                     Text(
                         "New chat",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
+                        // Trimmed leading: centring the line box against the plus left the label
+                        // riding high, because the box reserves descender room that "New chat"
+                        // never uses. Trimming it centres the word on the glyph instead.
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeightStyle = LineHeightStyle(
+                                alignment = LineHeightStyle.Alignment.Center,
+                                trim = LineHeightStyle.Trim.Both,
+                            ),
+                        ),
+                        fontWeight = FontWeight.SemiBold,
                         color = if (busy) WHITE_35 else WHITE_74,
                     )
                 }
-            }
-            Box(
-                Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .clickable(onClick = onClose),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    SpiraIcons.X,
-                    contentDescription = "Close the assistant",
-                    tint = WHITE_74,
-                    modifier = Modifier.size(16.dp),
-                )
             }
         }
     }
@@ -327,7 +344,7 @@ private fun ProviderStrip(provider: String, connected: Boolean, onOpen: () -> Un
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(SpiraIcons.Key, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(12.dp))
+            Icon(SpiraIcons.NavKey, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(13.dp))
             Spacer(Modifier.size(6.dp))
             Text(
                 "Bring your own key",
@@ -344,14 +361,23 @@ private fun ProviderStrip(provider: String, connected: Boolean, onOpen: () -> Un
             )
         }
         Spacer(Modifier.weight(1f))
+        // The dot and its halo — the web's `shadow-[0_0_0_3px_rgba(...)]`, which Android was
+        // missing entirely. The ring is a fifth of the dot's opacity and three units wide, so the
+        // mark reads as a lit indicator rather than a bare speck.
+        //
+        // The `intelligence` ramp, not the semantic ones: this dot marks the assistant's own
+        // provider, so it belongs to the AI accent. A connected key takes the bright step, a
+        // missing one the pale step, so the state still reads.
+        val dot = if (connected) Intelligence500 else Intelligence300
         Box(
             Modifier
-                .size(7.dp)
+                .size(13.dp)
                 .clip(CircleShape)
-                // Brand tones rather than the web's ad-hoc mint/amber: Kale-300 reads as "ready",
-                // Guava-300 as "needs attention", and both hold up on the teal ground.
-                .background(if (connected) Kale300 else Guava300),
-        )
+                .background(dot.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+        }
         Spacer(Modifier.size(6.dp))
         Text(
             providerLabel(provider),
@@ -449,11 +475,16 @@ private fun EmptyChat(
             Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(WHITE_10)
-                .border(1.dp, WHITE_20, CircleShape),
+                .background(Color.White),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(SpiraIcons.Leaf, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            // Image, not Icon: the seedling carries its own greens, and Icon would tint them flat.
+            // On white it keeps the ink the source drew it with.
+            Image(
+                imageVector = SpiraArt.sprout(),
+                contentDescription = null,
+                modifier = Modifier.size(34.dp),
+            )
         }
         Spacer(Modifier.height(16.dp))
         Text(
@@ -727,6 +758,7 @@ private fun Composer(
 ) {
     var draft by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf<List<AiApi.ChatAttachment>>(emptyList()) }
+    var attachMenu by remember { mutableStateOf(false) }
     val picker = rememberChatAttachmentPicker { picked ->
         attachments = (attachments + picked).takeLast(ATTACH_MAX_COUNT)
     }
@@ -808,38 +840,52 @@ private fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (allowAttachments) {
-                    Box(
-                        Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = enabled && attachments.size < ATTACH_MAX_COUNT) { picker() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            SpiraIcons.Paperclip,
-                            contentDescription = "Attach a file",
-                            tint = if (enabled) ON_WHITE else ON_WHITE.copy(alpha = 0.4f),
-                            modifier = Modifier.size(16.dp),
-                        )
+                    // The paperclip asks WHERE from rather than going straight to the file
+                    // chooser: on a phone the camera is the fastest way to put a document in
+                    // front of the assistant, and it used to be unreachable from here.
+                    Box {
+                        Box(
+                            Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = enabled && attachments.size < ATTACH_MAX_COUNT) {
+                                    attachMenu = true
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                SpiraIcons.Paperclip,
+                                contentDescription = "Attach a file",
+                                tint = if (enabled) ON_WHITE else ON_WHITE.copy(alpha = 0.4f),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        SpiraDropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
+                            SpiraMenuItem(
+                                label = "Take a photo",
+                                icon = SpiraIcons.Camera,
+                                onClick = { attachMenu = false; picker.takePhoto() },
+                            )
+                            SpiraMenuItem(
+                                label = "Choose a file",
+                                icon = SpiraIcons.Paperclip,
+                                onClick = { attachMenu = false; picker.pickFile() },
+                            )
+                        }
                     }
                 }
                 growAction?.let { start ->
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = start)
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(SpiraIcons.Leaf, contentDescription = null, tint = ON_WHITE, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.size(6.dp))
-                        Text(
-                            "Start GROW session",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = ON_WHITE,
-                        )
-                    }
+                    // A badge, not a text button: it is the assistant offering a mode, so it
+                    // takes the palette's `intelligence` tone — the colour reserved for AI.
+                    SpiraBadge(
+                        "Start GROW session",
+                        tone = SpiraBadgeTone.Intelligence,
+                        modifier = Modifier.clickable(onClick = start),
+                        icon = SpiraIcons.NavAi, // the same two-star mark the assistant uses
+                        // Its small star hangs below the big one, so the glyph's ink sits 2px
+                        // under the word; lift it back onto the label's centre.
+                        iconModifier = Modifier.offset(y = (-2).dp),
+                    )
                 }
                 Spacer(Modifier.weight(1f))
 

@@ -3,6 +3,7 @@ package com.spiramindscape.android.ui.ai
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.ai.AiApi
 import com.spiramindscape.android.data.ai.ChatMessage
 import com.spiramindscape.android.data.ai.ChatRole
@@ -88,7 +89,11 @@ class AiChatViewModel(
 
     fun refreshKeys() {
         viewModelScope.launch {
-            val saved = runCatching { api.listKeys() }.getOrDefault(emptyList())
+            // A failure here looks identical to "no keys saved", so the user is told to
+            // add a key they already have.
+            val saved = runCatching { api.listKeys() }
+                .onFailure { SpiraLog.w(TAG, "ai_keys_load_failed", it) }
+                .getOrDefault(emptyList())
             _keys.value = saved
             _needsKey.value = saved.none { it.provider.equalsIgnoreCase(_provider.value) }
         }
@@ -97,7 +102,12 @@ class AiChatViewModel(
     fun chooseProvider(provider: String) {
         _provider.value = provider
         _needsKey.value = _keys.value.none { it.provider.equalsIgnoreCase(provider) }
-        viewModelScope.launch { runCatching { api.saveProvider(provider) } }
+        // The picker updates either way, so a failure means the choice silently reverts
+        // on the next launch.
+        viewModelScope.launch {
+            runCatching { api.saveProvider(provider) }
+                .onFailure { SpiraLog.w(TAG, "ai_provider_save_failed", it) }
+        }
     }
 
     /** Save a key, then adopt its provider — the user just told us what they want to use. */
@@ -123,6 +133,7 @@ class AiChatViewModel(
     fun chooseModel(provider: String, model: String) {
         viewModelScope.launch {
             runCatching { api.updateKeyModel(provider, model) }
+                .onFailure { SpiraLog.w(TAG, "ai_model_save_failed", it) }
             refreshKeys()
         }
     }
@@ -130,7 +141,10 @@ class AiChatViewModel(
     // ── Transcript ──────────────────────────────────────────────────────────
 
     private suspend fun loadTranscript() {
-        val stored = runCatching { api.getTranscript(goalId) }.getOrNull() ?: return
+        // Indistinguishable from "no history yet" — the chat just opens empty.
+        val stored = runCatching { api.getTranscript(goalId) }
+            .onFailure { SpiraLog.w(TAG, "ai_transcript_load_failed goalId=$goalId", it) }
+            .getOrNull() ?: return
         val parsed = parseTranscript(stored.content) ?: return
         lastSyncedAt = stored.updatedAt
         _messages.value = mergeAttachmentBytes(_messages.value, parsed)
@@ -144,7 +158,9 @@ class AiChatViewModel(
     fun syncTranscript() {
         if (_streaming.value) return
         viewModelScope.launch {
-            val stored = runCatching { api.getTranscript(goalId) }.getOrNull() ?: return@launch
+            val stored = runCatching { api.getTranscript(goalId) }
+                .onFailure { SpiraLog.w(TAG, "ai_transcript_sync_failed goalId=$goalId", it) }
+                .getOrNull() ?: return@launch
             if (stored.updatedAt != null && stored.updatedAt == lastSyncedAt) return@launch
             val parsed = parseTranscript(stored.content) ?: return@launch
             lastSyncedAt = stored.updatedAt
@@ -155,7 +171,11 @@ class AiChatViewModel(
     private fun persist() {
         val json = encodeTranscript(_messages.value)
         viewModelScope.launch {
-            lastSyncedAt = runCatching { api.putTranscript(goalId, json) }.getOrNull() ?: lastSyncedAt
+            // The highest-value one: a failure here means the whole conversation is not
+            // saved, and the UI gives no sign of it until the next device shows nothing.
+            lastSyncedAt = runCatching { api.putTranscript(goalId, json) }
+                .onFailure { SpiraLog.w(TAG, "ai_transcript_save_failed goalId=$goalId", it) }
+                .getOrNull() ?: lastSyncedAt
         }
     }
 
@@ -165,7 +185,12 @@ class AiChatViewModel(
         _messages.value = emptyList()
         _mode.value = ChatMode.CHAT
         stopTimer()
-        viewModelScope.launch { runCatching { api.deleteTranscript(goalId) } }
+        // The screen clears regardless, so a failure leaves the old chat on the server and
+        // it reappears on the next sync — "New chat" that didn't take.
+        viewModelScope.launch {
+            runCatching { api.deleteTranscript(goalId) }
+                .onFailure { SpiraLog.w(TAG, "ai_transcript_delete_failed goalId=$goalId", it) }
+        }
     }
 
     // ── Sending ─────────────────────────────────────────────────────────────
@@ -411,6 +436,8 @@ class AiChatViewModel(
     }
 
     companion object {
+        private const val TAG = "AiChatVM"
+
         const val DEFAULT_PROVIDER = "ANTHROPIC"
         const val DEFAULT_SESSION_MINUTES = 20
 

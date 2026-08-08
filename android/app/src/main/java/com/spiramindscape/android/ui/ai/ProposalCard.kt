@@ -41,6 +41,8 @@ import com.spiramindscape.android.data.ai.createSummary
 import com.spiramindscape.android.data.ai.editDisplay
 import com.spiramindscape.android.data.ai.stripHtml
 import com.spiramindscape.android.ui.components.InlineEditText
+import com.spiramindscape.android.ui.components.SpiraBadge
+import com.spiramindscape.android.ui.components.SpiraBadgeTone
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Guava100
 import com.spiramindscape.android.ui.theme.Guava600
@@ -237,36 +239,16 @@ fun ProposalCard(
     }
 }
 
-/** The kind badge: what sort of change this is, in one word. */
+/** The kind badge: what sort of change this is, in one word — the app's one badge shape. */
 @Composable
 private fun KindBadge(kind: ProposalKind, settled: Boolean) {
-    val creating = kind in CREATE_KINDS
-    val destructive = kind.wire.startsWith("delete_")
-    val background = when {
-        settled -> MaterialTheme.spiraExtras.surfaceSunken
-        destructive -> Guava100
-        creating -> Kale100
-        else -> MaterialTheme.spiraExtras.surfaceSunken
+    val tone = when {
+        settled -> SpiraBadgeTone.Neutral
+        kind.wire.startsWith("delete_") -> SpiraBadgeTone.Error
+        kind in CREATE_KINDS -> SpiraBadgeTone.Teal
+        else -> SpiraBadgeTone.Info
     }
-    val tint = when {
-        settled -> MaterialTheme.spiraExtras.mutedForeground
-        destructive -> Guava600
-        creating -> Kale500
-        else -> MaterialTheme.spiraExtras.mutedForeground
-    }
-    Box(
-        Modifier
-            .clip(CircleShape)
-            .background(background)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    ) {
-        Text(
-            kindLabel(kind),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            fontWeight = FontWeight.Bold,
-            color = tint,
-        )
-    }
+    SpiraBadge(kindLabel(kind), tone)
 }
 
 private val CREATE_KINDS = setOf(
@@ -283,39 +265,39 @@ private val CREATE_KINDS = setOf(
 )
 
 internal fun kindLabel(kind: ProposalKind): String = when (kind) {
-    ProposalKind.NEW_GOAL -> "NEW GOAL"
-    ProposalKind.TARGET -> "NEW TARGET"
-    ProposalKind.TASK -> "NEW TASK"
-    ProposalKind.OPTION -> "NEW OPTION"
-    ProposalKind.NOTE -> "NEW NOTE"
-    ProposalKind.LINK -> "NEW LINK"
-    ProposalKind.EMAIL -> "NEW CONTACT"
-    ProposalKind.OBSTACLE -> "NEW OBSTACLE"
-    ProposalKind.ACTION -> "NEW ACTION"
-    ProposalKind.ADD_CHECKLIST_ITEM -> "NEW SUB-TASK"
-    ProposalKind.EDIT -> "EDIT GOAL"
-    ProposalKind.CONFIDENCE -> "CONFIDENCE"
-    ProposalKind.DEADLINE -> "DEADLINE"
-    ProposalKind.EDIT_TARGET -> "EDIT TARGET"
-    ProposalKind.EDIT_OPTION -> "EDIT OPTION"
-    ProposalKind.EDIT_OBSTACLE -> "EDIT OBSTACLE"
-    ProposalKind.EDIT_ACTION -> "EDIT ACTION"
-    ProposalKind.EDIT_NOTE -> "EDIT NOTE"
-    ProposalKind.EDIT_LINK -> "EDIT LINK"
-    ProposalKind.EDIT_EMAIL -> "EDIT CONTACT"
-    ProposalKind.COMPLETE_TARGET -> "TARGET STATUS"
-    ProposalKind.TARGET_PROGRESS -> "PROGRESS"
-    ProposalKind.SELECT_OPTION -> "ACTIVE OPTION"
-    ProposalKind.CHECKLIST_ITEM -> "CHECKLIST"
-    ProposalKind.EDIT_GOAL -> "EDIT GOAL"
-    ProposalKind.OPEN_GOAL -> "OPEN GOAL"
-    ProposalKind.DELETE_GOAL -> "DELETE GOAL"
-    ProposalKind.DELETE_TARGET -> "DELETE TARGET"
-    ProposalKind.DELETE_OPTION -> "DELETE OPTION"
-    ProposalKind.DELETE_OBSTACLE -> "DELETE OBSTACLE"
-    ProposalKind.DELETE_ACTION -> "DELETE ACTION"
-    ProposalKind.DELETE_CHECKLIST_ITEM -> "DELETE ITEM"
-    ProposalKind.UNKNOWN -> "CHANGE"
+    ProposalKind.NEW_GOAL -> "New goal"
+    ProposalKind.TARGET -> "New target"
+    ProposalKind.TASK -> "New task"
+    ProposalKind.OPTION -> "New option"
+    ProposalKind.NOTE -> "New note"
+    ProposalKind.LINK -> "New link"
+    ProposalKind.EMAIL -> "New contact"
+    ProposalKind.OBSTACLE -> "New obstacle"
+    ProposalKind.ACTION -> "New action"
+    ProposalKind.ADD_CHECKLIST_ITEM -> "New sub-task"
+    ProposalKind.EDIT -> "Edit goal"
+    ProposalKind.CONFIDENCE -> "Confidence"
+    ProposalKind.DEADLINE -> "Deadline"
+    ProposalKind.EDIT_TARGET -> "Edit target"
+    ProposalKind.EDIT_OPTION -> "Edit option"
+    ProposalKind.EDIT_OBSTACLE -> "Edit obstacle"
+    ProposalKind.EDIT_ACTION -> "Edit action"
+    ProposalKind.EDIT_NOTE -> "Edit note"
+    ProposalKind.EDIT_LINK -> "Edit link"
+    ProposalKind.EDIT_EMAIL -> "Edit contact"
+    ProposalKind.COMPLETE_TARGET -> "Target status"
+    ProposalKind.TARGET_PROGRESS -> "Progress"
+    ProposalKind.SELECT_OPTION -> "Active option"
+    ProposalKind.CHECKLIST_ITEM -> "Checklist"
+    ProposalKind.EDIT_GOAL -> "Edit goal"
+    ProposalKind.OPEN_GOAL -> "Open goal"
+    ProposalKind.DELETE_GOAL -> "Delete goal"
+    ProposalKind.DELETE_TARGET -> "Delete target"
+    ProposalKind.DELETE_OPTION -> "Delete option"
+    ProposalKind.DELETE_OBSTACLE -> "Delete obstacle"
+    ProposalKind.DELETE_ACTION -> "Delete action"
+    ProposalKind.DELETE_CHECKLIST_ITEM -> "Delete item"
+    ProposalKind.UNKNOWN -> "Change"
 }
 
 /** One optional field of a create proposal, with its own tick. */

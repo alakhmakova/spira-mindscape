@@ -1,9 +1,11 @@
 package com.spiramindscape.backend.config;
 
+import com.spiramindscape.backend.auth.AppUserOidcUser;
 import com.spiramindscape.backend.auth.AppUserOidcUserService;
 import com.spiramindscape.backend.auth.E2eTestAuthFilter;
 import com.spiramindscape.backend.auth.LocalDevAuthFilter;
 import com.spiramindscape.backend.auth.OAuth2LoginSuccessHandler;
+import com.spiramindscape.backend.logging.AuthAuditLogger;
 import com.spiramindscape.backend.security.RateLimitFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +13,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -50,6 +53,7 @@ public class SecurityConfig {
     /** Present only under the local-dev {@code local} profile (otherwise empty). */
     private final ObjectProvider<LocalDevAuthFilter> localDevAuthFilter;
     private final RateLimitFilter rateLimitFilter;
+    private final AuthAuditLogger authAuditLogger;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -111,6 +115,11 @@ public class SecurityConfig {
                 // Public: native mobile sign-in — verifies a Google ID token and starts a
                 // session itself (the caller is unauthenticated at this point).
                 .requestMatchers("/api/auth/google/mobile").permitAll()
+                // Public: browser error reports. The SPA shell renders for anonymous users
+                // (login page, expired session), and those errors are precisely the ones we
+                // could not otherwise see — requiring auth would blind us to half of them.
+                // Its only effect is a log line; rate limiting is the compensating control.
+                .requestMatchers(HttpMethod.POST, "/api/client-errors").permitAll()
                 // Data endpoints require authentication
                 .requestMatchers("/graphql", "/api/**").authenticated()
                 // Everything else is the SPA shell + static assets (served by Spring in
@@ -143,6 +152,10 @@ public class SecurityConfig {
                 // stale cookies from before the JDBC-session migration.
                 .deleteCookies("SESSION", "JSESSIONID")
                 .logoutSuccessHandler((request, response, authentication) -> {
+                    if (authentication != null
+                            && authentication.getPrincipal() instanceof AppUserOidcUser principal) {
+                        authAuditLogger.signedOut(principal.getAppUser().getId());
+                    }
                     response.setStatus(HttpServletResponse.SC_NO_CONTENT); // 204
                 })
             )
@@ -180,8 +193,13 @@ public class SecurityConfig {
             http.csrf(csrf -> csrf
                 .csrfTokenRepository(csrfRepo)
                 .csrfTokenRequestHandler(requestHandler)
+                // /api/client-errors is exempt because navigator.sendBeacon — the only
+                // transport that survives a page crash or unload — cannot set the
+                // X-XSRF-TOKEN header. Safe here: the endpoint writes a log line and
+                // nothing else, so there is no state a forged request could change.
                 .ignoringRequestMatchers(
-                        "/health", "/oauth2/**", "/login/**", "/api/auth/google/mobile"));
+                        "/health", "/oauth2/**", "/login/**", "/api/auth/google/mobile",
+                        "/api/client-errors"));
         }
 
         return http.build();

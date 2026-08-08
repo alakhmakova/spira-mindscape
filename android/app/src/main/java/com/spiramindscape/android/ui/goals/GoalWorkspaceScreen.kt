@@ -1,8 +1,9 @@
 package com.spiramindscape.android.ui.goals
 
-import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -14,44 +15,33 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,10 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +79,10 @@ import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.launch
 import com.spiramindscape.android.ui.ai.WithAiAssistant
 import com.spiramindscape.android.ui.components.CelebrationOverlay
+import com.spiramindscape.android.ui.components.GoalWorkspaceBottomBar
+import com.spiramindscape.android.ui.components.GoalWorkspaceTopBar
+import com.spiramindscape.android.ui.components.GrowTabsRow
+import com.spiramindscape.android.ui.components.SpiraInlineBanner
 import com.spiramindscape.android.ui.components.ConfidenceStepper
 import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.DeadlineLinkField
@@ -106,7 +98,6 @@ import com.spiramindscape.android.ui.components.SectionLabel
 import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
 import com.spiramindscape.android.ui.components.SpiraCard
-import com.spiramindscape.android.ui.components.SpiraTopBar
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
@@ -194,6 +185,7 @@ fun GoalWorkspaceRoute(
         factory = GoalWorkspaceViewModel.factory(goalId, ApolloGoalsRepository(Network.apollo)),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     val allGoals by GoalsStore.goals.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
@@ -255,7 +247,7 @@ fun GoalWorkspaceRoute(
             }
         },
         goal = (state as? GoalUiState.Content)?.goal,
-    ) {
+    ) { swipeUpGesture ->
         GoalWorkspaceScreen(
             state = state,
             user = user,
@@ -263,7 +255,10 @@ fun GoalWorkspaceRoute(
             onLogout = onLogout,
             onOpenGoal = onOpenGoal,
             onOpenAssistant = { assistantOpen = true },
+            assistantSwipeUpGesture = swipeUpGesture,
             actions = workspaceActions,
+            actionError = actionError,
+            onDismissActionError = viewModel::clearActionError,
         )
     }
 }
@@ -278,11 +273,20 @@ fun GoalWorkspaceScreen(
     onLogout: () -> Unit = {},
     onOpenGoal: (String) -> Unit = {},
     onOpenAssistant: () -> Unit = {},
+    /** Attached to the footer so swiping up there opens the assistant (see `AiChatHost`). */
+    assistantSwipeUpGesture: Modifier = Modifier,
+    /** An action that failed without changing the screen (e.g. a delete that didn't land). */
+    actionError: String? = null,
+    onDismissActionError: () -> Unit = {},
 ) {
     var confirmDeleteGoal by remember { mutableStateOf(false) }
-    var searchOpen by remember { mutableStateOf(false) }
+    // The header's goal switcher. It is local to this screen and starts empty on every visit —
+    // a search typed on the All-goals dashboard must never carry into an opened goal.
     var searchQuery by remember { mutableStateOf("") }
-    // Tabs switch either by tapping the bottom nav or by swiping the pager; both drive/read
+    // Resources is a page of its own (reached from the footer), not one of the GROW phases and
+    // not a drawer.
+    var resourcesOpen by remember { mutableStateOf(false) }
+    // Tabs switch either by tapping the GROW tab bar or by swiping the pager; both drive/read
     // the same pagerState so they always agree on which tab is showing.
     val pagerState = rememberPagerState(pageCount = { GoalTab.entries.size })
     // Switching tabs clears focus off any inline field being edited — this commits the pending edit
@@ -306,58 +310,76 @@ fun GoalWorkspaceScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Search is a goal switcher: results appear only once something is typed.
-    if (searchOpen) {
-        GoalSearchScreen(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            results = if (searchQuery.isBlank()) emptyList()
-            else allGoals.filter { it.title.contains(searchQuery.trim(), ignoreCase = true) },
-            onOpen = { id -> onOpenGoal(id); searchOpen = false; searchQuery = "" },
-            onClose = { searchOpen = false; searchQuery = "" },
-        )
-        return
-    }
+    // The Resources page is a step "inside" the workspace, so back leaves it rather than the goal.
+    BackHandler(enabled = resourcesOpen) { resourcesOpen = false }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        drawerContent = { SpiraDrawer(user, onLogout) },
+        drawerContent = {
+            SpiraDrawer(
+                user = user,
+                onLogout = onLogout,
+                goalTitle = (state as? GoalUiState.Content)?.goal?.title,
+                // Which place the drawer should mark — the pager's page, or Resources over it.
+                currentPlace = if (resourcesOpen) GoalTab.entries.size else pagerState.currentPage,
+                onClose = { scope.launch { drawerState.close() } },
+                onHome = { scope.launch { drawerState.close() }; actions.onBack() },
+                onGoalPlace = { place ->
+                    scope.launch { drawerState.close() }
+                    if (place < GoalTab.entries.size) {
+                        resourcesOpen = false
+                        scope.launch { pagerState.scrollToPage(place) }
+                    } else {
+                        resourcesOpen = true
+                    }
+                },
+            )
+        },
     ) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                // Shared dark-teal header (design mockup): SPIRA + Search / AI / Profile.
-                SpiraTopBar(
-                    onMenu = { scope.launch { drawerState.open() } },
-                    onSearch = { searchOpen = true },
-                    onAssistant = onOpenAssistant,
-                    onProfile = { scope.launch { drawerState.open() } },
-                    onBrandClick = actions.onBack, // SPIRA wordmark → back to All goals
-                )
+                Column {
+                    // Home / goal search / delete — the workspace's own header (the All-goals
+                    // dashboard keeps the SPIRA wordmark bar).
+                    GoalWorkspaceTopBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onHome = actions.onBack,
+                        onDelete = { confirmDeleteGoal = true },
+                    )
+                    // The GROW tabs stay put on every phase screen. On the Resources page nothing
+                    // is underlined (-1) — it isn't a GROW phase — but the row is still there, so
+                    // one tap leads back into the flow.
+                    GrowTabsRow(
+                        labels = GoalTab.entries.map { it.label },
+                        selectedIndex = if (resourcesOpen) -1 else pagerState.currentPage,
+                        onSelect = { index ->
+                            resourcesOpen = false
+                            // A tap JUMPS to the tab rather than scrolling to it: a tab three
+                            // pages away would otherwise flick the two screens in between past
+                            // the user, which reads as noise, not as motion. Swiping still
+                            // animates — that is the pager following the finger.
+                            scope.launch { pagerState.scrollToPage(index) }
+                        },
+                    )
+                    // An action that failed without changing the screen — a delete that didn't
+                    // land, for instance. Under the chrome so it can't be missed, and above the
+                    // content so the goal stays visible behind it.
+                    SpiraInlineBanner(
+                        message = actionError,
+                        onDismiss = onDismissActionError,
+                    )
+                }
             },
             bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.spiraExtras.surfaceRaised) {
-                    GoalTab.entries.forEach { t ->
-                        NavigationBarItem(
-                            selected = pagerState.currentPage == t.ordinal,
-                            onClick = { scope.launch { pagerState.animateScrollToPage(t.ordinal) } },
-                            icon = { Icon(t.icon(), contentDescription = null, modifier = Modifier.width(22.dp).height(22.dp)) },
-                            label = {
-                                Text(
-                                    t.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.spiraExtras.primarySoft,
-                            ),
-                        )
-                    }
-                }
+                GoalWorkspaceBottomBar(
+                    onMenu = { scope.launch { drawerState.open() } },
+                    onAssistant = onOpenAssistant,
+                    onResources = { resourcesOpen = !resourcesOpen },
+                    resourcesSelected = resourcesOpen,
+                    swipeUpGesture = assistantSwipeUpGesture,
+                )
             },
         ) { padding ->
             val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -407,19 +429,26 @@ fun GoalWorkspaceScreen(
                             modifier = Modifier.fillMaxSize().zIndex(2f),
                         )
                         ProvideInlineResources(inlineResources) {
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier.fillMaxSize(),
-                            ) { page ->
-                                GoalTabContent(
+                            if (resourcesOpen) {
+                                ResourcesPage(
                                     goal = state.goal,
-                                    tab = GoalTab.entries[page],
                                     actions = actions,
-                                    targetView = targetView,
-                                    onOpenFullResource = { fullScreenResourceId = it },
-                                    realityKind = realityKind,
-                                    onRealityKindChange = { realityKind = it },
+                                    onOpenFull = { fullScreenResourceId = it },
                                 )
+                            } else {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) { page ->
+                                    GoalTabContent(
+                                        goal = state.goal,
+                                        tab = GoalTab.entries[page],
+                                        actions = actions,
+                                        targetView = targetView,
+                                        realityKind = realityKind,
+                                        onRealityKindChange = { realityKind = it },
+                                    )
+                                }
                             }
                         }
                     }
@@ -427,52 +456,64 @@ fun GoalWorkspaceScreen(
                 // FABs live directly in this full-width content box (not Scaffold's dedicated
                 // floatingActionButton slot) — that slot sizes itself to its content rather than
                 // the screen width, which clipped a BottomEnd-aligned second FAB off-screen.
-                FloatingActionButton(
-                    onClick = actions.onBack,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(16.dp),
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) { Icon(SpiraIcons.ArrowLeft, contentDescription = "Back to all goals") }
-                // "Add option" — only on the Options tab. Guava (coral accent) FAB with a white +,
-                // popping against that tab's teal page background.
-                if (pagerState.currentPage == GoalTab.Options.ordinal) {
-                    FloatingActionButton(
-                        onClick = { showNewOptionSheet = true },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.tertiary,
-                        contentColor = MaterialTheme.colorScheme.onTertiary,
-                    ) { Icon(SpiraIcons.Plus, contentDescription = "Add option") }
+                // Guava (coral accent) FAB with a white +, one per page that can add something.
+                val addAction: Pair<String, () -> Unit>? = when {
+                    resourcesOpen -> "Add resource" to { showNewResourceSheet = true }
+                    pagerState.currentPage == GoalTab.Options.ordinal ->
+                        "Add option" to { showNewOptionSheet = true }
+                    pagerState.currentPage == GoalTab.Reality.ordinal ->
+                        (if (realityKind == "obstacles") "Add obstacle" else "Add action") to
+                            { showNewRealitySheet = true }
+                    else -> null
                 }
-                // "Add resource" — only on the Resources tab. Guava FAB (matches the design mockup).
-                if (pagerState.currentPage == GoalTab.Resources.ordinal) {
+                if (addAction != null) {
+                    // Kale on the white pages, Guava on the teal Options page: on white the teal
+                    // button belongs to the app's chrome, while against the teal ground it would
+                    // vanish — that is the one place the coral accent is needed to stand out.
+                    val addInKale = resourcesOpen ||
+                        pagerState.currentPage != GoalTab.Options.ordinal
                     FloatingActionButton(
-                        onClick = { showNewResourceSheet = true },
+                        onClick = addAction.second,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                         shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.tertiary,
-                        contentColor = MaterialTheme.colorScheme.onTertiary,
-                    ) { Icon(SpiraIcons.Plus, contentDescription = "Add resource") }
+                        containerColor = if (addInKale) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                        contentColor = if (addInKale) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onTertiary
+                        },
+                    ) { Icon(SpiraIcons.Plus, contentDescription = addAction.first) }
                 }
-                // "Add action/obstacle" — only on the Reality tab. Guava FAB.
-                if (pagerState.currentPage == GoalTab.Reality.ordinal) {
-                    FloatingActionButton(
-                        onClick = { showNewRealitySheet = true },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.tertiary,
-                        contentColor = MaterialTheme.colorScheme.onTertiary,
-                    ) { Icon(SpiraIcons.Plus, contentDescription = if (realityKind == "obstacles") "Add obstacle" else "Add action") }
+
+                // The goal switcher's results hang under the header, over the page, and only
+                // once something has been typed.
+                if (searchQuery.isNotBlank()) {
+                    GoalSearchResults(
+                        results = allGoals.filter {
+                            it.title.contains(searchQuery.trim(), ignoreCase = true)
+                        },
+                        onOpen = { id -> searchQuery = ""; onOpenGoal(id) },
+                        modifier = Modifier.align(Alignment.TopCenter).zIndex(3f),
+                    )
                 }
             }
         }
 
         if (confirmDeleteGoal) {
+            // Worded like the target dialog, so the two read as one pattern rather than two
+            // different warnings, and the goal's own name is what stands out in it.
+            val goalName = (state as? GoalUiState.Content)?.goal?.title.orEmpty()
             ConfirmDialog(
                 title = "Delete this goal?",
-                message = "This removes the goal and everything in it.",
-                confirmLabel = "Delete goal",
+                message = "\"$goalName\" will be permanently deleted. Targets, options and " +
+                    "everything else inside it will be removed. You can't undo this.",
+                subject = "\"$goalName\"",
+                confirmLabel = "Yes, delete",
+                cancelLabel = "No, go back",
                 onConfirm = actions.onDeleteGoal,
                 onDismiss = { confirmDeleteGoal = false },
             )
@@ -509,17 +550,14 @@ fun GoalWorkspaceScreen(
     }
 }
 
-/** The five bottom-navigation tabs of the goal workspace. */
+/**
+ * The four GROW phases of the goal workspace, in the order the tab bar shows them. The labels are
+ * the tab bar's words — note [Targets] reads "Will do" (the GROW "Will" step), matching its
+ * on-screen kicker. Resources is deliberately absent: it is a page of its own, reached from the
+ * footer, not a phase of the method.
+ */
 enum class GoalTab(val label: String) {
-    Goal("Goal"), Reality("Reality"), Resources("Resources"), Options("Options"), Targets("Targets");
-
-    fun icon() = when (this) {
-        Goal -> SpiraIcons.Trophy
-        Reality -> SpiraIcons.Eye
-        Resources -> SpiraIcons.Folder
-        Options -> SpiraIcons.Lightbulb
-        Targets -> SpiraIcons.Target
-    }
+    Goal("Goal"), Reality("Reality"), Options("Options"), Targets("Will do")
 }
 
 @Composable
@@ -577,67 +615,80 @@ private fun TargetFilterMenu(filter: TargetFilter, onChange: (TargetFilter) -> U
     }
 }
 
-/** Full-screen goal search (from the workspace header): pick a goal to open it. */
+/**
+ * Results for the header's goal switcher — a floating white card hanging under the header, in the
+ * same language as the app's dropdowns (pure white, rounded, hairline border, soft shadow).
+ * Picking one opens that goal.
+ */
 @Composable
-private fun GoalSearchScreen(
-    query: String,
-    onQueryChange: (String) -> Unit,
+private fun GoalSearchResults(
     results: List<GoalSummary>,
     onOpen: (String) -> Unit,
-    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Row(
-                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(64.dp).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search for goals") },
-                    leadingIcon = { Icon(SpiraIcons.Search, contentDescription = null, modifier = Modifier.width(18.dp).height(18.dp)) },
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.large,
-                )
-                IconButton(onClick = onClose) { Icon(SpiraIcons.X, contentDescription = "Close search") }
-            }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.spiraExtras.surfaceRaised)
+            .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(20.dp)),
+    ) {
+        if (results.isEmpty()) {
+            Text(
+                "No goals found",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.spiraExtras.mutedForeground,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            )
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        // Capped so the card can never grow taller than the page it floats over.
+        LazyColumn(Modifier.heightIn(max = 320.dp)) {
             items(results, key = { it.id }) { goal ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(goal.id) }.padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        SpiraIcons.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(16.dp).height(16.dp),
-                    )
-                    Text(
-                        goal.title.ifBlank { "Untitled goal" },
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    goal.title.ifBlank { "Untitled goal" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(goal.id) }
+                        .padding(horizontal = 20.dp, vertical = 13.dp),
+                )
             }
         }
     }
 }
 
-/** Content of the currently selected bottom-navigation tab. */
+/**
+ * The Resources page — everything attached to this goal. It is a page in its own right (reached
+ * from the footer), not a GROW phase and not a drawer, so it gets the same scrolling frame the
+ * phase pages use.
+ */
+@Composable
+private fun ResourcesPage(
+    goal: GoalDetail,
+    actions: GoalWorkspaceActions,
+    onOpenFull: (String) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        // Cards manage their own 18dp side margin, so no extra side padding here.
+        contentPadding = PaddingValues(top = 0.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item { ResourcesTabContent(goal = goal, actions = actions, onOpenFull = onOpenFull) }
+    }
+}
+
+/** Content of the currently selected GROW tab. */
 @Composable
 private fun GoalTabContent(
     goal: GoalDetail,
     tab: GoalTab,
     actions: GoalWorkspaceActions,
     targetView: TargetViewState,
-    onOpenFullResource: (String) -> Unit = {},
     realityKind: String = "actions",
     onRealityKindChange: (String) -> Unit = {},
 ) {
@@ -652,13 +703,13 @@ private fun GoalTabContent(
         modifier = Modifier
             .fillMaxSize()
             .then(if (tab == GoalTab.Options) Modifier.background(MaterialTheme.colorScheme.primary) else Modifier),
-        // Bottom padding keeps content clear of the floating "back to all goals" button. The
-        // Options and Resources tabs pad to their own edges (cards manage their own 18dp side
-        // margin), so no extra side padding there — otherwise the cards would be doubly inset.
-        contentPadding = if (tab == GoalTab.Options || tab == GoalTab.Resources) {
-            androidx.compose.foundation.layout.PaddingValues(top = 0.dp, bottom = 96.dp)
+        // Bottom padding keeps content clear of the floating "add" button. The Options tab pads
+        // to its own edges (its cards manage their own 18dp side margin), so no extra side
+        // padding there — otherwise the cards would be doubly inset.
+        contentPadding = if (tab == GoalTab.Options) {
+            PaddingValues(top = 0.dp, bottom = 96.dp)
         } else {
-            androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp)
+            PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp)
         },
         verticalArrangement = Arrangement.spacedBy(16.dp),
         userScrollEnabled = !optionsDragging,
@@ -677,9 +728,6 @@ private fun GoalTabContent(
                     )
                 }
             }
-            GoalTab.Resources -> {
-                item { ResourcesTabContent(goal = goal, actions = actions, onOpenFull = onOpenFullResource) }
-            }
             GoalTab.Options -> {
                 item {
                     OptionsTabContent(
@@ -692,7 +740,6 @@ private fun GoalTabContent(
             GoalTab.Targets -> {
                 item {
                     GoalTabIntro(
-                        label = "Will do",
                         title = "Commit to the next steps",
                         description = "Turn your chosen option into concrete targets you'll act on, " +
                             "and track your progress as you go.",
@@ -713,7 +760,30 @@ private fun GoalTabContent(
                             onChange = { targetView.filter = it },
                         )
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { showNewTarget = true }) { Text("Add target") }
+                        // The app's add-action shape: a circled plus and a plain label, the same
+                        // as "New chat". Guava marks a target — the accent for the thing a goal
+                        // is actually measured by.
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .clickable { showNewTarget = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            Icon(
+                                SpiraIcons.CirclePlus,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Text(
+                                "Add target",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                     }
                 }
                 val visible = applyTargetView(
@@ -740,36 +810,32 @@ private fun GoalTabContent(
 }
 
 /**
- * The consistent intro block at the top of every goal-workspace screen (CLAUDE.md → "Goal-workspace
- * screen header"): a **left-aligned** kicker [label] (the screen/phase name, in the brand label
- * style) followed by a **centered** [title] and [description], with clear space between the kicker
- * and the heading. [onTeal] flips the colours for the teal-backgrounded Options tab.
+ * The intro block at the top of every goal-workspace screen: a **centered** [title] and
+ * [description]. [onTeal] flips the colours for the teal-backgrounded Options screen.
+ *
+ * There used to be a coloured kicker above the title naming the phase ("REALITY", "WILL DO").
+ * The GROW tab bar now sits directly above this block and names the phase itself, so the kicker
+ * only said the same word twice.
+ *
+ * Every phase heading — this one and the goal's own title — is set at [PHASE_HEADING_STYLE], and
+ * every screen starts with the same [PHASE_HEADING_TOP_GAP] of air under the tabs, so moving
+ * between phases never shifts the type.
  */
 @Composable
 private fun GoalTabIntro(
-    label: String,
     title: String,
     description: String,
     modifier: Modifier = Modifier,
     onTeal: Boolean = false,
 ) {
-    val kickerColor = if (onTeal) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
     val titleColor = if (onTeal) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
     val descColor = if (onTeal) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
     else MaterialTheme.spiraExtras.mutedForeground
 
-    Column(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp)) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = kickerColor,
-            textAlign = TextAlign.Start,
-        )
-        Spacer(Modifier.height(14.dp))
+    Column(modifier.fillMaxWidth().padding(top = PHASE_HEADING_TOP_GAP, bottom = 12.dp)) {
         Text(
             title,
-            style = MaterialTheme.typography.headlineSmall,
+            style = PHASE_HEADING_STYLE(),
             color = titleColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
@@ -785,19 +851,28 @@ private fun GoalTabIntro(
     }
 }
 
+/** One size for every phase heading, including the goal's own title. */
+@Composable
+private fun PHASE_HEADING_STYLE() = MaterialTheme.typography.headlineMedium
+
+/** The air between the GROW tab row and the first heading, on every phase. */
+private val PHASE_HEADING_TOP_GAP = 28.dp
+
 @Composable
 private fun GoalHeader(goal: GoalDetail, actions: GoalWorkspaceActions) {
     var historyOpen by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Full title, same size as the "All goals" dashboard heading. Attached resources render
-        // as links here too — a goal's title can reference the brief it came from.
+        // The goal's own title is a phase heading like any other: same size, same air under the
+        // tab row, so the four screens read as one set. Attached resources render as links here
+        // too — a goal's title can reference the brief it came from.
         InlineRichText(
             value = goal.title,
             onCommit = actions.onSetGoalTitle,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(top = PHASE_HEADING_TOP_GAP),
             placeholder = "Goal title",
-            textStyle = MaterialTheme.typography.headlineMedium,
+            textStyle = PHASE_HEADING_STYLE(),
+            textAlign = TextAlign.Center,
             required = true,
             maxLength = FieldLimits.GOAL_TITLE,
         )
@@ -1023,7 +1098,6 @@ private fun RealityTabContent(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         GoalTabIntro(
-            label = "Reality",
             title = "Get honest about where you stand",
             description = "List the actions you've already taken and what's standing in your way. " +
                 "Stick to facts, not judgment — a clear picture of your reality often points " +
@@ -1248,29 +1322,14 @@ private fun OptionsTabContent(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 18.dp)) {
-        // Page head — light on the teal Options surface (title + description, no kicker), matching
-        // the mockup: 32sp ITC Clearface title, 14sp GCentra description on a light teal tint.
-        Column(
-            Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                "Options",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 32.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold,
-                ),
-                color = MaterialTheme.colorScheme.onPrimary,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Different ways this goal could be reached. Compare them, then make one active — the one you're actually pursuing.",
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 22.sp),
-                color = Kale200,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-        }
+        // The same intro block every phase uses — light, because this screen is teal. It used to
+        // be a one-off 32sp head, which is what made Options read a size larger than its siblings.
+        GoalTabIntro(
+            title = "Options",
+            description = "Different ways this goal could be reached. Compare them, then make one " +
+                "active — the one you're actually pursuing.",
+            onTeal = true,
+        )
 
         if (ordered.isEmpty()) {
             Text(

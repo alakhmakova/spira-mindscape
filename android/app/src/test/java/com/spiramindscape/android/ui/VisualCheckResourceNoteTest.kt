@@ -1,7 +1,6 @@
 package com.spiramindscape.android.ui
 
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.spiramindscape.android.data.goals.GoalDetail
@@ -46,7 +45,8 @@ class VisualCheckResourceNoteTest : VisualCheckTestBase() {
             SpiraTheme { GoalWorkspaceScreen(state = GoalUiState.Content(goal), actions = GoalWorkspaceActions(), user = user) }
         }
         compose.waitForIdle()
-        compose.onNode(hasText("Resources") and hasClickAction()).performClick()
+        // Resources is no longer a tab — it is the footer's right-hand action.
+        compose.onNodeWithContentDescription("Resources").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("D7 visa checklist").performClick()
         compose.waitForIdle()

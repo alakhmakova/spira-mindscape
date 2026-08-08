@@ -18,7 +18,7 @@ import java.time.temporal.ChronoUnit
 data class ChatSuggestion(val id: String, val icon: ImageVector, val text: String)
 
 val GLOBAL_SUGGESTIONS: List<ChatSuggestion> = listOf(
-    ChatSuggestion("new-goal", SpiraIcons.Trophy, "Help me create a new goal"),
+    ChatSuggestion("new-goal", SpiraIcons.NavTrophy, "Help me create a new goal"),
     ChatSuggestion("edit", SpiraIcons.Pencil, "Change a goal's confidence or deadline"),
     ChatSuggestion("delete", SpiraIcons.Trash, "Delete a goal"),
 )

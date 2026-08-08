@@ -1,7 +1,7 @@
 package com.spiramindscape.android.data.push
 
-import android.util.Log
 import com.google.firebase.messaging.FirebaseMessaging
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.tasks.await
 
@@ -25,7 +25,7 @@ object PushManager {
             val token = FirebaseMessaging.getInstance().token.await()
             api.register(token)
         } catch (e: Exception) {
-            Log.w(TAG, "FCM registration skipped: ${e.message}")
+            SpiraLog.w(TAG, "fcm_registration_skipped", e)
         }
     }
 
@@ -34,7 +34,7 @@ object PushManager {
         try {
             api.register(token)
         } catch (e: Exception) {
-            Log.w(TAG, "FCM token registration failed: ${e.message}")
+            SpiraLog.w(TAG, "fcm_token_registration_failed", e)
         }
     }
 
@@ -48,7 +48,7 @@ object PushManager {
         try {
             FirebaseMessaging.getInstance().deleteToken().await()
         } catch (e: Exception) {
-            Log.w(TAG, "FCM token deletion failed: ${e.message}")
+            SpiraLog.w(TAG, "fcm_token_deletion_failed", e)
         }
     }
 }

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="spira_orange">#EA580C</color>
-    <color name="ic_launcher_background">#EA580C</color>
+    <!-- White, so the launcher shows the seedling on the same ground the AI coach does.
+         The drawing is line art in near-black ink; on the old orange it read as a smudge. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>

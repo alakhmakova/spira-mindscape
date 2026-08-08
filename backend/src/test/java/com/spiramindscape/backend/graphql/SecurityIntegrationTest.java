@@ -102,6 +102,31 @@ class SecurityIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @DisplayName("Anonymous POST /api/client-errors is accepted — it is deliberately public")
+    void anonymousClientErrorReportIsAccepted() throws Exception {
+        // The narrowest possible hole in "/api/** requires auth": browser errors from
+        // logged-out users (login page, expired session) are the ones we could never see
+        // otherwise. This test is the guard in both directions — if it starts returning
+        // 401 the reports stop arriving, and if a future matcher change opens more of
+        // /api/** the other tests in this class fail.
+        mockMvc.perform(post("/api/client-errors")
+                        .with(anonymous())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"kind":"window-error","message":"boom"}
+                                """))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("Anonymous GET /api/client-errors is still 401 — only POST is public")
+    void clientErrorEndpointOpensPostOnly() throws Exception {
+        mockMvc.perform(get("/api/client-errors").with(anonymous()))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ─── /api/auth/me ────────────────────────────────────────────────────────
 
     @Test

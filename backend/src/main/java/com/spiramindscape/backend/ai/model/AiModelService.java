@@ -77,7 +77,7 @@ public class AiModelService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch Mistral models: {}", e.getMessage());
+            log.warn("Failed to fetch Mistral models", e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Failed to fetch models from Mistral: " + e.getMessage());
         }
@@ -106,7 +106,7 @@ public class AiModelService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch OpenAI models: {}", e.getMessage());
+            log.warn("Failed to fetch OpenAI models", e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Failed to fetch models from OpenAI: " + e.getMessage());
         }
@@ -143,7 +143,7 @@ public class AiModelService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch Gemini models: {}", e.getMessage());
+            log.warn("Failed to fetch Gemini models", e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Failed to fetch models from Gemini: " + e.getMessage());
         }
@@ -172,7 +172,7 @@ public class AiModelService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch Anthropic models: {}", e.getMessage());
+            log.warn("Failed to fetch Anthropic models", e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Failed to fetch models from Anthropic: " + e.getMessage());
         }

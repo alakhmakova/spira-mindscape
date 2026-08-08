@@ -1,8 +1,9 @@
 # Android `VisualCheckTest` class fails with `AppNotIdleException` when run together
 
 - **ID:** BUG-009
-- **Status:** 🔧 In progress — the *cross-test* `AppNotIdleException` was fixed 2026-07-18 (see
-  Resolution), but a **related hang is still open** (see "Reopened 2026-07-19" below).
+- **Status:** ✅ Fixed (2026-08-07) — the cross-test `AppNotIdleException` was fixed 2026-07-18,
+  and the remaining **hangs** were fixed 2026-08-07 by removing the animated tab scroll (see
+  "Root cause of the hangs, found 2026-08-07").
 - **Reported by:** Claude (found while verifying an unrelated Reality-tab UI fix)
 - **Area:** Android — `app/src/test/java/com/spiramindscape/android/ui/VisualCheck*Test.kt` (Robolectric `NATIVE` graphics mode, `createAndroidComposeRule`) + `app/build.gradle.kts`
 - **Severity:** Low (test-infrastructure only — does not affect the app or any production code path)
@@ -171,3 +172,66 @@ in the old combined class) — now pass **together in a single `gradle` invocati
 (`BUILD SUCCESSFUL in 14m25s`, 0 failures), and each class also passes in isolation. The full
 `VisualCheck*` suite is slow to run end-to-end on the dev machine (six Robolectric cold starts
 under `forkEvery = 1`), so it's best run per-class during iteration and in CI for the full sweep.
+
+
+## Root cause of the hangs, found 2026-08-07 — the animated tab scroll
+
+Every one of the *hangs* above — `VisualCheckRealityDraftSaveTest`, `OptionsDragReorderTest`, and
+(newly, while reworking the workspace navigation) `VisualCheckOptionsTabTest`,
+`VisualCheckRealityTabTest` and `VisualCheckResourcesTabTest` — had **one** cause: switching
+workspace screens used `pagerState.animateScrollToPage(...)`, and **that animation never settles
+under Robolectric's NATIVE graphics**.
+
+A thread dump of a wedged run pinned it exactly:
+
+```
+VisualCheckTestBase.saveWindow → compose.activity → ActivityScenario.onActivity
+  → LocalControlledLooper.drainMainThreadUntilIdle → ShadowPausedLooper.idle
+  → Choreographer.doFrame          ← forever
+```
+
+`drainMainThreadUntilIdle` pumps the looper until it is empty, but the in-flight pager animation
+keeps re-posting a Choreographer frame callback, so the looper is never empty and the test never
+returns. Nothing after the tab switch could ever complete — which is why the failures looked so
+unrelated to each other (a drag test, a bottom-sheet typing test, three screenshot tests).
+
+This also explains why the two previously-tried mitigations failed. `mainClock.autoAdvance = false`
+makes it *worse*: with the clock frozen the animation can never finish at all, so the pending frame
+callback stays pending forever. And `forkEvery = 1` cannot help, because the problem is inside one
+test, not between two.
+
+**Fix:** a tab tap now **jumps** with `pagerState.scrollToPage(index)` instead of animating across
+the pages in between (`GoalWorkspaceScreen.kt`). This is the better product behaviour anyway — a
+tap on a tab three pages away used to flick the two screens between past the user — and swiping
+still animates, because that is the pager following the finger, not `animateScrollToPage`.
+
+**Verification (2026-08-07):**
+
+- `./gradlew.bat :app:testDebugUnitTest` — the **whole** suite, **133 tests, 0 failures, 8m51s**
+  (it previously took ~15 minutes *and* wedged).
+- `OptionsDragReorderTest`, which this file recorded as hanging >10 minutes *even on unmodified
+  `main`*, now passes in **22s**.
+- `VisualCheckRealityDraftSaveTest` was **re-enabled** (the `@Ignore` is gone). Once the hang was
+  gone it failed honestly, on a stale assertion — it still clicked an "Add new action" row that the
+  July UI change had replaced with a FAB — so the test was updated to open the sheet from the FAB
+  (`onNodeWithContentDescription("Add action")`). It now passes in 31s and genuinely covers typing
+  into a `ModalBottomSheet`, which this bug had claimed was impossible under Robolectric.
+
+## Follow-up (2026-08-07, during the logging work)
+
+`GoalWorkspaceScreenTest > renders even when a target, option and resource share an id` was
+failing on the **uncommitted** goal-workspace chrome/drawer work in the tree — not on anything the
+logging change touched. Two collisions, both from the same cause:
+
+- `SpiraDrawer` now takes a `goalTitle`, so the goal's title appears twice (Goal tab + drawer) and
+  `onNodeWithText("My Goal")` became ambiguous.
+- The drawer's rubric rows are now **clickable** and share their labels with the GROW tab bar, so
+  `hasText("Will do") and hasClickAction()` matched two nodes.
+
+`ModalNavigationDrawer` composes its drawer content even while closed (off-screen at negative x),
+so both copies exist in the semantics tree; only one is *displayed*. The test now selects the
+on-screen node via small `assertVisible` / `clickVisible` helpers rather than assuming uniqueness.
+
+Worth knowing for the next test written against this screen: **any text or content description
+shared between the drawer and the workspace chrome will match twice.** Match on visibility, not on
+uniqueness.

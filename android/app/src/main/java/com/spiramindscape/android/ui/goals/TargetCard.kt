@@ -56,8 +56,10 @@ import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.InlineRichText
 import com.spiramindscape.android.ui.components.LocalInlineResources
 import com.spiramindscape.android.ui.components.attachTo
+import com.spiramindscape.android.ui.icons.SpiraArt
 import com.spiramindscape.android.ui.icons.SpiraIcons
-import com.spiramindscape.android.ui.theme.Guava600
+import com.spiramindscape.android.ui.theme.Error800
+import com.spiramindscape.android.ui.theme.Guava500
 import com.spiramindscape.android.ui.theme.Kale200
 import com.spiramindscape.android.ui.theme.Kale300
 import com.spiramindscape.android.ui.theme.Salt400
@@ -142,7 +144,7 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
                         fontWeight = FontWeight.SemiBold,
                         color = when {
                             done -> MaterialTheme.colorScheme.primary
-                            info?.isOverdue == true -> Guava600
+                            info?.isOverdue == true -> Error800
                             else -> MaterialTheme.spiraExtras.mutedForeground
                         },
                     )
@@ -152,7 +154,9 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
             // ── Progress strip ──────────────────────────────────────────────────
             val shown = previewProgress ?: target.progress
             val width by animateFloatAsState(shown.coerceIn(0f, 1f), label = "target-progress")
-            Box(Modifier.fillMaxWidth().height(5.dp).background(Salt400)) {
+            // The part still to go is Kale-300, not a grey: the strip then reads as one teal
+            // measure filling up rather than as a coloured bar sitting on dead space.
+            Box(Modifier.fillMaxWidth().height(5.dp).background(Kale300)) {
                 Box(
                     Modifier
                         .fillMaxWidth(width)
@@ -267,6 +271,7 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
             title = "Delete this target?",
             message = "\"$quoted\" will be permanently deleted. Progress and checklist tasks " +
                 "inside it will be removed. You can't undo this.",
+            subject = "\"$quoted\"",
             confirmLabel = "Yes, delete",
             cancelLabel = "No, go back",
             onConfirm = { actions.onDeleteTarget(target.id) },
@@ -298,46 +303,96 @@ private fun targetCaption(target: TargetItem, info: DeadlineInfo?, done: Boolean
 @Composable
 fun DeadlineTile(info: DeadlineInfo?, done: Boolean, modifier: Modifier = Modifier) {
     val overdue = info?.isOverdue == true && !done
-    val art = when {
-        done -> R.drawable.tile_party_popper
-        overdue -> R.drawable.tile_calendar_overdue
-        info != null -> R.drawable.tile_calendar_date
-        else -> R.drawable.tile_calendar_add
+
+    // An achieved target keeps the popper — it isn't a date any more, it's a result.
+    if (done) {
+        Box(modifier.size(64.dp), contentAlignment = Alignment.Center) {
+            Image(
+                painter = painterResource(R.drawable.tile_party_popper),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        return
     }
 
-    Box(modifier.size(64.dp), contentAlignment = Alignment.BottomCenter) {
+    // One calendar for every date state (the owner's artwork, 2026-08-07), always with its Guava
+    // header band — overdue is said by the badge below, and recolouring the band as well made the
+    // whole tile shout.
+    val calendar = remember { SpiraArt.calendarPage() }
+    val plusMark = remember { SpiraArt.plusMark() }
+
+    Box(modifier.size(TILE), contentAlignment = Alignment.Center) {
         Image(
-            painter = painterResource(art),
+            imageVector = calendar,
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
         )
-        if (!done && info != null) {
-            // The date is centred on the PAPER, not on the tile — and the two calendars are drawn
-            // at different tilts, so the overdue one needs its own nudge: its page sits slightly
-            // to the left (the badge hangs off the right edge). The date stays black in both: the
-            // red badge is what says "overdue", and red digits on a warm page only muddy it.
-            Column(
-                Modifier
-                    .offset(x = if (overdue) (-3).dp else 0.dp, y = (-3).dp)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+
+        // What is printed sits on the PAPER, not on the tile. In the artwork's 50-unit box the
+        // page runs y 11 -> 45 and the header band takes y 11 -> 18.6, so the writable paper is
+        // y 18.6 -> 45 — its middle is at 0.636 of the height, well below the tile's own centre.
+        Column(
+            Modifier.fillMaxWidth().offset(y = PAPER_CENTRE_OFFSET),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (info == null) {
+                // No date yet: the page shows a plus, so the tile still invites a tap. It is the
+                // hand-drawn one, so it belongs to the calendar rather than sitting on top of it.
+                Image(
+                    imageVector = plusMark,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
                 Text(
                     info.monthLabel.uppercase(),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 10.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, lineHeight = 9.sp),
                     fontWeight = FontWeight.SemiBold,
                     color = Salt1000,
                 )
                 Text(
                     info.dayLabel,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 19.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 17.sp),
                     fontWeight = FontWeight.Bold,
                     color = Salt1000,
                 )
             }
         }
+
+        // Overdue: an alert badge on the tile's bottom-right corner, clear of the paper so the
+        // date keeps its place. Down there it is well away from the red header band — a red mark
+        // on a red band would disappear — and it carries a white ring to separate it cleanly.
+        if (overdue) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 3.dp, y = 2.dp)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    SpiraIcons.AlertCircleFilled,
+                    contentDescription = "Overdue",
+                    tint = Error800,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
     }
 }
+
+/** The tile's footprint on a card. */
+private val TILE = 64.dp
+
+/**
+ * How far below the tile's centre what the calendar prints is centred. The paper's own middle is
+ * at 0.636 of the artwork's height; the date sits a little lower still (0.68) because the drawn
+ * frame eats into the top of the page and the block reads better hung from the band than floating.
+ */
+private val PAPER_CENTRE_OFFSET = (TILE.value * (0.68f - 0.5f)).dp
 
 /**
  * The padlock on a target: pinned progress can't be nudged by a stray tap. An achieved target
@@ -390,12 +445,21 @@ private fun BinaryProgressBody(
             checked = target.done,
             onCheckedChange = { if (!locked) actions.onSetTargetDone(target.id, it) },
             enabled = !locked,
+            // A locked switch keeps its colours. Material greys a disabled control to say "this
+            // does nothing", but here the lock already says that, and fading a done target's teal
+            // made a finished target look unfinished — the state is the thing worth reading.
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
                 uncheckedThumbColor = MaterialTheme.spiraExtras.mutedForeground,
                 uncheckedTrackColor = MaterialTheme.spiraExtras.surfaceSunken,
                 uncheckedBorderColor = MaterialTheme.spiraExtras.border,
+                disabledCheckedThumbColor = Color.White,
+                disabledCheckedTrackColor = MaterialTheme.colorScheme.primary,
+                disabledCheckedBorderColor = MaterialTheme.colorScheme.primary,
+                disabledUncheckedThumbColor = MaterialTheme.spiraExtras.mutedForeground,
+                disabledUncheckedTrackColor = MaterialTheme.spiraExtras.surfaceSunken,
+                disabledUncheckedBorderColor = MaterialTheme.spiraExtras.border,
             ),
         )
     }
@@ -539,7 +603,7 @@ private fun NumericProgressBody(
                     .weight(1f)
                     .height(8.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.spiraExtras.surfaceSunken),
+                    .background(Kale300), // the distance still to cover, same as the card strip
             ) {
                 Box(
                     Modifier
@@ -662,7 +726,7 @@ private fun TaskRow(
             contentDescription = if (item.deadline != null) "Change the deadline" else "Set a deadline",
             tint = when {
                 item.deadline == null -> MaterialTheme.spiraExtras.mutedForeground
-                overdue -> Guava600
+                overdue -> Error800
                 else -> MaterialTheme.colorScheme.primary
             },
             modifier = Modifier.size(18.dp).clickable { showDatePicker = true },

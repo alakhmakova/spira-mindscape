@@ -115,14 +115,14 @@ fun ResourcesTabContent(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 20.dp),
+            // 28dp of air under the tab row and the shared heading size — the same block every
+            // phase screen opens with, so nothing shifts as the user moves between them.
+            Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 "Resources",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 32.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold,
-                ),
+                style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
             )

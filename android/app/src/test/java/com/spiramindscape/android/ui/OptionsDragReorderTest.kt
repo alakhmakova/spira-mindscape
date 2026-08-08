@@ -1,9 +1,14 @@
 package com.spiramindscape.android.ui
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import com.spiramindscape.android.ui.components.GROW_TABS_TAG
+import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.geometry.Offset
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.OptionItem
 import com.spiramindscape.android.ui.goals.GoalUiState
@@ -43,7 +48,11 @@ class OptionsDragReorderTest : VisualCheckTestBase() {
             SpiraTheme { GoalWorkspaceScreen(state = GoalUiState.Content(goal), actions = actions, user = user) }
         }
         compose.waitForIdle()
-        compose.onNodeWithText("Options").performClick()
+        // The drawer lists the same phase names, so the label alone is ambiguous even
+        // while it is closed — pick the tab that is actually on screen.
+        compose.onAllNodesWithText("Options")
+            .filterToOne(hasAnyAncestor(hasTestTag(GROW_TABS_TAG)))
+            .performClick()
         compose.waitForIdle()
 
         // One continuous gesture: press and hold the THIRD card, then drag far up — past two cards —

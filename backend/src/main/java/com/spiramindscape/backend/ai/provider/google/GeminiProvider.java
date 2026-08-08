@@ -115,7 +115,8 @@ public class GeminiProvider implements LlmProvider {
         // turn, or a multi-turn tool call (read_resource / web_search) is rejected.
         Map<Integer, String> toolExtra = new HashMap<>();
         final boolean[] sawToolCalls = {false};
-        final String[] firstToolChunk = {null}; // kept only to diagnose a missing signature
+        // Field names only — never the values; see the BUG-016 diagnostic below.
+        final String[] toolCallFieldNames = {null};
 
         try {
             lines.forEach(line -> {
@@ -138,10 +139,12 @@ public class GeminiProvider implements LlmProvider {
                     if (toolCalls.isArray() && !toolCalls.isEmpty()) {
                         sawToolCalls[0] = true;
                         for (JsonNode tc : toolCalls) {
-                            // Raw chunk logging (DEBUG) so we can confirm where Gemini
-                            // puts the thought_signature across API changes.
-                            log.debug("Gemini tool_call chunk: {}", tc);
-                            if (firstToolChunk[0] == null) firstToolChunk[0] = tc.toString();
+                            // Field names, not values: enough to confirm where Gemini puts
+                            // the thought_signature across API changes, without putting
+                            // model output (derived from the user's goals) into the logs.
+                            if (toolCallFieldNames[0] == null) {
+                                toolCallFieldNames[0] = fieldNames(tc);
+                            }
                             int index = tc.path("index").asInt(0);
                             String id = tc.path("id").asText("");
                             if (!id.isEmpty()) toolIds.put(index, id);
@@ -167,7 +170,11 @@ public class GeminiProvider implements LlmProvider {
                         }
                     }
                 } catch (Exception e) {
-                    log.debug("Skipping unparseable SSE data: {}", data);
+                    // Length + cause only: the frame body is the model's answer, i.e. the
+                    // user's own content. Logging it would leak journal text the moment
+                    // anyone raised this logger to DEBUG.
+                    log.debug("Skipping unparseable SSE frame ({} chars)",
+                            data == null ? 0 : data.length(), e);
                 }
             });
 
@@ -189,11 +196,13 @@ public class GeminiProvider implements LlmProvider {
             }
             log.info("Gemini stream finished: sawToolCalls={}, toolCallsEmitted={}, withThoughtSignature={}",
                     sawToolCalls[0], emitted, toolExtra.size());
-            // If Gemini sent tool calls but we found no thought_signature, dump the raw
-            // shape once so we can see exactly where it lives (diagnostic for BUG-016).
-            if (sawToolCalls[0] && toolExtra.isEmpty() && firstToolChunk[0] != null) {
-                log.warn("Gemini tool call had no extra_content/thought_signature; raw chunk: {}",
-                        firstToolChunk[0]);
+            // Gemini sent tool calls but no thought_signature (diagnostic for BUG-016).
+            // The field NAMES present are enough to locate where the signature moved to;
+            // the chunk's values are model output derived from the user's goals and must
+            // never reach Cloud Logging — see docs/logging.md.
+            if (sawToolCalls[0] && toolExtra.isEmpty() && toolCallFieldNames[0] != null) {
+                log.warn("Gemini tool call had no extra_content/thought_signature; chunk fields: {}",
+                        toolCallFieldNames[0]);
             }
 
             onComplete.run();
@@ -201,6 +210,20 @@ public class GeminiProvider implements LlmProvider {
         } catch (Exception e) {
             onError.accept(e);
         }
+    }
+
+    /**
+     * The JSON field names of a node, comma-joined — a log-safe description of a payload's
+     * shape. Field names come from Gemini's wire format, never from the user's data, so
+     * this answers "where did the signature go?" without logging what the model said.
+     */
+    private static String fieldNames(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return String.valueOf(node == null ? null : node.getNodeType());
+        }
+        List<String> names = new ArrayList<>();
+        node.fieldNames().forEachRemaining(names::add);
+        return String.join(",", names);
     }
 
     String buildRequestBody(List<LlmMessage> messages, String systemPrompt, List<ToolSpec> tools) throws Exception {

@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,10 +39,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.ui.theme.confidenceColor
+import com.spiramindscape.android.ui.theme.Error900
 import com.spiramindscape.android.ui.theme.spiraExtras
 import java.time.Instant
 import java.time.ZoneOffset
@@ -264,6 +274,25 @@ fun SpiraFormSheet(
     }
 }
 
+/**
+ * [message] with every occurrence of [subject] set bold and in the full-strength ink. Returns the
+ * message unchanged when there is no subject to pick out.
+ */
+private fun emphasise(message: String, subject: String?): AnnotatedString {
+    if (subject.isNullOrBlank()) return AnnotatedString(message)
+    return buildAnnotatedString {
+        var from = 0
+        while (true) {
+            val at = message.indexOf(subject, from)
+            if (at < 0) break
+            append(message.substring(from, at))
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(subject) }
+            from = at + subject.length
+        }
+        append(message.substring(from))
+    }
+}
+
 /** Confirmation dialog for destructive actions (mirrors the web `ConfirmDialog`). */
 @Composable
 fun ConfirmDialog(
@@ -273,18 +302,104 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     confirmLabel: String = "Yes, remove",
     cancelLabel: String = "No, go back",
+    /** "destructive" (default) = red confirm; primary = teal, for a constructive action. */
+    destructive: Boolean = true,
+    /**
+     * The thing being acted on — its name is drawn **bold** wherever it appears in [message], so
+     * the user can see *what* they are about to delete instead of having to find it inside a
+     * sentence set in one flat weight.
+     */
+    subject: String? = null,
 ) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(); onDismiss() }) {
-                Text(confirmLabel, color = MaterialTheme.colorScheme.error)
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.spiraExtras.surfaceRaised)
+                .padding(24.dp),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    title,
+                    // The title is set in the SANS, not the headline serif — it is interface
+                    // copy, not a heading, exactly as on the web.
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 20.sp,
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(end = 28.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    emphasise(message, subject),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                ) {
+                    DialogButton(
+                        label = cancelLabel,
+                        onClick = onDismiss,
+                    )
+                    DialogButton(
+                        label = confirmLabel,
+                        onClick = { onConfirm(); onDismiss() },
+                        // error-900 from the palette's semantic ramp — the colour reserved for
+                        // danger. Guava stays the brand accent and is deliberately not used here.
+                        container = if (destructive) Error900 else MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(cancelLabel) } },
-    )
+
+            Icon(
+                com.spiramindscape.android.ui.icons.SpiraIcons.X,
+                contentDescription = "Close",
+                tint = MaterialTheme.spiraExtras.mutedForeground,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(16.dp)
+                    .clickable(onClick = onDismiss),
+            )
+        }
+    }
+}
+
+/** One dialog action: outlined by default, solid when [container] is given. */
+@Composable
+private fun DialogButton(
+    label: String,
+    onClick: () -> Unit,
+    container: Color? = null,
+) {
+    Box(
+        Modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .then(
+                if (container != null) {
+                    Modifier.background(container)
+                } else {
+                    Modifier.border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(6.dp))
+                },
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (container != null) Color.White else MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
 
 /** Small label above a form control. */

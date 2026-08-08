@@ -37,12 +37,18 @@ import kotlin.random.Random
  */
 private val CONFETTI_COLOURS = listOf(Guava500, Guava600, Kale500, Kale300, Ginger200)
 
-private const val PIECES = 44
-private const val DURATION_MS = 1800
+/**
+ * Deliberately denser than the web's 44: a phone screen is a fraction of a desktop window, so the
+ * same handful of dots scattered across it read as a few stray specks rather than as a burst.
+ */
+private const val PIECES = 130
+private const val DURATION_MS = 2000
 
 private class ConfettiPiece(random: Random) {
     val angle = random.nextFloat() * 2f * Math.PI.toFloat()
-    val distance = 120f + random.nextFloat() * 260f
+    // A wide spread of distances, so the burst has a dense core and stragglers that carry to the
+    // screen edges instead of every piece stopping on the same ring.
+    val distance = 90f + random.nextFloat() * 460f
     val size = 6f + random.nextFloat() * 6f
     val flat = random.nextBoolean()
     val round = random.nextBoolean()

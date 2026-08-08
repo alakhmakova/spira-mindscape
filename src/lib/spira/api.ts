@@ -15,6 +15,8 @@ type GraphqlError = {
   message: string;
   extensions?: {
     classification?: string;
+    /** Server-side trace id for this request; see backend RequestLogContextFilter. */
+    correlationId?: string;
   };
 };
 
@@ -35,6 +37,12 @@ export class SpiraApiError extends Error {
   readonly status?: number;
   /** "network" = fetch failed (no connection), "service" = server replied with error */
   readonly kind: "network" | "service";
+  /**
+   * The server's trace id for the failed request, when it sent one. Every backend log
+   * line of that request carries the same id, so quoting it finds the whole story
+   * rather than a single line.
+   */
+  readonly correlationId?: string;
 
   constructor(
     message: string,
@@ -44,6 +52,7 @@ export class SpiraApiError extends Error {
       status?: number;
       cause?: unknown;
       kind?: "network" | "service";
+      correlationId?: string;
     } = {},
   ) {
     super(message, { cause: options.cause });
@@ -52,6 +61,7 @@ export class SpiraApiError extends Error {
     this.errors = options.errors;
     this.status = options.status;
     this.kind = options.kind ?? "service";
+    this.correlationId = options.correlationId;
   }
 }
 
@@ -286,10 +296,15 @@ async function graphql<T>(
     });
   }
 
+  // The backend stamps every response with the request's trace id, so even an HTTP-level
+  // failure (no GraphQL body to read) can still be tied back to the server logs.
+  const traceId = response.headers.get("X-Trace-Id") ?? undefined;
+
   if (!response.ok) {
     throw new SpiraApiError(DEFAULT_API_ERROR_MESSAGE, {
       details: `GraphQL request failed with HTTP ${response.status}`,
       status: response.status,
+      correlationId: traceId,
     });
   }
 
@@ -302,11 +317,15 @@ async function graphql<T>(
     throw new SpiraApiError(validationMessage ?? DEFAULT_API_ERROR_MESSAGE, {
       details: body.errors.map((error) => error.message).join("; "),
       errors: body.errors,
+      correlationId:
+        body.errors.find((error) => error.extensions?.correlationId)?.extensions
+          ?.correlationId ?? traceId,
     });
   }
   if (!body.data) {
     throw new SpiraApiError(DEFAULT_API_ERROR_MESSAGE, {
       details: "GraphQL response did not include data",
+      correlationId: traceId,
     });
   }
   return body.data;
