@@ -1,6 +1,7 @@
 import { create } from "zustand";
+import { logger } from "../logger";
 import { SpiraApiError, spiraApi } from "./api";
-import { goalProgress, targetProgress } from "./progress";
+import { goalProgress, relockOnCompletion, targetProgress } from "./progress";
 import type {
   ChatMessage,
   Confidence,
@@ -198,7 +199,9 @@ function updateGoalAchievementFromProgress(goal: Goal): Goal {
 }
 
 function setSyncError(set: (state: Partial<State>) => void, error: unknown) {
-  console.error("Spira sync failed", error);
+  // The single funnel for ~20 optimistic writes, so this one call covers most of the
+  // ways a save can fail. The logger drops the expected cases (401, offline) itself.
+  logger.reportError(error, { kind: "api" });
   // Session expired mid-use: a generic "sync failed" here would let the user
   // keep editing while every save silently dies with 401. Hard-redirect to
   // login instead (mirrors loadGoals) so they re-authenticate and lose at
@@ -254,7 +257,7 @@ export const useSpira = create<State>()((set, get) => ({
         window.location.replace("/login");
         return;
       }
-      console.error("Spira sync failed", error);
+      logger.reportError(error, { kind: "api" });
       const kind = error instanceof SpiraApiError ? error.kind : "service";
       set({
         isLoading: false,
@@ -286,7 +289,7 @@ export const useSpira = create<State>()((set, get) => ({
         syncErrorKind: undefined,
       });
     } catch (error) {
-      console.error("Spira sync failed", error);
+      logger.reportError(error, { kind: "api" });
       const kind = error instanceof SpiraApiError ? error.kind : "service";
       set({
         isLoading: false,
@@ -339,8 +342,10 @@ export const useSpira = create<State>()((set, get) => ({
         return;
       }
       // Otherwise stay silent: a background refresh failing must not wipe the
-      // visible data or flash an error banner. The next refresh recovers.
-      console.error("Spira background refresh failed", error);
+      // visible data or flash an error banner. The next refresh recovers — and it is
+      // designed to fail quietly, so this stays a dev-console warning and is never
+      // reported. A flaky connection would otherwise report on every poll.
+      logger.warn("Background refresh failed", error);
     }
   },
 
@@ -751,7 +756,11 @@ export const useSpira = create<State>()((set, get) => ({
         updateGoalAchievementFromProgress({
           ...goal,
           targets: goal.targets.map((target) =>
-            target.id === targetId ? mergeTargetPatch(target, patch) : target,
+            target.id === targetId
+              ? // The re-lock rides along with the optimistic patch, so the whole target — the
+                // new progress AND the restored lock — goes to the server in the one call below.
+                relockOnCompletion(target, mergeTargetPatch(target, patch))
+              : target,
           ),
         }),
       ),

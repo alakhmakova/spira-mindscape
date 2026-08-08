@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.auth;
 
+import com.spiramindscape.backend.logging.AuthAuditLogger;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -45,6 +46,7 @@ public class MobileAuthController {
 
     private final MobileTokenVerifier tokenVerifier;
     private final AppUserService appUserService;
+    private final AuthAuditLogger authAuditLogger;
 
     /**
      * Writes the authenticated context into the (PostgreSQL-backed) HTTP session, which
@@ -54,9 +56,11 @@ public class MobileAuthController {
     private final SecurityContextRepository securityContextRepository =
             new HttpSessionSecurityContextRepository();
 
-    public MobileAuthController(MobileTokenVerifier tokenVerifier, AppUserService appUserService) {
+    public MobileAuthController(MobileTokenVerifier tokenVerifier, AppUserService appUserService,
+                                AuthAuditLogger authAuditLogger) {
         this.tokenVerifier = tokenVerifier;
         this.appUserService = appUserService;
+        this.authAuditLogger = authAuditLogger;
     }
 
     /** Request body: the Google ID token obtained on the device. */
@@ -67,11 +71,13 @@ public class MobileAuthController {
                                                HttpServletRequest request,
                                                HttpServletResponse response) {
         if (body == null || body.idToken() == null || body.idToken().isBlank()) {
+            authAuditLogger.signInRejected(AuthAuditLogger.Method.MOBILE, "missing_token");
             return ResponseEntity.badRequest().build();
         }
 
         Optional<VerifiedGoogleUser> verified = tokenVerifier.verify(body.idToken());
         if (verified.isEmpty()) {
+            authAuditLogger.signInRejected(AuthAuditLogger.Method.MOBILE, "token_invalid");
             return ResponseEntity.status(401).build();
         }
 
@@ -88,11 +94,13 @@ public class MobileAuthController {
             //     — a genuine conflict we can't resolve, so return 409 instead of a 500.
             user = appUserService.findByGoogleSub(google.sub()).orElse(null);
             if (user == null) {
+                authAuditLogger.signInRejected(AuthAuditLogger.Method.MOBILE, "account_conflict");
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }
         }
 
         establishSession(google, user, request, response);
+        authAuditLogger.signInSucceeded(AuthAuditLogger.Method.MOBILE, user.getId());
         return ResponseEntity.ok(UserDto.from(user));
     }
 

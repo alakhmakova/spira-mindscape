@@ -1,6 +1,11 @@
 package com.spiramindscape.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import com.spiramindscape.android.ui.components.GROW_TABS_TAG
+import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -36,7 +41,11 @@ class VisualCheckRealityDraftBlankTest : VisualCheckTestBase() {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithText("Reality").performClick()
+        // The drawer lists the same phase names, so the label alone is ambiguous even
+        // while it is closed — pick the tab that is actually on screen.
+        compose.onAllNodesWithText("Reality")
+            .filterToOne(hasAnyAncestor(hasTestTag(GROW_TABS_TAG)))
+            .performClick()
         compose.waitForIdle()
 
         // The Guava "+" FAB opens the "New action" form (a sheet); Cancel dismisses it, so an

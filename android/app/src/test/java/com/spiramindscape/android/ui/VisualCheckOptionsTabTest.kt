@@ -1,7 +1,12 @@
 package com.spiramindscape.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import com.spiramindscape.android.ui.components.GROW_TABS_TAG
+import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.spiramindscape.android.data.goals.GoalDetail
@@ -40,7 +45,11 @@ class VisualCheckOptionsTabTest : VisualCheckTestBase() {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithText("Options").performClick()
+        // The drawer lists the same phase names, so the label alone is ambiguous even
+        // while it is closed — pick the tab that is actually on screen.
+        compose.onAllNodesWithText("Options")
+            .filterToOne(hasAnyAncestor(hasTestTag(GROW_TABS_TAG)))
+            .performClick()
         compose.waitForIdle()
         saveWindow("options-tab")
 

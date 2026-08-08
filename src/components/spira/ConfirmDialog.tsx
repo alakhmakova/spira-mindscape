@@ -16,6 +16,11 @@ import { cn } from "@/lib/utils";
  * Centered confirmation dialog. White card, hairline border, drop-shadow.
  * Cancel = neutral outlined ("No, go back"), Confirm = solid red destructive —
  * or solid teal (`tone="primary"`) when the action creates something rather than removes it.
+ *
+ * The destructive red is **error-900 `#C53336`** from the palette's semantic `error` ramp
+ * (CLAUDE.md → "Extended ramps"), hovering to error-1000. It was an ad-hoc `#d13239` before,
+ * which belonged to no ramp; Guava is deliberately not used here — it is the brand accent, not a
+ * danger signal.
  */
 export function ConfirmDialog({
   open,
@@ -67,7 +72,7 @@ export function ConfirmDialog({
               "h-10 px-5 rounded-md text-white font-semibold",
               tone === "primary"
                 ? "bg-primary hover:bg-primary/90"
-                : "bg-[#d13239] hover:bg-[#b0292f]",
+                : "bg-[#C53336] hover:bg-[#A31821]",
             )}
             onClick={onConfirm}
           >

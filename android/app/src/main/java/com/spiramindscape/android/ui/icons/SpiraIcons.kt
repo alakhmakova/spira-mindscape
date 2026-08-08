@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui.icons
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -178,6 +179,10 @@ object SpiraIcons {
     )
     val CirclePlus = lucide("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z M8 12h8 M12 8v8")
     val CircleCheck = lucide("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z m9 12 2 2 4-4")
+    val Camera = lucide(
+        "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z " +
+            "M12 16a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+    )
     val Paperclip = lucide(
         "m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57" +
             "a2 2 0 0 1-2.83-2.83l8.49-8.48",
@@ -217,7 +222,203 @@ object SpiraIcons {
             "a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",
     )
     val TrendingUp = lucide("M16 7h6v6 M22 7l-8.5 8.5-5-5L2 17")
+
+    // ── Filled 16px marks for the target card (the owner's set, 2026-08-07) ──
+    // Solid shapes with their detail punched out by the even-odd rule, not stroked outlines, so
+    // they go through `filled`. The source markup carried editor leftovers (`nv_id`, `class`,
+    // `aria-hidden`, `focusable`) and a plus whose two bars were centred a fraction off 8 — only
+    // the geometry is kept here, squared up.
+
+    /** A solid disc with an exclamation cut out of it — the overdue badge. */
+    val AlertCircleFilled = filled(
+        "M.5 8a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0" +
+            "m6.75.25v-3a.75.75 0 0 1 1.5 0v3a.75.75 0 0 1-1.5 0" +
+            "M8 11.5A.75.75 0 1 0 8 10a.75.75 0 0 0 0 1.5",
+    )
+
+    /**
+     * A plus with rounded ends, both bars centred on 8 (the source had 7.98 / 7.946). The bars are
+     * 2.2 units thick rather than the source's 1.5: at the 18dp the target tile draws it, the
+     * thinner original read as a hairline against the calendar's own outline.
+     */
+    val PlusFilled = filled(
+        "M2.5 8a1.1 1.1 0 0 1 1.1-1.1h8.8a1.1 1.1 0 0 1 0 2.2h-8.8A1.1 1.1 0 0 1 2.5 8z",
+        "M8 2.5a1.1 1.1 0 0 1 1.1 1.1v8.8a1.1 1.1 0 0 1-2.2 0v-8.8A1.1 1.1 0 0 1 8 2.5z",
+    )
+
+    // ── Goal-workspace navigation chrome ─────────────────────────────────────
+    // The owner supplied this second, *filled* 16×16 family for the goal-workspace header,
+    // GROW tab bar and footer (the Lucide stroke set above still covers the rest of the app).
+    //
+    // Two rules when adding one, both learned the hard way — a mis-transcribed path draws
+    // NOTHING while every existence assertion stays green, so re-render `VisualCheckNavIconsTest`
+    // after touching this block and look at `build/reports/visual/nav-icons.png`:
+    //
+    //  1. **Space the arc flags out.** Compose's path parser does not accept SVG's compact form
+    //     (`a.75.75 0 011.06-1.06`) — the two flags have to be separate tokens
+    //     (`a .75 .75 0 0 1 1.06 -1.06`). Every path below is stored in that expanded form.
+    //  2. **One argument per source `<path>` element.** Merging an icon's elements into a single
+    //     path makes their overlaps cancel under the even-odd rule, hollowing the glyph out.
+
+    /** Header "home" affordance — a chevron pointing back to All goals. */
+    val NavChevronLeft = filled(CHEVRON_RIGHT, mirrorX = true)
+
+    /** Header goal search. */
+    val NavSearch = filled(
+        "M 11.035 12.096 a 6.5 6.5 0 1 1 1.06 -1.06 l 2.935 2.934 a .75 .75 0 0 1 -1.06 1.06 " +
+            "l -2.935 -2.934 Z M 12 7 A 5 5 0 1 1 2 7 a 5 5 0 0 1 10 0 Z",
+    )
+
+    /** Footer main menu (three bars). The source declares no fill rule, so it winds non-zero. */
+    val NavMenu = filled(
+        "M 2 4.5 a .75 .75 0 0 1 .75 -.75 h 10.5 a .75 .75 0 0 1 0 1.5 H 2.75 " +
+            "A .75 .75 0 0 1 2 4.5 Z M 2 8 a .75 .75 0 0 1 .75 -.75 h 10.5 " +
+            "a .75 .75 0 0 1 0 1.5 H 2.75 A .75 .75 0 0 1 2 8 Z m .75 2.75 " +
+            "a .75 .75 0 0 0 0 1.5 h 10.5 a .75 .75 0 0 0 0 -1.5 H 2.75 Z",
+        fillType = PathFillType.NonZero,
+    )
+
+    /** Footer resources page — a document with a paper clip. */
+    val NavResources = filled(
+        "M 5.745 12.777 a .75 .75 0 0 1 1.061 0 l 1.021 1.021 a .75 .75 0 0 1 -1.06 1.061 " +
+            "l -1.022 -1.021 a .75 .75 0 0 1 0 -1.06 Z",
+        "M 4.66 10.156 a 1.535 1.535 0 1 0 0 3.071 a 1.535 1.535 0 0 0 0 -3.07 Z " +
+            "m -3.035 1.536 a 3.035 3.035 0 1 1 6.07 0 a 3.035 3.035 0 0 1 -6.07 0 Z " +
+            "M 9.758 .921 a .75 .75 0 0 1 .75 .75 v 2.462 c 0 .362 .294 .656 .656 .656 " +
+            "h 2.462 a .75 .75 0 0 1 0 1.5 h -2.462 a 2.156 2.156 0 0 1 -2.156 -2.156 " +
+            "V 1.67 a .75 .75 0 0 1 .75 -.75 Z",
+        "M 1.625 3.78 A 2.86 2.86 0 0 1 4.485 .922 h 5.454 a 2.86 2.86 0 0 1 2.022 .838 " +
+            "l 1.577 1.577 a 2.86 2.86 0 0 1 .838 2.022 v 6.861 a 2.86 2.86 0 0 1 -2.86 2.86 " +
+            "H 10.11 a .75 .75 0 1 1 0 -1.5 h 1.406 c .75 0 1.36 -.609 1.36 -1.36 V 5.358 " +
+            "c 0 -.36 -.144 -.706 -.399 -.961 L 10.9 2.82 a 1.36 1.36 0 0 0 -.961 -.399 " +
+            "H 4.484 c -.75 0 -1.36 .61 -1.36 1.36 v 3.516 a .75 .75 0 1 1 -1.5 0 V 3.78 Z",
+    )
+
+    /** Home (house) — the drawer's Home row, from the same filled family. */
+    val NavHome = filled(
+        "M 2.667 4.983 a .75 .75 0 0 1 .75 .75 v 7.517 h 9.166 V 5.733 a .75 .75 0 0 1 1.5 0 " +
+            "V 14 a .75 .75 0 0 1 -.75 .75 H 2.667 a .75 .75 0 0 1 -.75 -.75 V 5.733 " +
+            "a .75 .75 0 0 1 .75 -.75 Z",
+        "M 7.57 1.386 a .75 .75 0 0 1 .86 0 l 6.667 4.666 a .75 .75 0 0 1 -.86 1.23 L 8 2.914 " +
+            "L 1.763 7.281 a .75 .75 0 1 1 -.86 -1.229 L 7.57 1.386 Z M 5.25 10 " +
+            "c 0 -1.15 .932 -2.083 2.083 -2.083 h 1.334 c 1.15 0 2.083 .932 2.083 2.083 v 4 " +
+            "a .75 .75 0 0 1 -1.5 0 v -4 a .583 .583 0 0 0 -.583 -.583 H 7.333 " +
+            "A .583 .583 0 0 0 6.75 10 v 4 a .75 .75 0 0 1 -1.5 0 v -4 Z",
+    )
+
+    /** Help — a question mark inside a speech bubble, for the drawer's About Spira row. */
+    val NavHelp = filled(
+        "M8.683 6.687 " +
+            "a.674 .674 0 0 0 -.708 -.605 .75 .75 0 0 1 -.073 0 .704 .704 0 0 0 -.714 .545 .75 .75 0 0 1 -1.462 -.34 2.204 2.204 0 0 1 2.202 -1.704 2.174 2.174 0 0 1 2.255 2.084 " +
+            "c0 .894 -.655 1.433 -.993 1.708 l-.138 .11 " +
+            "a3.015 3.015 0 0 0 -.307 .27 .75 .75 0 0 1 -1.495 -.088 c0 -.455 .249 -.78 .432 -.972 " +
+            "a4.97 4.97 0 0 1 .476 -.416 l.085 -.068 c.356 -.29 .432 -.42 .44 -.524 z",
+        "M11.728 4.272 a5.26 5.26 0 0 0 -8.026 6.736 .75 .75 0 0 1 .118 .594 l-.166 .743 .744 -.165 " +
+            "a.75 .75 0 0 1 .594 .118 5.26 5.26 0 0 0 6.736 -8.026 zM3.664 2.814 a6.76 6.76 0 1 1 .748 10.9 " +
+            "l-1.583 .351 a.75 .75 0 0 1 -.894 -.894 l.351 -1.583 a6.76 6.76 0 0 1 1.378 -8.774 z",
+        "M8.76 10.781 a.75 .75 0 1 1 -1.501 0 .75 .75 0 0 1 1.5 0 z",
+    )
+
+    /** The "bring your own key" mark — a key on a ring, from the same filled family. */
+    val NavKey = filled(
+        "M8.989 5.347 c.158 -.16 .41 -.31 .726 -.31 s.568 .15 .727 .31 " +
+            "c.159 .158 .309 .411 .309 .726 0 .316 -.15 .568 -.309 .727 a1.035 1.035 0 0 1 -.727 .309 " +
+            "c-.315 0 -.568 -.15 -.726 -.309 a1.035 1.035 0 0 1 -.31 -.727 c0 -.315 .15 -.568 .31 -.726 z",
+        "M9.295 2.771 c-.344 -.124 -.584 -.06 -.763 .12 L6.46 4.96 a.804 .804 0 0 0 -.192 .83 " +
+            "L6.9 7.194 a.75 .75 0 0 1 -.158 .842 l-4.06 3.993 v1.221 h1.224 l4.065 -4.065 " +
+            "a.75 .75 0 0 1 .826 -.159 l1.482 .635 c.344 .125 .584 .06 .763 -.119 l2.043 -2.044 " +
+            "c.189 -.239 .244 -.516 .146 -.79 l-1.063 -2.482 -.007 -.016 a.665 .665 0 0 0 -.368 -.368 " +
+            "l-.017 -.007 L9.295 2.77 zM7.47 1.83 c.675 -.676 1.574 -.755 2.365 -.458 " +
+            "l.032 .013 2.492 1.068 c.54 .219 .97 .65 1.19 1.19 l1.068 2.492 .013 .032 " +
+            "c.32 .855 .095 1.706 -.412 2.315 a.755 .755 0 0 1 -.046 .05 l-2.07 2.07 " +
+            "c-.676 .676 -1.574 .755 -2.365 .458 a.895 .895 0 0 1 -.033 -.013 l-1.032 -.442 -3.926 3.925 " +
+            "a.75 .75 0 0 1 -.53 .22 H1.93 a.75 .75 0 0 1 -.75 -.75 v-2.285 a.75 .75 0 0 1 .225 -.535 " +
+            "l3.912 -3.847 -.429 -.952 a2.304 2.304 0 0 1 .51 -2.48 L7.472 1.83 z",
+    )
+
+    /**
+     * The AI assistant mark — a large four-point sparkle with a small companion. Replaces the
+     * old Brain glyph in the footer and in the All-goals header. Its source art is 15×16, so it
+     * is nudged half a unit right to sit centred in the shared 16×16 box.
+     */
+    val NavAi = filled(
+        "M 5.737 1.166 c .226 -.688 1.2 -.688 1.425 0 l 1.15 3.494 a .75 .75 0 0 0 .477 .478 " +
+            "l 3.495 1.15 c .687 .225 .687 1.198 0 1.424 l -3.495 1.15 " +
+            "a .75 .75 0 0 0 -.478 .477 l -1.149 3.495 c -.226 .687 -1.199 .687 -1.425 0 " +
+            "L 4.588 9.338 a .75 .75 0 0 0 -.478 -.478 L .616 7.712 " +
+            "c -.687 -.226 -.687 -1.199 0 -1.425 L 4.11 5.138 a .75 .75 0 0 0 .478 -.478 " +
+            "l 1.15 -3.494 Z m 6.238 9.778 a .5 .5 0 0 1 .95 0 l .312 .95 " +
+            "a .5 .5 0 0 0 .319 .319 l .95 .312 a .5 .5 0 0 1 0 .95 l -.95 .312 " +
+            "a .5 .5 0 0 0 -.319 .319 l -.312 .95 a .5 .5 0 0 1 -.95 0 l -.313 -.95 " +
+            "a .5 .5 0 0 0 -.318 -.319 l -.95 -.312 a .5 .5 0 0 1 0 -.95 l .95 -.313 " +
+            "a .5 .5 0 0 0 .319 -.318 l .312 -.95 Z",
+        fillType = PathFillType.NonZero,
+        offsetX = 0.5f,
+    )
+
+    /**
+     * A trophy — the mark on the assistant's "help me create a new goal" suggestion. Three source
+     * `<path>` elements, each passed separately as the family requires: merged into one argument
+     * the cup's bowl and its handles would cancel under even-odd and the glyph would hollow out.
+     */
+    val NavTrophy = filled(
+        "M5.417 3.083v5.25c0 1.059.858 1.917 1.916 1.917h1.334a1.917 1.917 0 0 0 1.916-1.917v-5.25zM3.917 3" +
+            "c0-.782.634-1.417 1.416-1.417h5.334c.782 0 1.416.635 1.416 1.417v5.333a3.417 3.417 0 0 1-3.416 3.417" +
+            "H7.333a3.417 3.417 0 0 1-3.416-3.417z",
+        "M7.25 13.667V11h1.5v2.667z",
+        "M5.25 13.667a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5H6a.75.75 0 0 1-.75-.75m5.333-9.334" +
+            "a.75.75 0 0 1 .75-.75h2c.783 0 1.417.635 1.417 1.417v1.333A2.75 2.75 0 0 1 12 9.083h-.667" +
+            "a.75.75 0 0 1 0-1.5H12c.69 0 1.25-.56 1.25-1.25v-1.25h-1.917a.75.75 0 0 1-.75-.75M1.25 5" +
+            "c0-.782.634-1.417 1.417-1.417h2a.75.75 0 0 1 0 1.5H2.75v1.25c0 .69.56 1.25 1.25 1.25h.667" +
+            "a.75.75 0 0 1 0 1.5H4a2.75 2.75 0 0 1-2.75-2.75z",
+    )
 }
+
+/** Shared by [SpiraIcons.NavChevronLeft], which mirrors it into a left chevron. */
+private const val CHEVRON_RIGHT =
+    "M 5.47 3.47 a .75 .75 0 0 1 1.06 0 l 4 4 a .75 .75 0 0 1 0 1.06 l -4 4 " +
+        "a .75 .75 0 0 1 -1.06 -1.06 L 8.94 8 L 5.47 4.53 a .75 .75 0 0 1 0 -1.06"
+
+/**
+ * Builds one of the owner-supplied **filled** 16×16 glyphs (the navigation family). Unlike
+ * [lucide] these have no stroke — the shape *is* the fill — and each [paths] entry is one
+ * `<path>` element of the source SVG, drawn separately so their fills never cancel.
+ *
+ * [fillType] is the source's `fill-rule` (SVG defaults to non-zero when the attribute is absent),
+ * [mirrorX] flips the glyph horizontally, and [offsetX] nudges art that isn't a full 16 units
+ * wide back into the centre of the box.
+ */
+private fun filled(
+    vararg paths: String,
+    fillType: PathFillType = PathFillType.EvenOdd,
+    mirrorX: Boolean = false,
+    offsetX: Float = 0f,
+): ImageVector =
+    ImageVector.Builder(
+        name = "spira-nav",
+        defaultWidth = 16.dp,
+        defaultHeight = 16.dp,
+        viewportWidth = 16f,
+        viewportHeight = 16f,
+    ).apply {
+        // A group carries the mirror/offset transform; without one the raw path would have to be
+        // rewritten by hand, which is where transcription bugs come from.
+        addGroup(
+            name = "transform",
+            pivotX = 8f,
+            pivotY = 8f,
+            scaleX = if (mirrorX) -1f else 1f,
+            translationX = offsetX,
+        )
+        paths.forEach { data ->
+            addPath(
+                pathData = addPathNodes(data),
+                pathFillType = fillType,
+                fill = SolidColor(Color.Black), // tinted by the Icon composable at draw time
+            )
+        }
+        clearGroup()
+    }.build()
 
 private fun lucide(pathData: String): ImageVector =
     ImageVector.Builder(

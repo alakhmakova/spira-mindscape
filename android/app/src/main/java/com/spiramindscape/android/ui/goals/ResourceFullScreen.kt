@@ -29,6 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import com.spiramindscape.android.ui.components.ConfirmDialog
+import com.spiramindscape.android.ui.components.HeaderCircleAction
+import com.spiramindscape.android.ui.components.ResourceTopBar
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,12 +78,29 @@ fun ResourceFullScreen(
 private fun ColumnScope.FileFullScreen(res: ResourceItem, actions: GoalWorkspaceActions, onClose: () -> Unit) {
     val context = LocalContext.current
     val bytes = remember(res.dataUrl) { decodeDataUrl(res.dataUrl) }
-    FullScreenHeader(
-        title = res.title ?: "File",
+    var confirmDelete by remember { mutableStateOf(false) }
+    val name = res.title ?: "File"
+    // The same bar the note editor opens under — see ResourceTopBar. A file's right-hand action is
+    // the delete cross, which asks before it removes anything.
+    ResourceTopBar(
+        title = name,
         onTitleCommit = { commitResource(actions, res, title = it.ifBlank { null }) },
         onBack = onClose,
-        onDelete = { actions.onRemoveResource(res.id); onClose() },
+        action = {
+            HeaderCircleAction(SpiraIcons.X, "Delete resource") { confirmDelete = true }
+        },
     )
+    if (confirmDelete) {
+        ConfirmDialog(
+            title = "Delete this resource?",
+            message = "\"$name\" will be permanently deleted. You can't undo this.",
+            subject = "\"$name\"",
+            confirmLabel = "Yes, delete",
+            cancelLabel = "No, go back",
+            onConfirm = { confirmDelete = false; actions.onRemoveResource(res.id); onClose() },
+            onDismiss = { confirmDelete = false },
+        )
+    }
     val saveFile = rememberFileSaver()
     Box(Modifier.weight(1f).fillMaxWidth().background(Parsnip200), contentAlignment = Alignment.Center) {
         when {
@@ -167,31 +187,3 @@ private fun ZoomableBox(modifier: Modifier = Modifier, content: @Composable () -
     ) { content() }
 }
 
-@Composable
-private fun FullScreenHeader(
-    title: String,
-    onTitleCommit: (String) -> Unit,
-    onBack: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(SpiraIcons.ArrowLeft, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
-        }
-        com.spiramindscape.android.ui.components.InlineEditText(
-            value = title,
-            onCommit = onTitleCommit,
-            modifier = Modifier.weight(1f),
-            textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-            placeholder = "Title",
-            singleLine = true,
-        )
-        IconButton(onClick = onDelete) {
-            Icon(SpiraIcons.Trash, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
-        }
-    }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.spiraExtras.border))
-}

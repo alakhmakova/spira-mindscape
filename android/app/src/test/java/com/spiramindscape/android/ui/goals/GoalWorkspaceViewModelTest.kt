@@ -46,7 +46,7 @@ class GoalWorkspaceViewModelTest {
         resources = emptyList(),
     )
 
-    private class FakeRepo(var goal: GoalDetail) : FakeGoalsRepository() {
+    private open class FakeRepo(var goal: GoalDetail) : FakeGoalsRepository() {
         override suspend fun getGoal(id: String): GoalDetail = goal
         override suspend fun setTargetDone(targetId: String, done: Boolean): TargetItem =
             TargetItem.Binary(targetId, "B", if (done) 1f else 0f, null, done, done)
@@ -234,5 +234,107 @@ class GoalWorkspaceViewModelTest {
         advanceUntilIdle()
 
         assertTrue(deletedCallback)
+    }
+
+    /** A repo whose target starts deliberately unlocked, and which records every lock write. */
+    private class UnlockedThenDoneRepo : FakeGoalsRepository() {
+        val lockWrites = mutableListOf<Pair<String, Boolean>>()
+        override suspend fun getGoal(id: String) = GoalDetail(
+            id = "g1", title = "Goal", description = "", confidence = 5, deadline = null,
+            progress = 0f, achieved = false,
+            actions = emptyList(), obstacles = emptyList(), options = emptyList(),
+            targets = listOf(
+                TargetItem.Binary("t1", "A", 0f, null, false, done = false, progressLocked = false),
+            ),
+            resources = emptyList(),
+        )
+        override suspend fun setTargetDone(targetId: String, done: Boolean) =
+            TargetItem.Binary(targetId, "A", if (done) 1f else 0f, null, done, done, progressLocked = false)
+        override suspend fun setTargetProgressLocked(targetId: String, locked: Boolean): TargetItem {
+            lockWrites += targetId to locked
+            return TargetItem.Binary(targetId, "A", 1f, null, true, done = true, progressLocked = locked)
+        }
+    }
+
+    @Test
+    fun `reaching 100 percent re-locks a target that was deliberately unlocked earlier`() =
+        runTest(dispatcher) {
+            val repo = UnlockedThenDoneRepo()
+            val vm = GoalWorkspaceViewModel("g1", repo)
+            advanceUntilIdle()
+
+            vm.setTargetDone("t1", true)
+            advanceUntilIdle()
+
+            assertEquals(listOf("t1" to true), repo.lockWrites)
+            val target = (vm.state.value as GoalUiState.Content).goal.targets.single()
+            assertEquals(true, target.progressLocked)
+        }
+
+    @Test
+    fun `an update that does not complete the target leaves the unlock alone`() = runTest(dispatcher) {
+        val repo = UnlockedThenDoneRepo()
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+
+        // Still 0% afterwards, so nothing was completed and the user's unlock must survive.
+        vm.setTargetDone("t1", false)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Pair<String, Boolean>>(), repo.lockWrites)
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+
+    /** Deletes always fail — the case that used to produce nothing at all. */
+    private inner class FailingDeleteRepo : FakeRepo(goalWithTwoBinaries()) {
+        override suspend fun deleteGoal(id: String) {
+            throw IllegalStateException("network down")
+        }
+    }
+
+    @Test
+    fun `a successful delete navigates away`() = runTest(dispatcher) {
+        var deleted = false
+        val vm = GoalWorkspaceViewModel("g1", object : FakeRepo(goalWithTwoBinaries()) {
+            override suspend fun deleteGoal(id: String) = Unit
+        })
+        advanceUntilIdle()
+
+        vm.deleteGoal { deleted = true }
+        advanceUntilIdle()
+
+        assertTrue(deleted)
+        assertEquals(null, vm.actionError.value)
+    }
+
+    @Test
+    fun `a failed delete tells the user instead of silently doing nothing`() = runTest(dispatcher) {
+        // The bug this covers: the user confirmed the dialog and the screen simply did
+        // nothing — no navigation, no message, no log — which is indistinguishable from a
+        // dead button. The assertion is about the message, not about the log line.
+        var deleted = false
+        val vm = GoalWorkspaceViewModel("g1", FailingDeleteRepo())
+        advanceUntilIdle()
+
+        vm.deleteGoal { deleted = true }
+        advanceUntilIdle()
+
+        assertEquals(false, deleted) // must NOT navigate away — nothing was deleted
+        assertEquals("Couldn't delete this goal. Please try again.", vm.actionError.value)
+        // The goal is still on screen, so the user can retry.
+        assertTrue(vm.state.value is GoalUiState.Content)
+    }
+
+    @Test
+    fun `dismissing the failure clears it`() = runTest(dispatcher) {
+        val vm = GoalWorkspaceViewModel("g1", FailingDeleteRepo())
+        advanceUntilIdle()
+        vm.deleteGoal { }
+        advanceUntilIdle()
+
+        vm.clearActionError()
+
+        assertEquals(null, vm.actionError.value)
     }
 }

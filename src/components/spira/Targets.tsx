@@ -35,6 +35,7 @@ import { ResizableSheet } from "@/components/spira/Resources";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { CalendarPageArt, PlusMarkArt } from "./TargetTileArt";
 import {
   Table,
   TableBody,
@@ -75,8 +76,9 @@ import {
 type SortField = "title" | "deadline" | "progress";
 type StatusFilter = TargetStatusFilter;
 
-/** Guava-600 — the brand's destructive tone (CLAUDE.md), used for an overdue deadline. */
-const OVERDUE_RED = "#EF523C";
+/** error-800 — the palette's semantic red for an overdue state (CLAUDE.md extended ramps).
+ *  Guava is the brand accent and is deliberately not used as a danger signal. */
+const OVERDUE_RED = "#D74041";
 
 /**
  * Once a target is achieved, any link in its title (a web URL or an attached resource) drops from
@@ -145,14 +147,12 @@ function ProgressLockButton({
   );
 }
 
-/** The four states of the deadline tile, as illustrations. Each carries its own outline and
- *  colour, so the tile itself draws no frame. */
-const TILE_ART = {
-  done: "/images/party-popper.png",
-  overdue: "/images/calendar-overdue.png",
-  dated: "/images/calendar-date.png",
-  empty: "/images/calendar-add.png",
-} as const;
+/**
+ * The achieved tile, still a bitmap — the calendar states are drawn from shared path data now
+ * (see `TargetTileArt`), but the popper has no vector twin on either surface, and Android keeps
+ * a PNG for it too.
+ */
+const TILE_ART = { done: "/images/party-popper.png" } as const;
 
 /**
  * The deadline as a compact calendar tile — month above, the day in big digits — so a card reads
@@ -170,33 +170,66 @@ function DeadlineTile({
   done: boolean;
 }) {
   const overdue = !!info?.isOverdue && !done;
-  const art = done
-    ? TILE_ART.done
-    : overdue
-      ? TILE_ART.overdue
-      : info
-        ? TILE_ART.dated
-        : TILE_ART.empty;
+
+  // An achieved target keeps the popper — it isn't a date any more, it's a result.
+  if (done) {
+    return (
+      <span className="relative block h-16 w-16 shrink-0 cursor-pointer text-center">
+        <img
+          src={TILE_ART.done}
+          alt=""
+          aria-hidden="true"
+          className="h-16 w-16 select-none"
+          draggable={false}
+        />
+      </span>
+    );
+  }
 
   return (
     <span className="relative block h-16 w-16 shrink-0 cursor-pointer text-center">
-      <img
-        src={art}
-        alt=""
-        aria-hidden="true"
-        className="h-16 w-16 select-none"
-        draggable={false}
-      />
-      {!done && info && (
-        // The date is centred on the PAPER, not on the tile — and the two calendars are drawn at
-        // different tilts, so the overdue one needs its own nudge: its page sits ~5% to the left
-        // (the badge hangs off the right edge). The date stays black in both: the red badge is
-        // what says "overdue", and red digits on a warm page only muddy it.
+      {/* One calendar for every date state, drawn from the same paths as the Android tile. Its
+          Guava band never changes: overdue is said by the badge below, and recolouring the band
+          as well made the whole tile shout. */}
+      <CalendarPageArt className="h-16 w-16" />
+      {!info && (
+        // No date yet: the page shows the hand-drawn plus, so the tile still invites a tap.
+        <span className="absolute inset-x-0 top-[68%] flex -translate-y-1/2 justify-center">
+          <PlusMarkArt className="h-5 w-5" />
+        </span>
+      )}
+      {overdue && (
+        // Bottom-right, clear of the paper so the date keeps its place, on a white ring that
+        // separates it from the artwork.
         <span
-          className={cn(
-            "absolute inset-x-0 bottom-[4%] flex flex-col items-center leading-none text-foreground",
-            overdue && "-translate-x-[3px]",
-          )}
+          className="absolute -bottom-0.5 -right-1 flex h-[18px] w-[18px] items-center
+                     justify-center rounded-full bg-white"
+          title="Overdue"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="h-[15px] w-[15px]"
+            aria-hidden="true"
+          >
+            <path
+              d="M.5 8a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0Zm7.5-4a.75.75 0 0 1 .75.75v3.5a.75.75 0
+                 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 7.5a.9.9 0 1 0 0-1.8.9.9 0 0 0 0 1.8Z"
+              fill="#D74041"
+              fillRule="evenodd"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      )}
+      {info && (
+        // What is printed sits on the PAPER, not on the tile. In the artwork's 50-unit box the
+        // page runs y 11 -> 45 and the band takes y 11 -> 18.6, so the writable paper's middle is
+        // well below the tile's own centre — hence 68%, the same figure the Android tile uses.
+        // The date stays black when overdue: the red badge is what says so, and red digits on the
+        // page only muddy it.
+        <span
+          className="absolute inset-x-0 top-[68%] flex -translate-y-1/2 flex-col items-center
+                     leading-none text-foreground"
         >
           <span className="text-[9px] font-semibold uppercase tracking-wide">
             {info.monthLabel}
@@ -1389,7 +1422,7 @@ export function TargetRow({
               done
                 ? "text-primary"
                 : deadlineInfo?.isOverdue
-                  ? "text-[#EF523C]"
+                  ? "text-[#D74041]"
                   : "text-muted-foreground",
             )}
           >
@@ -1403,7 +1436,9 @@ export function TargetRow({
       </div>
 
       {/* Progress strip — the page-scroll bar's shape, carrying this target's progress. */}
-      <div className="h-[5px] w-full overflow-hidden bg-[#EAEAEA]">
+      {/* The part still to go is Kale-300, not a grey: the strip then reads as one teal measure
+          filling up rather than as a coloured bar sitting on dead space. */}
+      <div className="h-[5px] w-full overflow-hidden bg-[#8DD3D4]">
         <div
           className="h-full bg-primary transition-[width] duration-300 ease-out"
           style={{ width: `${Math.round(progress * 100)}%` }}
@@ -2113,7 +2148,7 @@ function ChecklistRow({
               !singleLine && "mt-0.5",
               it.deadline
                 ? overdue
-                  ? "text-[#EF523C]"
+                  ? "text-[#D74041]"
                   : "text-primary"
                 : "text-muted-foreground/70",
             )}

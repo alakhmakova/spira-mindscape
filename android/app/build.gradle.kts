@@ -176,6 +176,10 @@ dependencies {
 
     implementation("com.apollographql.apollo:apollo-runtime:4.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // `implementation`, not `debugImplementation`: Network.kt lives in the main source set,
+    // so a debug-only dependency would break the release compile. BuildConfig.DEBUG is what
+    // keeps the interceptor from ever being installed in a release build.
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // Firebase Crashlytics + Analytics (crash reporting). Active only when google-services.json
     // is present and the plugins above are applied; the libraries are harmless otherwise.

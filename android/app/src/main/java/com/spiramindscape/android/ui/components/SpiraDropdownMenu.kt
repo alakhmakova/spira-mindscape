@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -54,6 +55,12 @@ import com.spiramindscape.android.ui.theme.spiraExtras
  * Anchored just below its trigger, right-edge-aligned to it (the usual place for an app-bar or
  * kebab menu), flipping above if it would run off the bottom. Dismisses on outside tap / back.
  */
+/**
+ * The menu's corner radius. Matched to the web's `rounded-md` (6px) rather than the pill-like 20dp
+ * this used to carry: beside the web menu the round version read as a different component.
+ */
+private val MENU_RADIUS = 8.dp
+
 @Composable
 fun SpiraDropdownMenu(
     expanded: Boolean,
@@ -62,16 +69,20 @@ fun SpiraDropdownMenu(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (!expanded) return
-    val gap = with(LocalDensity.current) { 4.dp.roundToPx() }
-    val positionProvider = remember(gap) { AnchorBelowEndPositionProvider(gap) }
+    val density = LocalDensity.current
+    val gap = with(density) { 4.dp.roundToPx() }
+    // The menu must never sit flush against the screen. Clamping only to 0 let it touch the left
+    // edge, which reads as a rendering fault rather than as a floating card.
+    val edge = with(density) { 12.dp.roundToPx() }
+    val positionProvider = remember(gap, edge) { AnchorBelowEndPositionProvider(gap, edge) }
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismissRequest,
         properties = PopupProperties(focusable = true),
     ) {
         Surface(
-            modifier = modifier.widthIn(min = 180.dp),
-            shape = RoundedCornerShape(20.dp),
+            modifier = modifier.widthIn(min = 168.dp),
+            shape = RoundedCornerShape(MENU_RADIUS),
             color = SpiraSurfaceRaised,
             border = BorderStroke(1.dp, SpiraBorder),
             shadowElevation = 12.dp,
@@ -79,7 +90,7 @@ fun SpiraDropdownMenu(
             Column(
                 Modifier
                     .width(IntrinsicSize.Max)
-                    .padding(vertical = 6.dp),
+                    .padding(4.dp),
                 content = content,
             )
         }
@@ -107,24 +118,25 @@ fun SpiraMenuItem(
     Row(
         modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 13.dp),
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             color = contentColor,
             modifier = Modifier.weight(1f),
         )
         // The icon column: a fixed-width slot on the right so icons align across all rows even
         // when some rows have none.
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(14.dp))
         if (trailing != null) {
-            Icon(trailing, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+            Icon(trailing, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
         } else {
-            Spacer(Modifier.size(18.dp))
+            Spacer(Modifier.size(16.dp))
         }
     }
 }
@@ -134,25 +146,31 @@ fun SpiraMenuItem(
 fun SpiraMenuDivider() {
     HorizontalDivider(
         color = MaterialTheme.spiraExtras.border,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
     )
 }
 
 /** Positions the menu directly below its trigger, right edges aligned; flips above near the bottom. */
-private class AnchorBelowEndPositionProvider(private val gapPx: Int) : PopupPositionProvider {
+private class AnchorBelowEndPositionProvider(
+    private val gapPx: Int,
+    private val edgePx: Int,
+) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
         windowSize: IntSize,
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
-        var x = anchorBounds.right - popupContentSize.width
-        if (x + popupContentSize.width > windowSize.width) x = windowSize.width - popupContentSize.width
-        if (x < 0) x = 0
+        val maxX = (windowSize.width - popupContentSize.width - edgePx).coerceAtLeast(edgePx)
+        val x = (anchorBounds.right - popupContentSize.width).coerceIn(edgePx, maxX)
         var y = anchorBounds.bottom + gapPx
-        if (y + popupContentSize.height > windowSize.height) {
+        if (y + popupContentSize.height > windowSize.height - edgePx) {
             val above = anchorBounds.top - popupContentSize.height - gapPx
-            y = if (above >= 0) above else (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+            y = if (above >= edgePx) {
+                above
+            } else {
+                (windowSize.height - popupContentSize.height - edgePx).coerceAtLeast(edgePx)
+            }
         }
         return IntOffset(x, y)
     }

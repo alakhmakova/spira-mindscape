@@ -28,22 +28,23 @@ the web's `#006d67`:
 Dark type on the white bubbles and composer is **Kale-600**, keeping the web's dark-teal-on-white
 relationship while staying inside the palette.
 
-## 1. How it is reached — swipe, not a screen
+## 1. How it is reached — swipe up, not a screen
 
-The assistant is a **pane beside the content**, not a destination in the navigation graph:
+The assistant is a **pane over the content**, not a destination in the navigation graph:
 
-- **Open** by dragging in from the **right screen edge** (a 24dp grab strip), or by tapping the
-  assistant icon in the header.
-- **Close** by dragging the pane back to the right, by tapping the scrim, or from the chevron in
-  the pane's own header.
-- A drag past **a third** of the width, or a flick faster than 600 px/s, settles the way it was
+- **Open** by swiping **up on the goal-workspace footer**, or by tapping the assistant's sparkle
+  (the footer's middle action, and the All-goals header's AI icon).
+- **Close** from the chevron in the pane's own header, with the **back** gesture, or by dragging
+  the pane's top handle back down.
+- A drag past **a third** of the height, or a flick faster than 600 px/s, settles the way it was
   heading; anything less springs back, so a half-swipe never strands the user in between.
 
-**Why not a second page of a pager.** The goal workspace already swipes horizontally between its
-five tabs. Nesting pagers would make every tab swipe ambiguous — the inner pager would eat the
-gesture, or the outer one would steal it at the edges. Confining the *opening* gesture to a narrow
-edge strip leaves tab swiping exactly as it was, while the pane itself — which has nothing that
-scrolls horizontally — can be grabbed anywhere to dismiss.
+**Why up, and not sideways.** The pane originally slid in from the right screen edge, which put it
+on the **same axis** as the workspace's horizontal tab swiping — the two gestures competed, and the
+opening drag had to be confined to a narrow 24dp edge strip to keep them apart. Now the axes are
+split: horizontal switches GROW phases, vertical brings the assistant up. That frees the whole
+footer to be the grab area, which is far easier to find than a hidden strip, and it removes the
+need for any swipe *between* the chat and the page.
 
 ## 2. Scope
 

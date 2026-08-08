@@ -44,7 +44,7 @@ public class BookIngestionRunner implements ApplicationRunner {
         try {
             files = new PathMatchingResourcePatternResolver().getResources("classpath:books/*.txt");
         } catch (Exception e) {
-            log.warn("GROW library: failed to scan classpath:books/ — {}", e.getMessage());
+            log.warn("GROW library: failed to scan classpath:books/", e);
             return;
         }
         if (files.length == 0) {
@@ -56,7 +56,7 @@ public class BookIngestionRunner implements ApplicationRunner {
             try {
                 ingest(file);
             } catch (Exception e) {
-                log.error("GROW library: failed to ingest {} — {}", file.getFilename(), e.getMessage());
+                log.error("GROW library: failed to ingest {}", file.getFilename(), e);
             }
         }
         log.info("GROW library ready: {} chunks total, {} awaiting embeddings.",
