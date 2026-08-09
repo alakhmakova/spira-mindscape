@@ -541,6 +541,54 @@ building a component library for designers to use). That's a separate workflow f
   fixed**, and a **Resolution** filled in when done.
 - When a bug is fixed, flip its `Status` to `✅ Fixed` and complete the Resolution.
 
+### Notion mirror
+
+The owner keeps a Notion workspace page — **Spira**
+(https://app.notion.com/p/Spira-f84e136f2e9f836cb8fa010ea36d0cb4) — a readable copy of the
+project's documentation, so the material can be browsed and shared outside the repo.
+
+**The repository is always the source of truth.** Notion is a hand-maintained mirror: nothing
+reads from it, and a stale row there is a documentation problem, not a code problem. Never resolve
+a question by trusting Notion over the files.
+
+What the page holds (state as of 2026-08-09):
+
+| Notion database | Mirrors | Depth |
+|---|---|---|
+| **Bugs & Issues** | `backlog/` — 37 rows, one per bug file | **full text** of the file in the page body |
+| **Docs and Specs** | `docs/` (33 rows, `Kind = Doc`) + `specs/` (17 rows, `Kind = Spec`) | **index only** — title + GitHub link, no body text |
+| Tasks & To-Dos, Learning Resources | — | template leftovers, unused |
+
+In Docs and Specs the title property is `Path` and holds the repo-relative path
+(`docs/logging.md`, `specs/2026-08-06-android-ai-assistant/`), so the two trees stay visually
+distinct and sort naturally; `Kind` separates them for filtering. Each dated spec **folder** is one
+row, not one row per file inside it. Since the bodies are links rather than copies, these rows go
+stale only when a file is **added, removed or renamed** — not when its contents change.
+
+Both databases were stripped to the fields actually in use — the template's `Tech Stack`,
+`Demo Link`, `Deadline`, `Assigned To` and the cross-database relations are gone. What remains is
+**Bugs & Issues**: `Issue Title`, `Status`, `Type`, `Impact Area`, `Description`,
+`Link / Attachment`, `Sprint` — and **Docs and Specs**: `Path`, `Kind`, `GitHub`. Don't
+reintroduce a column without a value to put in it.
+
+`Sprint` is the owner's, not the repo's: it carries a planning label (e.g. `Week 32 2026`) that
+has **no counterpart in `backlog/`**. Leave it alone when syncing — never clear it, and never try
+to derive it from a file.
+
+Conventions for the Bugs & Issues rows, so a re-sync stays consistent:
+
+- Row title is prefixed with the `BUG-nnn` id; `Link / Attachment` points at the file on GitHub.
+- Status maps `🐞 Open → Backlog`, `🔧 In progress → In progress`, `✅ Fixed → Done`.
+- Backlog files are hard-wrapped at ~100 chars and Notion turns **every newline into its own
+  block**, so paragraphs and list items must be joined onto one line before upload (code fences go
+  in verbatim, and GFM pipe tables need Notion's `<table>` form).
+- The Notion MCP has **no delete operation** — to remove rows, move them into a temporary child
+  page and delete that page with `update_page` + `allow_deleting_content: true`.
+
+**When a backlog file's `Status` changes, update the matching Notion row too** — or tell the user
+plainly that the mirror is now stale. Same for adding a new bug file: it needs a new row. And when
+a file is added to or renamed in `docs/` / `specs/`, add or fix its row in Docs and Specs.
+
 ---
 
 ## Build / run reference

@@ -70,15 +70,33 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
     fun load() {
         viewModelScope.launch {
             _state.value = GoalsUiState.Loading
-            _state.value = fetch()
+            val next = fetch()
+            _state.value = next
+            // Note the revision this list matches so the resume firing right after a cold start
+            // doesn't fetch it all over again. Best-effort: without it the gate just refetches.
+            if (next is GoalsUiState.Content) {
+                runCatching { repository.goalsRevision() }
+                    .onSuccess { GoalsStore.markRefreshed(GoalsStore.GOALS_KEY, it) }
+            }
         }
     }
 
+    /**
+     * Silent refetch on resume, gated on the graph's change-signature: the list is only pulled
+     * again when something actually moved. Returning to an unchanged dashboard now costs a short
+     * string instead of every goal.
+     */
     fun refresh() {
         viewModelScope.launch {
+            val revision = runCatching { repository.goalsRevision() }.getOrNull()
+            if (revision != null && !GoalsStore.needsRefresh(GoalsStore.GOALS_KEY, revision)) return@launch
             val next = fetch()
             if (next is GoalsUiState.Content || _state.value !is GoalsUiState.Content) {
                 _state.value = next
+            }
+            // Only after the list is applied — an errored fetch must re-check next resume.
+            if (revision != null && next is GoalsUiState.Content) {
+                GoalsStore.markRefreshed(GoalsStore.GOALS_KEY, revision)
             }
         }
     }

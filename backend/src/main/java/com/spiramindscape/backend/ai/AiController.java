@@ -5,6 +5,7 @@ import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
 import com.spiramindscape.backend.ai.chat.transcript.AiChatTranscriptService;
 import com.spiramindscape.backend.ai.chat.transcript.dto.SaveTranscriptRequest;
 import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptDto;
+import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptRevisionDto;
 import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
@@ -206,6 +207,16 @@ public class AiController {
     @GetMapping("/chat/transcript")
     public TranscriptDto getTranscript(@RequestParam(required = false) Long goalId) {
         return transcriptService.get(goalId);
+    }
+
+    /**
+     * When the stored transcript for a scope last changed — the cheap poll target. A client asks
+     * for this every few seconds and only calls {@link #getTranscript} when the timestamp moved,
+     * so an open chat panel no longer transfers the whole conversation on every tick.
+     */
+    @GetMapping("/chat/transcript/revision")
+    public TranscriptRevisionDto getTranscriptRevision(@RequestParam(required = false) Long goalId) {
+        return transcriptService.revision(goalId);
     }
 
     /** Upsert (last write wins) the current user's transcript for a scope. */

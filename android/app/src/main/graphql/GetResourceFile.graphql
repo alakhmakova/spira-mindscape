@@ -1,0 +1,9 @@
+# A single resource's file bytes, fetched only when something actually renders them (a preview,
+# a full-screen open, a download). Keeping dataUrl out of GetGoal is what stops every goal-screen
+# resume from re-downloading every attached PDF — see GetGoal.graphql.
+query GetResourceFile($id: ID!) {
+  resourceById(id: $id) {
+    id
+    dataUrl
+  }
+}

@@ -12,6 +12,16 @@ import com.spiramindscape.android.graphql.type.UpdateResourceInput
 open class FakeGoalsRepository : GoalsRepository {
     override suspend fun getGoals(): List<GoalSummary> = throw NotImplementedError()
     override suspend fun getGoal(id: String): GoalDetail = throw NotImplementedError()
+
+    /**
+     * A fresh signature on every call, so the resume gate always sees "something changed" and
+     * refreshes — the behaviour tests expect unless they are specifically exercising the gate.
+     * Override with a constant to assert that an unchanged graph is *not* refetched.
+     */
+    private var revisionCounter = 0
+    override suspend fun goalsRevision(): String = "rev-${revisionCounter++}"
+
+    override suspend fun resourceFile(resourceId: String): String? = throw NotImplementedError()
     override suspend fun setTargetDone(targetId: String, done: Boolean): TargetItem = throw NotImplementedError()
     override suspend fun setTargetCurrent(targetId: String, current: Double): TargetItem = throw NotImplementedError()
     override suspend fun setChecklistItems(targetId: String, items: List<ChecklistItemModel>): TargetItem =

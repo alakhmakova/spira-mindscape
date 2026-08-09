@@ -11,6 +11,7 @@ import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.data.goals.TargetItem
 import com.spiramindscape.android.data.goals.TextItem
 import com.spiramindscape.android.graphql.type.CreateTargetInput
+import com.spiramindscape.android.graphql.type.UpdateResourceInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -336,5 +337,121 @@ class GoalWorkspaceViewModelTest {
         vm.clearActionError()
 
         assertEquals(null, vm.actionError.value)
+    }
+
+    // ── file bytes are loaded lazily, not carried by the goal (BUG-019) ───────
+
+    private fun goalWithPdf(dataUrl: String? = null) = GoalDetail(
+        id = "g1", title = "Goal", description = "", confidence = 5, deadline = null,
+        progress = 0f, achieved = false,
+        actions = emptyList(), obstacles = emptyList(), options = emptyList(),
+        targets = emptyList(),
+        resources = listOf(
+            ResourceItem(
+                id = "r1", type = "file", title = "Contract",
+                mime = "application/pdf", dataUrl = dataUrl,
+            ),
+        ),
+    )
+
+    private class ResourceRepo(
+        goal: GoalDetail,
+        val bytes: String? = "data:application/pdf;base64,JVBERi0xLjQ=",
+    ) : FakeRepo(goal) {
+        var fileRequests = 0
+        var lastUpdate: UpdateResourceInput? = null
+
+        override suspend fun resourceFile(resourceId: String): String? {
+            fileRequests++
+            return bytes
+        }
+
+        override suspend fun updateResource(id: String, input: UpdateResourceInput) {
+            lastUpdate = input
+        }
+    }
+
+    @Test
+    fun `loadResourceFile fetches the bytes once and patches them into state`() =
+        runTest(dispatcher) {
+            val repo = ResourceRepo(goalWithPdf())
+            val vm = GoalWorkspaceViewModel("g1", repo)
+            advanceUntilIdle()
+
+            vm.loadResourceFile("r1")
+            advanceUntilIdle()
+
+            val loaded = (vm.state.value as GoalUiState.Content).goal.resources.first()
+            assertEquals("data:application/pdf;base64,JVBERi0xLjQ=", loaded.dataUrl)
+            assertEquals(1, repo.fileRequests)
+
+            // The preview recomposes constantly; asking again must not re-download the file.
+            vm.loadResourceFile("r1")
+            advanceUntilIdle()
+            assertEquals(1, repo.fileRequests)
+        }
+
+    @Test
+    fun `a metadata-only edit does not resend the file`() = runTest(dispatcher) {
+        // Renaming a PDF used to re-upload the whole PDF, because the update mutation takes the
+        // whole resource and the caller echoed back the bytes it was holding.
+        val repo = ResourceRepo(goalWithPdf(dataUrl = "data:application/pdf;base64,JVBERi0xLjQ="))
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+
+        vm.updateResource("r1", title = "Renamed", mime = "application/pdf")
+        advanceUntilIdle()
+
+        assertEquals(Optional.Absent, repo.lastUpdate?.dataUrl)
+        // …and the already-loaded bytes stay on screen rather than blanking the preview.
+        val after = (vm.state.value as GoalUiState.Content).goal.resources.first()
+        assertEquals("data:application/pdf;base64,JVBERi0xLjQ=", after.dataUrl)
+    }
+
+    // ── the resume gate (BUG-019) ────────────────────────────────────────────
+
+    private class CountingRepo(goal: GoalDetail, val revision: String) : FakeRepo(goal) {
+        var goalFetches = 0
+        override suspend fun getGoal(id: String): GoalDetail {
+            goalFetches++
+            return goal
+        }
+        override suspend fun goalsRevision(): String = revision
+    }
+
+    @Test
+    fun `resume does not refetch the goal when the revision is unchanged`() = runTest(dispatcher) {
+        val repo = CountingRepo(goalWithTwoBinaries(), revision = "1700:12")
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+        val afterLoad = repo.goalFetches
+
+        vm.refresh()
+        advanceUntilIdle()
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(afterLoad, repo.goalFetches)
+    }
+
+    @Test
+    fun `resume refetches the goal when the revision moved`() = runTest(dispatcher) {
+        val repo = object : FakeRepo(goalWithTwoBinaries()) {
+            var goalFetches = 0
+            var revision = 0
+            override suspend fun getGoal(id: String): GoalDetail {
+                goalFetches++
+                return goal
+            }
+            override suspend fun goalsRevision(): String = "rev-${revision++}"
+        }
+        val vm = GoalWorkspaceViewModel("g1", repo)
+        advanceUntilIdle()
+        val afterLoad = repo.goalFetches
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(afterLoad + 1, repo.goalFetches)
     }
 }

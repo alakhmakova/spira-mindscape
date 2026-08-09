@@ -16,6 +16,7 @@ import com.spiramindscape.backend.graphql.input.UpdateTargetInput;
 import com.spiramindscape.backend.graphql.model.RealityPayload;
 import com.spiramindscape.backend.resource.Resource;
 import com.spiramindscape.backend.resource.ResourceService;
+import com.spiramindscape.backend.resource.ResourceView;
 import com.spiramindscape.backend.target.ChecklistItem;
 import com.spiramindscape.backend.target.Target;
 import com.spiramindscape.backend.target.TargetService;
@@ -58,7 +59,7 @@ public class SpiraGraphqlController {
     }
 
     @QueryMapping
-    public List<Resource> resourcesByGoal(@Argument Long goalId) {
+    public List<ResourceView> resourcesByGoal(@Argument Long goalId) {
         return resourceService.findByGoal(goalId);
     }
 
@@ -240,10 +241,15 @@ public class SpiraGraphqlController {
         return result;
     }
 
+    /**
+     * Resource <em>metadata</em> for the goal graph — {@code dataUrl} resolves to null here on
+     * purpose so the file bytes are never read out of the database. Clients fetch bytes on demand
+     * via {@code resourceById}. See {@link ResourceView}.
+     */
     @BatchMapping(typeName = "Goal", field = "resources")
-    public Map<Goal, List<Resource>> resources(List<Goal> goals) {
-        Map<Long, List<Resource>> resourcesByGoalId = resourceService.findByGoalIds(goalIds(goals));
-        Map<Goal, List<Resource>> result = new LinkedHashMap<>();
+    public Map<Goal, List<ResourceView>> resources(List<Goal> goals) {
+        Map<Long, List<ResourceView>> resourcesByGoalId = resourceService.findByGoalIds(goalIds(goals));
+        Map<Goal, List<ResourceView>> result = new LinkedHashMap<>();
         for (Goal goal : goals) {
             result.put(goal, resourcesByGoalId.getOrDefault(goal.getId(), List.of()));
         }

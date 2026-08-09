@@ -35,6 +35,7 @@ import {
   saveSessionMemory,
   listGoalProposals,
   getTranscript,
+  getTranscriptRevision,
   putTranscript,
   deleteTranscript,
   getAiProvider,
@@ -1406,13 +1407,16 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // never adopt mid-stream (`busy`) or during hydration, skip background tabs,
   // and set `skipServerPutRef` so an adopted copy isn't echoed back (no ping-pong).
   //
-  // Cost guard (mirrors the goals poll in AppShell via useActivityGate): each tick fetches
-  // the whole transcript, so a chat left open but idle would keep hitting the DB every 4s and
-  // keep the (Neon) compute awake for nothing. The gate pauses polling after a few minutes
-  // without user interaction (pointer/key/wheel/touch — reading-by-scroll counts) and, on
-  // resume, replays the latest poll at once. Trade-off: while idle, a message sent from ANOTHER
-  // device isn't adopted here until you interact — acceptable for a personal app, and
-  // focus/visibility elsewhere still refresh.
+  // Cost guard (mirrors the goals poll in AppShell via useActivityGate). Two layers:
+  //   1. Each tick asks only for the transcript's `updatedAt` (`getTranscriptRevision`) and
+  //      fetches the conversation itself just when that moved. Comparing timestamps used to
+  //      happen after the whole transcript was already down the wire, so an idle-but-open chat
+  //      spent metered (Neon) egress on its own history every few seconds.
+  //   2. The gate still pauses polling after a few minutes without user interaction
+  //      (pointer/key/wheel/touch — reading-by-scroll counts) and, on resume, replays the latest
+  //      poll at once. Trade-off: while idle, a message sent from ANOTHER device isn't adopted
+  //      here until you interact — acceptable for a personal app, and focus/visibility elsewhere
+  //      still refresh.
   const transcriptPollRef = useRef<() => void>(() => {});
   const isChatActive = useActivityGate(3 * 60_000, () =>
     transcriptPollRef.current(),
@@ -1429,6 +1433,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         return;
       if (!isChatActive()) return; // idle: let the DB rest
       const scopeAtPoll = scopeKey;
+      // Cheap first: a timestamp, not the conversation. `undefined` means the check itself
+      // failed, so fall through and fetch rather than assume nothing changed.
+      const revision = await getTranscriptRevision(context.goalId);
+      if (cancelled || revision === null) return; // null: nothing stored for this scope
+      if (revision !== undefined && revision === lastSeenUpdatedRef.current)
+        return;
       const server = await getTranscript(context.goalId);
       if (
         cancelled ||
@@ -1450,7 +1460,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       saveTranscript(scopeAtPoll, serverMsgs);
     };
     transcriptPollRef.current = () => void poll();
-    const interval = window.setInterval(poll, 4000);
+    // 10s rather than the original 4s: the tick is now a timestamp, and a few extra seconds of
+    // cross-device lag is a fair trade for two thirds fewer requests.
+    const interval = window.setInterval(poll, 10_000);
     return () => {
       cancelled = true;
       transcriptPollRef.current = () => {};

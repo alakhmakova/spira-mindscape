@@ -101,7 +101,9 @@ fun applyProposalToGoal(
                 p.patch?.get("role") ?: existing.role,
                 p.patch?.get("phone") ?: existing.phone,
                 existing.mime,
-                existing.dataUrl,
+                // null = "leave the file alone". These three proposal kinds only edit note/link/
+                // contact text, and re-sending the bytes would re-upload the whole file.
+                null,
             )
         }
 

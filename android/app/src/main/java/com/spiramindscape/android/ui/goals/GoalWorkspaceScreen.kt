@@ -171,6 +171,8 @@ data class GoalWorkspaceActions(
         mime: String?, dataUrl: String?,
     ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
     val onRemoveResource: (id: String) -> Unit = {},
+    /** Ask for a file resource's bytes (omitted from the goal query — see `GetGoal.graphql`). */
+    val onLoadResourceFile: (id: String) -> Unit = {},
 )
 
 @Composable
@@ -232,6 +234,7 @@ fun GoalWorkspaceRoute(
             viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
         },
         onRemoveResource = viewModel::removeResource,
+        onLoadResourceFile = viewModel::loadResourceFile,
     )
 
     WithAiAssistant(
