@@ -1,7 +1,8 @@
 # Android: goal workspace crashes ("Spira keeps stopping") — duplicate LazyColumn keys
 
 - **ID:** BUG-004
-- **Status:** ✅ Fixed (2026-07-16) — see Resolution. Pending redistribution + retest.
+- **Status:** ✅ Fixed (2026-07-16) — see Resolution. Redistributed in v0.2.0-alpha (2026-08-09);
+  on-device retest still pending.
 - **Reported by:** User (on-device, App Distribution build)
 - **Area:** Android app — goal workspace (`ui/goals/GoalWorkspaceScreen.kt`)
 - **Severity:** High (crashes the app on certain goals)

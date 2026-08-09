@@ -1,7 +1,7 @@
 # Android: two Reality visual tests assert UI text that no longer exists
 
 - **ID:** BUG-014
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** Claude (while diagnosing why CI was red), confirmed against CI logs
 - **Area:** Android tests — `app/src/test/java/com/spiramindscape/android/ui/VisualCheckRealityTabTest.kt`,
   `VisualCheckRealityDraftBlankTest.kt`

@@ -1,7 +1,7 @@
 # Android note editor: selected text can't be copied — no selection menu appears
 
 - **ID:** BUG-032
-- **Status:** ✅ Fixed (2026-08-08) — verified on an emulator; pending manual commit by the user
+- **Status:** ✅ Fixed (2026-08-08) — verified on an emulator; shipped in `main` (2026-08-09).
 - **Reported by:** User (2026-08-07)
 - **Area:** Android — note editor (`ui/goals/NoteEditorActivity.kt`, the TipTap WebView)
 - **Type:** Defect

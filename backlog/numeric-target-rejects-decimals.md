@@ -1,7 +1,7 @@
 # Numeric target rejects decimal values with a misleading error
 
 - **ID:** BUG-020
-- **Status:** ✅ Fixed — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** Frontend web — numeric target editing (`src/components/spira/Targets.tsx`)
 - **Severity:** Medium (valid input blocked; the error text is also wrong/confusing)

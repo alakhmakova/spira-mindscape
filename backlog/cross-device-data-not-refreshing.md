@@ -1,7 +1,7 @@
 # Cross-device data does not refresh without reload / re-login
 
 - **ID:** BUG-001
-- **Status:** ✅ Fixed (2026-07-15) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-15) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** Frontend web app — data sync (`src/lib/spira/store.ts`, `src/components/shell/AppShell.tsx`)
 - **Severity:** High (data looks stale / inconsistent across devices)

@@ -2,7 +2,7 @@
 
 - **ID:** BUG-017
 - **Status:** ✅ Fixed (2026-07-31) — implemented + unit-tested; one manual real-model check
-  remains (see Resolution). Pending manual commit by the user.
+  remains (see Resolution). Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** AI chat — frontend (`src/components/ai/AiPanel.tsx`, `ai-api.ts`) and backend
   (`ai/chat/dto/ChatRequest.java`, `ai/chat/AiChatService.java`, `ai/provider/*`,

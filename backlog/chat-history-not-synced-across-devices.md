@@ -2,7 +2,7 @@
 
 - **ID:** BUG-018
 - **Status:** ✅ Fixed (2026-07-31) — implemented + tested; one manual cross-device check remains
-  (see Resolution). Pending manual commit by the user.
+  (see Resolution). Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** AI assistant chat — frontend (`src/components/ai/AiPanel.tsx`, `ai-api.ts`) and backend
   (new `ai/chat/transcript/*`, `AiController`, migration `V18`)

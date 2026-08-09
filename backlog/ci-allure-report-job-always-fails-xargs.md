@@ -1,7 +1,7 @@
 # CI: the Allure report job fails on every run ("xargs is not available")
 
 - **ID:** BUG-015
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User ("allure report сейчас единственная проблема для мерджа")
 - **Area:** CI — `.github/workflows/ci.yml`, `allure-report` job
 - **Severity:** Medium (job red on every run → blocks a clean merge; no test report is ever published)
