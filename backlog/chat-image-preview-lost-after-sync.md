@@ -1,7 +1,7 @@
 # Chat image attachment doesn't preview (bytes wiped by transcript sync)
 
 - **ID:** BUG-021
-- **Status:** ✅ Fixed — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User (while testing the new "tap an image attachment to preview it" feature)
 - **Area:** Frontend web — AI chat (`src/components/ai/AiPanel.tsx`)
 - **Severity:** Medium (feature silently stops working seconds after use)

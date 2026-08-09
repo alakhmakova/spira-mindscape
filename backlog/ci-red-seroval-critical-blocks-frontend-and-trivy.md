@@ -1,7 +1,7 @@
 # CI permanently red: a critical `seroval` advisory blocks the frontend and Trivy jobs
 
 - **ID:** BUG-013
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User ("при мердже все тесты провалились"), diagnosed by Claude
 - **Area:** CI (`.github/workflows/ci.yml` — `frontend` + `dependency-scan` jobs), `package.json`
 - **Severity:** High (every build red → the signal is worthless and deploys stay skipped)

@@ -1,7 +1,7 @@
 # Android: Options cards should support drag-and-drop reordering
 
 - **ID:** BUG-010 (enhancement — tracked here at the user's request)
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** Android — `ui/goals/GoalWorkspaceScreen.kt` (`OptionsTabContent`, `OptionCard`)
 - **Severity:** Low (nice-to-have UX; a working alternative already ships)

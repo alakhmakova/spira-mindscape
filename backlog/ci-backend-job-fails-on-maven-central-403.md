@@ -1,7 +1,7 @@
 # CI backend job dies in 13s: Maven Central answers 403 to the wrapper's download
 
 - **ID:** BUG-035
-- **Status:** ✅ Fixed (2026-08-09) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-08-09) — see Resolution. Shipped in `main`.
 - **Reported by:** User ("Backend tests failed при попытке PR and merge"), diagnosed by Claude
 - **Area:** CI (`.github/workflows/ci.yml`), `backend/mvnw`, `backend/mvnw.cmd`
 - **Severity:** High (a red backend job blocks the PR, and `e2e` / `web-e2e` / `deploy` all

@@ -1,7 +1,7 @@
 # A newly uploaded PDF resource disappears right after opening it (mobile)
 
 - **ID:** BUG-011
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** User
 - **Area:** Frontend web app — resources (`src/lib/spira/api.ts`, `src/lib/spira/store.ts`)
 - **Severity:** High (looks like data loss — the user believes the upload was lost)

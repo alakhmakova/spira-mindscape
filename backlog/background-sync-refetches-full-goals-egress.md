@@ -3,7 +3,7 @@
 - **ID:** BUG-019
 - **Status:** 🔧 In progress — fix implemented and unit/integration-tested; **awaiting real-world
   confirmation** after the user downgrades to the Neon free tier (watch the "public network
-  transfer" metric). Pending manual commit by the user.
+  transfer" metric). Shipped in `main` (2026-08-09).
 - **Reported by:** User (Neon free tier hit its 5 GB/month public-network-transfer allowance:
   "You're almost out of public network transfer — used 82% (4.1 GB)")
 - **Area:** Frontend sync (`src/lib/spira/store.ts`, `src/lib/spira/api.ts`) + backend

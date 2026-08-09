@@ -1,7 +1,7 @@
 # A target that was unlocked once never auto-locks again at 100%
 
 - **ID:** BUG-031
-- **Status:** ✅ Fixed (2026-08-08) — both surfaces; pending manual commit by the user
+- **Status:** ✅ Fixed (2026-08-08) — both surfaces; shipped in `main` (2026-08-09).
 - **Reported by:** User (2026-08-07, testing on Android)
 - **Area:** Progress lock — Android (`ui/util/Progress.kt`,
   `ui/goals/GoalWorkspaceViewModel.kt`) and web (`src/lib/spira/progress.ts`)

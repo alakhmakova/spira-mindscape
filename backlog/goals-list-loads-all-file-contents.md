@@ -1,7 +1,7 @@
 # Goals list downloads every file resource's contents on every load
 
 - **ID:** BUG-012
-- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Pending manual commit by the user.
+- **Status:** ✅ Fixed (2026-07-25) — see Resolution. Shipped in `main` (2026-08-09).
 - **Reported by:** Claude (found while investigating BUG-011), confirmed by the user
 - **Area:** Frontend web app — data loading (`src/lib/spira/api.ts`, `src/lib/spira/store.ts`,
   `src/components/spira/Resources.tsx`)
