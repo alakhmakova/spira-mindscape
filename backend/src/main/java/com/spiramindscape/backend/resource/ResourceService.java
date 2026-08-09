@@ -38,20 +38,25 @@ public class ResourceService {
     private final ResourceRepository resourceRepository;
     private final GoalService goalService;
 
+    /**
+     * One goal's resources as metadata only — no file bytes. See {@link ResourceView} for why the
+     * list paths must never select {@code data_url}.
+     */
     @Transactional(readOnly = true)
-    public List<Resource> findByGoal(Long goalId) {
+    public List<ResourceView> findByGoal(Long goalId) {
         goalService.findById(goalId); // owner-scoped check
-        return resourceRepository.findByGoalIdOrderByCreatedAtAsc(goalId);
+        return resourceRepository.findViewsByGoalId(goalId);
     }
 
+    /** The same metadata-only read, batched across goals — the {@code goals} query's hot path. */
     @Transactional(readOnly = true)
-    public Map<Long, List<Resource>> findByGoalIds(List<Long> goalIds) {
+    public Map<Long, List<ResourceView>> findByGoalIds(List<Long> goalIds) {
         if (goalIds.isEmpty()) {
             return Map.of();
         }
-        return resourceRepository.findByGoalIdInOrderByGoalIdAscCreatedAtAsc(goalIds)
+        return resourceRepository.findViewsByGoalIdIn(goalIds)
                 .stream()
-                .collect(Collectors.groupingBy(resource -> resource.getGoal().getId()));
+                .collect(Collectors.groupingBy(ResourceView::goalId));
     }
 
     @Transactional(readOnly = true)

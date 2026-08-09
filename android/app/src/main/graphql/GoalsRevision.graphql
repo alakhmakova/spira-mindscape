@@ -1,0 +1,5 @@
+# A change-signature for the whole goal graph: "<maxUpdatedAtMicros>:<rowCount>". Cheap enough to
+# ask on every resume, so the app can skip a full GetGoals/GetGoal when nothing moved.
+query GoalsRevision {
+  goalsRevision
+}

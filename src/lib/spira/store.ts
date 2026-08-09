@@ -94,6 +94,13 @@ const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
  * open-but-idle tab stops re-downloading every goal each tick (a large cut in Neon egress).
  * Only set when a snapshot is actually applied, so a poll interrupted by a local edit re-checks
  * next time instead of masking a genuine cross-device change.
+ *
+ * Known and deliberate: a *local* write bumps the server's revision too, so the first poll after
+ * an edit burst always re-fetches the graph even though this tab already has the data. Recording
+ * the post-write revision here would avoid that, but it would also swallow an edit another device
+ * made in the same window — the cross-device staleness this poll exists to fix (BUG-001). One
+ * ~51 KB fetch per edit burst is the cheaper mistake; the payload only stays small because the
+ * list paths never carry file bytes (`ResourceView` on the backend, `RESOURCE_FIELDS` here).
  */
 let lastGoalsRevision: string | undefined;
 

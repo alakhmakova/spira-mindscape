@@ -350,6 +350,32 @@ export async function getTranscript(
 }
 
 /**
+ * When the stored transcript for a scope last changed — a timestamp and nothing else.
+ *
+ * The poll asks for this instead of the transcript itself: an open chat panel used to pull the
+ * whole conversation out of the database every tick just to compare `updatedAt` client-side, which
+ * is metered egress spent to learn that nothing happened. Same idea as `goalsRevision` for goals.
+ *
+ * Best-effort like the rest of this module: `undefined` means "couldn't tell", and the caller
+ * falls back to fetching the transcript rather than assuming it is unchanged.
+ */
+export async function getTranscriptRevision(
+  goalId?: string,
+): Promise<string | null | undefined> {
+  try {
+    const res = await fetch(
+      `${AI_BASE}/chat/transcript/revision${goalId ? `?goalId=${parseInt(goalId, 10)}` : ""}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { updatedAt: string | null };
+    return body.updatedAt ?? null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Persist the current user's transcript for a scope (last write wins). `content`
  * is the JSON array of messages (attachment file bytes already stripped).
  * Best-effort: a failure never blocks the chat.

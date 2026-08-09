@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -77,6 +78,11 @@ fun ResourceFullScreen(
 @Composable
 private fun ColumnScope.FileFullScreen(res: ResourceItem, actions: GoalWorkspaceActions, onClose: () -> Unit) {
     val context = LocalContext.current
+    // Opening straight from a notification/deep path can reach here before the card ever asked for
+    // the bytes, so request them here too — the view model de-duplicates.
+    LaunchedEffect(res.id, res.dataUrl) {
+        if (res.dataUrl == null) actions.onLoadResourceFile(res.id)
+    }
     val bytes = remember(res.dataUrl) { decodeDataUrl(res.dataUrl) }
     var confirmDelete by remember { mutableStateOf(false) }
     val name = res.title ?: "File"

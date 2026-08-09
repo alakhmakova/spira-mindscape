@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -81,7 +82,14 @@ private fun typeLabel(kind: String): String = when (kind) {
     else -> "File"
 }
 
-/** Update one field of a resource, preserving the rest (the mutation takes the whole resource). */
+/**
+ * Update one field of a resource, preserving the rest (the mutation takes the whole resource).
+ *
+ * [dataUrl] defaults to null, which the mutation reads as "leave the file as it is" — every caller
+ * here edits metadata (a title, a URL, a contact field). Echoing back `res.dataUrl` would re-upload
+ * the entire file to rename it, and since bytes now load lazily it is usually null anyway, which
+ * the server would have to distinguish from a deliberate clear.
+ */
 internal fun commitResource(
     actions: GoalWorkspaceActions,
     res: ResourceItem,
@@ -93,7 +101,7 @@ internal fun commitResource(
     role: String? = res.role,
     phone: String? = res.phone,
     mime: String? = res.mime,
-    dataUrl: String? = res.dataUrl,
+    dataUrl: String? = null,
 ) = actions.onUpdateResource(res.id, title, body, url, name, email, role, phone, mime, dataUrl)
 
 /**
@@ -333,6 +341,11 @@ private fun EmailBody(res: ResourceItem, actions: GoalWorkspaceActions) {
 @Composable
 private fun FileBody(res: ResourceItem, actions: GoalWorkspaceActions, onOpenFull: (String) -> Unit) {
     val context = LocalContext.current
+    // Bytes aren't in the goal query any more (they'd be re-downloaded on every resume), so the
+    // card asks for them the first time it is actually shown. The view model ignores repeat calls.
+    LaunchedEffect(res.id, res.dataUrl) {
+        if (res.dataUrl == null) actions.onLoadResourceFile(res.id)
+    }
     val bytes = remember(res.dataUrl) { decodeDataUrl(res.dataUrl) }
 
     when {

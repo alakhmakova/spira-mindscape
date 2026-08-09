@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { approveProposal, listApiKeys, saveApiKey, streamChat } from "./ai-api";
+import {
+  approveProposal,
+  getTranscriptRevision,
+  listApiKeys,
+  saveApiKey,
+  streamChat,
+} from "./ai-api";
 
 // The AI client must echo Spring Security's CSRF token on mutations. Mock the
 // shared helper so the test does not depend on a browser `document.cookie`.
@@ -165,5 +171,55 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
     ];
     const body = JSON.parse(init.body) as { attachments: unknown };
     expect(body.attachments).toBeNull();
+  });
+});
+
+// The chat panel polls while it is open. It must ask for a timestamp, not the conversation —
+// fetching the whole transcript just to compare `updatedAt` was a steady drain on the database's
+// metered egress (BUG-019).
+describe("getTranscriptRevision (the cheap poll target)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("GETs the revision endpoint, not the transcript itself", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJson({ goalId: 7, updatedAt: "2026-08-09T10:00:00Z" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const revision = await getTranscriptRevision("7");
+
+    const [url, init] = firstCall();
+    expect(url).toBe("/api/ai/chat/transcript/revision?goalId=7");
+    expect(init.credentials).toBe("include");
+    expect(revision).toBe("2026-08-09T10:00:00Z");
+  });
+
+  it("omits goalId for the global chat scope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ goalId: null, updatedAt: null })),
+    );
+
+    const revision = await getTranscriptRevision();
+
+    const [url] = firstCall();
+    expect(url).toBe("/api/ai/chat/transcript/revision");
+    // null = "nothing stored for this scope", which is different from "couldn't tell".
+    expect(revision).toBeNull();
+  });
+
+  it("returns undefined when the check fails, so the caller falls back to fetching", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+
+    // Undefined must not be mistaken for "unchanged" — that would freeze the panel on a
+    // stale conversation for as long as the network stayed flaky.
+    expect(await getTranscriptRevision("7")).toBeUndefined();
   });
 });

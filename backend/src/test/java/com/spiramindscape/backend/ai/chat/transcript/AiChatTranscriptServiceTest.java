@@ -1,6 +1,7 @@
 package com.spiramindscape.backend.ai.chat.transcript;
 
 import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptDto;
+import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptRevisionDto;
 import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.auth.CurrentUserProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,5 +140,44 @@ class AiChatTranscriptServiceTest {
         service.clear(3L);
 
         verify(repo).delete(existing);
+    }
+
+    // ── revision (the cheap poll target, BUG-019) ─────────────────────────────
+    //
+    // The chat panel polls every few seconds while it is open. These tests pin the property that
+    // makes that affordable: the revision path must read the timestamp *only*. Loading the entity
+    // and returning `t.getUpdatedAt()` would satisfy any assertion on the value while still
+    // pulling the whole conversation out of the database — which is the bug being fixed.
+
+    @Test
+    @DisplayName("revision reads the timestamp alone, never the transcript entity")
+    void revisionReadsTimestampOnly() {
+        Instant updatedAt = Instant.parse("2026-08-09T10:00:00Z");
+        when(repo.findUpdatedAtByAppUserIdAndGoalId(USER_ID, 3L)).thenReturn(Optional.of(updatedAt));
+
+        TranscriptRevisionDto dto = service.revision(3L);
+
+        assertThat(dto.updatedAt()).isEqualTo(updatedAt);
+        assertThat(dto.goalId()).isEqualTo(3L);
+        verify(repo, never()).findByAppUserIdAndGoalId(any(), any());
+    }
+
+    @Test
+    @DisplayName("revision uses the global (goalId IS NULL) row when goalId is null")
+    void revisionGlobalScope() {
+        when(repo.findUpdatedAtByAppUserIdAndGoalIdIsNull(USER_ID)).thenReturn(Optional.empty());
+
+        service.revision(null);
+
+        verify(repo).findUpdatedAtByAppUserIdAndGoalIdIsNull(USER_ID);
+        verify(repo, never()).findUpdatedAtByAppUserIdAndGoalId(any(), any());
+    }
+
+    @Test
+    @DisplayName("revision is null when the scope has no transcript yet")
+    void revisionNullWhenNothingStored() {
+        when(repo.findUpdatedAtByAppUserIdAndGoalId(USER_ID, 3L)).thenReturn(Optional.empty());
+
+        assertThat(service.revision(3L).updatedAt()).isNull();
     }
 }

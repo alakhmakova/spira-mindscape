@@ -1,9 +1,10 @@
-# Goals dashboard — mirrors the fields the web cards use.
+# Goals dashboard. Only what a card renders: GoalSummary has no description field, so asking for
+# it downloaded up to 5000 characters per goal on every dashboard load and dropped them on the
+# floor. Ask for a field here only when a card actually shows it.
 query GetGoals {
   goals {
     id
     title
-    description
     confidence
     deadline
     createdAt

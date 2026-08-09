@@ -15,6 +15,8 @@ import com.spiramindscape.android.graphql.DeleteResourceMutation
 import com.spiramindscape.android.graphql.DeleteTargetMutation
 import com.spiramindscape.android.graphql.GetGoalQuery
 import com.spiramindscape.android.graphql.GetGoalsQuery
+import com.spiramindscape.android.graphql.GetResourceFileQuery
+import com.spiramindscape.android.graphql.GoalsRevisionQuery
 import com.spiramindscape.android.graphql.RemoveOptionMutation
 import com.spiramindscape.android.graphql.RemoveRealityItemMutation
 import com.spiramindscape.android.graphql.ReorderOptionsMutation
@@ -52,6 +54,20 @@ class GoalsException(message: String) : Exception(message)
 interface GoalsRepository {
     suspend fun getGoals(): List<GoalSummary>
     suspend fun getGoal(id: String): GoalDetail
+
+    /**
+     * A change-signature for the user's whole goal graph. Callers that refresh on resume compare
+     * it with the last one they applied and skip the full query when it is unchanged, so returning
+     * to the app costs a short string instead of the graph.
+     */
+    suspend fun goalsRevision(): String
+
+    /**
+     * The base64 file bytes of one resource, or null when it has none. [GetGoalQuery] deliberately
+     * omits `dataUrl` (multi-MB per file, refetched on every resume), so previews load bytes
+     * through here on demand.
+     */
+    suspend fun resourceFile(resourceId: String): String?
     suspend fun setTargetDone(targetId: String, done: Boolean): TargetItem
     suspend fun setTargetCurrent(targetId: String, current: Double): TargetItem
     suspend fun setChecklistItems(targetId: String, items: List<ChecklistItemModel>): TargetItem
@@ -120,6 +136,13 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
         }
     }
 
+    override suspend fun goalsRevision(): String =
+        apollo.query(GoalsRevisionQuery()).executeOrThrow().data?.goalsRevision
+            ?: throw GoalsException("Could not read the goals revision")
+
+    override suspend fun resourceFile(resourceId: String): String? =
+        apollo.query(GetResourceFileQuery(resourceId)).executeOrThrow().data?.resourceById?.dataUrl
+
     override suspend fun getGoal(id: String): GoalDetail {
         val g = apollo.query(GetGoalQuery(id)).executeOrThrow().data?.goalById
             ?: throw GoalsException("Goal not found")
@@ -148,7 +171,8 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
             resources = g.resources.map {
                 ResourceItem(
                     id = it.id, type = it.type, title = it.title, body = it.body, url = it.url,
-                    mime = it.mime, dataUrl = it.dataUrl, driveWebViewLink = it.driveWebViewLink,
+                    // dataUrl stays null here on purpose — loaded lazily, see resourceFile().
+                    mime = it.mime, driveWebViewLink = it.driveWebViewLink,
                     name = it.name, email = it.email, role = it.role, phone = it.phone,
                 )
             },

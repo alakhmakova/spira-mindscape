@@ -31,5 +31,35 @@ object GoalsStore {
 
     fun clear() {
         _goals.value = emptyList()
+        appliedRevisions.clear()
+    }
+
+    // ── Refresh gate ──────────────────────────────────────────────────────────
+    //
+    // Both screens refetch on resume, which on a goal with attachments used to mean pulling the
+    // whole goal back every time the app came forward. `goalsRevision` is a short change-signature
+    // for the user's entire graph, so a resume can ask "did anything move?" and usually stop there.
+    //
+    // Keyed per fetch, not globally: the dashboard's query and a workspace's query return
+    // different data, so one screen applying a revision must not convince the other it is already
+    // up to date.
+
+    private val appliedRevisions = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Key for the dashboard's goals list. */
+    const val GOALS_KEY = "goals"
+
+    /** Key for one goal's workspace. */
+    fun goalKey(goalId: String) = "goal:$goalId"
+
+    /** True when [revision] is new for [key] — i.e. this fetch has real work to do. */
+    fun needsRefresh(key: String, revision: String): Boolean = appliedRevisions[key] != revision
+
+    /**
+     * Record the revision a completed fetch was based on. Call it only *after* the data is
+     * applied, so a failed or abandoned fetch re-checks next time rather than marking itself done.
+     */
+    fun markRefreshed(key: String, revision: String) {
+        appliedRevisions[key] = revision
     }
 }

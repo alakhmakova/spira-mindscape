@@ -62,6 +62,7 @@ class GoalWorkspaceViewModel(
             _state.value = GoalUiState.Loading
             try {
                 setContent(repository.getGoal(goalId))
+                markLoadedRevision()
             } catch (e: Exception) {
                 SpiraLog.w(TAG, "goal_load_failed goalId=$goalId", e)
                 _state.value = GoalUiState.Error("Couldn't load this goal.")
@@ -69,17 +70,38 @@ class GoalWorkspaceViewModel(
         }
     }
 
-    /** Silent refetch (used on app resume): no spinner, keeps the current goal on failure. */
+    /**
+     * Silent refetch (used on app resume): no spinner, keeps the current goal on failure.
+     *
+     * Gated on [GoalsStore.needsRefresh] — a resume first asks for the graph's change-signature and
+     * refetches the goal only when it moved. Coming back to an unchanged goal used to re-download
+     * everything attached to it. The revision is recorded only after the new content is applied,
+     * so an interrupted refresh re-checks next time.
+     */
     fun refresh() {
         viewModelScope.launch {
             try {
+                val revision = repository.goalsRevision()
+                val key = GoalsStore.goalKey(goalId)
+                if (!GoalsStore.needsRefresh(key, revision)) return@launch
                 setContent(repository.getGoal(goalId))
+                GoalsStore.markRefreshed(key, revision)
             } catch (e: Exception) {
                 // Keep whatever is on screen — but a resume that silently never refreshes
                 // looks like stale data, not like a failure, so it must leave a trace.
                 SpiraLog.w(TAG, "goal_refresh_failed goalId=$goalId", e)
             }
         }
+    }
+
+    /**
+     * Note the revision this freshly-loaded content matches, so the resume that fires right after
+     * a cold start doesn't immediately fetch the same goal a second time. Best-effort: if the
+     * signature can't be read the gate simply falls back to refetching, and nothing is lost.
+     */
+    private suspend fun markLoadedRevision() {
+        runCatching { repository.goalsRevision() }
+            .onSuccess { GoalsStore.markRefreshed(GoalsStore.goalKey(goalId), it) }
     }
 
     /** Set the goal content AND mirror its summary into the shared store so the dashboard card
@@ -307,6 +329,46 @@ class GoalWorkspaceViewModel(
         mutateThenReload { repository.createResource(goalId, input) }
     }
 
+    /**
+     * Pull a file resource's bytes on demand and patch them into state, so the preview can render.
+     * [GetGoalQuery] omits `dataUrl` — see `GetGoal.graphql` — because it would otherwise re-fetch
+     * every attachment each time the screen resumes.
+     *
+     * Safe to call from composition on every recomposition: already-loaded and in-flight ids are
+     * skipped, so one resource is fetched once.
+     */
+    fun loadResourceFile(resourceId: String) {
+        val content = _state.value as? GoalUiState.Content ?: return
+        val resource = content.goal.resources.firstOrNull { it.id == resourceId } ?: return
+        if (resource.type != "file" || resource.dataUrl != null) return
+        if (!fileLoads.add(resourceId)) return // already in flight
+
+        viewModelScope.launch {
+            try {
+                val dataUrl = repository.resourceFile(resourceId)
+                val latest = _state.value as? GoalUiState.Content
+                if (dataUrl != null && latest != null) {
+                    setContent(
+                        latest.goal.copy(
+                            resources = latest.goal.resources.map {
+                                if (it.id == resourceId) it.copy(dataUrl = dataUrl) else it
+                            },
+                        ),
+                    )
+                }
+            } catch (e: Exception) {
+                // The preview stays empty with no error anywhere on screen, and the file the user
+                // attached looks lost — invisible to them, so it has to be visible to us.
+                SpiraLog.w(TAG, "resource_file_load_failed resourceId=$resourceId", e)
+            } finally {
+                fileLoads.remove(resourceId)
+            }
+        }
+    }
+
+    /** Ids whose bytes are being fetched, so concurrent previews share one request. */
+    private val fileLoads = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     fun updateResource(
         id: String,
         title: String? = null,
@@ -338,7 +400,10 @@ class GoalWorkspaceViewModel(
                     if (r.id != id) r
                     else r.copy(
                         title = title, body = body, url = url, name = name, email = email,
-                        role = role, phone = phone, mime = mime, dataUrl = dataUrl,
+                        role = role, phone = phone, mime = mime,
+                        // A null dataUrl means "the file didn't change" — keep whatever bytes are
+                        // already loaded rather than blanking the preview on a title edit.
+                        dataUrl = dataUrl ?: r.dataUrl,
                     )
                 },
             )

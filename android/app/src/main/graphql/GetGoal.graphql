@@ -42,6 +42,9 @@ query GetGoal($id: ID!) {
       createdAt
       items { id text done deadline achievedAt }
     }
+    # dataUrl is deliberately NOT fetched here: a file's dataUrl is a multi-MB base64 blob, and
+    # this query runs on every resume of the goal screen. Bytes load lazily through
+    # GetResourceFile when a preview or download actually needs them.
     resources {
       id
       type
@@ -49,7 +52,6 @@ query GetGoal($id: ID!) {
       body
       url
       mime
-      dataUrl
       driveWebViewLink
       name
       email
