@@ -1,5 +1,6 @@
 package com.spiramindscape.android.data.ai
 
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.net.Network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -22,6 +23,8 @@ import java.util.concurrent.TimeUnit
  * done|error` with a JSON-encoded `data:` payload, dispatched on a blank line.
  */
 object AiApi {
+
+    private const val TAG = "AiApi"
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
@@ -133,6 +136,9 @@ object AiApi {
             val response = try {
                 call.execute()
             } catch (e: Exception) {
+                // The UI keeps the one generic message, but the log is where "offline" and
+                // "TLS/proxy/parse bug" stop being indistinguishable.
+                SpiraLog.w(TAG, "ai_sse_failed stage=connect", e)
                 trySend(ChatEvent.Error(ERROR_NETWORK))
                 close()
                 return@callbackFlow
@@ -201,6 +207,7 @@ object AiApi {
                 }
             }
         } catch (e: Exception) {
+            SpiraLog.w(TAG, "ai_sse_failed stage=stream", e)
             trySend(ChatEvent.Error(ERROR_NETWORK))
         }
         close()

@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.auth;
 
+import com.spiramindscape.backend.logging.AuthAuditLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,8 +41,11 @@ class MobileAuthControllerTest {
     @Mock
     private AppUserService appUserService;
 
+    /** Real, not mocked: it only writes log lines, and a real one keeps the test honest. */
+    private final AuthAuditLogger authAuditLogger = new AuthAuditLogger();
+
     private MobileAuthController controller() {
-        return new MobileAuthController(tokenVerifier, appUserService);
+        return new MobileAuthController(tokenVerifier, appUserService, authAuditLogger);
     }
 
     @AfterEach

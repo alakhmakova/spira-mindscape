@@ -5,12 +5,12 @@ import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.spiramindscape.android.data.auth.AuthUser
+import java.io.File
+import java.io.FileOutputStream
 import org.junit.Rule
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Shared rule/helper for the `VisualCheck*Test` classes: renders key surfaces to PNGs

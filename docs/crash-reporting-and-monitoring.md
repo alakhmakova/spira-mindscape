@@ -7,9 +7,12 @@ TL;DR:
 
 | Surface | Tool | Catches | Status |
 |---|---|---|---|
-| Android app | **Firebase Crashlytics** | app crashes + non-fatal errors, automatically | ✅ wired |
+| Android app | **Firebase Crashlytics** | app crashes automatically, plus non-fatals we record | ✅ wired |
 | Backend (API) | **Google Cloud Logging** (Cloud Run) | server exceptions, request logs | ✅ built in |
-| Web frontend (browser) | — | client-side JS errors | ❌ none yet (see §4) |
+| Web frontend (browser) | **our own `/api/client-errors`** → Cloud Logging | client-side JS errors | ✅ wired (see §4) |
+
+Deliberate logging — levels, the never-log list, correlation ids, and the Logs Explorer queries
+— is a separate doc: **`docs/logging.md`**. This one is about how a *failure* reaches us.
 
 ---
 
@@ -108,16 +111,30 @@ the next genuine crash automatically. (If you ever want to confirm the pipeline 
 can temporarily add a line that throws — `throw RuntimeException("Test Crash")` — run it once, and
 remove it; the report shows up in the console a few minutes later. Not needed for normal use.)
 
-### Optional next steps (not done yet — add when useful)
-- **Tie crashes to a user:** after sign-in, call
-  `FirebaseCrashlytics.getInstance().setUserId(user.id)` so a crash report names who hit it.
-- **Breadcrumbs:** `FirebaseCrashlytics.getInstance().log("opened goal $goalId")` before risky
-  work; the last logs appear alongside the crash.
-- **Non-fatals:** in a `catch` where we recover but want visibility,
-  `FirebaseCrashlytics.getInstance().recordException(e)`.
+### Beyond crashes: non-fatals and user attribution (now done)
 
-These are deliberately deferred — auto crash capture is the high-value part; the rest we add
-when a real need shows up (no telemetry theater).
+Auto crash capture was always the high-value part, but it only ever saw the app *dying*. The
+app's actual blind spot was the opposite: around thirty `catch` blocks that recovered silently, so
+a failed save, a dropped AI transcript or a delete that never landed produced no signal at all —
+not on the device, not in the console.
+
+All of that now goes through **`core/SpiraLog.kt`**, which in one call writes to logcat *and*
+records a Crashlytics **non-fatal**:
+
+```kotlin
+SpiraLog.w(TAG, "goal_delete_failed goalId=$goalId", e)
+```
+
+- **Non-fatals** appear under Crashlytics → the **Non-fatals** tab, grouped like crashes.
+- **User attribution** — `SpiraLog.setUserId(user.id)` runs on sign-in and is cleared on logout.
+  It passes the backend's **numeric** id (an opaque surrogate key), never the email or name.
+- **Breadcrumbs** (`SpiraLog.breadcrumb(...)`) exist but are barely used — added where a specific
+  investigation needs them, not sprinkled around.
+
+`SpiraLog` can never throw: without `google-services.json` (CI, a fresh clone) `FirebaseApp` is
+uninitialized and `getInstance()` throws, and on a plain JVM `android.util.Log` is an unmocked
+stub that throws too — both are guarded. Which call sites are worth logging (and which are
+deliberately silent) is in `docs/logging.md` §8.
 
 ---
 
@@ -139,29 +156,43 @@ don't leak internals while still logging the detail server-side.
 So for anything that breaks **on the server**, you already have visibility — it's Crashlytics's
 equivalent for the backend, just built into Cloud Run rather than a separate SDK.
 
-### Frontend (React SPA in the browser) — **no, this is a real gap**
-If a user hits a JavaScript error in the browser, **you are not notified**. Today the frontend
-only:
-- logs sync failures to the browser console (`console.error("Spira sync failed", …)` in
-  `src/lib/spira/store.ts`) — visible **only** in that user's own devtools, never sent anywhere;
-- shows a friendly error state in the UI when a request fails.
+### Frontend (React SPA in the browser) — yes, via our own endpoint
 
-There is **no** client-side error-tracking service (no Sentry, LogRocket, Bugsnag, etc.) and no
-global `window.onerror` reporter. A crash in someone else's browser leaves no trace you can see.
+This used to be a real gap (BUG-005): a JavaScript error in someone else's browser left no trace
+we could see. It is now closed — **without Sentry**.
 
-### Recommendation (not yet implemented)
-The web equivalent of Crashlytics is **[Sentry](https://sentry.io)** (or a similar
-browser-error service). Adding `@sentry/react` would give the frontend the same
-"errors report themselves" property the Android app now has — grouped JS exceptions with stack
-traces, browser/OS, and the user action that led to them. It has a free tier and is a small,
-additive change (init in `main.tsx` + an error boundary). This is worth doing before a wider
-public launch, but it's **not wired today** — stating that plainly so the gap is known, not
-hidden. Tracked in `backlog/web-frontend-no-error-tracking.md` (BUG-005). If/when we do it, it
-belongs in this doc alongside Crashlytics.
+The SPA reports errors to **our own backend**, which logs them into the same Cloud Logging the
+server writes to:
+
+- `src/lib/logger.ts` — the only place the SPA logs. `logger.reportError(...)` posts a small,
+  fixed-shape record to `POST /api/client-errors`; `warn`/`debug`/`info` stay in the console.
+- `src/components/ErrorBoundary.tsx` wraps the app in `main.tsx`, and `window.onerror` /
+  `unhandledrejection` listeners catch what React never sees (event handlers, stray promises).
+  TanStack Router's `defaultErrorComponent` reports too.
+- `ClientErrorController` logs each report at **WARN** on the `client.web-error` logger.
+
+**Why our own endpoint rather than Sentry** — this reverses the earlier recommendation, so the
+reasoning matters: zero external services, zero third-party PII egress, zero cost, one origin, and
+the report lands next to the backend log line that shares its `traceId`. Sentry's advantage is a
+ready-made grouping dashboard; at this scale a Logs Explorer query
+(`jsonPayload.message:"web_client_error"`) does the job, and not shipping users' data to a third
+party is worth more than the dashboard.
+
+The safety properties (never sending `SpiraApiError.details`, dedupe, the 5-per-session cap, the
+unauthenticated + CSRF-exempt endpoint and its three compensating controls) are documented in
+`docs/logging.md` §7.
+
+**One thing it still cannot catch:** a crash that kills the tab. If the OS terminates the renderer
+— the attachment-OOM case, BUG-022 — no JavaScript runs at all, so no boundary, no `onerror` and
+no beacon fire. That needs crash-surviving breadcrumbs written to `localStorage` and flushed after
+the reload; the endpoint already accepts them as `kind: "crash-trail"`. See
+`specs/2026-08-03-attachment-crash-diagnostics/requirements.md`.
 
 ---
 
 ## See also
+- **`docs/logging.md`** — levels, the never-log list, `traceId`/`userId` correlation, and the
+  Logs Explorer queries to run.
 - `docs/mobile-setup-guide.md` — Firebase project setup, `google-services.json`, App Distribution.
 - `docs/security-model.md` §9 — safe error handling on the backend.
 - `specs/2026-06-12-security-hardening/additional-threats.md` — Cloud Logging alerting.

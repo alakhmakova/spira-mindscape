@@ -1,8 +1,10 @@
 package com.spiramindscape.backend.web;
 
+import com.spiramindscape.backend.logging.RequestLogContextFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
@@ -67,12 +69,26 @@ public class RestExceptionHandler {
     /** Anything unexpected → 500 with a correlation id, never leaking internals. */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpected(Exception ex, HttpServletRequest request) {
-        String correlationId = UUID.randomUUID().toString();
+        String correlationId = currentTraceId();
         log.error("Unhandled REST exception [{}] on {} {}", correlationId,
                 request.getMethod(), request.getRequestURI(), ex);
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         pd.setDetail("Something went wrong. Please try again. Reference: " + correlationId);
         pd.setProperty("correlationId", correlationId);
         return pd;
+    }
+
+    /**
+     * The reference handed to the user is the request's trace id, so it matches every
+     * other log line of that request rather than only the one written here. Falls back
+     * to a fresh id if the MDC is somehow empty (e.g. a unit test with no filter).
+     *
+     * @see com.spiramindscape.backend.logging.RequestLogContextFilter
+     */
+    private static String currentTraceId() {
+        String traceId = MDC.get(RequestLogContextFilter.TRACE_ID);
+        return (traceId != null && !traceId.isBlank())
+                ? traceId
+                : UUID.randomUUID().toString();
     }
 }

@@ -79,7 +79,7 @@ public class GoogleMobileTokenVerifier implements MobileTokenVerifier {
                     (String) payload.get("picture")));
         } catch (Exception e) {
             // Malformed token, network/cert issue, etc. — treat as unauthenticated.
-            log.warn("Mobile Google ID token verification failed: {}", e.getMessage());
+            log.warn("Mobile Google ID token verification failed", e);
             return Optional.empty();
         }
     }

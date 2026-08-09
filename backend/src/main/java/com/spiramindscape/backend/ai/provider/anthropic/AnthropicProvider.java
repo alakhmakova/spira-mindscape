@@ -149,7 +149,10 @@ public class AnthropicProvider implements LlmProvider {
                         default -> { /* message_start, content_block_stop, message_stop, ping — ignored */ }
                     }
                 } catch (Exception e) {
-                    log.debug("Skipping unparseable SSE data: {}", data);
+                    // Length + cause only — the frame body is the model's answer, i.e. the
+                    // user's own content (see docs/logging.md).
+                    log.debug("Skipping unparseable SSE frame ({} chars)",
+                            data == null ? 0 : data.length(), e);
                 }
             });
 

@@ -19,14 +19,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.ui.icons.SpiraIcons
+import com.spiramindscape.android.ui.theme.Kale600
 
 /**
- * The shared app header (from the design mockup): a dark teal bar with the white "SPIRA" wordmark
- * on the left and, on the right, Search / AI assistant / Profile. Used on every screen so the
- * chrome is consistent. Icons are white for contrast on the teal surface; the avatar sits in a
- * translucent circle.
+ * The **All goals** header (from the design mockup): a Kale-600 bar — the same teal the
+ * assistant panel is set on, so the app's two dark surfaces are one colour with the white "spira"
+ * wordmark on the left and, on the right, Search / AI assistant / Profile. Icons are white for
+ * contrast on the teal surface; the avatar sits in a translucent circle.
+ *
+ * Inside a goal the chrome is different — see `GoalWorkspaceTopBar` — but the AI assistant is the
+ * same sparkle mark on both, so the assistant is recognisably one thing across the app.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,12 +49,18 @@ fun SpiraTopBar(
             }
         },
         title = {
+            // The wordmark is lowercase "spira" in the body sans, tight-tracked — the same mark
+            // the sign-in screen and the web header carry. It was previously set as spaced-out
+            // uppercase here, which read as a different brand from one screen to the next.
             Text(
-                "SPIRA",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 18.sp,
+                "spira",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 26.sp,
+                    // Leading equal to the size, so the line box is the glyphs themselves and the
+                    // wordmark centres against the icons instead of riding on the font's metrics.
+                    lineHeight = 26.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 3.sp,
+                    letterSpacing = (-0.01).em,
                 ),
                 color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.clickable(onClick = onBrandClick),
@@ -60,7 +71,7 @@ fun SpiraTopBar(
                 Icon(SpiraIcons.Search, contentDescription = "Search", modifier = Modifier.size(22.dp))
             }
             IconButton(onClick = onAssistant) {
-                Icon(SpiraIcons.Brain, contentDescription = "AI assistant", modifier = Modifier.size(22.dp))
+                Icon(SpiraIcons.NavAi, contentDescription = "AI assistant", modifier = Modifier.size(21.dp))
             }
             IconButton(onClick = onProfile) {
                 Box(
@@ -72,7 +83,7 @@ fun SpiraTopBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primary,
+            containerColor = Kale600,
             navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
             actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
             titleContentColor = MaterialTheme.colorScheme.onPrimary,

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.spiramindscape.android.BuildConfig
+import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.auth.AuthApi
 import com.spiramindscape.android.data.auth.AuthClient
 import com.spiramindscape.android.data.auth.AuthException
@@ -60,9 +61,13 @@ class AuthViewModel(
                 // user to login.
                 val user = authClient.me()
                 _state.value = if (user != null) AuthState.Authed(user) else AuthState.Anonymous
+                // Attribute crashes to a user. The backend's numeric id only — it is an
+                // opaque surrogate key, unlike the email, which is personal data.
+                SpiraLog.setUserId(user?.id)
             } catch (e: Exception) {
                 // Transient network/server error (not a 401): don't drop an active session.
                 // Only fall back to Anonymous if we never established one (initial load).
+                SpiraLog.w(TAG, "session_refresh_failed", e)
                 if (_state.value is AuthState.Loading) {
                     _state.value = AuthState.Anonymous
                 }
@@ -81,17 +86,18 @@ class AuthViewModel(
                 val idToken = idTokenProvider.getIdToken(activityContext)
                 val user = authClient.mobileLogin(idToken)
                 _state.value = AuthState.Authed(user)
+                SpiraLog.setUserId(user.id)
             } catch (e: GetCredentialCancellationException) {
                 // User dismissed the Google sheet — not an error.
             } catch (e: AuthException) {
                 // A token WAS obtained on-device, but the backend rejected it (audience,
                 // email_verified, or signature). This is a server-side rejection.
-                Log.w(TAG, "Mobile sign-in rejected by backend: HTTP ${e.code}", e)
+                SpiraLog.w(TAG, "signin_rejected_by_backend status=${e.code}", e)
                 _error.value = "Sign-in failed (server ${e.code})."
             } catch (e: Exception) {
                 // Failed before/without reaching the backend — Credential Manager on the
                 // device (no Google account, SHA-1 / OAuth-client mismatch, Play Services).
-                Log.w(TAG, "Google sign-in failed on device", e)
+                SpiraLog.w(TAG, "signin_failed_on_device", e)
                 _error.value = "Google sign-in failed. Please try again."
             } finally {
                 _signingIn.value = false
@@ -103,9 +109,13 @@ class AuthViewModel(
         viewModelScope.launch {
             try {
                 authClient.logout()
-            } catch (_: Exception) {
-                // Best-effort; we clear locally regardless.
+            } catch (e: Exception) {
+                // Best-effort; we clear locally regardless. Worth recording though: a
+                // server-side session that outlives the local sign-out is a real difference.
+                SpiraLog.w(TAG, "logout_request_failed", e)
             }
+            // Stop attributing anything else on this device to the user who just left.
+            SpiraLog.setUserId(null)
             Network.cookieJar.clear()
             com.spiramindscape.android.data.goals.GoalsStore.clear() // don't leak this user's goals to the next sign-in
             _state.value = AuthState.Anonymous

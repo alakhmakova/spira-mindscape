@@ -69,10 +69,99 @@ Follow this sequence for any code change, small or large:
      - **Surface real risks to the user** and record them in `backlog/`, rather than shipping a
        known hole silently.
    When unsure whether something is a genuine risk, **ask** — proportionality over paranoia.
+   - **Writing a `catch` block, or tempted to add a log line?** See "Logging" below.
 7. **Document** — for a **big** step (new module, new auth/deploy path, architectural "why"),
    propose an entry in `docs/` or `specs/` and ask the user. Skip docs for small edits
    (renames, styling, bugfixes) — code, git history, and tests cover those.
 8. **Hand off — don't commit.** The user commits.
+
+---
+
+## Logging (hard rules)
+
+Full reference: **`docs/logging.md`**. This section is the part you need while writing code.
+
+### 1. The default is: add nothing
+
+Most new code needs **zero** log statements, because failures that are already loud are already
+captured:
+
+| You write | What is logged for you |
+|---|---|
+| A new GraphQL resolver or REST endpoint | Any unexpected exception → `ERROR` with the stack trace, `traceId` and `userId`; the client gets a sanitized `Reference:` (`GraphQlExceptionHandler`, `RestExceptionHandler`) |
+| A new React component | A throw during render → `ErrorBoundary` → reported to the backend |
+| Any un-awaited promise on the web | `unhandledrejection` → reported |
+| A new optimistic write through the store | `setSyncError` is the shared funnel and already reports |
+| A new Android screen | A crash → Firebase Crashlytics, automatically |
+
+So do **not** sprinkle "entering method X" / "saved successfully" lines. They are noise, they cost
+log volume, and Cloud Run already writes an `httpRequest` entry for every request.
+
+### 2. When a log line IS required
+
+> **Log when a failure is invisible to the user AND something is lost.**
+
+In practice that means a `catch` (or `runCatching`, or `.catch()`) after which the app pretends
+nothing happened. Ask two questions:
+
+1. **Will the user notice?** If they get an error state, a banner or a toast — no log needed.
+2. **Was anything lost?** A save that didn't persist, a request that never reached the server, a
+   transcript silently not stored. If nothing was lost — no log needed.
+
+Both "yes" is exactly the defect class that made Android's delete-goal do nothing at all
+(BUG-034): confirmed dialog, no navigation, no message, no trace anywhere.
+
+**And if the user genuinely can't tell something failed, a log is not enough — surface it in the
+UI too.** A log tells *us*; it does not fix the dead-button feeling. Use `SpiraInlineBanner`
+(Android) or the existing sync-error banner (web).
+
+**Counter-example — do NOT log:** `ui/util/DateFormatting.kt` swallows six parse failures on
+purpose. A malformed date is expected input, not a defect; logging it would be pure noise.
+
+### 3. How to write it
+
+```java
+// Backend — throwable LAST, with no {} placeholder. Never e.getMessage().
+log.warn("goal_save_failed goalId={}", goalId, e);
+```
+```ts
+// Web — reportError reaches us; warn/debug/info stay in the developer's console.
+logger.reportError(err, { kind: "api" });
+logger.warn("clipboard fallback used", err);
+```
+```kotlin
+// Android — one call writes to logcat AND records a Crashlytics non-fatal.
+SpiraLog.w(TAG, "goal_save_failed goalId=$goalId", e)
+```
+
+Message format is `snake_case_event key=value key=value`. `reason=` values must be **fixed codes**
+(`token_invalid`, `account_conflict`), never a string built from user input.
+
+Levels: **ERROR** = we must fix it (alertable) · **WARN** = expected but notable (rejected auth,
+rate-limit block, a client error report) · **INFO** = lifecycle facts, a handful per request at
+most · **DEBUG** = off in production.
+
+### 4. Never log (enforced by a test)
+
+Secrets and tokens (API keys, Google ID/refresh tokens, session ids, CSRF tokens) — and **the
+user's own text**: goal/reality/option/target content, resource notes, AI prompts and completions,
+uploaded file contents, email addresses (use the numeric `userId`).
+
+**Log a measurement or a shape instead of the content** — `chunks.size()`, `data.length()`, or the
+JSON field names. This is not hypothetical: `GeminiProvider` shipped a raw model chunk at **WARN**,
+so real users' goal text went to Cloud Logging in production.
+
+`LoggingConventionTest` scans `src/main/java` and **fails the build** on a violation. If it fires
+and you believe the line is safe, the cause is almost always a **misleading variable name**
+(`body`, `chunk`, `payload`) — rename it, or sharpen the heuristic. Adding an entry to its
+`ACCEPTED` map is the last resort, and it must carry its reasoning.
+
+### 5. Don't reinvent the plumbing
+
+`traceId`/`userId` are already in the MDC for the whole request and become top-level JSON fields —
+never pass them as arguments. Two documented gaps: MDC does **not** reach the AI chat's SSE worker
+threads, and it would be lost by an async (`CompletableFuture`/`Mono`) data fetcher if one is ever
+introduced.
 
 ---
 
@@ -129,6 +218,14 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
   spec names). Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc
   drawn shapes. If an icon is missing, add its Lucide path to `SpiraIcons` (copy the `d`
   attribute from https://lucide.dev) — keep the two surfaces on the same icon set.
+- **One exception — the `Nav*` family.** The Android goal-workspace chrome (header, footer,
+  drawer Home, and the AI sparkle in both headers) uses a second, **filled** 16×16 set the owner
+  supplied, declared as `SpiraIcons.Nav*` at the bottom of `SpiraIcons.kt`. Everything else stays
+  Lucide. When adding to that family, follow the two rules in the comment there: **space out the
+  arc flags** (Compose's path parser rejects SVG's compact `a.75.75 0 011.06-1.06` form) and give
+  **each source `<path>` element its own argument** (merging them makes overlaps cancel under
+  even-odd and hollows the glyph out). A wrong path draws *nothing* while assertions stay green —
+  re-render `VisualCheckNavIconsTest` and look at `build/reports/visual/nav-icons.png`.
 
 ### 4. Verify UI changes visually before shipping
 
@@ -139,16 +236,17 @@ pixels** before distributing: render the changed surface in one of the
 PNGs to `app/build/reports/visual/`) and open the image, or screenshot the emulator (`adb exec-out
 screencap`). Never claim a visual fix without having seen it.
 
-> ⚠️ **The `VisualCheck*` suite is SLOW and currently has a HANGING test — do not run the whole
-> suite blindly.** Each class re-inits Robolectric NATIVE graphics under `forkEvery = 1`, so a full
-> `:app:testDebugUnitTest` sweep takes **~15 minutes**, and
-> `VisualCheckRealityDraftSaveTest` **hangs indefinitely** (`performTextInput` inside a
-> `ModalBottomSheet` never idles — the unresolved side of **BUG-009**, see
-> `backlog/android-visual-test-suite-flaky-appnotidle.md`). That test is `@Ignore`d so it doesn't
-> wedge the run, but **until BUG-009 is fully fixed, do not add new tests that type into a
-> `ModalBottomSheet`, and prefer running a single `--tests "...VisualCheck<one>Test"` class** (or
-> just render its PNG) instead of the whole suite. If a run appears stuck in
-> `> Task :app:testDebugUnitTest`, stop it with `cd android && ./gradlew.bat --stop`.
+> The `VisualCheck*` suite used to hang; **it doesn't any more** (BUG-009, fixed 2026-08-07 — the
+> cause was `animateScrollToPage` on a tab tap, whose animation never settles under Robolectric, so
+> nothing after a screen switch could reach idle). A full `:app:testDebugUnitTest` sweep now runs
+> clean in **~9 minutes**; every class still re-inits Robolectric NATIVE graphics under
+> `forkEvery = 1`, so prefer a single `--tests "...VisualCheck<one>Test"` class while iterating.
+>
+> **If a run ever wedges in `> Task :app:testDebugUnitTest` again**, stop it with
+> `cd android && ./gradlew.bat --stop` — then, rather than guessing, take a **thread dump**
+> (`jstack <pid>` on the newest `java` process) and read the `SDK NN Main Thread` frames. That is
+> what identified the cause above in one shot; `mainClock.autoAdvance = false` and `forkEvery = 1`
+> had both been tried against it and neither could work.
 
 ### 5. Menus & overlays are pure white
 
@@ -167,25 +265,42 @@ default reads as a flat grey rectangle and was explicitly rejected. Every sort/f
 (⋮) menu, and action menu uses `SpiraDropdownMenu`. If it can't express what you need, **extend
 that file**, don't fork it.
 
-The look it must always produce (from the reference the owner supplied — a clean floating card
-menu):
+**The web menu is the standard** (updated 2026-08-08, superseding the earlier
+"generously rounded card" reference). Android must look like `src/components/ui/dropdown-menu.tsx`,
+because side by side the two used to read as different components: the web menu is compact and
+barely rounded, while Android's was a 20dp pill with 20dp/13dp rows. When the two disagree, the
+**web wins** and `SpiraDropdownMenu` is what changes.
+
+The measurements, taken from the web component:
+
+| | Value | Web equivalent |
+|---|---|---|
+| Corner radius | **8dp** | `rounded-md` (6px) |
+| Container padding | **4dp** | `p-1` |
+| Row padding | **10dp** horizontal, **9dp** vertical | `px-2 py-1.5` |
+| Row corner (hover/press) | **6dp** | `rounded-sm` |
+| Row type | `bodyMedium` | `text-sm` |
+| Minimum width | **168dp** | `min-w-[8rem]` |
+| Border | **1dp** hairline (`SpiraBorder`) | `border` |
+| Shadow | `shadowElevation` **12dp** | `shadow-lg` |
+
+Plus the rules that don't change:
 
 - **Pure white** background (`SpiraSurfaceRaised`), never tinted or elevation-grey.
-- **Width fits its content** (`IntrinsicSize.Max`) with a sensible `min` — it never stretches to
-  the full screen width.
-- **Generously rounded** corners (**20dp**), a **1dp hairline border** (`SpiraBorder`), and a soft
-  **shadow** (`shadowElevation ≈ 12dp`) so it floats as a card, not a box.
+- **Width fits its content** (`IntrinsicSize.Max`) above that minimum — never the full screen width.
 - Each row (`SpiraMenuItem`) = **label on the left**, an **icon in a right-aligned column** that
   lines up across every row (label cell flexes with `weight(1f)`; the icon slot is fixed width so
-  even icon-less rows keep the column aligned). Comfortable padding (~20dp horizontal, ~13dp
-  vertical).
+  even icon-less rows keep the column aligned).
 - **Destructive** items (Delete) are red (`colorScheme.error`); a **selected** item in a pick-one
   menu shows a check in the icon slot.
 - Anchored just below its trigger, right-edge aligned, flipping above near the screen bottom;
   dismiss on outside-tap / back.
+- **Never flush against a screen edge.** The position provider keeps **12dp** from every border.
+  Clamping x to `0` let the attach menu touch the left edge, which reads as a rendering fault
+  rather than as a floating card — that clamp is the bug to avoid, not a style preference.
 
-If a menu doesn't look like that floating white card, it's wrong — fix `SpiraDropdownMenu`, don't
-ship a different-looking menu.
+If an Android menu doesn't match the table above, it's wrong — fix `SpiraDropdownMenu`, don't ship
+a different-looking menu.
 
 ---
 
@@ -328,19 +443,40 @@ above rather than picking a fresh green.)
 > on the type scale (`Type.kt`) and per-usage alignment, so they hold no matter which heading font
 > ships. Don't tie them to a specific font.
 
-### Goal-workspace screen header (every tab)
+### Goal-workspace navigation (Android)
 
-Every goal-workspace tab opens with the shared **`GoalTabIntro`** block (`GoalWorkspaceScreen.kt`):
+Inside a goal the chrome is **not** the All-goals `SpiraTopBar` — that header is unchanged on the
+dashboard. The workspace has its own, in `ui/components/GoalWorkspaceChrome.kt`:
+
+- **Header** (teal): a **chevron in a circle** on the left → back to All goals; a **goal search
+  field** in the middle (it switches goals, and its results hang under the header as a white
+  card); an **X in a circle** on the right → delete the goal, behind a confirm dialog.
+- **GROW tab bar** under the header, on **every** phase screen: `Goal · Reality · Options ·
+  Will do`, the current one marked by a **Guava underline**. Tapping a tab and swiping the pager
+  drive the same state. On the Resources page nothing is underlined (`selectedIndex = -1`) — it
+  isn't a GROW phase — but the row stays, so one tap leads back into the flow.
+- **Footer**: **menu** (opens the drawer) · **AI assistant** (the teal sparkle) · **Resources**.
+  The assistant also opens by **swiping up on the footer**, and closes with its own button, the
+  back gesture, or by dragging its top handle down — see `AiChatHost`. There is deliberately **no
+  horizontal swipe** between the chat and the page: horizontal is the tabs' axis.
+- **Resources is a page**, not a tab and not a drawer.
+
+**The search box is screen-local.** It starts empty on every visit and is never shared with the
+dashboard's filter — a search typed on one screen must not follow the user onto the next. The web
+enforces the same rule through `useResetQueryOnNavigate` (`shell-store.ts`), because there one
+`query` field backs both searches.
+
+Phase screens open with the shared **`GoalTabIntro`** block (`GoalWorkspaceScreen.kt`) — today the
+Reality and Will-do screens, whose kickers read `REALITY` and `WILL DO`:
 
 - a **left-aligned kicker label** = the screen/phase name in the brand label style (`labelLarge`,
   bold, teal — or white on the teal Options tab), then
 - a **centered heading + centered description** below it, with **clear space between the kicker and
   the heading** (the brand "clear space between header and body" rule).
 
-Use it on **all five tabs** (Goal, Reality, Resources, Options, and the Targets tab). The five
-kicker labels are `GOAL / REALITY / RESOURCES / OPTIONS / WILL DO` — note the fifth tab's bottom-nav
-label stays **"Targets"** but its on-screen kicker reads **"Will do"** (the GROW "Will" step). Don't
-re-center the kicker and don't drop the header/body spacing.
+Don't re-center the kicker and don't drop the header/body spacing. The Options and Resources pages
+lead with their own centered title + description instead (no kicker), and the Goal screen leads
+with the editable goal title.
 
 ### Options cards (interaction)
 

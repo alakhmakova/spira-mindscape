@@ -63,8 +63,42 @@ val White = Color(0xFFFFFFFF)
 
 val Brand1100 = Color(0xFF003737)          // deep teal copy on white, inside a teal panel
 val Success400 = Color(0xFF5FCD91)         // "connected" state dot
+val Success900 = Color(0xFF007A4B)         // solid success on white
 val Warning300 = Color(0xFFFFDEA1)         // soft amber that reads on a teal ground
 val Warning400 = Color(0xFFEBAF00)         // "not connected" state dot
+
+// ── Extended ramps (CLAUDE.md → "Extended ramps (also allowed)") ─────────────
+// Only the steps the app actually uses are declared; add more from the table as they are needed.
+
+// `intelligence` — the assistant/AI accent, and the only place the app uses violet.
+val Intelligence300 = Color(0xFFE6DFF9)
+val Intelligence500 = Color(0xFFA28DFF)
+val Intelligence700 = Color(0xFF8871EB)
+val Intelligence900 = Color(0xFF6E56CF)
+
+// `brand` — the teal ramp at full resolution. 1200 is its deepest step: a near-black teal that
+// carries a whole surface without going grey, which is what the AI panel is set on.
+val Brand1200 = Color(0xFF182928)
+
+// Badge pairs — the 100 step of each ramp as the pale fill, its solid step as the outline and
+// type (see `SpiraBadge`). The 100s are nearly white on purpose: the outline carries the colour.
+val Brand100 = Color(0xFFF9FDFC)
+val Info100 = Color(0xFFFDFCFF)
+val Info900 = Color(0xFF006CC1)
+val Intelligence100 = Color(0xFFFEFBFF)
+val Success100 = Color(0xFFF8FDF7)
+val Warning100 = Color(0xFFFFFBF7)
+val Warning900 = Color(0xFF896500)
+val Error100 = Color(0xFFFFFBFB)
+val Neutral100 = Color(0xFFFAFAFA)
+val Neutral1200 = Color(0xFF6B6B6B)
+
+// `error` — semantic state only (a validation failure, a destructive confirmation), never
+// decoration. Guava stays the brand accent; these are the red the guidelines reserve for danger.
+val Error200 = Color(0xFFFFEDEB)
+val Error700 = Color(0xFFE84D4C)
+val Error800 = Color(0xFFD74041)      // the overdue / danger tone on white
+val Error900 = Color(0xFFC53336)      // a solid destructive button
 
 // ── Semantic tokens (what components reference) ──────────────────────────────
 
@@ -86,8 +120,12 @@ val SpiraSurfaceSunken = Salt300           // sunken wells
 val SpiraForeground = Salt1000             // primary text
 val SpiraMutedForeground = Salt800         // secondary/muted text
 
-val SpiraDestructive = Guava600            // destructive/delete (kept within the Guava ramp)
-val SpiraSuccess = Color(0xFF337B31)       // functional success green (brand has no green)
+// Destructive/danger is a SEMANTIC state, so it comes from the `error` ramp — Guava is the
+// brand accent and must not double as a danger signal (CLAUDE.md → "Extended ramps").
+val SpiraDestructive = Error900
+// success-900 from the semantic ramp. This was an ad-hoc #337B31 from before the palette
+// carried a green of its own.
+val SpiraSuccess = Success900
 
 val SpiraBorder = Salt500                  // hairline borders / inputs
 val SpiraBorderStrong = Salt600            // stronger outline

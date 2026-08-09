@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -115,7 +116,15 @@ fun InlineEditText(
         }
     }
 
-    val effectiveStyle = textStyle.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface, textAlign = textAlign))
+    // `merge` lets its ARGUMENT win, so a colour passed in [textStyle] used to be overwritten by
+    // the theme's ink — which put near-black type on the teal resource header. Default the colour
+    // only when the caller left it unset.
+    val effectiveStyle = textStyle.merge(
+        TextStyle(
+            color = textStyle.color.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurface,
+            textAlign = textAlign,
+        ),
+    )
     val centered = textAlign == TextAlign.Center
 
     BasicTextField(

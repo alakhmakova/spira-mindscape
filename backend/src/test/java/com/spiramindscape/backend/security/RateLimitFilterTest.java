@@ -24,7 +24,7 @@ class RateLimitFilterTest {
     void setUp() {
         filter = new RateLimitFilter();
         // Tiny limits so the test is fast and deterministic.
-        filter.configure(2, 2, 2, 2);
+        filter.configure(2, 2, 2, 2, 2);
     }
 
     @AfterEach
@@ -88,6 +88,29 @@ class RateLimitFilterTest {
             disabled.doFilter(aiChat("1.2.3.4"), res, chain);
             assertThat(res.getStatus()).isEqualTo(200);
         }
+    }
+
+    @Test
+    @DisplayName("the unauthenticated client-error endpoint is throttled")
+    void clientErrorsEndpointIsThrottled() throws Exception {
+        // POST /api/client-errors is permitAll and CSRF-exempt, so this throttle is the
+        // control that stops anyone using it to flood the logs. If the limit is ever
+        // dropped, that endpoint becomes an open write channel into Cloud Logging.
+        FilterChain chain = mock(FilterChain.class);
+        for (int i = 0; i < 2; i++) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            filter.doFilter(clientError("4.4.4.4"), res, chain);
+            assertThat(res.getStatus()).isEqualTo(200);
+        }
+        MockHttpServletResponse blocked = new MockHttpServletResponse();
+        filter.doFilter(clientError("4.4.4.4"), blocked, chain);
+        assertThat(blocked.getStatus()).isEqualTo(429);
+    }
+
+    private MockHttpServletRequest clientError(String ip) {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/client-errors");
+        req.setRemoteAddr(ip);
+        return req;
     }
 
     @Test

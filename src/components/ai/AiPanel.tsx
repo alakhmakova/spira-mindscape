@@ -20,6 +20,7 @@ import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { useActivityGate } from "@/lib/useActivityGate";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import type { AiAction, Goal } from "@/lib/spira/types";
 import { toast, type ExternalToast } from "sonner";
@@ -603,7 +604,7 @@ export function AiPanel() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#006d67] text-white">
+        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#005961] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -620,7 +621,7 @@ export function AiPanel() {
   return (
     <aside
       className={cn(
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#006d67] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#005961] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
       style={{ width: `${width}px` }}
@@ -1311,8 +1312,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           }
         },
       )
-      .catch(() => {
-        /* backend not running – ignore */
+      .catch((err) => {
+        // Fails legitimately when logged out or the backend is down — deliberately
+        // not reported, or every offline page load would produce one.
+        logger.debug("Initial AI key/provider fetch failed", err);
       });
   }, []);
 
@@ -1508,8 +1511,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           ];
         });
       })
-      .catch(() => {
-        /* restore is best-effort — the chat works without it */
+      .catch((err) => {
+        // Best-effort — the chat works without it, but consistent failure means pending
+        // proposals silently stop coming back, which is worth noticing while developing.
+        logger.warn("Restoring pending proposals failed", err);
       });
     return () => {
       cancelled = true;
@@ -1614,8 +1619,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         allCreates
           .filter((pp) => !creates.includes(pp))
           .forEach((pp) => {
+            // Cleanup of a superseded duplicate: cosmetic server-side leftover, so a
+            // dev-console note is enough — not worth a report.
             if (pp.serverId != null)
-              rejectProposal(pp.serverId).catch(() => {});
+              rejectProposal(pp.serverId).catch((err) =>
+                logger.warn("Dropping superseded proposal failed", err),
+              );
           });
         const others = afterDeletes.filter((pp) => !CREATE_KINDS.has(pp.kind));
         const finalProposals = [...others, ...creates];
@@ -1736,7 +1745,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       reviseTokenRef.current === token && !stopRef.current;
 
     // The old server-side proposal row is superseded — drop it (the new one gets its own id).
-    if (p.serverId != null) rejectProposal(p.serverId).catch(() => {});
+    // A failure here orphans that row, so it is worth seeing even though the UI moves on.
+    if (p.serverId != null)
+      rejectProposal(p.serverId).catch((err) =>
+        logger.reportError(err, { kind: "api" }),
+      );
 
     // Earlier requests on this card are ordinary turns in here now, so the model sees them.
     const history: HistoryEntry[] = buildHistory(curList);
@@ -2018,8 +2031,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         allCreates
           .filter((pp) => !creates.includes(pp))
           .forEach((pp) => {
+            // Cleanup of a superseded duplicate: cosmetic server-side leftover, so a
+            // dev-console note is enough — not worth a report.
             if (pp.serverId != null)
-              rejectProposal(pp.serverId).catch(() => {});
+              rejectProposal(pp.serverId).catch((err) =>
+                logger.warn("Dropping superseded proposal failed", err),
+              );
           });
         const others = afterDeletes.filter((pp) => !CREATE_KINDS.has(pp.kind));
         const finalProposals = [...others, ...creates];
@@ -2425,7 +2442,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         if (pr?.serverId != null) {
           (status === "approved" ? approveProposal : rejectProposal)(
             pr.serverId,
-          ).catch(() => {});
+          ).catch((err) => {
+            // The user explicitly approved or rejected this card. If the server never
+            // hears about it the row stays pending and the proposal comes back later,
+            // which reads as the app forgetting a decision the user made.
+            logger.reportError(err, { kind: "api" });
+          });
         }
       }}
       onExpand={setContentModal}
@@ -2499,9 +2521,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             <span
               className={cn(
                 "w-[7px] h-[7px] rounded-full",
+                // The `intelligence` ramp, not the semantic greens/ambers: this dot marks the
+                // assistant's own provider, so it belongs to the AI accent. Connected takes the
+                // bright step, a missing key the pale one, so the state still reads.
                 activeProvider.connected
-                  ? "bg-[#5fd0a8] shadow-[0_0_0_3px_rgba(95,208,168,0.2)]"
-                  : "bg-[#d99a4e] shadow-[0_0_0_3px_rgba(217,154,78,0.2)]",
+                  ? "bg-[#A28DFF] shadow-[0_0_0_3px_rgba(162,141,255,0.2)]"
+                  : "bg-[#E6DFF9] shadow-[0_0_0_3px_rgba(230,223,249,0.2)]",
               )}
             />
             {activeLabel}
@@ -2574,7 +2599,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
                     {m.attachments.map((a, i) => {
                       const chipClass =
-                        "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#083f3a] shadow-sm";
+                        "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#003737] shadow-sm";
                       // Image attachments open a preview on click; the dataUrl survives only
                       // in-session (it's stripped before the transcript is persisted), so a
                       // reloaded chat falls back to a plain, non-clickable chip.
@@ -2606,7 +2631,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                     })}
                   </div>
                 )}
-                <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#083f3a] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#006d67]/25 selection:text-[#083f3a]">
+                <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#003737] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
                   {m.content}
                 </div>
                 <CopyButton text={m.content} />
@@ -2641,7 +2666,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             return (
               <div
                 key={m.id}
-                className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#f0b860] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]"
+                className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#FFDEA1] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]"
               >
                 <Ic
                   path={PATHS.alert}
@@ -2700,14 +2725,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           pending card renders here (the card IS the input); otherwise the composer. */}
       {mode !== "grow-end" && revising && (
         <div className="px-3 pb-3 pt-1 shrink-0">
-          <div className="flex items-center gap-2.5 rounded-[14px] border border-white/20 bg-white px-4 py-3 text-[#083f3a] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
-            <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#006d67]/30 border-t-[#006d67] animate-spin" />
+          <div className="flex items-center gap-2.5 rounded-[14px] border border-white/20 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+            <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
             <span className="flex-1 min-w-0 text-[13.5px] truncate">
               Revising «{revising.label}»…
             </span>
             <button
               onClick={cancelRevise}
-              className="shrink-0 text-[13px] font-medium text-[#083f3a]/55 hover:text-red-600 transition-colors px-1.5 py-1"
+              className="shrink-0 text-[13px] font-medium text-[#003737]/55 hover:text-red-600 transition-colors px-1.5 py-1"
             >
               Cancel
             </button>
@@ -2759,9 +2784,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               !inGrow && goal ? (
                 <button
                   onClick={() => setMode("grow-start")}
-                  className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#006d67] text-[13px] font-medium hover:bg-[#006d67]/10 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 transition-colors"
                 >
-                  <Ic path={PATHS.leaf} size={14} /> Start GROW session
+                  <Ic path={PATHS.sparkles} size={14} /> Start GROW session
                 </button>
               ) : undefined
             }
@@ -2881,27 +2906,27 @@ function ContentModal({
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(8,40,38,0.45)] backdrop-blur-[2px]"
+      className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(0,55,55,0.45)] backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#083f3a] rounded-[18px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
+        className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#003737] rounded-[18px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
         style={{ animation: "slideUp 0.25s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
-        <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-[#eef1f0]">
+        <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-[#F3F3F3]">
           <h3 className="font-['Playfair_Display'] text-[18px] font-semibold leading-[1.25] flex-1 break-words [overflow-wrap:anywhere]">
             {title}
           </h3>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 text-[#083f3a]/40 hover:text-[#083f3a] transition-colors p-1 -mr-1"
+            className="shrink-0 text-[#003737]/40 hover:text-[#003737] transition-colors p-1 -mr-1"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="px-5 py-4 overflow-y-auto text-[14px] leading-[1.6] text-[#083f3a]/85 [overflow-wrap:anywhere]">
+        <div className="px-5 py-4 overflow-y-auto text-[14px] leading-[1.6] text-[#003737]/85 [overflow-wrap:anywhere]">
           {/* An attached image previews as the image itself; notes are stored as HTML
               (TipTap) → render formatted like the note view; goal descriptions are
               plain text → Markdown. */}
@@ -3082,14 +3107,14 @@ function TimerPill({
     <span
       className={cn(
         "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 text-white font-sans",
-        closing && "text-[#f0b860]",
+        closing && "text-[#FFDEA1]",
       )}
     >
       <Ic path={PATHS.clock} size={12} />
       <span
         className={cn(
           "text-[12.5px] font-semibold tabular-nums tracking-[0.02em]",
-          closing && "text-[#f0b860]",
+          closing && "text-[#FFDEA1]",
         )}
       >
         {label}
@@ -3099,10 +3124,53 @@ function TimerPill({
           className="block h-full rounded-full transition-[width] duration-[900ms] linear"
           style={{
             width: `${frac * 100}%`,
-            background: closing ? "#f0b860" : "white",
+            background: closing ? "#FFDEA1" : "white",
           }}
         />
       </span>
+    </span>
+  );
+}
+
+// ── Status badge ───────────────────────────────────────────────────────────
+
+/**
+ * The app's one badge shape: a **pill** with a bright 1px outline and a very pale fill tinted to
+ * match, carrying a word and no icon. Each tone is a pair from one ramp — the 100 step fills, the
+ * solid step outlines and inks — so the outline is what carries the colour and a row of badges
+ * reads as one family. Mirrors the Android `SpiraBadge`.
+ */
+// A pill with a bright 1px outline over a nearly-white fill from the same ramp. The WORD stays
+// near-black (Salt-1000) in every tone — the outline carries the meaning, and colouring the type
+// too only cost legibility. Labels are sentence case, never capitals; "GROW" is the one acronym.
+const BADGE_BASE =
+  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-semibold text-[#222525]";
+
+const BADGE_TONES = {
+  // brand-800 on brand-100
+  teal: "border-[#0A8080] bg-[#F9FDFC]",
+  // intelligence-900 on intelligence-100 — anything belonging to the assistant
+  intelligence: "border-[#6E56CF] bg-[#FEFBFF]",
+  // info-900 on info-100 — a kind, a category, a neutral fact worth naming
+  info: "border-[#006CC1] bg-[#FDFCFF]",
+  success: "border-[#007A4B] bg-[#F8FDF7]",
+  warning: "border-[#896500] bg-[#FFFBF7]",
+  error: "border-[#C53336] bg-[#FFFBFB]",
+  neutral: "border-[#6B6B6B] bg-[#FAFAFA]",
+} as const;
+
+function Badge({
+  children,
+  tone = "teal",
+  className,
+}: {
+  children: React.ReactNode;
+  tone?: keyof typeof BADGE_TONES;
+  className?: string;
+}) {
+  return (
+    <span className={cn(BADGE_BASE, BADGE_TONES[tone], className)}>
+      {children}
     </span>
   );
 }
@@ -3145,7 +3213,7 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
 };
 
 const PROPOSAL_INPUT_CLS =
-  "w-full border border-[#d9dddc] rounded-lg px-3 py-2 text-[14px] text-[#083f3a] bg-white outline-none focus:border-[#006d67] focus:ring-2 focus:ring-[#006d67]/12 transition";
+  "w-full border border-[#DCDCDC] rounded-lg px-3 py-2 text-[14px] text-[#003737] bg-white outline-none focus:border-[#005961] focus:ring-2 focus:ring-[#005961]/12 transition";
 
 // Truncate long strings for one-line card display (full text lives behind the
 // "Read full content" modal).
@@ -3333,8 +3401,8 @@ function ProposalBody({
   return (
     <>
       <div className="mb-2">
-        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
-          <Ic path={meta.icon} size={12} className="text-[#006d67]" />
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
+          <Ic path={meta.icon} size={12} className="text-[#005961]" />
           {meta.label}
         </span>
       </div>
@@ -3347,7 +3415,7 @@ function ProposalBody({
         {headline}
       </div>
       {showDetail && (
-        <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#083f3a]/60 break-words [overflow-wrap:anywhere]">
+        <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#003737]/60 break-words [overflow-wrap:anywhere]">
           {detail}
         </p>
       )}
@@ -3361,7 +3429,7 @@ function ProposalBody({
               html: p.kind === "note" || p.kind === "edit_note",
             })
           }
-          className="inline-flex items-center gap-1.5 mt-2.5 text-[12.5px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors"
+          className="inline-flex items-center gap-1.5 mt-2.5 text-[12.5px] font-medium text-[#005961] hover:text-[#003737] transition-colors"
         >
           <Ic path={PATHS.expand} size={13} /> Read full content
         </button>
@@ -3401,7 +3469,7 @@ function InstructBox({
       <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">
         {headline}
       </div>
-      <p className="text-[12px] text-[#083f3a]/55">
+      <p className="text-[12px] text-[#003737]/55">
         Tell the AI how to change this — it will re-propose.
       </p>
       <textarea
@@ -3423,13 +3491,13 @@ function InstructBox({
         <button
           onClick={send}
           disabled={!instruction.trim()}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#005b56] transition-colors"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.sparkles} size={14} /> Send to AI
         </button>
         <button
           onClick={onCancel}
-          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] transition-colors px-1.5 py-2"
+          className="ml-auto text-[13px] text-[#003737]/50 hover:text-[#003737] transition-colors px-1.5 py-2"
         >
           Cancel
         </button>
@@ -3439,7 +3507,7 @@ function InstructBox({
 }
 
 const CARD_CLS =
-  "rounded-[14px] border border-white/20 bg-white text-[#083f3a] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
+  "rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
 
 /** A single proposed change (the common case): polished card, Accept / Edit / Dismiss. */
 function ProposalCard({
@@ -3482,24 +3550,13 @@ function ProposalCard({
           <ProposalBody p={p} goal={goal} onExpand={onExpand} />
           {settled ? (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <div
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
-                  p.status === "approved"
-                    ? "bg-[#006d67]/10 text-[#006d67]"
-                    : "bg-black/6 text-[#083f3a]/50",
-                )}
-              >
-                <Ic
-                  path={p.status === "approved" ? PATHS.check : PATHS.x}
-                  size={12}
-                />
+              <Badge tone={p.status === "approved" ? "success" : "neutral"}>
                 {p.status === "approved" ? "Added to goal" : "Dismissed"}
-              </div>
+              </Badge>
               {p.status === "approved" && p.createdRef && (
                 <button
                   onClick={() => onOpen(p.createdRef!)}
-                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#006d67] text-white text-[12.5px] font-semibold hover:bg-[#005b56] transition-colors"
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
                 >
                   <Ic path={PATHS.switch_} size={13} /> Open
                 </button>
@@ -3512,20 +3569,20 @@ function ProposalCard({
                   onResolve("approved");
                   onApprove(p);
                 }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
               >
                 <Ic path={PATHS.check} size={14} /> Accept
               </button>
               <button
                 onClick={() => setInstructing(true)}
                 title="Ask the AI to change this proposal"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[9px] border border-[#d9dddc] text-[#083f3a] text-[13px] font-medium hover:border-[#006d67]/40 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[9px] border border-[#DCDCDC] text-[#003737] text-[13px] font-medium hover:border-[#005961]/40 transition-colors"
               >
                 <Ic path={PATHS.pencil} size={13} /> Edit
               </button>
               <button
                 onClick={() => onResolve("rejected")}
-                className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2"
+                className="ml-auto text-[13px] text-[#003737]/50 hover:text-red-600 transition-colors px-1.5 py-2"
               >
                 Dismiss
               </button>
@@ -3547,8 +3604,8 @@ function CheckBox({ checked }: { checked: boolean }) {
       className={cn(
         "mt-0.5 h-5 w-5 shrink-0 rounded-[6px] border grid place-items-center transition-colors",
         checked
-          ? "bg-[#006d67] border-[#006d67] text-white"
-          : "border-[#cfd6d4] bg-white text-transparent",
+          ? "bg-[#005961] border-[#005961] text-white"
+          : "border-[#D6D6D6] bg-white text-transparent",
       )}
     >
       <Ic path={PATHS.check} size={12} />
@@ -3582,20 +3639,9 @@ function OptionAspectCard({
   if (settled) {
     return (
       <div className={CARD_CLS}>
-        <div
-          className={cn(
-            "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
-            p.status === "approved"
-              ? "bg-[#006d67]/10 text-[#006d67]"
-              : "bg-black/6 text-[#083f3a]/50",
-          )}
-        >
-          <Ic
-            path={p.status === "approved" ? PATHS.check : PATHS.x}
-            size={12}
-          />
+        <Badge tone={p.status === "approved" ? "success" : "neutral"}>
           {p.status === "approved" ? "Added to goal" : "Dismissed"}
-        </div>
+        </Badge>
       </div>
     );
   }
@@ -3627,7 +3673,7 @@ function OptionAspectCard({
   return (
     <div className={CARD_CLS}>
       <div className="mb-3">
-        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
           <Ic path={KIND_META.option.icon} size={12} /> Strategy option
         </span>
       </div>
@@ -3642,7 +3688,7 @@ function OptionAspectCard({
           <CheckBox checked={createOpt} />
           <span
             className={cn(
-              "text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]",
+              "text-[14px] font-semibold text-[#003737] leading-[1.3] break-words [overflow-wrap:anywhere]",
               !createOpt && "opacity-45",
             )}
           >
@@ -3658,27 +3704,27 @@ function OptionAspectCard({
           className="flex items-start gap-2.5 text-left disabled:opacity-45"
         >
           <CheckBox checked={makeActive && createOpt} />
-          <span className="text-[14px] font-semibold text-[#083f3a] leading-[1.3]">
+          <span className="text-[14px] font-semibold text-[#003737] leading-[1.3]">
             Make it the active option
           </span>
         </button>
       </div>
       <button
         onClick={() => setInstructing(true)}
-        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors"
+        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#003737]/55 hover:text-[#003737] transition-colors"
       >
         <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
       </button>
-      <div className="mt-3.5 flex items-center gap-2 border-t border-[#eef1f0] pt-3">
+      <div className="mt-3.5 flex items-center gap-2 border-t border-[#F3F3F3] pt-3">
         <button
           onClick={confirm}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.check} size={14} /> Confirm
         </button>
         <button
           onClick={() => onResolve("rejected")}
-          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2"
+          className="ml-auto text-[13px] text-[#003737]/50 hover:text-red-600 transition-colors px-1.5 py-2"
         >
           Dismiss
         </button>
@@ -3809,8 +3855,8 @@ function SteppedProposalCard({
           className={cn(
             "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
             saved > 0
-              ? "bg-[#006d67]/10 text-[#006d67]"
-              : "bg-black/6 text-[#083f3a]/50",
+              ? "bg-[#005961]/10 text-[#005961]"
+              : "bg-black/6 text-[#003737]/50",
           )}
         >
           <Ic path={saved > 0 ? PATHS.check : PATHS.x} size={12} />
@@ -3827,23 +3873,23 @@ function SteppedProposalCard({
   return (
     <div className={CARD_CLS}>
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+        <span className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
           {total} change{total > 1 ? "s" : ""}
         </span>
-        <span className="ml-auto text-[11px] font-medium text-[#083f3a]/45 tabular-nums">
+        <span className="ml-auto text-[11px] font-medium text-[#003737]/45 tabular-nums">
           {idx + 1} / {total}
         </span>
         <button
           onClick={dismissAll}
           aria-label="Dismiss all"
-          className="text-[#083f3a]/35 hover:text-red-600 transition-colors p-0.5 -mr-0.5"
+          className="text-[#003737]/35 hover:text-red-600 transition-colors p-0.5 -mr-0.5"
         >
           <X size={16} />
         </button>
       </div>
-      <div className="h-[5px] rounded-full bg-[#006d67]/12 overflow-hidden mb-3.5">
+      <div className="h-[5px] rounded-full bg-[#005961]/12 overflow-hidden mb-3.5">
         <div
-          className="h-full rounded-full bg-[#006d67] transition-all duration-300"
+          className="h-full rounded-full bg-[#005961] transition-all duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -3870,19 +3916,19 @@ function SteppedProposalCard({
             >
               <CheckBox checked={!isOff(cur)} />
               <div className={cn("flex-1 min-w-0", isOff(cur) && "opacity-45")}>
-                <div className="text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]">
+                <div className="text-[14px] font-semibold text-[#003737] leading-[1.3] break-words [overflow-wrap:anywhere]">
                   {headline}
                 </div>
                 {/* For creates, fields live in their own checkboxes below — never restate
                     them here. Non-create changes keep their summary line. */}
                 {detail && !isCreate && (
-                  <div className="text-[12.5px] text-[#083f3a]/55 mt-0.5 break-words [overflow-wrap:anywhere]">
+                  <div className="text-[12.5px] text-[#003737]/55 mt-0.5 break-words [overflow-wrap:anywhere]">
                     {detail}
                   </div>
                 )}
                 {/* Checklist shows its items as real checkboxes below — skip the count line. */}
                 {isCreate && summary && !curItems && (
-                  <div className="text-[12.5px] text-[#083f3a]/55 mt-0.5 break-words [overflow-wrap:anywhere]">
+                  <div className="text-[12.5px] text-[#003737]/55 mt-0.5 break-words [overflow-wrap:anywhere]">
                     {summary}
                   </div>
                 )}
@@ -3897,7 +3943,7 @@ function SteppedProposalCard({
                     html: cur.kind === "note" || cur.kind === "edit_note",
                   })
                 }
-                className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors"
+                className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#005961] hover:text-[#003737] transition-colors"
               >
                 <Ic path={PATHS.expand} size={12} /> Read full content
               </button>
@@ -3938,7 +3984,7 @@ function SteppedProposalCard({
                 className="flex items-start gap-2.5 text-left disabled:opacity-45"
               >
                 <CheckBox checked={!noActive.has(cur.id) && !isOff(cur)} />
-                <span className="text-[13.5px] font-semibold text-[#083f3a]">
+                <span className="text-[13.5px] font-semibold text-[#003737]">
                   Make it the active option
                 </span>
               </button>
@@ -3947,29 +3993,29 @@ function SteppedProposalCard({
 
           <button
             onClick={() => setInstructing(true)}
-            className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors"
+            className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#003737]/55 hover:text-[#003737] transition-colors"
           >
             <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
           </button>
 
-          <div className="mt-3.5 flex items-center justify-between border-t border-[#eef1f0] pt-3">
+          <div className="mt-3.5 flex items-center justify-between border-t border-[#F3F3F3] pt-3">
             <button
               onClick={() => setStep((s) => Math.max(0, s - 1))}
               disabled={idx === 0}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-[#083f3a]/70 disabled:opacity-30 hover:text-[#083f3a] transition-colors"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-[#003737]/70 disabled:opacity-30 hover:text-[#003737] transition-colors"
             >
               <Ic path={PATHS.chevron} size={13} className="rotate-90" /> Back
             </button>
             {idx < total - 1 ? (
               <button
                 onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
-                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#006d67] hover:text-[#005b56] transition-colors"
+                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#005961] hover:text-[#003737] transition-colors"
               >
                 Next{" "}
                 <Ic path={PATHS.chevron} size={13} className="-rotate-90" />
               </button>
             ) : (
-              <span className="text-[12px] text-[#083f3a]/40">
+              <span className="text-[12px] text-[#003737]/40">
                 End of review
               </span>
             )}
@@ -3979,7 +4025,7 @@ function SteppedProposalCard({
             <button
               onClick={saveAll}
               disabled={includedCount === 0}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-[10px] bg-[#006d67] text-white text-[13.5px] font-semibold hover:bg-[#005b56] disabled:opacity-40 transition-colors"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-[10px] bg-[#005961] text-white text-[13.5px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
             >
               <Ic path={PATHS.check} size={15} />
               {includedCount === total
@@ -3988,7 +4034,7 @@ function SteppedProposalCard({
             </button>
             <button
               onClick={dismissAll}
-              className="text-[12.5px] text-[#083f3a]/45 hover:text-red-600 transition-colors py-1"
+              className="text-[12.5px] text-[#003737]/45 hover:text-red-600 transition-colors py-1"
             >
               Dismiss all
             </button>
@@ -4034,14 +4080,14 @@ function AspectRow({
         className="flex items-start gap-2.5 text-left disabled:opacity-45"
       >
         <CheckBox checked={checked} />
-        <span className="text-[13.5px] font-medium text-[#083f3a]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">
+        <span className="text-[13.5px] font-medium text-[#003737]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">
           {label}
         </span>
       </button>
       {body && body.trim() && onExpand && (
         <button
           onClick={() => onExpand({ title: headline, body })}
-          className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#006d67] hover:text-[#005b56] transition-colors"
+          className="self-start ml-[30px] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#005961] hover:text-[#003737] transition-colors"
         >
           <Ic path={PATHS.expand} size={12} /> Read full content
         </button>
@@ -4078,7 +4124,7 @@ function ChecklistItems({
             className="flex items-start gap-2.5 text-left disabled:opacity-45"
           >
             <CheckBox checked={on} />
-            <span className="text-[13px] text-[#083f3a]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">
+            <span className="text-[13px] text-[#003737]/85 leading-[1.3] break-words [overflow-wrap:anywhere]">
               {it.text}
               {it.deadline ? ` · due ${fmtDeadline(it.deadline)}` : ""}
             </span>
@@ -4105,25 +4151,17 @@ function CreateSettled({
 }) {
   return (
     <div className="mt-3 flex items-center gap-2 flex-wrap">
-      <div
-        className={cn(
-          "inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium",
-          p.status === "approved"
-            ? "bg-[#006d67]/10 text-[#006d67]"
-            : "bg-black/6 text-[#083f3a]/50",
-        )}
-      >
-        <Ic path={p.status === "approved" ? PATHS.check : PATHS.x} size={12} />
+      <Badge tone={p.status === "approved" ? "success" : "neutral"}>
         {p.status === "approved"
           ? isGoal
             ? "Goal created"
             : "Target added"
           : "Dismissed"}
-      </div>
+      </Badge>
       {p.status === "approved" && p.createdRef && (
         <button
           onClick={() => onOpen(p.createdRef!)}
-          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#006d67] text-white text-[12.5px] font-semibold hover:bg-[#005b56] transition-colors"
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.switch_} size={13} />{" "}
           {p.createdRef.kind === "goal" ? "Open goal" : "Open target"}
@@ -4178,7 +4216,7 @@ function CreateChecklistCard({
     return (
       <div className={CARD_CLS}>
         <div className="mb-2">
-          <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
             <Ic path={meta.icon} size={12} /> {meta.label}
           </span>
         </div>
@@ -4235,7 +4273,7 @@ function CreateChecklistCard({
   return (
     <div className={CARD_CLS}>
       <div className="mb-3">
-        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
           <Ic path={meta.icon} size={12} /> {meta.label}
         </span>
       </div>
@@ -4250,7 +4288,7 @@ function CreateChecklistCard({
           <CheckBox checked={createOn} />
           <span
             className={cn(
-              "text-[14px] font-semibold text-[#083f3a] leading-[1.3] break-words [overflow-wrap:anywhere]",
+              "text-[14px] font-semibold text-[#003737] leading-[1.3] break-words [overflow-wrap:anywhere]",
               !createOn && "opacity-45",
             )}
           >
@@ -4260,7 +4298,7 @@ function CreateChecklistCard({
         {/* Numeric measure stays a one-line summary; a checklist shows its items as real,
             tickable checkboxes instead (so the count line would be redundant). */}
         {createSummary(p) && !items && (
-          <div className="ml-[30px] -mt-1 text-[12.5px] text-[#083f3a]/55">
+          <div className="ml-[30px] -mt-1 text-[12.5px] text-[#003737]/55">
             {createSummary(p)}
           </div>
         )}
@@ -4287,21 +4325,21 @@ function CreateChecklistCard({
       </div>
       <button
         onClick={() => setInstructing(true)}
-        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#083f3a]/55 hover:text-[#083f3a] transition-colors"
+        className="inline-flex items-center gap-1.5 mt-3 text-[12.5px] text-[#003737]/55 hover:text-[#003737] transition-colors"
       >
         <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
       </button>
-      <div className="mt-3.5 flex items-center gap-2 border-t border-[#eef1f0] pt-3">
+      <div className="mt-3.5 flex items-center gap-2 border-t border-[#F3F3F3] pt-3">
         <button
           onClick={confirm}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.check} size={14} />{" "}
           {isGoal ? "Create goal" : "Add target"}
         </button>
         <button
           onClick={() => onResolve("rejected")}
-          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2"
+          className="ml-auto text-[13px] text-[#003737]/50 hover:text-red-600 transition-colors px-1.5 py-2"
         >
           Dismiss
         </button>
@@ -4342,7 +4380,7 @@ function CreateConfirmCard({
   return (
     <div className={CARD_CLS}>
       <div className="mb-2">
-        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
           <Ic path={meta.icon} size={12} /> {meta.label}
         </span>
       </div>
@@ -4350,7 +4388,7 @@ function CreateConfirmCard({
         {headline}
       </div>
       {typeLine && (
-        <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#083f3a]/60">
+        <p className="mt-1.5 text-[13.5px] leading-[1.5] text-[#003737]/60">
           {typeLine}
         </p>
       )}
@@ -4364,14 +4402,14 @@ function CreateConfirmCard({
               onResolve("approved");
               onCreate(p);
             }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
           >
             <Ic path={PATHS.check} size={14} />{" "}
             {isGoal ? "Create goal" : "Add target"}
           </button>
           <button
             onClick={() => onResolve("rejected")}
-            className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-red-600 transition-colors px-1.5 py-2"
+            className="ml-auto text-[13px] text-[#003737]/50 hover:text-red-600 transition-colors px-1.5 py-2"
           >
             Dismiss
           </button>
@@ -4541,19 +4579,19 @@ function GrowStartOverlay({
   const [focus, setFocus] = useState("");
 
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-[rgba(8,40,38,0.4)] backdrop-blur-[2px]">
+    <div className="absolute inset-0 z-40 flex items-end bg-[rgba(0,55,55,0.4)] backdrop-blur-[2px]">
       <div
-        className="w-full bg-white text-[#083f3a] rounded-t-[22px] px-5 pt-6 pb-5"
+        className="w-full bg-white text-[#003737] rounded-t-[22px] px-5 pt-6 pb-5"
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
-        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#006d67]">
-          <Ic path={PATHS.leaf} size={14} className="text-[#006d67]" /> GROW
+        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
+          <Ic path={PATHS.leaf} size={14} className="text-[#005961]" /> GROW
           session
         </span>
         <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
           Focused time on a single goal
         </h3>
-        <p className="text-[13.5px] text-[#083f3a]/60 mb-4 leading-[1.5]">
+        <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
           A conversation without rush. I'll help you get clarity — the decisions
           stay yours.
         </p>
@@ -4563,10 +4601,10 @@ function GrowStartOverlay({
               key={m}
               onClick={() => setMins(m)}
               className={cn(
-                "flex flex-col items-center py-2.5 rounded-xl border text-[#083f3a] transition-colors",
+                "flex flex-col items-center py-2.5 rounded-xl border text-[#003737] transition-colors",
                 mins === m
-                  ? "border-[#006d67] bg-[#e7f3f1] text-[#006d67]"
-                  : "border-[#e6e4df] hover:border-[#006d67]/40",
+                  ? "border-[#005961] bg-[#E5F4F3] text-[#005961]"
+                  : "border-[#E5E5E5] hover:border-[#005961]/40",
               )}
             >
               <span className="text-[18px] font-bold leading-none">{m}</span>
@@ -4578,17 +4616,17 @@ function GrowStartOverlay({
           value={focus}
           onChange={(e) => setFocus(e.target.value)}
           placeholder="What do you want to work on? (optional)"
-          className="w-full px-3.5 py-3 border border-[#e6e4df] rounded-xl text-[14px] bg-white text-[#083f3a] mb-3.5 outline-none focus:border-[#006d67] focus:ring-2 focus:ring-[#006d67]/12 transition"
+          className="w-full px-3.5 py-3 border border-[#E5E5E5] rounded-xl text-[14px] bg-white text-[#003737] mb-3.5 outline-none focus:border-[#005961] focus:ring-2 focus:ring-[#005961]/12 transition"
         />
         <button
           onClick={() => onStart(mins, focus)}
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#006d67] text-white text-[14.5px] font-semibold hover:bg-[#005b56] transition-colors"
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#005961] text-white text-[14.5px] font-semibold hover:bg-[#003737] transition-colors"
         >
           Start session · {mins} min
         </button>
         <button
           onClick={onCancel}
-          className="block mx-auto mt-2 text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] transition-colors py-1.5"
+          className="block mx-auto mt-2 text-[13px] text-[#003737]/50 hover:text-[#003737] transition-colors py-1.5"
         >
           Cancel
         </button>
@@ -4624,12 +4662,12 @@ function GrowEndCard({
   };
 
   return (
-    <div className="rounded-[14px] border border-white/20 bg-white text-[#083f3a] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
-      <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#006d67]">
-        <Ic path={PATHS.brain} size={12} className="text-[#006d67]" /> Session
+    <div className="rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+      <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
+        <Ic path={PATHS.brain} size={12} className="text-[#005961]" /> Session
         wrap-up
       </span>
-      <p className="mt-2 text-[13.5px] leading-[1.5] text-[#083f3a]/60">
+      <p className="mt-2 text-[13.5px] leading-[1.5] text-[#003737]/60">
         {memory
           ? "This is what will be saved as the session memory — next time we'll continue from it."
           : "Save what I learned about this goal? Next time we'll continue instead of starting from scratch."}
@@ -4637,7 +4675,7 @@ function GrowEndCard({
       {memory && (
         <div
           className={cn(
-            "mt-2.5 rounded-[9px] border border-[#e6e4df] bg-[#fbf9f4] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] text-[#083f3a]/85 whitespace-pre-wrap select-text",
+            "mt-2.5 rounded-[9px] border border-[#E5E5E5] bg-[#FFFAF2] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] text-[#003737]/85 whitespace-pre-wrap select-text",
             revising && "opacity-50",
           )}
         >
@@ -4645,14 +4683,14 @@ function GrowEndCard({
         </div>
       )}
       {memory && (
-        <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#e6e4df] bg-white px-3 py-1.5 focus-within:border-[#006d67] transition-colors">
+        <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#E5E5E5] bg-white px-3 py-1.5 focus-within:border-[#005961] transition-colors">
           {revising ? (
-            <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#006d67]/30 border-t-[#006d67] animate-spin" />
+            <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
           ) : (
             <Ic
               path={PATHS.pencil}
               size={13}
-              className="shrink-0 text-[#083f3a]/40"
+              className="shrink-0 text-[#003737]/40"
             />
           )}
           <input
@@ -4665,12 +4703,12 @@ function GrowEndCard({
             placeholder={
               revising ? "Revising…" : "Want changes? Tell the AI what to fix…"
             }
-            className="flex-1 bg-transparent outline-none text-[13px] text-[#083f3a] placeholder:text-[#083f3a]/35 min-h-[30px] disabled:opacity-60"
+            className="flex-1 bg-transparent outline-none text-[13px] text-[#003737] placeholder:text-[#003737]/35 min-h-[30px] disabled:opacity-60"
           />
           {reviseDraft.trim() && !revising && (
             <button
               onClick={sendRevise}
-              className="shrink-0 text-[12.5px] font-semibold text-[#006d67] hover:text-[#005b56] px-1"
+              className="shrink-0 text-[12.5px] font-semibold text-[#005961] hover:text-[#003737] px-1"
             >
               Revise
             </button>
@@ -4678,7 +4716,7 @@ function GrowEndCard({
         </div>
       )}
       {proposals > 0 && (
-        <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[9px] bg-[#e7f3f1] text-[#006d67] text-[12.5px]">
+        <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[9px] bg-[#E5F4F3] text-[#005961] text-[12.5px]">
           <Ic path={PATHS.target} size={12} /> {proposals} proposal
           {proposals === 1 ? "" : "s"} still awaiting your decision
         </div>
@@ -4687,13 +4725,13 @@ function GrowEndCard({
         <button
           onClick={onSave}
           disabled={revising}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors disabled:opacity-50"
         >
           <Ic path={PATHS.check} size={14} /> Save memory
         </button>
         <button
           onClick={onDiscard}
-          className="ml-auto text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] transition-colors px-1.5"
+          className="ml-auto text-[13px] text-[#003737]/50 hover:text-[#003737] transition-colors px-1.5"
         >
           Don't save
         </button>
@@ -4757,19 +4795,19 @@ function ProviderSheet({
 
   return (
     <div
-      className="absolute inset-0 z-45 flex items-end bg-[rgba(8,40,38,0.42)] backdrop-blur-[2px]"
+      className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="w-full max-h-[88%] overflow-y-auto bg-white text-[#083f3a] rounded-t-[22px] px-5 pt-3 pb-5"
+        className="w-full max-h-[88%] overflow-y-auto bg-white text-[#003737] rounded-t-[22px] px-5 pt-3 pb-5"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
-        <div className="w-[38px] h-1 rounded-full bg-[#e6e4df] mx-auto mb-3.5" />
+        <div className="w-[38px] h-1 rounded-full bg-[#E5E5E5] mx-auto mb-3.5" />
         <div className="flex items-start justify-between gap-2 mb-1">
           <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#006d67]">
-              <Ic path={PATHS.key} size={14} className="text-[#006d67]" /> Bring
+            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
+              <Ic path={PATHS.key} size={14} className="text-[#005961]" /> Bring
               your own key
             </span>
             <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-1.5 leading-[1.18]">
@@ -4778,12 +4816,12 @@ function ProviderSheet({
           </div>
           <button
             onClick={onClose}
-            className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-[#083f3a]/50 hover:bg-black/5 hover:text-[#083f3a] transition-colors"
+            className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-[#003737]/50 hover:bg-black/5 hover:text-[#003737] transition-colors"
           >
             <Ic path={PATHS.x} size={16} />
           </button>
         </div>
-        <p className="text-[13.5px] text-[#083f3a]/60 mb-4 leading-[1.5]">
+        <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
           Keys are stored encrypted on your account. Keep several connected and
           switch anytime.
         </p>
@@ -4801,8 +4839,8 @@ function ProviderSheet({
                 className={cn(
                   "border rounded-xl p-3.5",
                   isActive
-                    ? "border-[#006d67] bg-[#e7f3f1]/50"
-                    : "border-[#e6e4df]",
+                    ? "border-[#005961] bg-[#E5F4F3]/50"
+                    : "border-[#E5E5E5]",
                 )}
               >
                 {/* Header row */}
@@ -4811,23 +4849,23 @@ function ProviderSheet({
                     <span className="font-semibold text-[15px]">
                       {p.vendor}
                     </span>
-                    <span className="ml-2 text-[12px] text-[#083f3a]/50">
+                    <span className="ml-2 text-[12px] text-[#003737]/50">
                       {p.context}
                     </span>
                   </div>
+                  {/* Green, not teal: "Active" sat on a teal-outlined card and vanished into its
+                      own frame. Success reads as "this one is working". */}
                   {isActive ? (
-                    <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#006d67] bg-[#006d67]/10 px-2 py-0.5 rounded-full">
-                      <Ic path={PATHS.check} size={11} /> Active
-                    </span>
+                    <Badge tone="success">Active</Badge>
                   ) : p.connected ? (
                     <button
                       onClick={() => onActivate(p.id)}
-                      className="inline-flex items-center gap-1 text-[12px] font-medium text-[#083f3a] border border-[#e6e4df] px-2.5 py-1 rounded-lg hover:border-[#006d67]/40 transition-colors"
+                      className="inline-flex items-center gap-1 text-[12px] font-medium text-[#003737] border border-[#E5E5E5] px-2.5 py-1 rounded-lg hover:border-[#005961]/40 transition-colors"
                     >
                       <Ic path={PATHS.switch_} size={12} /> Use this
                     </button>
                   ) : (
-                    <span className="text-[12px] text-[#083f3a]/40">
+                    <span className="text-[12px] text-[#003737]/40">
                       Not connected
                     </span>
                   )}
@@ -4838,29 +4876,29 @@ function ProviderSheet({
                   <div className="relative mt-2.5">
                     <button
                       onClick={() => handleDropdownToggle(p.id, p.connected)}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#e6e4df] bg-white hover:border-[#006d67]/40 transition-colors text-left"
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#E5E5E5] bg-white hover:border-[#005961]/40 transition-colors text-left"
                     >
-                      <span className="text-[13px] text-[#083f3a] font-mono truncate">
+                      <span className="text-[13px] text-[#003737] font-mono truncate">
                         {p.activeModel || "Select model"}
                       </span>
                       <Ic
                         path={PATHS.chevron}
                         size={14}
                         className={cn(
-                          "shrink-0 text-[#083f3a]/50 transition-transform duration-150",
+                          "shrink-0 text-[#003737]/50 transition-transform duration-150",
                           dropOpen && "rotate-180",
                         )}
                       />
                     </button>
 
                     {dropOpen && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#e6e4df] rounded-xl shadow-lg overflow-hidden">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#E5E5E5] rounded-xl shadow-lg overflow-hidden">
                         {isLoadingMdl ? (
-                          <div className="px-3 py-3 text-[13px] text-[#083f3a]/50 text-center">
+                          <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
                             Loading models…
                           </div>
                         ) : (fetchedModels ?? p.models).length === 0 ? (
-                          <div className="px-3 py-3 text-[13px] text-[#083f3a]/50 text-center">
+                          <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
                             No models found
                           </div>
                         ) : (
@@ -4875,8 +4913,8 @@ function ProviderSheet({
                                 className={cn(
                                   "w-full text-left px-3 py-2.5 text-[13px] font-mono transition-colors",
                                   m === p.activeModel
-                                    ? "bg-[#e7f3f1] text-[#006d67] font-semibold"
-                                    : "text-[#083f3a] hover:bg-[#f4f5f5]",
+                                    ? "bg-[#E5F4F3] text-[#005961] font-semibold"
+                                    : "text-[#003737] hover:bg-[#F4F4F3]",
                                 )}
                               >
                                 {m}
@@ -4892,7 +4930,7 @@ function ProviderSheet({
                 {/* Key hint + replace */}
                 {p.connected && editing !== p.id && (
                   <div className="flex items-center justify-between mt-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#083f3a]/50">
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
                       <Ic path={PATHS.shield} size={12} /> {p.keyHint}
                     </span>
                     <button
@@ -4902,7 +4940,7 @@ function ProviderSheet({
                         setShowKey(false);
                         setOpenDropdown(null);
                       }}
-                      className="text-[12px] text-[#006d67] hover:underline"
+                      className="text-[12px] text-[#005961] hover:underline"
                     >
                       Replace key
                     </button>
@@ -4917,7 +4955,7 @@ function ProviderSheet({
                       setKeyVal("");
                       setShowKey(false);
                     }}
-                    className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#006d67] hover:text-[#005b56] font-medium"
+                    className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
                   >
                     <Ic path={PATHS.plus} size={14} /> Connect a key
                   </button>
@@ -4926,7 +4964,7 @@ function ProviderSheet({
                 {/* Key input form */}
                 {editing === p.id && (
                   <div className="mt-3">
-                    <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#006d67] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,109,103,0.12)]">
+                    <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
                       <input
                         type={showKey ? "text" : "password"}
                         value={keyVal}
@@ -4935,11 +4973,11 @@ function ProviderSheet({
                           p.keyPrefix ? `${p.keyPrefix}…` : "API key"
                         }
                         autoFocus
-                        className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#083f3a] bg-transparent py-1.5 tracking-[0.02em]"
+                        className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
                       />
                       <button
                         onClick={() => setShowKey((s) => !s)}
-                        className="bg-black/5 text-[#083f3a]/60 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg"
+                        className="bg-black/5 text-[#003737]/60 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg"
                       >
                         {showKey ? "Hide" : "Show"}
                       </button>
@@ -4951,13 +4989,13 @@ function ProviderSheet({
                           onSaveKey(p.id, keyVal.trim());
                           setEditing(null);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] disabled:opacity-40 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
                       >
                         <Ic path={PATHS.check} size={14} /> Save &amp; activate
                       </button>
                       <button
                         onClick={() => setEditing(null)}
-                        className="text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] px-2 transition-colors"
+                        className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
                       >
                         Cancel
                       </button>
@@ -4970,24 +5008,22 @@ function ProviderSheet({
         </div>
 
         {/* Web search (Tavily) — a search key, separate from chat providers */}
-        <div className="mt-5 pt-4 border-t border-[#e6e4df]">
-          <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#006d67]">
-            <Ic path={PATHS.key} size={13} className="text-[#006d67]" /> Web
+        <div className="mt-5 pt-4 border-t border-[#E5E5E5]">
+          <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
+            <Ic path={PATHS.key} size={13} className="text-[#005961]" /> Web
             search
           </span>
-          <p className="text-[12.5px] text-[#083f3a]/60 mt-1 mb-2.5 leading-[1.5]">
+          <p className="text-[12.5px] text-[#003737]/60 mt-1 mb-2.5 leading-[1.5]">
             Add a Tavily key (tavily.com) to let the assistant search the web.
             Optional.
           </p>
-          <div className="border rounded-xl p-3.5 border-[#e6e4df]">
+          <div className="border rounded-xl p-3.5 border-[#E5E5E5]">
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold text-[15px]">Tavily</span>
               {tavily.connected ? (
-                <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#006d67] bg-[#006d67]/10 px-2 py-0.5 rounded-full">
-                  <Ic path={PATHS.check} size={11} /> Connected
-                </span>
+                <Badge tone="success">Connected</Badge>
               ) : (
-                <span className="text-[12px] text-[#083f3a]/40">
+                <span className="text-[12px] text-[#003737]/40">
                   Not connected
                 </span>
               )}
@@ -4995,7 +5031,7 @@ function ProviderSheet({
 
             {tavily.connected && !editingTavily && (
               <div className="flex items-center justify-between mt-2.5">
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#083f3a]/50">
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
                   <Ic path={PATHS.shield} size={12} /> {tavily.hint}
                 </span>
                 <button
@@ -5003,7 +5039,7 @@ function ProviderSheet({
                     setEditingTavily(true);
                     setTavilyVal("");
                   }}
-                  className="text-[12px] text-[#006d67] hover:underline"
+                  className="text-[12px] text-[#005961] hover:underline"
                 >
                   Replace key
                 </button>
@@ -5016,7 +5052,7 @@ function ProviderSheet({
                   setEditingTavily(true);
                   setTavilyVal("");
                 }}
-                className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#006d67] hover:text-[#005b56] font-medium"
+                className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
               >
                 <Ic path={PATHS.plus} size={14} /> Connect a key
               </button>
@@ -5024,14 +5060,14 @@ function ProviderSheet({
 
             {editingTavily && (
               <div className="mt-3">
-                <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#006d67] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,109,103,0.12)]">
+                <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
                   <input
                     type="password"
                     value={tavilyVal}
                     onChange={(e) => setTavilyVal(e.target.value)}
                     placeholder="tvly-…"
                     autoFocus
-                    className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#083f3a] bg-transparent py-1.5 tracking-[0.02em]"
+                    className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
                   />
                 </div>
                 <div className="flex items-center gap-2 mt-2.5">
@@ -5041,13 +5077,13 @@ function ProviderSheet({
                       onSaveTavily(tavilyVal.trim());
                       setEditingTavily(false);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#006d67] text-white text-[13px] font-semibold hover:bg-[#005b56] disabled:opacity-40 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
                   >
                     <Ic path={PATHS.check} size={14} /> Save
                   </button>
                   <button
                     onClick={() => setEditingTavily(false)}
-                    className="text-[13px] text-[#083f3a]/50 hover:text-[#083f3a] px-2 transition-colors"
+                    className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
                   >
                     Cancel
                   </button>
@@ -5057,7 +5093,7 @@ function ProviderSheet({
           </div>
         </div>
 
-        <p className="mt-4 flex items-center gap-1.5 text-[12px] text-[#083f3a]/40">
+        <p className="mt-4 flex items-center gap-1.5 text-[12px] text-[#003737]/40">
           <Ic path={PATHS.shield} size={12} /> Keys never leave your account and
           are encrypted at rest.
         </p>
@@ -5080,18 +5116,18 @@ function EndConfirmDialog({
 }) {
   return (
     <div
-      className="absolute inset-0 z-45 flex items-end bg-[rgba(8,40,38,0.42)] backdrop-blur-[2px]"
+      className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
       onClick={onCancel}
     >
       <div
-        className="w-full bg-white text-[#083f3a] rounded-t-[22px] px-5 pt-6 pb-5"
+        className="w-full bg-white text-[#003737] rounded-t-[22px] px-5 pt-6 pb-5"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <h3 className="font-['Playfair_Display'] text-[22px] font-semibold leading-[1.18] mb-2">
           End the session early?
         </h3>
-        <p className="text-[13.5px] text-[#083f3a]/60 leading-[1.5] mb-4">
+        <p className="text-[13.5px] text-[#003737]/60 leading-[1.5] mb-4">
           {remainingLabel && `There's still ${remainingLabel} left. `}I'll do a
           short close — gather what became clear and ask whether to keep it — so
           nothing is lost.
@@ -5099,13 +5135,13 @@ function EndConfirmDialog({
         <div className="flex gap-2">
           <button
             onClick={onConfirm}
-            className="flex-1 py-3 rounded-xl bg-[#006d67] text-white text-[14px] font-semibold hover:bg-[#005b56] transition-colors"
+            className="flex-1 py-3 rounded-xl bg-[#005961] text-white text-[14px] font-semibold hover:bg-[#003737] transition-colors"
           >
             End &amp; wrap up
           </button>
           <button
             onClick={onCancel}
-            className="flex-1 py-3 rounded-xl border border-[#e6e4df] text-[#083f3a] text-[14px] font-medium hover:border-[#006d67]/40 transition-colors"
+            className="flex-1 py-3 rounded-xl border border-[#E5E5E5] text-[#003737] text-[14px] font-medium hover:border-[#005961]/40 transition-colors"
           >
             Keep going
           </button>
@@ -5167,7 +5203,7 @@ function CopyButton({
       className={cn(
         "inline-flex items-center gap-1 self-start text-[11.5px] transition-opacity -mt-1 opacity-70 hover:opacity-100",
         tone === "dark"
-          ? "text-[#083f3a]/55 hover:text-[#083f3a]"
+          ? "text-[#003737]/55 hover:text-[#003737]"
           : "text-white/60 hover:text-white",
       )}
       title="Copy message"
@@ -5467,7 +5503,7 @@ function Composer({
               return (
                 <span
                   key={i}
-                  className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#083f3a]/15 bg-[#083f3a]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#083f3a]"
+                  className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#003737]/15 bg-[#003737]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#003737]"
                 >
                   {canPreview ? (
                     <button
@@ -5487,7 +5523,7 @@ function Composer({
                     type="button"
                     onClick={() => removeAttachment(i)}
                     aria-label={`Remove ${a.name}`}
-                    className="shrink-0 grid h-4 w-4 place-items-center rounded-full text-[#083f3a]/50 hover:bg-[#083f3a]/10 hover:text-[#083f3a]"
+                    className="shrink-0 grid h-4 w-4 place-items-center rounded-full text-[#003737]/50 hover:bg-[#003737]/10 hover:text-[#003737]"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -5516,7 +5552,7 @@ function Composer({
               fire();
             }
           }}
-          className="w-full bg-transparent resize-none outline-none text-[14.5px] leading-[1.45] text-[#083f3a] placeholder:text-[#083f3a]/40 max-h-32 px-1 py-1"
+          className="w-full bg-transparent resize-none outline-none text-[14.5px] leading-[1.45] text-[#003737] placeholder:text-[#003737]/40 max-h-32 px-1 py-1"
         />
         <div className="flex items-center gap-2 pt-1">
           {allowAttachments && (
@@ -5535,7 +5571,7 @@ function Composer({
                 disabled={
                   busy || attachments.length + reading >= ATTACH_MAX_COUNT
                 }
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#006d67] hover:bg-[#006d67]/10 disabled:opacity-40 transition-colors"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#005961] hover:bg-[#005961]/10 disabled:opacity-40 transition-colors"
                 title="Attach a file (image, PDF, or DOCX)"
                 aria-label="Attach a file"
               >
@@ -5548,7 +5584,7 @@ function Composer({
           {busy ? (
             <button
               onClick={onStop}
-              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white hover:bg-[#005b56] transition-colors"
+              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#005961] text-white hover:bg-[#003737] transition-colors"
               title="Stop"
             >
               <span className="w-3 h-3 rounded-sm bg-white" />
@@ -5557,7 +5593,7 @@ function Composer({
             <button
               onClick={fire}
               disabled={!v.trim() || reading > 0}
-              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#006d67] text-white disabled:opacity-40 hover:bg-[#005b56] transition-colors"
+              className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#005961] text-white disabled:opacity-40 hover:bg-[#003737] transition-colors"
               title={reading > 0 ? "Waiting for attachments…" : "Send"}
             >
               <ArrowUp className="h-4 w-4" />

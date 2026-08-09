@@ -2,14 +2,16 @@ package com.spiramindscape.android.ui.ai
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.spiramindscape.android.data.ai.Proposal
 import com.spiramindscape.android.data.goals.GoalDetail
 
 /**
- * Wraps a screen with the AI assistant: the panel lives beside the content and is reached by
- * swiping in from the right edge (or from the header's assistant icon) — see [AiChatHost].
+ * Wraps a screen with the AI assistant: the panel is pulled **up** over the content, either from
+ * the assistant icon or by swiping up on whatever surface the screen attaches the gesture
+ * modifier to (the goal workspace uses its footer) — see [AiChatHost].
  *
  * [goalId] scopes the conversation: a goal id gives the assistant that goal's reality, options,
  * targets and resources; null is the all-goals chat. Each scope keeps its own transcript, so
@@ -23,7 +25,7 @@ fun WithAiAssistant(
     onApplyProposal: (Proposal, Set<String>) -> String?,
     /** The open goal, so the empty chat can offer prompts drawn from its actual state. */
     goal: GoalDetail? = null,
-    content: @Composable () -> Unit,
+    content: @Composable (swipeUpGesture: Modifier) -> Unit,
 ) {
     val viewModel: AiChatViewModel = viewModel(
         // Key by scope: the goal chat and the all-goals chat are different conversations, and

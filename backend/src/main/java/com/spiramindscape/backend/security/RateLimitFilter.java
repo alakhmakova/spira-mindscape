@@ -6,6 +6,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,6 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger("security.ratelimit");
+
     private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
 
     /** Off in the e2e/test profiles, where a black-box suite fires hundreds of
@@ -45,6 +49,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private int loginPerMinute;
     @Value("${spira.ratelimit.keys-per-minute:10}")
     private int keysPerMinute;
+    /** Deliberately low: a crash loop should report once, not hundreds of times. */
+    @Value("${spira.ratelimit.client-errors-per-minute:10}")
+    private int clientErrorsPerMinute;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -63,6 +70,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (bucket.tryConsume(1)) {
             chain.doFilter(request, response);
         } else {
+            // Throttling used to be completely invisible: a user hitting a limit saw a 429
+            // and we saw nothing, so "is the limit too tight or is someone hammering us?"
+            // had no answer. The caller key is a user id or an IP — never a token.
+            log.warn("rate_limit_block limit={} caller={} path={}",
+                    limit.name(), callerKey(request), request.getRequestURI());
             response.setStatus(429); // Too Many Requests
             response.setHeader("Retry-After", "60");
             response.setContentType("application/json");
@@ -86,6 +98,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
         if (path.startsWith("/oauth2/authorization")) {
             return new Limit("login", loginPerMinute);
+        }
+        // Browser error reports are permitAll (see SecurityConfig), so this throttle is
+        // the compensating control that keeps an unauthenticated endpoint from being used
+        // to flood the logs. Anonymous callers key by IP.
+        if ("POST".equals(method) && path.equals("/api/client-errors")) {
+            return new Limit("client-errors", clientErrorsPerMinute);
         }
         return null;
     }
@@ -114,11 +132,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private record Limit(String name, int perMinute) {}
 
     // Visible for tests: lets a test inject limits without Spring.
-    void configure(int aiChat, int graphql, int login, int keys) {
+    void configure(int aiChat, int graphql, int login, int keys, int clientErrors) {
         this.enabled = true;
         this.aiChatPerMinute = aiChat;
         this.graphqlPerMinute = graphql;
         this.loginPerMinute = login;
         this.keysPerMinute = keys;
+        this.clientErrorsPerMinute = clientErrors;
     }
 }

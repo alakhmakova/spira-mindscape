@@ -14,6 +14,12 @@ jobs:
   frontend:
     name: Frontend tests and build
     runs-on: ubuntu-latest
+    # Every job caps its runtime. GitHub's default is 6 HOURS, so a job that wedges on a
+    # network stall (npm/apt/Maven, none of which fail fast on their own) just sits there
+    # burning runner minutes until a human notices and cancels — which is exactly what
+    # happened to Web E2E on 2026-08-06. These caps are ~4x the observed duration: they
+    # never trip on a healthy run, and turn a hang into a fast, labelled failure.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -47,6 +53,7 @@ jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -58,6 +65,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
+
+      # `cache: maven` above only caches ~/.m2 — NOT Maven itself. backend/.mvn/wrapper is
+      # gitignored, so ./mvnw re-downloads the distribution on every run, and Maven Central
+      # answers 403 to rate-limited shared runner IPs (that 403 failed PR #20's backend job
+      # in 13s, before a single test ran). Caching the unpacked distribution means the normal
+      # path downloads nothing; on a cache miss ./mvnw retries across two mirrors.
+      - name: Cache Maven distribution (wrapper)
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/.mvn/wrapper/apache-maven-*
+            !backend/.mvn/wrapper/*.zip
+          key: maven-dist-${{ hashFiles('backend/mvnw') }}
 
       - name: Run backend tests
         run: |
@@ -105,6 +125,8 @@ jobs:
   android:
     name: Android tests
     runs-on: ubuntu-latest
+    # The longest job by far (~6 min of Robolectric with forkEvery = 1), hence the bigger cap.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -153,6 +175,7 @@ jobs:
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -167,6 +190,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
+
+      # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
+      - name: Cache Maven distribution (wrapper)
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/.mvn/wrapper/apache-maven-*
+            !backend/.mvn/wrapper/*.zip
+          key: maven-dist-${{ hashFiles('backend/mvnw') }}
 
       - name: Populate local Maven cache
         run: |
@@ -190,6 +222,7 @@ jobs:
     name: Python E2E tests
     needs: [backend]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -218,6 +251,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
+
+      # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
+      - name: Cache Maven distribution (wrapper)
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/.mvn/wrapper/apache-maven-*
+            !backend/.mvn/wrapper/*.zip
+          key: maven-dist-${{ hashFiles('backend/mvnw') }}
 
       - name: Build backend JAR
         run: |
@@ -295,6 +337,9 @@ jobs:
     name: Web E2E (Playwright)
     needs: [backend]
     runs-on: ubuntu-latest
+    # Healthy runs finish in ~2.5 min. On 2026-08-06 this job sat for 15 min and had to be
+    # cancelled by hand; the same commit passed three times afterwards.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -336,6 +381,15 @@ jobs:
       # --with-deps pulls the system libraries the headless browser needs on the runner.
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+
+      # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
+      - name: Cache Maven distribution (wrapper)
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/.mvn/wrapper/apache-maven-*
+            !backend/.mvn/wrapper/*.zip
+          key: maven-dist-${{ hashFiles('backend/mvnw') }}
 
       - name: Build backend JAR
         run: |
@@ -406,6 +460,7 @@ jobs:
     needs: [backend, e2e]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -490,6 +545,9 @@ jobs:
     needs: [frontend, backend, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    # `gcloud run deploy --source` builds the image on Cloud Build, so this one is genuinely
+    # slow — the cap only exists to stop a wedged deploy from running for hours.
+    timeout-minutes: 40
 
     permissions:
       contents: read

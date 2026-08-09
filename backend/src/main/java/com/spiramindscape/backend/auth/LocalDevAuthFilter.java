@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -48,6 +49,23 @@ public class LocalDevAuthFilter extends OncePerRequestFilter {
 
     public LocalDevAuthFilter(AppUserRepository appUserRepository) {
         this.appUserRepository = appUserRepository;
+    }
+
+    /**
+     * A startup tripwire. This filter signs every request in as a fixed user with no
+     * credentials — in production that is a total authentication bypass. It can only be
+     * reached by activating the {@code local} profile, but nothing previously recorded
+     * that it was active, so a misconfigured deploy would look completely normal in the
+     * logs. One WARN at startup makes it alertable in Cloud Logging.
+     */
+    @jakarta.annotation.PostConstruct
+    void warnThatAuthIsBypassed() {
+        LoggerFactory.getLogger("security.auth").warn(
+                // ASCII only: a non-UTF-8 console mangles an em dash into a replacement
+                // character, and this is the one line that must stay readable everywhere.
+                "auth_bypass_filter_active filter=LocalDevAuthFilter profile=local user={} "
+                        + "- every request is auto-authenticated; this MUST NOT appear in production",
+                DEV_EMAIL);
     }
 
     @Override
