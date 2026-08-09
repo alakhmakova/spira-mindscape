@@ -6,18 +6,44 @@ BASE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 WRAPPER_DIR="$BASE_DIR/.mvn/wrapper"
 MAVEN_HOME="$WRAPPER_DIR/apache-maven-$MAVEN_VERSION"
 MAVEN_ZIP="$WRAPPER_DIR/apache-maven-$MAVEN_VERSION-bin.zip"
-MAVEN_URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$MAVEN_VERSION/apache-maven-$MAVEN_VERSION-bin.zip"
+
+# The distribution is fetched from two hosts, in order. Maven Central is fronted by a CDN
+# that rate-limits shared CI egress IPs and answers **403** — and curl does not retry a 403,
+# so a single one used to fail the whole backend job in 13s, before a test ran.
+# archive.apache.org serves the identical artifact and has every release permanently.
+# (dlcdn.apache.org is deliberately NOT here: it only mirrors the *current* release, so it
+# 404s for a pinned older version like this one.)
+MAVEN_URLS="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$MAVEN_VERSION/apache-maven-$MAVEN_VERSION-bin.zip
+https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.zip"
+
+download_maven() {
+  # Three passes over the mirror list: a rate-limit that hits every host at once clears
+  # after a short wait, so retrying the list beats failing on the first sweep.
+  attempt=1
+  while [ "$attempt" -le 3 ]; do
+    for url in $MAVEN_URLS; do
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 20 "$url" -o "$MAVEN_ZIP" && return 0
+      elif command -v wget >/dev/null 2>&1; then
+        wget -q --tries=2 --waitretry=2 --timeout=20 "$url" -O "$MAVEN_ZIP" && return 0
+      else
+        echo "curl or wget is required to download Maven." >&2
+        exit 1
+      fi
+      echo "Download failed: $url" >&2
+    done
+    attempt=$((attempt + 1))
+    # `[ … ] && sleep` would be the script's last status under `set -e` on the final pass
+    # and would kill the shell before the error message below is ever printed.
+    if [ "$attempt" -le 3 ]; then sleep 5; fi
+  done
+  echo "Could not download Apache Maven $MAVEN_VERSION from any mirror." >&2
+  return 1
+}
 
 if [ ! -x "$MAVEN_HOME/bin/mvn" ]; then
   mkdir -p "$WRAPPER_DIR"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$MAVEN_URL" -o "$MAVEN_ZIP"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q "$MAVEN_URL" -O "$MAVEN_ZIP"
-  else
-    echo "curl or wget is required to download Maven." >&2
-    exit 1
-  fi
+  download_maven
   unzip -q -o "$MAVEN_ZIP" -d "$WRAPPER_DIR"
 fi
 
