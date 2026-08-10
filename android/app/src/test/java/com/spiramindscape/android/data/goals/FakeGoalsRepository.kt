@@ -55,6 +55,7 @@ open class FakeGoalsRepository : GoalsRepository {
 
     override suspend fun addOption(goalId: String, text: String) { throw NotImplementedError() }
     override suspend fun setOptionText(goalId: String, optionId: String, text: String) { throw NotImplementedError() }
+    override suspend fun setOptionStatus(goalId: String, optionId: String, status: String) { throw NotImplementedError() }
     override suspend fun selectOption(goalId: String, optionId: String) { throw NotImplementedError() }
     override suspend fun deselectOption(goalId: String, optionId: String) { throw NotImplementedError() }
     override suspend fun removeOption(goalId: String, optionId: String) { throw NotImplementedError() }

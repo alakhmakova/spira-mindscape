@@ -14,8 +14,6 @@ import {
   CircleX,
   Info,
   TriangleAlert,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -598,28 +596,23 @@ export function InlineText({
             </>
           )}
         </span>
-        {/* Expand/collapse chevron at the END of the text (bottom), aligned UNDER the smiley:
-            same width as the floated slot (w-8) and pinned right, so its centre lines up with the
-            smiley above rather than sitting further right. `bg-surface` masks any clipped text
-            behind it on the last line. */}
-        {showToggle && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((v) => !v);
-            }}
-            aria-label={expanded ? "Show less" : "Show more"}
-            className="absolute bottom-0 right-0 grid h-6 w-8 place-items-center bg-surface text-primary transition-colors hover:text-primary/80"
-          >
-            {expanded ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </button>
-        )}
       </span>
+      {/* Expand/collapse toggle — a worded link on its OWN line under the text, never floated
+          over the last line. It used to be a chevron pinned bottom-right, which sat on top of the
+          words it was hiding and read as decoration; the label says what it does, and matches the
+          Android card exactly. `self-start` keeps it a row of its own, left-aligned with the text. */}
+      {showToggle && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          className="mt-1 self-start text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
       {error && (
         <span
           role="alert"

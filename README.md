@@ -85,7 +85,7 @@ At some point, I learned that clear specs and tests are the best form of documen
 
 In summer 2023 I moved to Sweden with one large goal: to build a life here. In practice that meant many parallel goals — language, education, work, social integration. I needed one place to structure all of it and track visible progress.
 
-I first tried plain notes in Notion, then traditional task-management apps, and then goal-tracking products. Most tools were still focused on work-style processes (OKRs, team performance, reporting), while I needed a personal long-term goal system.
+I first tried plain notes, then traditional task-management apps, and then goal-tracking products. Most tools were still focused on work-style processes (OKRs, team performance, reporting), while I needed a personal long-term goal system.
 
 So I built Spira.
 

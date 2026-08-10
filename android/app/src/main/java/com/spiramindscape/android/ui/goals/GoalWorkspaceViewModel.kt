@@ -276,6 +276,16 @@ class GoalWorkspaceViewModel(
     fun setOptionText(optionId: String, text: String) =
         mutateThenReload { repository.setOptionText(goalId, optionId, text) }
     fun removeOption(optionId: String) = mutateThenReload { repository.removeOption(goalId, optionId) }
+
+    /**
+     * The smiley badge's thumb lean — "none" | "good_idea" | "didnt_work". Optimistic, like the
+     * active radio: the badge must flip under the finger, not a round-trip later.
+     */
+    fun setOptionStatus(optionId: String, status: String) =
+        editGoal({ g -> g.copy(options = g.options.map { if (it.id == optionId) it.copy(status = status) else it }) }) {
+            repository.setOptionStatus(goalId, optionId, status)
+        }
+
     fun selectOption(optionId: String) =
         editGoal({ g -> g.copy(options = g.options.map { it.copy(selected = it.id == optionId) }) }) {
             repository.selectOption(goalId, optionId)

@@ -246,6 +246,40 @@ object SpiraIcons {
         "M8 2.5a1.1 1.1 0 0 1 1.1 1.1v8.8a1.1 1.1 0 0 1-2.2 0v-8.8A1.1 1.1 0 0 1 8 2.5z",
     )
 
+    // ── The owner's collection (`specs/icons.md`) ────────────────────────────
+    // The PRIMARY icon source. Ported with [filled], which matches the collection's shape: 16×16,
+    // `fill="currentColor"`, no stroke. The same two transcription rules as the Nav family below
+    // apply — space the arc flags, one argument per source `<path>`.
+
+    /** Options card rating — "good idea". `specs/icons.md` → *Filled smile*. */
+    val SmileFilled = filled(
+        "M8 .5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zm-2.5 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" +
+            "m4 1a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM6.155 9.635a.75.75 0 1 0-1.31.73" +
+            "C5.465 11.48 6.639 12.25 8 12.25c1.361 0 2.534-.77 3.155-1.885a.75.75 0 0 0-1.31-.73" +
+            "c-.377.678-1.07 1.115-1.845 1.115-.775 0-1.468-.437-1.845-1.115z",
+    )
+
+    /** Options card rating — "didn't work". `specs/icons.md` → *Filled sad*. */
+    val FrownFilled = filled(
+        "M8 .5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zm-2.5 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" +
+            "m4 1a1 1 0 1 1 2 0 1 1 0 0 1-2 0zm.345 6.365a.75.75 0 1 0 1.31-.73" +
+            "C10.535 10.02 9.361 9.25 8 9.25c-1.361 0-2.534.77-3.155 1.885a.75.75 0 0 0 1.31.73" +
+            "c.377-.678 1.07-1.115 1.845-1.115.775 0 1.468.437 1.845 1.115z",
+    )
+
+    /**
+     * The actions menu, **horizontal** ⋯ — the default everywhere a row floats its menu over text.
+     *
+     * The collection ships only the vertical ⋮ ([KebabVertical]); this is that same glyph turned a
+     * quarter-turn rather than a second, hand-drawn icon. Its three dots sit at y = 2.5 / 8 / 13.5,
+     * symmetric about the 16×16 box's centre, so rotating about (8, 8) lands them at x = 2.5 / 8 /
+     * 13.5 — a true ⋯ with no re-transcription.
+     */
+    val Kebab = filled(KEBAB, fillType = PathFillType.NonZero, rotate = 90f)
+
+    /** The actions menu as the collection draws it, ⋮ — for rows with a fixed control column. */
+    val KebabVertical = filled(KEBAB, fillType = PathFillType.NonZero)
+
     // ── Goal-workspace navigation chrome ─────────────────────────────────────
     // The owner supplied this second, *filled* 16×16 family for the goal-workspace header,
     // GROW tab bar and footer (the Lucide stroke set above still covers the rest of the app).
@@ -374,6 +408,11 @@ object SpiraIcons {
     )
 }
 
+/** Shared by [SpiraIcons.Kebab] and [SpiraIcons.KebabVertical] — `specs/icons.md` → *Kebab*. */
+private const val KEBAB =
+    "M9.5 2.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z" +
+        "M8 15a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"
+
 /** Shared by [SpiraIcons.NavChevronLeft], which mirrors it into a left chevron. */
 private const val CHEVRON_RIGHT =
     "M 5.47 3.47 a .75 .75 0 0 1 1.06 0 l 4 4 a .75 .75 0 0 1 0 1.06 l -4 4 " +
@@ -385,13 +424,14 @@ private const val CHEVRON_RIGHT =
  * `<path>` element of the source SVG, drawn separately so their fills never cancel.
  *
  * [fillType] is the source's `fill-rule` (SVG defaults to non-zero when the attribute is absent),
- * [mirrorX] flips the glyph horizontally, and [offsetX] nudges art that isn't a full 16 units
- * wide back into the centre of the box.
+ * [mirrorX] flips the glyph horizontally, [rotate] turns it (degrees, about the box's centre), and
+ * [offsetX] nudges art that isn't a full 16 units wide back into the centre of the box.
  */
 private fun filled(
     vararg paths: String,
     fillType: PathFillType = PathFillType.EvenOdd,
     mirrorX: Boolean = false,
+    rotate: Float = 0f,
     offsetX: Float = 0f,
 ): ImageVector =
     ImageVector.Builder(
@@ -407,6 +447,7 @@ private fun filled(
             name = "transform",
             pivotX = 8f,
             pivotY = 8f,
+            rotate = rotate,
             scaleX = if (mirrorX) -1f else 1f,
             translationX = offsetX,
         )
