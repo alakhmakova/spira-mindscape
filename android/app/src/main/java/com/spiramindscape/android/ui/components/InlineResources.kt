@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -151,10 +152,22 @@ fun InlineRichText(
      * tap here and drop the card into edit mode.
      */
     tapSuppressed: () -> Boolean = { false },
+    /**
+     * Reports whether the read view is clipped by [maxLines] — what a "Show more" toggle needs to
+     * know before it can decide to exist. Only meaningful while [maxLines] actually clamps: once
+     * the caller expands the text this reports false again, so callers latch the first `true`.
+     */
+    onOverflowChange: ((Boolean) -> Unit)? = null,
+    /**
+     * Reports when this field swaps between its read view and the editor. Rows that reveal a
+     * control only while their text is being edited (the Options card's ⋯ menu) watch this.
+     */
+    onEditingChange: ((Boolean) -> Unit)? = null,
 ) {
     val ctx = LocalInlineResources.current
     val resources = ctx?.resources ?: emptyList()
     var editing by remember { mutableStateOf(false) }
+    LaunchedEffect(editing) { onEditingChange?.invoke(editing) }
 
     if (editing) {
         // A guard against the initial unfocused callback closing the editor before it opens.
@@ -236,7 +249,10 @@ fun InlineRichText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         inlineContent = inlineContent,
-        onTextLayout = { layout = it },
+        onTextLayout = {
+            layout = it
+            onOverflowChange?.invoke(it.hasVisualOverflow)
+        },
     )
 }
 
@@ -340,6 +356,9 @@ private fun rememberInlineIcons(tint: Color): Map<String, InlineTextContent> {
  * The per-element ⋯ menu: attach a resource to this element's text, and (where the element can be
  * removed) delete it. The Android twin of the web `ElementActionsMenu`. [vertical] picks ⋮ over ⋯ —
  * a row with a fixed control column (a checklist task) reads better vertical.
+ *
+ * Both are the owner's *Kebab* (`specs/icons.md`); the collection draws it vertical, and the
+ * horizontal default is that same glyph rotated a quarter-turn, not a second icon.
  */
 @Composable
 fun ElementActionsMenu(
@@ -352,14 +371,22 @@ fun ElementActionsMenu(
     attachedTo: String? = null,
     vertical: Boolean = false,
     tint: Color? = null,
+    /**
+     * Reports whether the dropdown (or its resource picker) is open. A caller that only *shows*
+     * this menu in some state — the Options card reveals it while its text is being edited — must
+     * keep showing it while it is open, or the composable holding the dropdown would be removed
+     * out from under the user's finger.
+     */
+    onOpenChange: ((Boolean) -> Unit)? = null,
 ) {
     val ctx = LocalInlineResources.current
     var expanded by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded, pickerOpen) { onOpenChange?.invoke(expanded || pickerOpen) }
 
     Box(modifier) {
         Icon(
-            if (vertical) SpiraIcons.MoreVertical else SpiraIcons.MoreHorizontal,
+            if (vertical) SpiraIcons.KebabVertical else SpiraIcons.Kebab,
             contentDescription = contentDescription,
             tint = tint ?: MaterialTheme.spiraExtras.mutedForeground,
             modifier = Modifier

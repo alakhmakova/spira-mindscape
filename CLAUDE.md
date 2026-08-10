@@ -213,11 +213,26 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
 
 - **No emoji anywhere** — not in UI text, notifications, empty states, badges, or AI/assistant
   replies. (Use a word like "Achieved", not `✓`/`🎉`.)
-- **Use Lucide icons only.** Web: `lucide-react`. Android: the Lucide glyphs in
-  `ui/icons/SpiraIcons.kt` (built from Lucide SVG **path data** — the "PATHS + Ic" approach the
-  spec names). Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc
-  drawn shapes. If an icon is missing, add its Lucide path to `SpiraIcons` (copy the `d`
-  attribute from https://lucide.dev) — keep the two surfaces on the same icon set.
+- **The owner's icon collection is the primary source: it lives in the repo at `specs/icons.md`**
+  (66 icons with their SVG). Take the icon from there **first** — no Linear login, no MCP, and it
+  reviews in a diff. **If what you need is not in that file, STOP and ask the owner** — do not
+  quietly reach for Lucide. Lucide is a **fallback that needs the owner's go-ahead each time**,
+  not a default.
+  - **Read the file before porting an icon.** It records the set's quirks: 62 of the 66 are
+    `viewBox="0 0 16 16"`, **44 have more than one `<path>`** (exactly the Android trap below),
+    `Certificate` is listed twice with two different glyphs, and `Filled Sparcling` is the one
+    icon with a hard-coded colour.
+  - **Prefer rotating or mirroring a collection glyph over inventing a variant.** The horizontal
+    ⋯ menu is the collection's vertical *Kebab* turned a quarter-turn — `filled(..., rotate = 90f)`
+    on Android, `transform="rotate(90 8 8)"` on the web — not a second, hand-drawn icon.
+  - Ported so far: Android `SpiraIcons` and web `src/components/spira/brand-icons.tsx` both carry
+    `SmileFilled`, `FrownFilled`, `Kebab`, `KebabVertical`. Keep the two surfaces on the same
+    glyphs — port to both, or neither.
+- **Lucide is the fallback set** (only once the owner has agreed, per the rule above). Web:
+  `lucide-react`. Android: the Lucide glyphs in `ui/icons/SpiraIcons.kt` (built from Lucide SVG
+  **path data** — the "PATHS + Ic" approach the spec names). Do **not** use Material Icons
+  (`androidx.compose.material.icons.*`) or ad-hoc drawn shapes. When adding one, copy the `d`
+  attribute from https://lucide.dev — keep the two surfaces on the same icon set.
 - **One exception — the `Nav*` family.** The Android goal-workspace chrome (header, footer,
   drawer Home, and the AI sparkle in both headers) uses a second, **filled** 16×16 set the owner
   supplied, declared as `SpiraIcons.Nav*` at the bottom of `SpiraIcons.kt`. Everything else stays
@@ -424,18 +439,19 @@ canvas, tints stay sparse, and `reserved` (Guava) is never a large fill.
 - **White is the primary canvas.** Use it more than any colour; let colour bring the white space
   to life. **Tints are used sparingly.**
 - **NEVER use Guava as a large background/fill colour** (page/section/card backgrounds) — it's an
-  accent. Small accent **marks** in Guava are fine (e.g. the Options "active" corner-check ribbon).
+  accent. Small accent **marks** in Guava are fine (e.g. the GROW tab-bar underline, or the "good
+  idea" smiley on an Options card).
 - **NEVER use white copy on a light background colour.**
 - **NEVER use black / `#222525` copy on Kale** — text on teal is white/light.
 - **NEVER use Guava as a text colour over Kale.**
 - Don't mix colours in ways that hurt legibility; keep combinations from the approved pairs.
 
-The **active-option corner check** ribbon is **Guava** (`tertiary`) with a white check — a small
+An Options card's **"good idea" smiley** is **Guava** (`tertiary`) on a white badge — a small
 accent mark, not a fill (an allowed accent use of Guava).
 
 Semantic mapping already wired in `Color.kt` → `Theme.kt`: primary = Kale-500, accent/tertiary =
 Guava-500 (accent marks only, no large fills), foreground = Salt-1000, muted = Salt-800, border =
-Salt-500, background = Parsnip-100, Options page = Kale-500 (teal), cards/menus = White, destructive =
+Salt-500, background = Parsnip-100, cards/menus = White, destructive =
 Guava-600. (`success` is a functional green — new work should take it from the **success** ramp
 above rather than picking a fresh green.)
 
@@ -466,32 +482,43 @@ dashboard's filter — a search typed on one screen must not follow the user ont
 enforces the same rule through `useResetQueryOnNavigate` (`shell-store.ts`), because there one
 `query` field backs both searches.
 
-Phase screens open with the shared **`GoalTabIntro`** block (`GoalWorkspaceScreen.kt`) — today the
-Reality and Will-do screens, whose kickers read `REALITY` and `WILL DO`:
-
-- a **left-aligned kicker label** = the screen/phase name in the brand label style (`labelLarge`,
-  bold, teal — or white on the teal Options tab), then
-- a **centered heading + centered description** below it, with **clear space between the kicker and
-  the heading** (the brand "clear space between header and body" rule).
-
-Don't re-center the kicker and don't drop the header/body spacing. The Options and Resources pages
-lead with their own centered title + description instead (no kicker), and the Goal screen leads
-with the editable goal title.
+Phase screens open with the shared **`GoalTabIntro`** block (`GoalWorkspaceScreen.kt`): a
+**centered heading + centered description**, with **clear space between the two** (the brand
+"clear space between header and body" rule) and the same top gap on every screen, so moving
+between phases never shifts the type. There is no coloured kicker above it — the GROW tab bar sits
+directly above the block and already names the phase. The Goal screen leads with the editable goal
+title instead.
 
 ### Options cards (interaction)
 
-- The Options screen background is the teal **primary** (Kale-500); cards are white and pop off it.
-- Card **title + strategy text are centered**; the "Option N" number is **display-only** and
-  renumbers automatically.
-- **Reorder is drag-and-drop**: long-press a card and drag it into place (`OptionCard`'s
-  `detectDragGesturesAfterLongPress` → `onReorderOption`). There is **no** reorder-by-editing-the-
-  number.
-- The card menu is a **bottom-centre "bump"** — a small white **half-oval** tab with a **horizontal**
-  ⋯ (`OptionMenuBump`, shape `HalfOvalDown`) hanging **entirely below** the card's bottom edge (it
-  must not overlap the white card). Tapping it **flips the card into a menu in place**
-  (`OptionCardMenu`: close button + Make active/Deactivate + Delete) —
-  **not** a dropdown and **not** a kebab. The close (✕) button leaves menu mode.
-- The **active-option** marker is a **Guava** corner-check ribbon (top-right); no "Active" label.
+**The web is the spec.** `src/components/spira/OptionsList.tsx` and the Android `OptionsTabContent`
+/ `OptionCard` (in `GoalWorkspaceScreen.kt`) render the same thing; when they disagree, the web
+wins and Android is what changes. Android used to have a teal full-screen Options page with
+centered "Option N" cards, a half-oval "bump" menu and a Guava corner-check ribbon — all of that is
+**gone** (2026-08-10). Don't bring any of it back.
+
+- The Options page uses the **ordinary off-white page background**, like every other phase screen.
+  It is not a teal screen.
+- A strategy is a **bordered row**, not a centered card, and carries **no "Option N" number**:
+  - a **48dp left cell** with the goal-wide single-select **active radio**, tinted (`primarySoft`)
+    and teal-bordered when active — that radio is the only "active" marker; there is no ACTIVE
+    band and no label;
+  - the **inline-editable strategy text**, left-aligned, clamped to **3 lines** behind a
+    **Show more / Show less** toggle. That toggle is a **worded link on its own line** under the
+    text (`Show more` / `Show less`) on **both** surfaces — never a chevron floated over the last
+    line, which covers the words it is hiding;
+  - the shared **`ElementActionsMenu`** (⋯ → Attach resource / Delete). It is **not** part of the
+    resting card: it appears only when the strategy **text** is tapped for editing, with the
+    caret, and floats over the text's top-right corner rather than taking a column of its own —
+    an always-present column would sit empty, and appearing would reflow the words being edited.
+    It stays while its dropdown is open, so losing the caret can't remove it mid-tap;
+  - a **smiley badge** half off the card's top-right corner that cycles the thumb lean on tap:
+    none (grey outline) → **good idea** (Guava `Smile`) → **didn't work** (Kale `Frown`). It is
+    independent of the active radio — an option can be both.
+- **New strategies are typed into the "Add a strategy…" field at the foot of the list.** The
+  Options tab has **no "+" FAB** and no create sheet.
+- **Reorder is a mode**, not a long press: a **Reorder / Save** button appears in the header from
+  two options up; while it is on, the whole card drags and every per-card control goes inert.
 
 For implementation details and testing, see `docs/drag-and-drop-options.md`.
 
@@ -541,53 +568,76 @@ building a component library for designers to use). That's a separate workflow f
   fixed**, and a **Resolution** filled in when done.
 - When a bug is fixed, flip its `Status` to `✅ Fixed` and complete the Resolution.
 
-### Notion mirror
+### Linear mirror
 
-The owner keeps a Notion workspace page — **Spira**
-(https://app.notion.com/p/Spira-f84e136f2e9f836cb8fa010ea36d0cb4) — a readable copy of the
-project's documentation, so the material can be browsed and shared outside the repo.
+The owner keeps a Linear workspace — **GROW goals** (https://linear.app/grow-goals) — as a
+readable copy of the project's tracker and documentation, so the material can be browsed, filtered
+and shared outside the repo. One team, **GROW goals** (key `GRO`); the repo's material lives in the
+project **Spira backlog**
+(https://linear.app/grow-goals/project/spira-backlog-4512ed68f7ee).
 
-**The repository is always the source of truth.** Notion is a hand-maintained mirror: nothing
-reads from it, and a stale row there is a documentation problem, not a code problem. Never resolve
-a question by trusting Notion over the files.
+**The repository is always the source of truth.** Linear is a hand-maintained mirror: nothing
+reads from it, and a stale issue there is a documentation problem, not a code problem. Never
+resolve a question by trusting Linear over the files.
 
-What the page holds (state as of 2026-08-09):
+What the project holds (state as of 2026-08-10):
 
-| Notion database | Mirrors | Depth |
+| Linear object | Mirrors | Depth |
 |---|---|---|
-| **Bugs & Issues** | `backlog/` — 37 rows, one per bug file | **full text** of the file in the page body |
-| **Docs and Specs** | `docs/` (33 rows, `Kind = Doc`) + `specs/` (17 rows, `Kind = Spec`) | **index only** — title + GitHub link, no body text |
-| Tasks & To-Dos, Learning Resources | — | template leftovers, unused |
+| **Issues** in *Spira backlog* | `backlog/` — **all 38** bug files, one issue each | **full text** of the file in the issue description |
+| The **Docs and Specs index** document | `docs/` (33) + `specs/` (18) | **index only** — one page of titles + GitHub links, no body text |
+| Other project documents (Icons, Pills, Dashboard, …) | — | the owner's own design notes, not mirrored from the repo |
 
-In Docs and Specs the title property is `Path` and holds the repo-relative path
-(`docs/logging.md`, `specs/2026-08-06-android-ai-assistant/`), so the two trees stay visually
-distinct and sort naturally; `Kind` separates them for filtering. Each dated spec **folder** is one
-row, not one row per file inside it. Since the bodies are links rather than copies, these rows go
-stale only when a file is **added, removed or renamed** — not when its contents change.
+The bug mirror is **complete** as of 2026-08-10 (`GRO-82`…`GRO-119`) — every file in `backlog/`
+has an issue, and every one of those issues carries a link attachment pointing at its file on
+GitHub. Keep it that way: a new bug file without an issue is a gap, not a style choice.
 
-Both databases were stripped to the fields actually in use — the template's `Tech Stack`,
-`Demo Link`, `Deadline`, `Assigned To` and the cross-database relations are gone. What remains is
-**Bugs & Issues**: `Issue Title`, `Status`, `Type`, `Impact Area`, `Description`,
-`Link / Attachment`, `Sprint` — and **Docs and Specs**: `Path`, `Kind`, `GitHub`. Don't
-reintroduce a column without a value to put in it.
+**Docs and Specs index** (https://linear.app/grow-goals/document/docs-and-specs-index-4991a478904d)
+is a **single** document, not one document per file: two tables (Docs, Specs) of repo-relative path
+→ title, each path linking to the file on GitHub `main`. Each dated spec **folder** is one row, not
+one row per file inside it. Because it holds links rather than copies, it goes stale only when a
+file is **added, removed or renamed** — not when its contents change.
 
-`Sprint` is the owner's, not the repo's: it carries a planning label (e.g. `Week 32 2026`) that
-has **no counterpart in `backlog/`**. Leave it alone when syncing — never clear it, and never try
-to derive it from a file.
+> **Issues in `Todo` are the owner's own queue — leave them alone.** The owner files them directly
+> (often in Russian, e.g. `GRO-79`…`GRO-81`): small fixes to be done **on request**, not standing
+> bugs. They are **never** mirrored into `backlog/`, never get a `BUG-nnn` id or a backlog file, and
+> their absence from `backlog/` is **not** a gap in the mirror. Don't rewrite, re-label, re-state or
+> close them, and don't start work on one unasked. When the owner does ask, fix it and leave the
+> issue's state for them to change.
 
-Conventions for the Bugs & Issues rows, so a re-sync stays consistent:
+Conventions for the mirrored issues, so a re-sync stays consistent:
 
-- Row title is prefixed with the `BUG-nnn` id; `Link / Attachment` points at the file on GitHub.
-- Status maps `🐞 Open → Backlog`, `🔧 In progress → In progress`, `✅ Fixed → Done`.
-- Backlog files are hard-wrapped at ~100 chars and Notion turns **every newline into its own
-  block**, so paragraphs and list items must be joined onto one line before upload (code fences go
-  in verbatim, and GFM pipe tables need Notion's `<table>` form).
-- The Notion MCP has **no delete operation** — to remove rows, move them into a temporary child
-  page and delete that page with `update_page` + `allow_deleting_content: true`.
+- Title is prefixed with the `BUG-nnn` id where the file has one; the few backlog files that
+  predate the ids keep their own title.
+- The description opens with a two-column metadata table — **Repo status**, **Area**, **Severity**,
+  **Source** (the repo-relative path of the backlog file) — then the file's body verbatim.
+- Every issue also carries a **link attachment** to its file on GitHub `main`
+  (`save_issue`'s `links`, titled with the repo-relative path). Links are append-only, so re-sending
+  one is harmless.
+- Linear takes **real Markdown**: hard-wrapped paragraphs, pipe tables and code fences all go in
+  as they are, with no reshaping. Pass literal newlines, never escape sequences.
+- State maps `🐞 Open → Backlog`, `🔧 In progress → In Progress`, `✅ Fixed → Done`. The team also
+  has `Todo`, `Canceled` and `Duplicate`.
+- **Labels** carry the classification: a type (`Bug` / `Feature` / `Improvement`)
+  plus area labels (`Security`, `Accessibility`, `Tests`, `Performance`, `Design`, `AI`, `CI`,
+  `Backend`, `Android`, `Web`, `Resources`, …). Reuse what exists; don't invent a near-duplicate.
+  `save_issue`'s `labels` **replaces the whole set**, so always pass every label that should remain.
+- **Cycles are the sprint** (they replaced the old planning label — there is no `Sprint` field).
+  **Put every issue we work on into the current cycle** (`save_issue`'s `cycle`), and leave the
+  cycle of an issue we didn't touch exactly as it is — this rule adds, it never rewrites someone
+  else's. Read the current one with `list_cycles(teamId, type: "current")`; never guess a number.
+  ⚠️ **The team's cycles are currently switched off** — the last, **#30**, ended 2026-06-21 and
+  `type: "current"` returns nothing. Cycles can only be re-enabled by the owner in Linear
+  (Settings → Team **GROW goals** → Cycles); the MCP cannot create one. Until a current cycle
+  exists, set no cycle at all and say so rather than inventing a substitute.
+- The Linear MCP has **no delete operation for issues or documents** (only for attachments,
+  comments and status updates) — to retire an issue set its state to `Canceled` or `Duplicate`, or
+  ask the owner to archive it in the UI.
 
-**When a backlog file's `Status` changes, update the matching Notion row too** — or tell the user
-plainly that the mirror is now stale. Same for adding a new bug file: it needs a new row. And when
-a file is added to or renamed in `docs/` / `specs/`, add or fix its row in Docs and Specs.
+**When a backlog file's `Status` changes, update the matching issue's state too** — or tell the
+user plainly that the mirror is now stale. Same for adding a new bug file: it needs a new issue.
+And when a file is added to or renamed in `docs/` / `specs/`, fix its row in the Docs and Specs
+index document.
 
 ---
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -256,5 +256,82 @@ describe("OptionsList — reorder mode", () => {
     );
 
     expect(onReorderingChange).toHaveBeenCalledWith(false);
+  });
+});
+
+// ── Show more / Show less ────────────────────────────────────────────────────
+
+/**
+ * The toggle is a worded link on its OWN line under the strategy, not a chevron floated over the
+ * last line of text (which is what it used to be, and which covered the words it was hiding).
+ *
+ * jsdom has no layout, so nothing ever "overflows" on its own: `scrollHeight` is 0 and
+ * `lineHeight` is "normal". Both are stubbed so the clamp measurement in `InlineText` decides the
+ * text is clipped, which is the only condition that makes the toggle exist.
+ */
+describe("OptionsList — Show more toggle", () => {
+  const LINE_HEIGHT = 24;
+  // Captured before any spy exists, so re-stubbing can never recurse into itself.
+  const realGetComputedStyle = window.getComputedStyle;
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function pretendTextOverflows(lines: number) {
+    // A Proxy rather than a copy: userEvent reads `pointer-events` off the same object, so every
+    // property except lineHeight has to keep coming from the real declaration.
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el, pseudo) => {
+      const real = realGetComputedStyle.call(window, el as Element, pseudo);
+      return new Proxy(real, {
+        get: (target, prop) =>
+          prop === "lineHeight"
+            ? `${LINE_HEIGHT}px`
+            : Reflect.get(target, prop, target),
+      });
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(
+      LINE_HEIGHT * lines,
+    );
+  }
+
+  it("renders the toggle as a worded button on its own line, after the text", async () => {
+    pretendTextOverflows(6);
+    render(
+      <OptionsList
+        goal={goalFixture([option("o1", "A very long strategy")])}
+        reordering={false}
+        onReorderingChange={vi.fn()}
+      />,
+    );
+
+    const toggle = await screen.findByRole("button", { name: "Show more" });
+    // Its own line: the toggle is a SIBLING that follows the text block, never a child of the
+    // clamped text (where it would sit inline on the last line).
+    const text = screen.getByLabelText("Edit strategy");
+    expect(text.contains(toggle)).toBe(false);
+    expect(
+      text.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // And it is laid out in flow, not floated over the text like the old chevron.
+    expect(toggle.className).not.toContain("absolute");
+
+    await userEvent.click(toggle);
+    expect(
+      screen.getByRole("button", { name: "Show less" }),
+    ).toBeInTheDocument();
+  });
+
+  it("has no toggle when the strategy fits inside the clamp", () => {
+    pretendTextOverflows(2);
+    render(
+      <OptionsList
+        goal={goalFixture([option("o1", "Short")])}
+        reordering={false}
+        onReorderingChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Show (more|less)/ }),
+    ).not.toBeInTheDocument();
   });
 });

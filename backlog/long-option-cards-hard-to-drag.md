@@ -48,3 +48,8 @@ of travel exceeds the screen, and there is no auto-scroll, so the pointer can't 
 Fixed in `src/components/spira/OptionsList.tsx` (reorder mode + whole-card drag + auto-scroll) and
 `src/components/spira/Inline.tsx` (`readOnly`, float-compatible clamp). Per-drop persistence reuses
 the existing `reorderOptions(goalId, optionIds)` full-list mutation.
+
+**Android (2026-08-10):** the same three fixes landed with the Options parity pass — 3-line clamp
+forced while dragging, reorder mode, and edge auto-scroll (a `withFrameNanos` loop in
+`OptionsTabContent`). Covered by `OptionsDragReorderTest`; see `docs/drag-and-drop-options.md` and
+`options-visual-redesign.md`.

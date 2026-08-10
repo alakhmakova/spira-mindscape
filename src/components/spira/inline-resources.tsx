@@ -9,12 +9,11 @@ import {
   ArrowUpRight,
   CirclePlus,
   Info,
-  MoreHorizontal,
-  MoreVertical,
   Paperclip,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Kebab, KebabVertical } from "@/components/spira/brand-icons";
 import type { Resource } from "@/lib/spira/types";
 import { resourceDisplayName } from "@/lib/spira/resources";
 import {
@@ -320,7 +319,7 @@ export function ElementActionsMenu({
    *  a fixed control column (a checklist task) reads better vertical. */
   orientation?: "horizontal" | "vertical";
 }) {
-  const MenuIcon = orientation === "vertical" ? MoreVertical : MoreHorizontal;
+  const MenuIcon = orientation === "vertical" ? KebabVertical : Kebab;
   const ctx = useInlineResources();
   const [pickerOpen, setPickerOpen] = useState(false);
   const all = ctx?.resources ?? [];

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Smile, Frown, Info, CirclePlus } from "lucide-react";
+import { Plus, Info, CirclePlus } from "lucide-react";
+import { FrownFilled, SmileFilled } from "@/components/spira/brand-icons";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
@@ -340,9 +341,9 @@ function OptionRow({
       )}
     >
       {opt.status === "didnt_work" ? (
-        <Frown className="h-4 w-4" />
+        <FrownFilled className="h-4 w-4" />
       ) : (
-        <Smile className="h-4 w-4" />
+        <SmileFilled className="h-4 w-4" />
       )}
     </button>
   );

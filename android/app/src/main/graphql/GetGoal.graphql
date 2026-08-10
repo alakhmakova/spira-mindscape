@@ -24,6 +24,9 @@ query GetGoal($id: ID!) {
       id
       text
       selected
+      # The thumb lean ("none" | "good_idea" | "didnt_work") behind the card's smiley badge —
+      # independent of `selected`, which is the single-select "active" radio.
+      status
       position
     }
     targets {

@@ -55,11 +55,14 @@ class OptionsDragReorderTest : VisualCheckTestBase() {
             .performClick()
         compose.waitForIdle()
 
-        // One continuous gesture: press and hold the THIRD card, then drag far up — past two cards —
-        // and release. Real drag-and-drop must land it at the very top (index 0), not just one slot.
+        // Reordering is a mode (web parity): nothing drags until Reorder is pressed.
+        compose.onNodeWithText("Reorder").performClick()
+        compose.waitForIdle()
+
+        // One continuous gesture: press the THIRD card and drag far up — past two cards — then
+        // release. Real drag-and-drop must land it at the very top (index 0), not just one slot.
         compose.onNodeWithText("Third strategy here").performTouchInput {
             down(center)
-            advanceEventTime(700)
             repeat(12) {
                 moveBy(Offset(0f, -60f))
                 advanceEventTime(16)
@@ -70,5 +73,62 @@ class OptionsDragReorderTest : VisualCheckTestBase() {
 
         // Moved from position 2 all the way to position 0.
         assertEquals("o3" to 0, reordered)
+    }
+
+    /**
+     * With more options than fit on screen, holding the dragged card against the bottom edge must
+     * keep the page scrolling under it (web parity) — otherwise the reachable travel is capped by
+     * the height of the screen and the last cards are simply unreachable in one drag.
+     *
+     * The finger moves only ~360px here, which is worth roughly four slots on its own; the card is
+     * then held still. Without auto-scroll a stationary finger produces no events at all and the
+     * card stops where it is, so anything past the fifth slot can only come from the page moving.
+     */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun `holding a dragged card at the bottom edge keeps scrolling the page`() {
+        val goal = GoalDetail(
+            id = "g1", title = "Learn Kotlin", description = "", confidence = 5, deadline = null,
+            progress = 0.5f, achieved = false,
+            actions = emptyList(), obstacles = emptyList(),
+            options = (0 until 9).map {
+                OptionItem("o$it", "Strategy number $it", selected = false, position = it)
+            },
+            targets = emptyList(), resources = emptyList(),
+        )
+        var reordered: Pair<String, Int>? = null
+        val actions = GoalWorkspaceActions(onReorderOption = { id, pos -> reordered = id to pos })
+
+        compose.activityRule.scenario.onActivity { }
+        compose.setContent {
+            SpiraTheme { GoalWorkspaceScreen(state = GoalUiState.Content(goal), actions = actions, user = user) }
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Options")
+            .filterToOne(hasAnyAncestor(hasTestTag(GROW_TABS_TAG)))
+            .performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Reorder").performClick()
+        compose.waitForIdle()
+
+        // The auto-scroll runs on `withFrameNanos`, and `performTouchInput`'s `advanceEventTime`
+        // moves only the INPUT clock — it produces no Compose frames, so the loop would never tick
+        // inside a single injection block. Drive the frame clock by hand instead, and keep the
+        // gesture open across the calls (down / moveBy / up are one gesture per test).
+        compose.mainClock.autoAdvance = false
+        val card = compose.onNodeWithText("Strategy number 0")
+        card.performTouchInput { down(center) }
+        repeat(6) {
+            card.performTouchInput { moveBy(Offset(0f, 60f)) }
+            compose.mainClock.advanceTimeByFrame()
+        }
+        // Finger now parked in the bottom edge zone and going nowhere: every further slot is the
+        // auto-scroll loop's doing.
+        repeat(60) { compose.mainClock.advanceTimeByFrame() }
+        card.performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+
+        assertEquals("o0" to 8, reordered)
     }
 }

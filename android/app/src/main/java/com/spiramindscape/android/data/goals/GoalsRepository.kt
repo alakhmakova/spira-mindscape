@@ -102,6 +102,8 @@ interface GoalsRepository {
     // Options
     suspend fun addOption(goalId: String, text: String)
     suspend fun setOptionText(goalId: String, optionId: String, text: String)
+    /** The thumb lean: "none" | "good_idea" | "didnt_work" (independent of `selected`). */
+    suspend fun setOptionStatus(goalId: String, optionId: String, status: String)
     suspend fun selectOption(goalId: String, optionId: String)
     suspend fun deselectOption(goalId: String, optionId: String)
     suspend fun removeOption(goalId: String, optionId: String)
@@ -156,7 +158,7 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
             achieved = g.achievedAt != null,
             actions = g.reality.actions.map { TextItem(it.id, it.text) },
             obstacles = g.reality.obstacles.map { TextItem(it.id, it.text) },
-            options = g.options.map { OptionItem(it.id, it.text, it.selected, it.position) },
+            options = g.options.map { OptionItem(it.id, it.text, it.selected, it.position, it.status) },
             targets = g.targets.map { t ->
                 buildTarget(
                     id = t.id, type = t.type, title = t.title, progress = t.progress,
@@ -285,6 +287,11 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
 
     override suspend fun setOptionText(goalId: String, optionId: String, text: String) {
         val input = UpdateOptionInput(text = Optional.present(text))
+        apollo.mutation(UpdateOptionMutation(goalId, optionId, input)).executeOrThrow()
+    }
+
+    override suspend fun setOptionStatus(goalId: String, optionId: String, status: String) {
+        val input = UpdateOptionInput(status = Optional.present(status))
         apollo.mutation(UpdateOptionMutation(goalId, optionId, input)).executeOrThrow()
     }
 

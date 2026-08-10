@@ -21,7 +21,17 @@ data class GoalDetail(
 data class ConfidenceHistoryEntry(val id: String, val confidence: Int, val at: String)
 
 data class TextItem(val id: String, val text: String)
-data class OptionItem(val id: String, val text: String, val selected: Boolean, val position: Int = 0)
+/**
+ * One strategy. [selected] is the goal-wide single-select "active" radio; [status] is the
+ * independent thumb lean the card's smiley badge cycles: `none` | `good_idea` | `didnt_work`.
+ */
+data class OptionItem(
+    val id: String,
+    val text: String,
+    val selected: Boolean,
+    val position: Int = 0,
+    val status: String = "none",
+)
 /** One checklist task. [deadline]/[achievedAt] are ISO instants, both optional (web parity). */
 data class ChecklistItemModel(
     val id: String,

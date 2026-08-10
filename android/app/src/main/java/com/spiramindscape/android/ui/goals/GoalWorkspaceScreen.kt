@@ -5,16 +5,19 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +32,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -50,15 +56,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -97,13 +111,10 @@ import com.spiramindscape.android.ui.components.ProvideInlineResources
 import com.spiramindscape.android.ui.components.SectionLabel
 import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
-import com.spiramindscape.android.ui.components.SpiraCard
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.icons.SpiraIcons
-import com.spiramindscape.android.ui.theme.Guava300
-import com.spiramindscape.android.ui.theme.Kale200
 import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 import com.spiramindscape.android.ui.util.FieldLimits
@@ -156,6 +167,8 @@ data class GoalWorkspaceActions(
     val onRemoveReality: (kind: String, itemId: String) -> Unit = { _, _ -> },
     val onAddOption: (text: String) -> Unit = {},
     val onSetOptionText: (optionId: String, text: String) -> Unit = { _, _ -> },
+    /** The smiley badge's thumb lean: "none" | "good_idea" | "didnt_work". */
+    val onSetOptionStatus: (optionId: String, status: String) -> Unit = { _, _ -> },
     val onSelectOption: (optionId: String) -> Unit = {},
     val onDeselectOption: (optionId: String) -> Unit = {},
     val onRemoveOption: (optionId: String) -> Unit = {},
@@ -225,6 +238,7 @@ fun GoalWorkspaceRoute(
         onRemoveReality = viewModel::removeReality,
         onAddOption = viewModel::addOption,
         onSetOptionText = viewModel::setOptionText,
+        onSetOptionStatus = viewModel::setOptionStatus,
         onSelectOption = viewModel::selectOption,
         onDeselectOption = viewModel::deselectOption,
         onRemoveOption = viewModel::removeOption,
@@ -300,9 +314,6 @@ fun GoalWorkspaceScreen(
     // The chosen sort/filter is remembered across sessions (web parity: the filters that persist
     // in localStorage), so a user who only ever looks at open targets doesn't re-pick every visit.
     val targetView = rememberTargetViewState()
-    // The "add option" FAB (below, in this same Scaffold) opens a create form — like the goal and
-    // target create sheets — rather than an inline draft card.
-    var showNewOptionSheet by remember { mutableStateOf(false) }
     var showNewResourceSheet by remember { mutableStateOf(false) }
     var showNewRealitySheet by remember { mutableStateOf(false) }
     // Which Reality list ("actions"/"obstacles") is shown — hoisted so the tab's "+" FAB knows
@@ -460,35 +471,22 @@ fun GoalWorkspaceScreen(
                 // floatingActionButton slot) — that slot sizes itself to its content rather than
                 // the screen width, which clipped a BottomEnd-aligned second FAB off-screen.
                 // Guava (coral accent) FAB with a white +, one per page that can add something.
+                // Options has no FAB: strategies are typed straight into the "Add a strategy…"
+                // field at the foot of its list, the way the web adds them.
                 val addAction: Pair<String, () -> Unit>? = when {
                     resourcesOpen -> "Add resource" to { showNewResourceSheet = true }
-                    pagerState.currentPage == GoalTab.Options.ordinal ->
-                        "Add option" to { showNewOptionSheet = true }
                     pagerState.currentPage == GoalTab.Reality.ordinal ->
                         (if (realityKind == "obstacles") "Add obstacle" else "Add action") to
                             { showNewRealitySheet = true }
                     else -> null
                 }
                 if (addAction != null) {
-                    // Kale on the white pages, Guava on the teal Options page: on white the teal
-                    // button belongs to the app's chrome, while against the teal ground it would
-                    // vanish — that is the one place the coral accent is needed to stand out.
-                    val addInKale = resourcesOpen ||
-                        pagerState.currentPage != GoalTab.Options.ordinal
                     FloatingActionButton(
                         onClick = addAction.second,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                         shape = CircleShape,
-                        containerColor = if (addInKale) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
-                        contentColor = if (addInKale) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onTertiary
-                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ) { Icon(SpiraIcons.Plus, contentDescription = addAction.first) }
                 }
 
@@ -519,15 +517,6 @@ fun GoalWorkspaceScreen(
                 cancelLabel = "No, go back",
                 onConfirm = actions.onDeleteGoal,
                 onDismiss = { confirmDeleteGoal = false },
-            )
-        }
-        if (showNewOptionSheet) {
-            NewOptionSheet(
-                onDismiss = { showNewOptionSheet = false },
-                onCreate = { text ->
-                    actions.onAddOption(text)
-                    showNewOptionSheet = false
-                },
             )
         }
         if (showNewResourceSheet) {
@@ -696,24 +685,47 @@ private fun GoalTabContent(
     onRealityKindChange: (String) -> Unit = {},
 ) {
     var showNewTarget by remember { mutableStateOf(false) }
-    // While an Options card is being long-press-dragged, freeze the list's own scroll so the
-    // vertical drag reorders the card instead of scrolling the page (fixes drag-and-drop).
+    // While an Options card is being dragged in reorder mode, freeze the list's own scroll so the
+    // vertical drag reorders the card instead of scrolling the page (fixes drag-and-drop). The
+    // page still scrolls PROGRAMMATICALLY underneath — see [optionsAutoScroll] — because
+    // `userScrollEnabled` only gates the gesture, not `LazyListState.scrollBy`.
     var optionsDragging by remember { mutableStateOf(false) }
 
+    // Auto-scroll for a dragged Options card, the web's behaviour: while the finger sits within
+    // AUTOSCROLL_EDGE of the page's top or bottom, the list scrolls toward it (speed ramps with
+    // proximity), so a list longer than one screen can be traversed in a single drag. The list's
+    // own bounds are captured in root coordinates, because that is the space the card reports its
+    // finger position in.
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var listTop by remember { mutableStateOf(0f) }
+    var listBottom by remember { mutableStateOf(0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Returns the distance actually scrolled, which the caller folds back into the drag so the
+    // card stays under the finger and the slot maths keeps working while the page moves.
+    val optionsAutoScroll: suspend (Float) -> Float = scroll@{ pointerYInRoot ->
+        val edge = with(density) { AUTOSCROLL_EDGE.toPx() }
+        val maxStep = with(density) { AUTOSCROLL_MAX_STEP.toPx() }
+        if (listBottom <= listTop) return@scroll 0f
+        val dy = when {
+            pointerYInRoot < listTop + edge ->
+                -(((listTop + edge - pointerYInRoot).coerceAtMost(edge) / edge) * maxStep)
+            pointerYInRoot > listBottom - edge ->
+                ((pointerYInRoot - (listBottom - edge)).coerceAtMost(edge) / edge) * maxStep
+            else -> 0f
+        }
+        if (dy == 0f) 0f else listState.scrollBy(dy)
+    }
+
     LazyColumn(
-        // The Options tab is a full teal screen (white cards on teal, mirroring the reference);
-        // every other tab keeps the off-white page background.
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .then(if (tab == GoalTab.Options) Modifier.background(MaterialTheme.colorScheme.primary) else Modifier),
-        // Bottom padding keeps content clear of the floating "add" button. The Options tab pads
-        // to its own edges (its cards manage their own 18dp side margin), so no extra side
-        // padding there — otherwise the cards would be doubly inset.
-        contentPadding = if (tab == GoalTab.Options) {
-            PaddingValues(top = 0.dp, bottom = 96.dp)
-        } else {
-            PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp)
-        },
+            .onGloballyPositioned {
+                listTop = it.positionInRoot().y
+                listBottom = listTop + it.size.height
+            },
+        // Bottom padding keeps content clear of the floating "add" button.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         userScrollEnabled = !optionsDragging,
     ) {
@@ -737,6 +749,7 @@ private fun GoalTabContent(
                         goal = goal,
                         actions = actions,
                         onDraggingChange = { optionsDragging = it },
+                        onAutoScroll = optionsAutoScroll,
                     )
                 }
             }
@@ -1264,20 +1277,40 @@ private fun RealityItemRow(
 }
 
 /**
- * The Options tab. The whole page background is teal (set in [GoalTabContent] for this tab); the
- * header uses the shared [GoalTabIntro] (left kicker + centered title/desc, white for the teal
- * page), and each option is a white card with a centered "Option N" title + centered strategy text.
- * Cards are reordered by **drag-and-drop** (long-press a card, drag it into place) — the "Option N"
- * number renumbers automatically. New options are created through the "add option" FAB (which opens
- * [NewOptionSheet] from the Scaffold, outside this composable).
+ * The Options tab — the web `OptionsList` (`src/components/spira/OptionsList.tsx`), phase-screen
+ * shaped. Each strategy is a bordered row on the ordinary off-white page (this tab used to be a
+ * full teal screen with centered "Option N" cards; the two surfaces now read as one design):
+ *
+ *  - a 48dp left cell holding the goal-wide single-select **active** radio,
+ *  - the inline-editable strategy text, clamped to [OPTION_CLAMP_LINES] with a Show more/less
+ *    toggle, plus the shared ⋯ menu (attach a resource / delete) in its own right-hand column,
+ *  - a **smiley badge** on the card's top-right edge that cycles the thumb lean
+ *    (none → good idea → didn't work), independent of the active radio.
+ *
+ * New strategies are typed into [AddStrategyField] at the foot of the list — the Options tab has
+ * no "+" FAB. Reordering is a **mode**, not a long press: the Reorder button (shown from two
+ * options up) turns every card into a drag handle and makes its per-card controls inert; Save
+ * leaves the mode. The order is committed to the server when the finger comes up.
  */
 @Composable
 private fun OptionsTabContent(
     goal: GoalDetail,
     actions: GoalWorkspaceActions,
     onDraggingChange: (Boolean) -> Unit = {},
+    /**
+     * Scrolls the page when the given finger position (root coordinates) is near its top/bottom
+     * edge, returning how far it actually moved. Supplied by [GoalTabContent], which owns the
+     * `LazyListState`; the default makes the card draggable but not auto-scrolling, which is all a
+     * test that renders the tab in isolation needs.
+     */
+    onAutoScroll: suspend (pointerYInRoot: Float) -> Float = { 0f },
 ) {
     val sortedOptions = goal.options.sortedBy { it.position }
+
+    // Reorder mode (the Reorder/Save toggle). Only ever on with 2+ options — deleting down to one
+    // leaves the mode rather than stranding the user in a list that can't be reordered.
+    var reordering by remember { mutableStateOf(false) }
+    LaunchedEffect(sortedOptions.size) { if (sortedOptions.size < 2) reordering = false }
 
     // Local, drag-reorderable copy of the option order. It shadows [sortedOptions] so the list can
     // shuffle live under the finger; it re-seeds from the source whenever a real change lands (add/
@@ -1290,14 +1323,11 @@ private fun OptionsTabContent(
     val byId = sortedOptions.associateBy { it.id }
     val ordered = order.mapNotNull { byId[it] }
 
-    // The kebab opens a bottom-sheet menu for one card (by id); null = no menu open.
-    var menuForId by remember { mutableStateOf<String?>(null) }
-
     // Drag-and-drop reorder: the dragged card follows the finger (dragTranslation) while, as it
     // clears each neighbour, that neighbour's real measured height is used to swap it in `order` —
     // so a single drag can travel to ANY position and the card stays continuously under the finger.
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val spacingPx = with(density) { 16.dp.toPx() }
+    val spacingPx = with(density) { OPTION_LIST_GAP.toPx() }
     val heights = remember { androidx.compose.runtime.mutableStateMapOf<String, Float>() }
     var dragTranslation by remember { mutableStateOf(0f) }
     fun onDragBy(id: String, delta: Float) {
@@ -1324,36 +1354,88 @@ private fun OptionsTabContent(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 18.dp)) {
-        // The same intro block every phase uses — light, because this screen is teal. It used to
-        // be a one-off 32sp head, which is what made Options read a size larger than its siblings.
+    // Where the finger is right now, in root coordinates — fed by the dragged card, read by the
+    // auto-scroll loop. The loop has to be a loop rather than something driven by drag events: a
+    // finger held STILL at the screen edge produces no events, and that is exactly when the page
+    // must keep scrolling. It exists only while a card is held, so it can't keep the frame clock
+    // busy afterwards (which is what once hung the whole visual-test suite — BUG-009).
+    var pointerYInRoot by remember { mutableStateOf(0f) }
+    LaunchedEffect(draggingId) {
+        val id = draggingId ?: return@LaunchedEffect
+        while (true) {
+            withFrameNanos { }
+            val scrolled = onAutoScroll(pointerYInRoot)
+            // Scrolling the page under a stationary finger is, to the reorder maths, the same as
+            // moving the finger the other way: fold it in so slots keep swapping as the page moves.
+            if (scrolled != 0f) onDragBy(id, scrolled)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(OPTION_LIST_GAP)) {
         GoalTabIntro(
             title = "Options",
             description = "Different ways this goal could be reached. Compare them, then make one " +
                 "active — the one you're actually pursuing.",
-            onTeal = true,
         )
+
+        // The Reorder/Save toggle sits where the web keeps it: in the section header, above the
+        // list, and only once there are two options to swap.
+        if (sortedOptions.size > 1) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                SpiraButton(
+                    text = if (reordering) "Save" else "Reorder",
+                    onClick = { reordering = !reordering },
+                )
+            }
+        }
 
         if (ordered.isEmpty()) {
             Text(
-                "No options yet — tap the plus button to add your first strategy.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                "What strategies could move you forward? Add a few, then choose one.",
+                style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                color = MaterialTheme.spiraExtras.mutedForeground,
             )
         }
 
-        ordered.forEachIndexed { index, opt ->
+        if (reordering) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    SpiraIcons.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.spiraExtras.mutedForeground,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    "Drag cards to reorder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.spiraExtras.mutedForeground,
+                )
+            }
+        }
+
+        ordered.forEach { opt ->
             androidx.compose.runtime.key(opt.id) {
                 OptionCard(
                     option = opt,
-                    displayNumber = index + 1,
+                    reordering = reordering,
                     isDragging = draggingId == opt.id,
                     dragTranslationY = if (draggingId == opt.id) dragTranslation else 0f,
                     onCommitText = { actions.onSetOptionText(opt.id, it) },
-                    onOpenMenu = { menuForId = opt.id },
+                    onToggleSelect = {
+                        if (opt.selected) actions.onDeselectOption(opt.id)
+                        else actions.onSelectOption(opt.id)
+                    },
+                    onCycleStatus = { actions.onSetOptionStatus(opt.id, nextOptionStatus(opt.status)) },
+                    onAttach = { resourceId ->
+                        attachTo(opt.text, resourceId, FieldLimits.OPTION_TEXT)
+                            ?.let { actions.onSetOptionText(opt.id, it) }
+                    },
+                    onRemove = { actions.onRemoveOption(opt.id) },
                     onHeightMeasured = { heights[opt.id] = it },
+                    onPointerY = { pointerYInRoot = it },
                     onDragStart = { draggingId = opt.id; dragTranslation = 0f; onDraggingChange(true) },
                     onDragBy = { delta -> onDragBy(opt.id, delta) },
                     onDragEnd = {
@@ -1368,80 +1450,87 @@ private fun OptionsTabContent(
                 )
             }
         }
-    }
 
-    val menuOption = ordered.firstOrNull { it.id == menuForId }
-    if (menuOption != null) {
-        val number = ordered.indexOfFirst { it.id == menuForId } + 1
-        OptionMenuSheet(
-            optionNumber = number,
-            isActive = menuOption.selected,
-            onMakeActive = { actions.onSelectOption(menuOption.id); menuForId = null },
-            onRemoveActive = { actions.onDeselectOption(menuOption.id); menuForId = null },
-            onDelete = { actions.onRemoveOption(menuOption.id); menuForId = null },
-            onDismiss = { menuForId = null },
-            optionText = menuOption.text,
-            onAttach = { resourceId ->
-                attachTo(menuOption.text, resourceId, FieldLimits.OPTION_TEXT)
-                    ?.let { actions.onSetOptionText(menuOption.id, it) }
-            },
-        )
+        // Hidden while reordering, like the web's creation field.
+        if (!reordering) {
+            AddStrategyField(onAdd = actions.onAddOption, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
+/** Vertical gap between option cards — the web's `space-y-3` (12px). */
+private val OPTION_LIST_GAP = 12.dp
+
+/** How far the smiley badge hangs off the card's top-right corner (the web's `-top-2 -right-2`). */
+private val OPTION_BADGE_OVERHANG = 8.dp
+
+/** A strategy longer than this collapses behind a Show more toggle (web parity). */
+private const val OPTION_CLAMP_LINES = 3
+
+/** How close to the page's top/bottom edge a dragged card must be before the page auto-scrolls. */
+private val AUTOSCROLL_EDGE = 64.dp
+
+/** Auto-scroll speed at the very edge, per frame; it ramps down to zero at [AUTOSCROLL_EDGE]. */
+private val AUTOSCROLL_MAX_STEP = 16.dp
+
+/** The badge's tap cycle: none → good idea → didn't work → none (same order as the web). */
+private fun nextOptionStatus(current: String): String = when (current) {
+    "good_idea" -> "didnt_work"
+    "didnt_work" -> "none"
+    else -> "good_idea"
+}
+
 /**
- * One saved Option (design mockup): a white card with a centered serif "Option N" title ([N] is
- * just its position — it renumbers automatically after a reorder) and centered, inline-editable
- * strategy text. A **kebab (⋮)** in the top-right corner opens the [OptionMenuSheet] bottom sheet
- * (Make active / Remove active status / Delete). Cards are reordered by **long-press-and-drag**
- * from anywhere on the card, the strategy text included; a short tap on that text opens an attached
- * resource, or starts editing. The **active** option gets a Guava border, a full-width "ACTIVE"
- * Guava band across its top edge, and a Guava-toned title with a short underline.
+ * One strategy row (the web's `OptionRow`). The rating badge sits on the card's top-right EDGE as
+ * a circle, half off the card; the ⋯ actions menu lives inside, in a fixed right-hand column so it
+ * lines up across cards and never sits on top of the words (the web can float it over the text
+ * because there it stays hidden until the row is hovered — a phone has no hover).
+ *
+ * In [reordering] the whole card is the drag target and every per-card control — the radio, the
+ * badge, the ⋯ menu, the inline editor and the Show more toggle — goes inert, so a touch anywhere
+ * moves the card instead of changing it.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun OptionCard(
     option: com.spiramindscape.android.data.goals.OptionItem,
-    displayNumber: Int,
+    reordering: Boolean,
     isDragging: Boolean,
     dragTranslationY: Float,
     onCommitText: (String) -> Unit,
-    onOpenMenu: () -> Unit,
+    onToggleSelect: () -> Unit,
+    onCycleStatus: () -> Unit,
+    onAttach: (resourceId: String) -> Unit,
+    onRemove: () -> Unit,
     onHeightMeasured: (Float) -> Unit,
+    /** The finger's Y in root coordinates while dragging — what the auto-scroll loop watches. */
+    onPointerY: (Float) -> Unit = {},
     onDragStart: () -> Unit,
     onDragBy: (delta: Float) -> Unit,
     onDragEnd: () -> Unit,
 ) {
     val active = option.selected
+    val shape = RoundedCornerShape(SpiraRadii.sm)
+    val primary = MaterialTheme.colorScheme.primary
 
-    // Long-press-and-drag reorders (the parent owns the reorder math — this just streams the finger
-    // delta). The SAME modifier also goes on the strategy text: that text runs its own tap detector
-    // (open an attached resource, or start editing), which would otherwise swallow the gesture and
-    // make the card undraggable by its biggest surface. With both detectors on one node the tap
-    // cancels itself as soon as the drag starts consuming.
-    // True from the moment a drag starts until the finger comes up, so the release doesn't also
-    // read as a tap on the strategy text (see `tapSuppressed` on InlineRichText).
-    var dragging by remember { mutableStateOf(false) }
-    val gestureMod = Modifier
-        .pointerInput(option.id) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { dragging = true; onDragStart() },
-                onDragEnd = { dragging = false; onDragEnd() },
-                onDragCancel = { dragging = false; onDragEnd() },
-                onDrag = { change, amount ->
-                    change.consume()
-                    onDragBy(amount.y)
-                },
-            )
-        }
+    // "Show more" only exists once the text really is clipped. `overflowed` latches the first
+    // clipped layout: expanding sets maxLines to unbounded, which reports "no overflow" again and
+    // would otherwise make the toggle vanish the moment it is used. Both reset when the text does.
+    var expanded by remember(option.text) { mutableStateOf(false) }
+    var overflowed by remember(option.text) { mutableStateOf(false) }
+    // A dragged or reordered card is forced back to the collapsed view so a long strategy doesn't
+    // need a screen-height of finger travel to move one slot.
+    val collapsed = !expanded || isDragging || reordering
 
-    val guava = MaterialTheme.colorScheme.tertiary       // Guava-500 accent (band / border)
-    val guavaDark = MaterialTheme.colorScheme.error       // Guava-600 (active name)
-    val borderColor = when {
-        active -> guava
-        isDragging -> MaterialTheme.colorScheme.primary
-        else -> Color.Transparent
-    }
+    // The ⋯ menu is revealed by tapping the strategy text (which is also what starts editing it),
+    // exactly as on the web. `menuOpen` keeps it alive once its dropdown is up: the dropdown lives
+    // inside the menu composable, so losing the caret while it is open would take it away too.
+    var editingText by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    val menuVisible = !reordering && (editingText || menuOpen)
+
+    // The card's top edge in root coordinates. `detectDragGestures` reports the finger in the
+    // card's OWN space, so this is what turns it into a page position the auto-scroll can use.
+    var cardTopInRoot by remember { mutableStateOf(0f) }
 
     Box(
         Modifier
@@ -1449,99 +1538,264 @@ private fun OptionCard(
             .onSizeChanged { onHeightMeasured(it.height.toFloat()) }
             .zIndex(if (isDragging) 1f else 0f)
             .offset { IntOffset(0, dragTranslationY.roundToInt()) }
-            // Soft drop shadow so the white card floats on the teal page (a Card's own elevation
-            // tints the surface grey in some renderers — this keeps the card pure white).
-            .shadow(
-                elevation = if (isDragging) 14.dp else 6.dp,
-                shape = RoundedCornerShape(18.dp),
-                clip = false,
-            )
-            .then(gestureMod),
-    ) {
-        SpiraCard(
-            contentPadding = PaddingValues(0.dp),
-            borderColor = borderColor,
-            borderWidth = if (active || isDragging) 1.5.dp else 1.dp,
-            shape = RoundedCornerShape(18.dp),
-            elevation = 0.dp,
-        ) {
-            Box(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth()) {
-                    // Active option: a full-width Guava band across the card's top edge.
-                    if (active) {
-                        Box(
-                            Modifier.fillMaxWidth().background(guava).padding(vertical = 5.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "ACTIVE",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.3.sp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        }
-                    }
-                    Column(
-                        Modifier.fillMaxWidth().padding(
-                            start = 24.dp, end = 24.dp,
-                            top = if (active) 18.dp else 22.dp, bottom = 24.dp,
-                        ),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            "Option $displayNumber",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
-                            ),
-                            color = if (active) guavaDark else MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
+            .onGloballyPositioned { cardTopInRoot = it.positionInRoot().y }
+            .then(
+                if (reordering) {
+                    Modifier.pointerInput(option.id) {
+                        // Tracked by hand rather than re-read from layout: the finger must stay
+                        // located even when it stops moving and only the page scrolls.
+                        var fingerY = 0f
+                        detectDragGestures(
+                            onDragStart = { start ->
+                                fingerY = cardTopInRoot + start.y
+                                onPointerY(fingerY)
+                                onDragStart()
+                            },
+                            onDragEnd = onDragEnd,
+                            onDragCancel = onDragEnd,
+                            onDrag = { change, amount ->
+                                change.consume()
+                                fingerY += amount.y
+                                onPointerY(fingerY)
+                                onDragBy(amount.y)
+                            },
                         )
-                        // Active name gets a short Guava underline accent.
-                        if (active) {
-                            Spacer(Modifier.height(9.dp))
-                            Box(
-                                Modifier.width(34.dp).height(2.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(Guava300),
-                            )
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        // The strategy text renders its `{{res:id}}` attachments as links — tapping
-                        // one opens the resource, tapping the words starts editing. The card is
-                        // dragged by long-pressing anywhere outside this text.
-                        InlineRichText(
-                            value = option.text,
-                            onCommit = onCommitText,
-                            modifier = Modifier.fillMaxWidth().then(gestureMod),
-                            placeholder = "What's this strategy?",
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp, lineHeight = 23.sp,
-                            ),
-                            required = true,
-                            maxLength = FieldLimits.OPTION_TEXT,
-                            textAlign = TextAlign.Center,
-                            tapSuppressed = { dragging },
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                // Room for the badge to hang off the top-right corner without being clipped.
+                .padding(top = OPTION_BADGE_OVERHANG, end = OPTION_BADGE_OVERHANG)
+                .shadow(if (isDragging) 10.dp else 0.dp, shape, clip = false)
+                .clip(shape)
+                .background(MaterialTheme.spiraExtras.surfaceRaised)
+                .border(1.dp, if (active || isDragging) primary else MaterialTheme.spiraExtras.border, shape)
+                // The radio cell is a full-height column beside text of any length.
+                .height(IntrinsicSize.Min),
+        ) {
+            Box(
+                Modifier
+                    .width(48.dp)
+                    .fillMaxHeight()
+                    .background(
+                        if (active) MaterialTheme.spiraExtras.primarySoft
+                        else MaterialTheme.spiraExtras.surfaceRaised,
+                    )
+                    .then(
+                        if (reordering) Modifier
+                        else Modifier.clickable(onClick = onToggleSelect),
+                    )
+                    .semantics {
+                        contentDescription =
+                            if (active) "Deselect strategy" else "Select strategy"
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .border(
+                            2.dp,
+                            if (active) primary else MaterialTheme.spiraExtras.borderStrong,
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (active) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(primary))
+                    }
+                }
+            }
+            // The hairline the web draws with `border-r` on the radio cell.
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(if (active) primary else MaterialTheme.spiraExtras.border),
+            )
+
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    InlineRichText(
+                        value = option.text,
+                        onCommit = onCommitText,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 26.sp,
+                        ),
+                        placeholder = "What's this strategy?",
+                        required = true,
+                        maxLength = FieldLimits.OPTION_TEXT,
+                        editable = !reordering,
+                        maxLines = if (collapsed) OPTION_CLAMP_LINES else Int.MAX_VALUE,
+                        onOverflowChange = { if (it) overflowed = true },
+                        onEditingChange = { editingText = it },
+                    )
+                    if (overflowed && !reordering && !isDragging) {
+                        Text(
+                            if (expanded) "Show less" else "Show more",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = primary,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .clickable { expanded = !expanded },
                         )
                     }
                 }
-                // Kebab (⋮) top-right — opens the bottom-sheet menu. Pushed below the band on
-                // active cards so it doesn't collide with the ACTIVE strip.
-                IconButton(
-                    onClick = onOpenMenu,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = if (active) 34.dp else 6.dp, end = 6.dp)
-                        .size(36.dp),
-                ) {
-                    Icon(
-                        SpiraIcons.MoreVertical,
-                        contentDescription = "Option menu",
-                        tint = MaterialTheme.spiraExtras.mutedForeground,
-                        modifier = Modifier.size(18.dp),
+                // The ⋯ menu appears with the editing caret and not before — tapping the strategy
+                // text is what asks for it. It FLOATS over the text's top-right corner rather than
+                // taking a column of its own: a column would sit empty most of the time, and
+                // appearing would reflow the words the user is editing.
+                if (menuVisible) {
+                    ElementActionsMenu(
+                        contentDescription = "Strategy actions",
+                        attachedTo = option.text,
+                        deleteLabel = "Delete option",
+                        onAttach = onAttach,
+                        onDelete = onRemove,
+                        onOpenChange = { menuOpen = it },
+                        modifier = Modifier.align(Alignment.TopEnd),
                     )
                 }
             }
+        }
+
+        // The thumb lean, on the card's top-right edge: one button that cycles on tap. Guava for
+        // "good idea", Kale for "didn't work", a grey outline for no opinion.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .size(28.dp)
+                .shadow(2.dp, CircleShape)
+                .clip(CircleShape)
+                .background(MaterialTheme.spiraExtras.surfaceRaised)
+                .border(1.dp, MaterialTheme.spiraExtras.border, CircleShape)
+                .then(if (reordering) Modifier else Modifier.clickable(onClick = onCycleStatus)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (option.status == "didnt_work") SpiraIcons.FrownFilled else SpiraIcons.SmileFilled,
+                contentDescription = "Rate strategy",
+                tint = when (option.status) {
+                    "good_idea" -> MaterialTheme.colorScheme.tertiary
+                    "didnt_work" -> primary
+                    else -> MaterialTheme.spiraExtras.borderStrong
+                },
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The creation field at the foot of the Options list (the web's "Add a strategy…" row): a plus
+ * cell, a single-line field, and a circled-plus submit that appears once something is typed.
+ * Enter and the submit button both add; an over-long draft is blocked with the reason spelled out,
+ * rather than being silently truncated by the server.
+ */
+@Composable
+private fun AddStrategyField(onAdd: (String) -> Unit, modifier: Modifier = Modifier) {
+    var draft by remember { mutableStateOf("") }
+    val trimmed = draft.trim()
+    val overBy = if (trimmed.length > FieldLimits.OPTION_TEXT) trimmed.length else 0
+    val shape = RoundedCornerShape(SpiraRadii.sm)
+
+    fun commit() {
+        if (trimmed.isEmpty() || overBy > 0) return
+        onAdd(trimmed)
+        draft = ""
+    }
+
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(shape)
+                .background(MaterialTheme.spiraExtras.surfaceRaised)
+                .border(1.dp, MaterialTheme.spiraExtras.border, shape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .width(48.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    SpiraIcons.Plus,
+                    contentDescription = null,
+                    tint = MaterialTheme.spiraExtras.mutedForeground,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.spiraExtras.border),
+            )
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                singleLine = true,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { commit() }),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (draft.isEmpty()) {
+                            Text(
+                                "Add a strategy…",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.spiraExtras.mutedForeground,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+            if (draft.isNotBlank()) {
+                IconButton(
+                    onClick = { commit() },
+                    enabled = overBy == 0,
+                    modifier = Modifier.padding(end = 4.dp).size(40.dp),
+                ) {
+                    Icon(
+                        SpiraIcons.CirclePlus,
+                        contentDescription = "Add",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+        if (overBy > 0) {
+            Text(
+                "Strategy is too long — max ${FieldLimits.OPTION_TEXT} characters " +
+                    "(you have $overBy). Trim it to add.",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }
