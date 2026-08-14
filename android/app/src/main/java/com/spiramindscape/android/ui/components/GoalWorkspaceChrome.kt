@@ -46,7 +46,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.ui.icons.SpiraIcons
-import com.spiramindscape.android.ui.theme.Intelligence900
 import com.spiramindscape.android.ui.theme.Kale600
 import com.spiramindscape.android.ui.theme.Salt400
 import com.spiramindscape.android.ui.theme.spiraExtras
@@ -68,9 +67,9 @@ private fun HeaderCircleButton(
 ) {
     Box(
         Modifier
-            .size(38.dp)
+            .size(HEADER_BUTTON_SIZE)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.16f))
+            .background(MaterialTheme.spiraExtras.surfaceRaised)
             .clickable(onClick = onClick)
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
@@ -78,11 +77,28 @@ private fun HeaderCircleButton(
         Icon(
             icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(17.dp),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp),
         )
     }
 }
+
+/**
+ * The header band's shared measurements. The circular buttons are **solid white with a teal
+ * glyph** — the reference's treatment. They used to be a 16%-white wash with a white mark, which
+ * on the teal band read as barely-there and made the delete cross easy to miss; a white disc is
+ * unmistakably a button.
+ */
+// Back to 38dp. Matching the 48dp field made the two discs the loudest thing in the bar — the
+// field is what the header is for, and the buttons should sit beside it, not compete with it.
+private val HEADER_BUTTON_SIZE = 38.dp
+private val SEARCH_FIELD_HEIGHT = 48.dp
+private val SEARCH_FIELD_RADIUS = 10.dp
+
+/** The header's circle button for callers in other files (the dashboard's search bar). */
+@Composable
+fun HeaderCircleClose(contentDescription: String, onClick: () -> Unit) =
+    HeaderCircleButton(SpiraIcons.X, contentDescription, onClick)
 
 /**
  * The workspace header: **chevron-in-a-circle** on the left (back to All goals), a **goal search**
@@ -110,7 +126,7 @@ fun GoalWorkspaceTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        HeaderCircleButton(SpiraIcons.NavChevronLeft, "All goals", onHome)
+        HeaderCircleButton(SpiraIcons.ChevronLeft, "All goals", onHome)
         SpiraSearchField(
             value = query,
             onValueChange = onQueryChange,
@@ -153,7 +169,7 @@ fun ResourceTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        HeaderCircleButton(SpiraIcons.NavChevronLeft, "Back", onBack)
+        HeaderCircleButton(SpiraIcons.ChevronLeft, "Back", onBack)
         // The name is edited where it is shown, so there is no second title field competing with
         // it. On the teal band it is set in white and carries no box — the header IS its frame.
         InlineEditText(
@@ -173,9 +189,17 @@ fun ResourceTopBar(
 }
 
 /**
- * The search input used in the workspace header — a white pill with a leading magnifier, sized to
- * sit inside the teal bar. Boxed (not inline) because it is header chrome, not a field that edits
- * the goal; it carries no floating label, only a placeholder.
+ * The one search input in the app — the workspace header's goal switcher and the dashboard's
+ * search mode both render this, so the two never drift apart.
+ *
+ * Shaped after the reference: a **48dp, softly rounded (10dp) well** — not the 40dp pill it used
+ * to be. A pill on a teal band read as a chip; a rounded rectangle reads as a field you type in.
+ * The fill is the sunken grey rather than white, which is what separates the field from the pure
+ * white circular buttons beside it. The magnifier leads in **teal**, at a size you can actually
+ * see (it was a 15dp grey mark that disappeared into the placeholder).
+ *
+ * Boxed (not inline) because it is header chrome, not a field that edits the goal; it carries no
+ * floating label, only a placeholder.
  */
 @Composable
 fun SpiraSearchField(
@@ -189,33 +213,33 @@ fun SpiraSearchField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.spiraExtras.surfaceRaised),
+            .height(SEARCH_FIELD_HEIGHT)
+            .clip(RoundedCornerShape(SEARCH_FIELD_RADIUS))
+            .background(MaterialTheme.spiraExtras.surfaceSunken),
         singleLine = true,
         textStyle = LocalTextStyle.current.merge(
-            MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
         ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         decorationBox = { field ->
             Row(
-                Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
-                    SpiraIcons.NavSearch,
+                    SpiraIcons.Search,
                     contentDescription = null,
-                    tint = MaterialTheme.spiraExtras.mutedForeground,
-                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
                 )
                 Box(Modifier.weight(1f)) {
                     if (value.isEmpty()) {
                         Text(
                             placeholder,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.spiraExtras.mutedForeground,
                             maxLines = 1,
                         )
@@ -228,7 +252,7 @@ fun SpiraSearchField(
                         contentDescription = "Clear search",
                         tint = MaterialTheme.spiraExtras.mutedForeground,
                         modifier = Modifier
-                            .size(15.dp)
+                            .size(17.dp)
                             .clickable { onValueChange("") },
                     )
                 }
@@ -360,28 +384,29 @@ fun GoalWorkspaceBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FooterAction(
-                icon = SpiraIcons.NavMenu,
+                icon = SpiraIcons.Menu,
                 label = "Menu",
                 onClick = onMenu,
                 modifier = Modifier.weight(1f),
             )
-            // The assistant is the footer's primary action: the sparkle sits a little larger and
-            // carries the palette's `intelligence` accent — the one colour reserved for AI
-            // surfaces — so it reads as a different kind of thing from the teal navigation.
+            // The assistant is the footer's primary action, and the sparkle sits a little larger
+            // for it — but in the same ink as its neighbours. It used to carry the palette's
+            // `intelligence` violet, which made one item in a row of three read as a badge rather
+            // than as a place; the bar's job is to look like one bar.
             FooterAction(
-                icon = SpiraIcons.NavAi,
+                icon = SpiraIcons.Sparkles,
                 label = "AI coach",
                 onClick = onAssistant,
                 modifier = Modifier.weight(1f),
-                tint = Intelligence900,
                 size = 23.dp,
             )
             FooterAction(
-                icon = SpiraIcons.NavResources,
+                icon = SpiraIcons.FolderOpen,
                 label = "Resources",
                 onClick = onResources,
                 modifier = Modifier.weight(1f),
                 selected = resourcesSelected,
+                selectedIcon = SpiraIcons.FolderOpenFilled,
             )
         }
     }
@@ -406,6 +431,12 @@ private fun FooterAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    /**
+     * The **filled** twin of [icon], shown while [selected] — the way a bottom bar normally marks
+     * its place. Only some Iconoir glyphs have a solid version; an item without one falls back to
+     * the grey disc below.
+     */
+    selectedIcon: ImageVector? = null,
     tint: Color? = null,
     size: androidx.compose.ui.unit.Dp = 21.dp,
 ) {
@@ -425,17 +456,23 @@ private fun FooterAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // The current item is marked by a soft grey disc behind its glyph. A bottom bar normally
-        // marks its place by switching to a *solid* version of the icon, but our marks only exist
-        // as outlines, so the disc carries the state instead of a weight the artwork can't do.
+        // The current item switches to the **filled** version of its glyph — the ordinary way a
+        // bottom bar marks its place. The grey disc is the fallback for a mark that has no solid
+        // twin in Iconoir, which is what every item used to rely on.
+        val filled = selected && selectedIcon != null
         Box(
             Modifier
                 .size(DISC)
                 .clip(CircleShape)
-                .then(if (selected) Modifier.background(Salt400) else Modifier),
+                .then(if (selected && !filled) Modifier.background(Salt400) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = resolved, modifier = Modifier.size(size))
+            Icon(
+                if (filled) selectedIcon!! else icon,
+                contentDescription = null,
+                tint = resolved,
+                modifier = Modifier.size(size),
+            )
         }
         Spacer(Modifier.height(3.dp))
         Text(

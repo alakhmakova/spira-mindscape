@@ -90,11 +90,13 @@ fun SpiraBadge(
             .clip(CircleShape)
             .background(tone.fill)
             .border(1.dp, tone.outline, CircleShape)
-            // Deliberately uneven: GCentra's ascent carries the capitals but its descent sits
-            // empty under a word like "Active", so a symmetric pill leaves the label visibly high.
-            // The extra 2dp on top drops the word onto the pill's optical centre; the total is
-            // unchanged, so the pill keeps its height.
-            .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 2.dp),
+            // Taller and narrower than it used to be (was 10/10/6/2): the old pill hugged its word
+            // top-and-bottom while leaving air at the sides, which read as a squashed capsule.
+            //
+            // Still deliberately uneven top-to-bottom: GCentra's ascent carries the capitals but
+            // its descent sits empty under a word like "Active", so a symmetric pill leaves the
+            // label visibly high. The extra 4dp on top drops the word onto the optical centre.
+            .padding(start = 8.dp, end = 8.dp, top = 7.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {

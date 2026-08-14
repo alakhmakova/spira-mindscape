@@ -340,8 +340,11 @@ private fun rememberInlineIcons(tint: Color): Map<String, InlineTextContent> {
             put(
                 ICON_ARROW,
                 InlineTextContent(slot) {
+                    // The **same mark the Resources page puts on "Open link"** — an arrow leaving a
+                    // square, not a bare arrow. A plain arrow says "up and to the right"; this one
+                    // says "this opens somewhere else", which is what tapping the chip does.
                     Icon(
-                        SpiraIcons.ArrowUpRight,
+                        SpiraIcons.ExternalLink,
                         contentDescription = null,
                         tint = tint,
                         modifier = Modifier.fillMaxSize(),
@@ -386,7 +389,7 @@ fun ElementActionsMenu(
 
     Box(modifier) {
         Icon(
-            if (vertical) SpiraIcons.KebabVertical else SpiraIcons.Kebab,
+            if (vertical) SpiraIcons.EllipsisVertical else SpiraIcons.Ellipsis,
             contentDescription = contentDescription,
             tint = tint ?: MaterialTheme.spiraExtras.mutedForeground,
             modifier = Modifier
@@ -450,7 +453,9 @@ fun AttachResourceButton(
         )
         Text(
             "Attach resource",
-            style = MaterialTheme.typography.bodyMedium,
+            // Trimmed leading, so the word sits on the plus's centre instead of riding above it —
+            // the line box reserves descender room this label never uses. See addActionTextStyle.
+            style = addActionTextStyle(),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )

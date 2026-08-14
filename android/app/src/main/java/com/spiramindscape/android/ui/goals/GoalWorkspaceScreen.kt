@@ -111,6 +111,15 @@ import com.spiramindscape.android.ui.components.ProvideInlineResources
 import com.spiramindscape.android.ui.components.SectionLabel
 import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
+import com.spiramindscape.android.ui.components.SpiraAddButton
+import com.spiramindscape.android.ui.components.SpiraChoice
+import com.spiramindscape.android.ui.components.SpiraFilterTrigger
+import com.spiramindscape.android.ui.components.SpiraListToolbar
+import com.spiramindscape.android.ui.components.SpiraMenuChoice
+import com.spiramindscape.android.ui.components.SpiraMenuColumnDivider
+import com.spiramindscape.android.ui.components.SpiraMenuColumns
+import com.spiramindscape.android.ui.components.SpiraMenuGroup
+import com.spiramindscape.android.ui.components.SpiraSortTrigger
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
@@ -202,6 +211,9 @@ fun GoalWorkspaceRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     val allGoals by GoalsStore.goals.collectAsStateWithLifecycle()
+    // The note the assistant last created, so its card can offer to open it.
+    val lastCreatedNote by viewModel.lastCreatedNote.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LifecycleResumeEffect(Unit) {
         // Silent refetch on resume (no spinner) so returning to the goal doesn't flash the loader.
@@ -264,6 +276,16 @@ fun GoalWorkspaceRoute(
             }
         },
         goal = (state as? GoalUiState.Content)?.goal,
+        // "Open note" on an applied card. Offered only once the note actually exists — the
+        // proposal is applied optimistically, so the row it created only has an id after the
+        // refetch lands, and a link that opened an empty editor would be worse than no link.
+        onOpenNote = lastCreatedNote?.let { note ->
+            {
+                context.startActivity(
+                    NoteEditorActivity.intent(context, note.id, note.title.orEmpty(), note.body.orEmpty()),
+                )
+            }
+        },
     ) { swipeUpGesture ->
         GoalWorkspaceScreen(
             state = state,
@@ -314,7 +336,16 @@ fun GoalWorkspaceScreen(
     // The chosen sort/filter is remembered across sessions (web parity: the filters that persist
     // in localStorage), so a user who only ever looks at open targets doesn't re-pick every visit.
     val targetView = rememberTargetViewState()
+    // Screen-local searches: they start empty on every visit to the goal (CLAUDE.md: a search
+    // typed on one screen must never follow the user onto the next) but survive a tab swipe.
+    var targetsQuery by remember { mutableStateOf("") }
+    var optionsQuery by remember { mutableStateOf("") }
+    var resourcesQuery by remember { mutableStateOf("") }
     var showNewResourceSheet by remember { mutableStateOf(false) }
+    // Hosted here, not inside the tab content: the round add button lives in this
+    // Scaffold, so the flags it sets have to live beside it.
+    var showNewTarget by remember { mutableStateOf(false) }
+    var showNewOption by remember { mutableStateOf(false) }
     var showNewRealitySheet by remember { mutableStateOf(false) }
     // Which Reality list ("actions"/"obstacles") is shown — hoisted so the tab's "+" FAB knows
     // which kind to add to.
@@ -448,6 +479,8 @@ fun GoalWorkspaceScreen(
                                     goal = state.goal,
                                     actions = actions,
                                     onOpenFull = { fullScreenResourceId = it },
+                                    query = resourcesQuery,
+                                    onQueryChange = { resourcesQuery = it },
                                 )
                             } else {
                                 HorizontalPager(
@@ -461,6 +494,10 @@ fun GoalWorkspaceScreen(
                                         targetView = targetView,
                                         realityKind = realityKind,
                                         onRealityKindChange = { realityKind = it },
+                                        targetsQuery = targetsQuery,
+                                        onTargetsQueryChange = { targetsQuery = it },
+                                        optionsQuery = optionsQuery,
+                                        onOptionsQueryChange = { optionsQuery = it },
                                     )
                                 }
                             }
@@ -471,13 +508,18 @@ fun GoalWorkspaceScreen(
                 // floatingActionButton slot) — that slot sizes itself to its content rather than
                 // the screen width, which clipped a BottomEnd-aligned second FAB off-screen.
                 // Guava (coral accent) FAB with a white +, one per page that can add something.
-                // Options has no FAB: strategies are typed straight into the "Add a strategy…"
-                // field at the foot of its list, the way the web adds them.
+                // EVERY page that can add something adds it the same way: this round
+                // button, bottom-right, exactly like "new goal" on the dashboard.
+                // An add action never sits at the top of a list.
                 val addAction: Pair<String, () -> Unit>? = when {
                     resourcesOpen -> "Add resource" to { showNewResourceSheet = true }
                     pagerState.currentPage == GoalTab.Reality.ordinal ->
                         (if (realityKind == "obstacles") "Add obstacle" else "Add action") to
                             { showNewRealitySheet = true }
+                    pagerState.currentPage == GoalTab.Options.ordinal ->
+                        "Add option" to { showNewOption = true }
+                    pagerState.currentPage == GoalTab.Targets.ordinal ->
+                        "Add target" to { showNewTarget = true }
                     else -> null
                 }
                 if (addAction != null) {
@@ -519,6 +561,21 @@ fun GoalWorkspaceScreen(
                 onDismiss = { confirmDeleteGoal = false },
             )
         }
+        if (showNewOption) {
+            NewOptionSheet(
+                onDismiss = { showNewOption = false },
+                onCreate = { text -> actions.onAddOption(text); showNewOption = false },
+            )
+        }
+        if (showNewTarget) {
+            NewTargetSheet(
+                onDismiss = { showNewTarget = false },
+                onCreate = { title, type, deadline, start, total, unit, checklist ->
+                    actions.onAddTarget(title, type, deadline, start, total, unit, checklist)
+                    showNewTarget = false
+                },
+            )
+        }
         if (showNewResourceSheet) {
             NewResourceSheet(
                 onDismiss = { showNewResourceSheet = false },
@@ -550,61 +607,6 @@ fun GoalWorkspaceScreen(
  */
 enum class GoalTab(val label: String) {
     Goal("Goal"), Reality("Reality"), Options("Options"), Targets("Will do")
-}
-
-@Composable
-private fun TargetSortMenu(
-    sort: TargetSort,
-    ascending: Boolean,
-    onSortChange: (TargetSort) -> Unit,
-    onToggleDir: () -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(SpiraIcons.ArrowUpDown, contentDescription = "Sort targets", modifier = Modifier.width(24.dp).height(24.dp))
-        }
-        SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            TargetSort.entries.forEach { key ->
-                SpiraMenuItem(
-                    label = key.label,
-                    onClick = { onSortChange(key); expanded = false },
-                    selected = key == sort,
-                )
-            }
-            SpiraMenuDivider()
-            SpiraMenuItem(
-                label = if (ascending) "Ascending" else "Descending",
-                onClick = { onToggleDir(); expanded = false },
-                icon = if (ascending) SpiraIcons.ArrowUp else SpiraIcons.ArrowDown,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TargetFilterMenu(filter: TargetFilter, onChange: (TargetFilter) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                SpiraIcons.SlidersHorizontal,
-                contentDescription = "Filter targets",
-                modifier = Modifier.width(24.dp).height(24.dp),
-                tint = if (filter != TargetFilter.All) MaterialTheme.colorScheme.primary
-                else androidx.compose.material3.LocalContentColor.current,
-            )
-        }
-        SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            TargetFilter.entries.forEach { f ->
-                SpiraMenuItem(
-                    label = f.label,
-                    onClick = { onChange(f); expanded = false },
-                    selected = f == filter,
-                )
-            }
-        }
-    }
 }
 
 /**
@@ -663,6 +665,8 @@ private fun ResourcesPage(
     goal: GoalDetail,
     actions: GoalWorkspaceActions,
     onOpenFull: (String) -> Unit,
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -670,7 +674,15 @@ private fun ResourcesPage(
         contentPadding = PaddingValues(top = 0.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { ResourcesTabContent(goal = goal, actions = actions, onOpenFull = onOpenFull) }
+        item {
+            ResourcesTabContent(
+                goal = goal,
+                actions = actions,
+                onOpenFull = onOpenFull,
+                query = query,
+                onQueryChange = onQueryChange,
+            )
+        }
     }
 }
 
@@ -683,8 +695,13 @@ private fun GoalTabContent(
     targetView: TargetViewState,
     realityKind: String = "actions",
     onRealityKindChange: (String) -> Unit = {},
+    // One query per page, hoisted to the screen so a pager swipe doesn't wipe what was typed while
+    // leaving the goal still does — and so an Options search can never leak into Targets.
+    targetsQuery: String = "",
+    onTargetsQueryChange: (String) -> Unit = {},
+    optionsQuery: String = "",
+    onOptionsQueryChange: (String) -> Unit = {},
 ) {
-    var showNewTarget by remember { mutableStateOf(false) }
     // While an Options card is being dragged in reorder mode, freeze the list's own scroll so the
     // vertical drag reorders the card instead of scrolling the page (fixes drag-and-drop). The
     // page still scrolls PROGRAMMATICALLY underneath — see [optionsAutoScroll] — because
@@ -750,6 +767,8 @@ private fun GoalTabContent(
                         actions = actions,
                         onDraggingChange = { optionsDragging = it },
                         onAutoScroll = optionsAutoScroll,
+                        query = optionsQuery,
+                        onQueryChange = onOptionsQueryChange,
                     )
                 }
             }
@@ -762,51 +781,70 @@ private fun GoalTabContent(
                     )
                 }
                 item {
-                    // Sort and filter sit beside "Add target"; the choice is remembered between
-                    // visits, so the list opens the way it was left.
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        TargetSortMenu(
-                            sort = targetView.sort,
-                            ascending = targetView.ascending,
-                            onSortChange = { targetView.sort = it },
-                            onToggleDir = { targetView.ascending = !targetView.ascending },
-                        )
-                        TargetFilterMenu(
-                            filter = targetView.filter,
-                            onChange = { targetView.filter = it },
-                        )
-                        Spacer(Modifier.weight(1f))
-                        // The app's add-action shape: a circled plus and a plain label, the same
-                        // as "New chat". Guava marks a target — the accent for the thing a goal
-                        // is actually measured by.
-                        Row(
-                            Modifier
-                                .clip(RoundedCornerShape(9.dp))
-                                .clickable { showNewTarget = true }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            Icon(
-                                SpiraIcons.CirclePlus,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(17.dp),
+                    // The shared list chrome — search, then sort / filter / add. The sort and
+                    // filter choice is remembered between visits; the query never is.
+                    SpiraListToolbar(
+                        query = targetsQuery,
+                        onQueryChange = onTargetsQueryChange,
+                        placeholder = "Search targets",
+                        sort = {
+                            SpiraSortTrigger(
+                                options = TargetSort.entries.map { SpiraChoice(it, it.label) },
+                                selected = targetView.sort,
+                                onSelect = { targetView.sort = it },
+                                ascending = targetView.ascending,
+                                onAscendingChange = { targetView.ascending = it },
+                                contentDescription = "Sort targets",
                             )
-                            Text(
-                                "Add target",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.tertiary,
-                            )
-                        }
-                    }
+                        },
+                        filter = {
+                            // Three independent questions, three columns. Each is `All` until the
+                            // user narrows it, and the trigger says how many are narrowing.
+                            SpiraFilterTrigger(
+                                count = targetView.activeCount,
+                                contentDescription = "Filter targets",
+                            ) { dismiss ->
+                                SpiraMenuColumns {
+                                    SpiraMenuGroup("Status") {
+                                        TargetFilter.entries.forEach { f ->
+                                            SpiraMenuChoice(
+                                                label = f.label,
+                                                selected = f == targetView.filter,
+                                                onClick = { targetView.filter = f; dismiss() },
+                                            )
+                                        }
+                                    }
+                                    SpiraMenuColumnDivider()
+                                    SpiraMenuGroup("Deadline") {
+                                        TargetDeadlineFilter.entries.forEach { f ->
+                                            SpiraMenuChoice(
+                                                label = f.label,
+                                                selected = f == targetView.deadlineFilter,
+                                                onClick = { targetView.deadlineFilter = f; dismiss() },
+                                            )
+                                        }
+                                    }
+                                    SpiraMenuColumnDivider()
+                                    SpiraMenuGroup("Lock") {
+                                        TargetLockFilter.entries.forEach { f ->
+                                            SpiraMenuChoice(
+                                                label = f.label,
+                                                selected = f == targetView.lockFilter,
+                                                onClick = { targetView.lockFilter = f; dismiss() },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
                 }
                 val visible = applyTargetView(
                     goal.targets, targetView.sort, targetView.ascending, targetView.filter,
+                    targetsQuery, targetView.deadlineFilter, targetView.lockFilter,
                 )
                 if (goal.targets.isEmpty()) item { EmptyLine("No targets yet.") }
-                else if (visible.isEmpty()) item { EmptyLine("No targets match the filter.") }
+                else if (visible.isEmpty()) item { EmptyLine("No targets match the search or filter.") }
                 else items(visible, key = { "target-${it.id}" }) { target ->
                     TargetCard(target, actions)
                 }
@@ -814,15 +852,6 @@ private fun GoalTabContent(
         }
     }
 
-    if (showNewTarget) {
-        NewTargetSheet(
-            onDismiss = { showNewTarget = false },
-            onCreate = { title, type, deadline, start, total, unit, checklist ->
-                actions.onAddTarget(title, type, deadline, start, total, unit, checklist)
-                showNewTarget = false
-            },
-        )
-    }
 }
 
 /**
@@ -1235,7 +1264,9 @@ private fun RealityItemRow(
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = { },
+                // A plain tap reveals the row's actions. It used to do nothing at all, so the only
+                // way to reach Delete was a long press nobody had been told about.
+                onClick = { showKebab = true },
                 onLongClick = { showKebab = true },
             )
             .padding(vertical = 10.dp),
@@ -1258,6 +1289,9 @@ private fun RealityItemRow(
             required = true,
             maxLength = FieldLimits.REALITY_TEXT,
             onLongPress = { showKebab = true },
+            // The words swallow the row's tap (they run their own detector), so the actions have
+            // to be revealed from here too — a tap into the editor is a tap on the item.
+            onEditingChange = { if (it) showKebab = true },
         )
         if (showKebab) {
             // Tapping outside the menu (or back) dismisses it — that's the "exit", so there's no
@@ -1278,19 +1312,19 @@ private fun RealityItemRow(
 
 /**
  * The Options tab — the web `OptionsList` (`src/components/spira/OptionsList.tsx`), phase-screen
- * shaped. Each strategy is a bordered row on the ordinary off-white page (this tab used to be a
+ * shaped. Each option is a bordered row on the ordinary off-white page (this tab used to be a
  * full teal screen with centered "Option N" cards; the two surfaces now read as one design):
  *
  *  - a 48dp left cell holding the goal-wide single-select **active** radio,
- *  - the inline-editable strategy text, clamped to [OPTION_CLAMP_LINES] with a Show more/less
+ *  - the inline-editable option text, clamped to [OPTION_CLAMP_LINES] with a Show more/less
  *    toggle, plus the shared ⋯ menu (attach a resource / delete) in its own right-hand column,
  *  - a **smiley badge** on the card's top-right edge that cycles the thumb lean
  *    (none → good idea → didn't work), independent of the active radio.
  *
- * New strategies are typed into [AddStrategyField] at the foot of the list — the Options tab has
- * no "+" FAB. Reordering is a **mode**, not a long press: the Reorder button (shown from two
- * options up) turns every card into a drag handle and makes its per-card controls inert; Save
- * leaves the mode. The order is committed to the server when the finger comes up.
+ * A new option is created from the page's own [NewOptionSheet]. Reordering is a **mode**, not a
+ * long press: the Reorder button (shown from two options up) turns every card into a drag handle
+ * and makes its per-card controls inert; Save leaves the mode. The order is committed to the
+ * server when the finger comes up.
  */
 @Composable
 private fun OptionsTabContent(
@@ -1304,13 +1338,25 @@ private fun OptionsTabContent(
      * test that renders the tab in isolation needs.
      */
     onAutoScroll: suspend (pointerYInRoot: Float) -> Float = { 0f },
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
+    onAddOption: () -> Unit = {},
 ) {
     val sortedOptions = goal.options.sortedBy { it.position }
+    var optionFilter by remember { mutableStateOf(OptionFilter.All) }
+    // "Narrowed" covers both ways the drawn list can differ from the real one — a search and the
+    // lean filter. Everything that depends on the two agreeing has to watch both, not just search.
+    val narrowed = query.isNotBlank() || optionFilter != OptionFilter.All
 
     // Reorder mode (the Reorder/Save toggle). Only ever on with 2+ options — deleting down to one
     // leaves the mode rather than stranding the user in a list that can't be reordered.
+    //
+    // And never while the list is narrowed. A drop sends the index of the card in the RENDERED
+    // list to the server as an absolute `position`; on a filtered list that index means something
+    // else entirely and a wrong order is saved with no sign anything went wrong.
     var reordering by remember { mutableStateOf(false) }
     LaunchedEffect(sortedOptions.size) { if (sortedOptions.size < 2) reordering = false }
+    LaunchedEffect(narrowed) { if (narrowed) reordering = false }
 
     // Local, drag-reorderable copy of the option order. It shadows [sortedOptions] so the list can
     // shuffle live under the finger; it re-seeds from the source whenever a real change lands (add/
@@ -1321,7 +1367,10 @@ private fun OptionsTabContent(
         if (draggingId == null) order = sortedOptions.map { it.id }
     }
     val byId = sortedOptions.associateBy { it.id }
+    // The drag maths always runs over the FULL list; the search only narrows what is drawn, and
+    // reordering is off whenever the two could differ.
     val ordered = order.mapNotNull { byId[it] }
+        .filter { !narrowed || it in applyOptionView(sortedOptions, query, optionFilter) }
 
     // Drag-and-drop reorder: the dragged card follows the finger (dragTranslation) while, as it
     // clears each neighbour, that neighbour's real measured height is used to swap it in `order` —
@@ -1378,20 +1427,84 @@ private fun OptionsTabContent(
                 "active — the one you're actually pursuing.",
         )
 
-        // The Reorder/Save toggle sits where the web keeps it: in the section header, above the
-        // list, and only once there are two options to swap.
+        // Options has **no sort** — position IS the meaning of this list. Its second line is
+        // Reorder on the left, then the lean filter beside it, in the slots the other pages give
+        // to sort and filter, so the three toolbars line their controls up at the same x.
+        SpiraListToolbar(
+            query = query,
+            onQueryChange = onQueryChange,
+            placeholder = "Search options",
+            sort = {
+                if (sortedOptions.size > 1 && !narrowed) {
+                    Text(
+                        if (reordering) "Save" else "Reorder",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(SpiraRadii.sm))
+                            .clickable { reordering = !reordering }
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                    )
+                }
+            },
+            filter = {
+                // Icons here, not in a column menu: the badge on the card IS a smiley, so the
+                // menu row that picks it carries the same mark rather than only its name.
+                SpiraFilterTrigger(
+                    count = if (optionFilter == OptionFilter.All) 0 else 1,
+                    contentDescription = "Filter options",
+                ) { dismiss ->
+                    OptionFilter.entries.forEach { f ->
+                        SpiraMenuItem(
+                            label = f.label,
+                            icon = when (f) {
+                                OptionFilter.GoodIdea -> SpiraIcons.Smile
+                                OptionFilter.BadIdea -> SpiraIcons.Frown
+                                else -> null
+                            },
+                            selected = f == optionFilter,
+                            onClick = { optionFilter = f; dismiss() },
+                        )
+                    }
+                }
+            },
+        )
+
         if (sortedOptions.size > 1) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                SpiraButton(
-                    text = if (reordering) "Save" else "Reorder",
-                    onClick = { reordering = !reordering },
-                )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                if (narrowed) {
+                    // Not merely disabled: a drop while the list is narrowed would write the wrong
+                    // position, so the action is gone and the reason is on screen.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            SpiraIcons.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.spiraExtras.mutedForeground,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            "Clear the search and filter to rearrange.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.spiraExtras.mutedForeground,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(0.dp))
+                }
             }
         }
 
         if (ordered.isEmpty()) {
             Text(
-                "What strategies could move you forward? Add a few, then choose one.",
+                if (narrowed) {
+                    "No options match that search."
+                } else {
+                    "What options could move you forward? Add a few, then choose one."
+                },
                 style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
                 color = MaterialTheme.spiraExtras.mutedForeground,
             )
@@ -1450,11 +1563,6 @@ private fun OptionsTabContent(
                 )
             }
         }
-
-        // Hidden while reordering, like the web's creation field.
-        if (!reordering) {
-            AddStrategyField(onAdd = actions.onAddOption, modifier = Modifier.padding(top = 4.dp))
-        }
     }
 }
 
@@ -1464,7 +1572,7 @@ private val OPTION_LIST_GAP = 12.dp
 /** How far the smiley badge hangs off the card's top-right corner (the web's `-top-2 -right-2`). */
 private val OPTION_BADGE_OVERHANG = 8.dp
 
-/** A strategy longer than this collapses behind a Show more toggle (web parity). */
+/** A option longer than this collapses behind a Show more toggle (web parity). */
 private const val OPTION_CLAMP_LINES = 3
 
 /** How close to the page's top/bottom edge a dragged card must be before the page auto-scrolls. */
@@ -1481,7 +1589,7 @@ private fun nextOptionStatus(current: String): String = when (current) {
 }
 
 /**
- * One strategy row (the web's `OptionRow`). The rating badge sits on the card's top-right EDGE as
+ * One option row (the web's `OptionRow`). The rating badge sits on the card's top-right EDGE as
  * a circle, half off the card; the ⋯ actions menu lives inside, in a fixed right-hand column so it
  * lines up across cards and never sits on top of the words (the web can float it over the text
  * because there it stays hidden until the row is hovered — a phone has no hover).
@@ -1517,11 +1625,11 @@ private fun OptionCard(
     // would otherwise make the toggle vanish the moment it is used. Both reset when the text does.
     var expanded by remember(option.text) { mutableStateOf(false) }
     var overflowed by remember(option.text) { mutableStateOf(false) }
-    // A dragged or reordered card is forced back to the collapsed view so a long strategy doesn't
+    // A dragged or reordered card is forced back to the collapsed view so a long option doesn't
     // need a screen-height of finger travel to move one slot.
     val collapsed = !expanded || isDragging || reordering
 
-    // The ⋯ menu is revealed by tapping the strategy text (which is also what starts editing it),
+    // The ⋯ menu is revealed by tapping the option text (which is also what starts editing it),
     // exactly as on the web. `menuOpen` keeps it alive once its dropdown is up: the dropdown lives
     // inside the menu composable, so losing the caret while it is open would take it away too.
     var editingText by remember { mutableStateOf(false) }
@@ -1592,7 +1700,7 @@ private fun OptionCard(
                     )
                     .semantics {
                         contentDescription =
-                            if (active) "Deselect strategy" else "Select strategy"
+                            if (active) "Deselect option" else "Select option"
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1634,7 +1742,7 @@ private fun OptionCard(
                             fontWeight = FontWeight.Medium,
                             lineHeight = 26.sp,
                         ),
-                        placeholder = "What's this strategy?",
+                        placeholder = "What's this option?",
                         required = true,
                         maxLength = FieldLimits.OPTION_TEXT,
                         editable = !reordering,
@@ -1654,13 +1762,13 @@ private fun OptionCard(
                         )
                     }
                 }
-                // The ⋯ menu appears with the editing caret and not before — tapping the strategy
+                // The ⋯ menu appears with the editing caret and not before — tapping the option
                 // text is what asks for it. It FLOATS over the text's top-right corner rather than
                 // taking a column of its own: a column would sit empty most of the time, and
                 // appearing would reflow the words the user is editing.
                 if (menuVisible) {
                     ElementActionsMenu(
-                        contentDescription = "Strategy actions",
+                        contentDescription = "Option actions",
                         attachedTo = option.text,
                         deleteLabel = "Delete option",
                         onAttach = onAttach,
@@ -1686,115 +1794,14 @@ private fun OptionCard(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                if (option.status == "didnt_work") SpiraIcons.FrownFilled else SpiraIcons.SmileFilled,
-                contentDescription = "Rate strategy",
+                if (option.status == "didnt_work") SpiraIcons.Frown else SpiraIcons.Smile,
+                contentDescription = "Rate option",
                 tint = when (option.status) {
                     "good_idea" -> MaterialTheme.colorScheme.tertiary
                     "didnt_work" -> primary
                     else -> MaterialTheme.spiraExtras.borderStrong
                 },
                 modifier = Modifier.size(16.dp),
-            )
-        }
-    }
-}
-
-/**
- * The creation field at the foot of the Options list (the web's "Add a strategy…" row): a plus
- * cell, a single-line field, and a circled-plus submit that appears once something is typed.
- * Enter and the submit button both add; an over-long draft is blocked with the reason spelled out,
- * rather than being silently truncated by the server.
- */
-@Composable
-private fun AddStrategyField(onAdd: (String) -> Unit, modifier: Modifier = Modifier) {
-    var draft by remember { mutableStateOf("") }
-    val trimmed = draft.trim()
-    val overBy = if (trimmed.length > FieldLimits.OPTION_TEXT) trimmed.length else 0
-    val shape = RoundedCornerShape(SpiraRadii.sm)
-
-    fun commit() {
-        if (trimmed.isEmpty() || overBy > 0) return
-        onAdd(trimmed)
-        draft = ""
-    }
-
-    Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .clip(shape)
-                .background(MaterialTheme.spiraExtras.surfaceRaised)
-                .border(1.dp, MaterialTheme.spiraExtras.border, shape),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .width(48.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.background),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    SpiraIcons.Plus,
-                    contentDescription = null,
-                    tint = MaterialTheme.spiraExtras.mutedForeground,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Box(
-                Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.spiraExtras.border),
-            )
-            BasicTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                singleLine = true,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { commit() }),
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (draft.isEmpty()) {
-                            Text(
-                                "Add a strategy…",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.spiraExtras.mutedForeground,
-                            )
-                        }
-                        inner()
-                    }
-                },
-            )
-            if (draft.isNotBlank()) {
-                IconButton(
-                    onClick = { commit() },
-                    enabled = overBy == 0,
-                    modifier = Modifier.padding(end = 4.dp).size(40.dp),
-                ) {
-                    Icon(
-                        SpiraIcons.CirclePlus,
-                        contentDescription = "Add",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-        }
-        if (overBy > 0) {
-            Text(
-                "Strategy is too long — max ${FieldLimits.OPTION_TEXT} characters " +
-                    "(you have $overBy). Trim it to add.",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }

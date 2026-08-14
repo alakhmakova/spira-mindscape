@@ -9,11 +9,17 @@ import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.GoalsRepository
 import com.spiramindscape.android.data.goals.GoalsStore
 import com.spiramindscape.android.data.goals.TargetItem
+import com.spiramindscape.android.ui.util.stripResourceTokens
+import com.spiramindscape.android.data.goals.ResourceItem
+import com.spiramindscape.android.data.goals.OptionItem
+import com.spiramindscape.android.data.ai.stripHtml
 import com.spiramindscape.android.graphql.type.ChecklistItemInput
 import com.spiramindscape.android.graphql.type.CreateResourceInput
 import com.spiramindscape.android.graphql.type.CreateTargetInput
 import com.spiramindscape.android.graphql.type.UpdateResourceInput
 import com.spiramindscape.android.ui.util.DetachPatch
+import com.spiramindscape.android.ui.util.deadlineInfo
+import com.spiramindscape.android.ui.util.isProgressLocked
 import com.spiramindscape.android.ui.util.planResourceDetach
 import com.spiramindscape.android.ui.util.resourceDisplayName
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -336,8 +342,29 @@ class GoalWorkspaceViewModel(
             role = Optional.presentIfNotNull(role),
             phone = Optional.presentIfNotNull(phone),
         )
-        mutateThenReload { repository.createResource(goalId, input) }
+        // Remember which resource this call created, so the AI chat can offer "Open note" on the
+        // card that proposed it. The id can only come from the refetch: `createResource` returns
+        // Unit, so the new row is found by diffing the ids that were there a moment ago.
+        val before = (_state.value as? GoalUiState.Content)?.goal?.resources?.map { it.id }.orEmpty().toSet()
+        mutateThenReload(
+            after = {
+                if (type == "note") {
+                    _lastCreatedNote.value = (_state.value as? GoalUiState.Content)
+                        ?.goal?.resources?.firstOrNull { it.id !in before }
+                }
+            },
+            block = { repository.createResource(goalId, input) },
+        )
     }
+
+    /**
+     * The note the assistant most recently created, or null.
+     *
+     * It is a one-shot pointer rather than a list: the chat only ever offers to open the note it
+     * just made, and holding more would be state nobody reads.
+     */
+    private val _lastCreatedNote = MutableStateFlow<ResourceItem?>(null)
+    val lastCreatedNote: StateFlow<ResourceItem?> = _lastCreatedNote.asStateFlow()
 
     /**
      * Pull a file resource's bytes on demand and patch them into state, so the preview can render.
@@ -481,7 +508,8 @@ class GoalWorkspaceViewModel(
     }
 
     /** Run a structural mutation, then silently refetch the goal so server ids/state are correct. */
-    private fun mutateThenReload(block: suspend () -> Unit) {
+    /** [after] runs once the refetch has landed, so it can read the row the mutation created. */
+    private fun mutateThenReload(after: () -> Unit = {}, block: suspend () -> Unit) {
         viewModelScope.launch {
             try {
                 block()
@@ -495,6 +523,7 @@ class GoalWorkspaceViewModel(
                 // Keep the current content if the refetch itself fails. Not logged: this is
                 // the retry of a retry, and the first failure above already told the story.
             }
+            after()
         }
     }
 
@@ -543,20 +572,162 @@ class GoalWorkspaceViewModel(
 
 enum class TargetSort(val label: String) { Name("Name"), Progress("Progress"), Deadline("Deadline") }
 
-enum class TargetFilter(val label: String) { All("All targets"), Done("Only done"), NotDone("Only not done") }
+/**
+ * The three questions the target filter asks, one per column of its menu (see
+ * [com.spiramindscape.android.ui.components.SpiraMenuColumns]). Each is independent: a target has
+ * to pass all three to be listed, and each is `All` until the user says otherwise.
+ *
+ * Labels are short on purpose — three columns of "Only not done" would not fit across a phone, and
+ * the column's own heading already says what the words are answering.
+ */
+enum class TargetFilter(val label: String) {
+    All("All"),
+    Done("Done"),
+    NotDone("Not done"),
 
-/** Apply the workspace's sort + filter to the goal's targets. */
+    /** Under way: some progress recorded, but not finished. */
+    Started("Started"),
+
+    /** Untouched: no progress at all. */
+    NotStarted("Not started"),
+}
+
+/** The deadline question. "Overdue" follows the card's own rule: past, and not yet achieved. */
+enum class TargetDeadlineFilter(val label: String) {
+    All("All"),
+    Overdue("Overdue"),
+    NotOverdue("Not overdue"),
+    None("No deadline"),
+}
+
+/** The padlock question — whether progress is pinned (see `isProgressLocked`). */
+enum class TargetLockFilter(val label: String) { All("All"), Locked("Locked"), Unlocked("Unlocked") }
+
+/**
+ * [Added] is the server's own order, which is the order the resources were created in — so the
+ * word for it is **Created**. It used to read "As added", which named the mechanism rather than
+ * the thing, and sat oddly beside "Name" and "Type".
+ */
+enum class ResourceSort(val label: String) { Added("Created"), Title("Name"), Type("Type") }
+
+/** The kinds a resource can be filtered to. "All" — the column's heading says what of. */
+enum class ResourceFilter(val label: String) {
+    All("All"), Notes("Notes"), Links("Links"), Files("Files"), Contacts("Contacts")
+}
+
+/**
+ * Does [text] contain [query]? The shared rule behind every list search: a blank query matches
+ * everything, and `{{res:id}}` tokens are stripped first so a query can never match an id the user
+ * cannot see on screen.
+ */
+private fun matches(query: String, vararg text: String?): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return text.any { it != null && stripResourceTokens(it) { "" }.contains(q, ignoreCase = true) }
+}
+
+/**
+ * The Options page's filter: the thumb lean the user gave each option.
+ *
+ * [status] is the value stored on the option, so the enum is the single place that knows the
+ * server's spelling. `Untried` is the absence of an opinion — the badge's grey outline.
+ */
+enum class OptionFilter(val label: String, val status: String?) {
+    All("All", null),
+    GoodIdea("Good idea", "good_idea"),
+    BadIdea("Bad idea", "didnt_work"),
+    Untried("Didn't try", "none"),
+}
+
+/**
+ * Apply the Options page's search and lean filter. There is deliberately **no sort**: position is
+ * the meaning of this list, and the user sets it by hand in reorder mode.
+ */
+fun applyOptionView(
+    options: List<OptionItem>,
+    query: String,
+    filter: OptionFilter = OptionFilter.All,
+): List<OptionItem> =
+    options.sortedBy { it.position }
+        // An option saved before the badge existed has an empty status, not "none"; both mean the
+        // same thing to the user, so "Didn't try" has to catch either.
+        .filter { filter.status == null || it.status.ifEmpty { "none" } == filter.status }
+        .filter { matches(query, it.text) }
+
+/**
+ * Apply the Resources page's search, sort and filter.
+ *
+ * There is deliberately no "newest first": [ResourceItem] carries no `createdAt`, so that ordering
+ * cannot be written on this side at all — it needs the field adding to the GraphQL `Resource` type
+ * first. [ResourceSort.Added] is the server's own order, which is what the page showed before.
+ */
+fun applyResourceView(
+    resources: List<ResourceItem>,
+    query: String,
+    sort: ResourceSort,
+    ascending: Boolean,
+    filter: ResourceFilter,
+): List<ResourceItem> {
+    val kindFor = { r: ResourceItem -> if (r.type == "img" || r.type == "image") "file" else r.type }
+    var list = when (filter) {
+        ResourceFilter.All -> resources
+        ResourceFilter.Notes -> resources.filter { kindFor(it) == "note" }
+        ResourceFilter.Links -> resources.filter { kindFor(it) == "link" }
+        ResourceFilter.Files -> resources.filter { kindFor(it) == "file" }
+        ResourceFilter.Contacts -> resources.filter { kindFor(it) == "email" }
+    }
+    // A note is remembered by its words, a link by its domain, a contact by the person — so the
+    // query is tried against all of them, and against the note body with its HTML taken off.
+    list = list.filter {
+        matches(query, it.title, it.url, it.name, it.email, it.role, it.body?.let(::stripHtml))
+    }
+    val comparator: Comparator<ResourceItem> = when (sort) {
+        ResourceSort.Added -> return if (ascending) list else list.reversed()
+        ResourceSort.Title -> compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it.title }
+        ResourceSort.Type -> compareBy<ResourceItem> { kindFor(it) }
+            .thenBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it.title }
+    }
+    list = list.sortedWith(comparator)
+    return if (ascending) list else list.reversed()
+}
+
+/**
+ * Apply the workspace's search, sort and the three filter questions to the goal's targets.
+ *
+ * The questions are **independent** — a target has to pass state, deadline AND lock — so this is
+ * three filters in sequence rather than one enum with every combination in it.
+ */
 fun applyTargetView(
     targets: List<TargetItem>,
     sort: TargetSort,
     ascending: Boolean,
     filter: TargetFilter,
+    query: String = "",
+    deadlineFilter: TargetDeadlineFilter = TargetDeadlineFilter.All,
+    lockFilter: TargetLockFilter = TargetLockFilter.All,
 ): List<TargetItem> {
     var list = when (filter) {
         TargetFilter.All -> targets
         TargetFilter.Done -> targets.filter { it.progress >= 1f }
         TargetFilter.NotDone -> targets.filter { it.progress < 1f }
+        TargetFilter.Started -> targets.filter { it.progress > 0f && it.progress < 1f }
+        TargetFilter.NotStarted -> targets.filter { it.progress <= 0f }
     }
+    list = when (deadlineFilter) {
+        TargetDeadlineFilter.All -> list
+        // "Overdue" is the card's own rule, not merely "in the past": a target that was achieved
+        // late is finished, and listing it as overdue would be telling the user to act on it.
+        TargetDeadlineFilter.Overdue -> list.filter { deadlineInfo(it.deadline, it.progress >= 1f)?.isOverdue == true }
+        TargetDeadlineFilter.NotOverdue ->
+            list.filter { it.deadline != null && deadlineInfo(it.deadline, it.progress >= 1f)?.isOverdue != true }
+        TargetDeadlineFilter.None -> list.filter { it.deadline == null }
+    }
+    list = when (lockFilter) {
+        TargetLockFilter.All -> list
+        TargetLockFilter.Locked -> list.filter { isProgressLocked(it) }
+        TargetLockFilter.Unlocked -> list.filter { !isProgressLocked(it) }
+    }
+    list = list.filter { matches(query, it.title) }
     val comparator: Comparator<TargetItem> = when (sort) {
         TargetSort.Name -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
         TargetSort.Progress -> compareBy { it.progress }

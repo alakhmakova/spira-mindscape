@@ -255,7 +255,7 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
 @Composable
 private fun Kicker(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(SpiraIcons.NavKey, contentDescription = null, tint = Kale500, modifier = Modifier.size(14.dp))
+        Icon(SpiraIcons.Key, contentDescription = null, tint = Kale500, modifier = Modifier.size(14.dp))
         Spacer(Modifier.size(6.dp))
         Text(
             text.uppercase(),

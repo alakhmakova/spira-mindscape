@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -35,14 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.R
@@ -57,6 +63,7 @@ import com.spiramindscape.android.ui.components.InlineRichText
 import com.spiramindscape.android.ui.components.LocalInlineResources
 import com.spiramindscape.android.ui.components.attachTo
 import com.spiramindscape.android.ui.icons.SpiraArt
+import com.spiramindscape.android.ui.components.addActionTextStyle
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Error800
 import com.spiramindscape.android.ui.theme.Guava500
@@ -374,7 +381,7 @@ fun DeadlineTile(info: DeadlineInfo?, done: Boolean, modifier: Modifier = Modifi
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    SpiraIcons.AlertCircleFilled,
+                    SpiraIcons.CircleExclamationFilled,
                     contentDescription = "Overdue",
                     tint = Error800,
                     modifier = Modifier.size(15.dp),
@@ -388,11 +395,18 @@ fun DeadlineTile(info: DeadlineInfo?, done: Boolean, modifier: Modifier = Modifi
 private val TILE = 64.dp
 
 /**
- * How far below the tile's centre what the calendar prints is centred. The paper's own middle is
- * at 0.636 of the artwork's height; the date sits a little lower still (0.68) because the drawn
- * frame eats into the top of the page and the block reads better hung from the band than floating.
+ * How far below the tile's centre what the calendar prints is centred — the date and the plus
+ * alike, so the two states never sit at different heights.
+ *
+ * It is **the paper's own middle**, nothing else. In the artwork's 50-unit box the page runs
+ * y 11 → 45 and the coral band takes y 11 → 18.6, so the writable paper is 18.6 → 45 and its
+ * centre is at 0.636 of the height. The block used to hang a little lower than that (0.68) on the
+ * theory that it read better hung from the band; beside the web tile it simply looked low, and the
+ * plus — which has no ascenders to lift it — looked lower still. The web uses the same figure
+ * (`Targets.tsx` → `PAPER_CENTRE`), so the two tiles print at the same place.
  */
-private val PAPER_CENTRE_OFFSET = (TILE.value * (0.68f - 0.5f)).dp
+private const val PAPER_CENTRE = 0.636f
+private val PAPER_CENTRE_OFFSET = (TILE.value * (PAPER_CENTRE - 0.5f)).dp
 
 /**
  * The padlock on a target: pinned progress can't be nudged by a stray tap. An achieved target
@@ -410,11 +424,14 @@ fun ProgressLockBadge(locked: Boolean, onToggle: (Boolean) -> Unit, modifier: Mo
             .clickable { onToggle(!locked) },
         contentAlignment = Alignment.Center,
     ) {
+        // The padlock nearly fills its ring. At 14dp inside a 28dp circle it read as an empty ring
+        // with a speck in the middle — the ring is the badge, the lock is what you are meant to
+        // see. The circle itself is unchanged, so the corner it hangs off keeps its geometry.
         Icon(
             if (locked) SpiraIcons.Lock else SpiraIcons.LockOpen,
             contentDescription = if (locked) "Unlock progress" else "Lock progress",
             tint = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.spiraExtras.mutedForeground,
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -469,6 +486,7 @@ private fun BinaryProgressBody(
  * The numeric editor: current / total / unit inline above a bar with ± controls, the percentage
  * printed beside it. Typing previews the bar as you go; the value still commits on blur/Done.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NumericProgressBody(
     target: TargetItem.Numeric,
@@ -535,10 +553,15 @@ private fun NumericProgressBody(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
+        // **A FlowRow, not a Row.** All seven pieces — current, "/", total, unit, "(from", start,
+        // ")" — do not fit across a phone, and a plain Row does not wrap: it squeezes the last
+        // children to nothing, which is how "65 / 54 kg" ended up as a lone "65" with "(from" set
+        // one letter per line down the right edge. Here the "(from …)" group drops to a second
+        // line instead, which is what the web does when its own row runs out of room.
+        FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             NumberField(
                 value = trimNumber(target.current),
@@ -554,31 +577,39 @@ private fun NumericProgressBody(
                 onTyping = { raw -> preview(raw) { Triple(target.current, it, start) } },
                 onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(totalValue = it) } },
             )
+            val unitStyle = MaterialTheme.typography.bodyMedium
             InlineEditText(
                 value = target.unit ?: "",
                 onCommit = { actions.onSetTargetUnit(target.id, it.ifBlank { null }) },
-                modifier = Modifier.width(56.dp),
+                modifier = Modifier.width(textWidth(target.unit?.ifBlank { null } ?: "unit", unitStyle) + 8.dp),
                 placeholder = "unit",
-                textStyle = MaterialTheme.typography.bodyMedium,
+                textStyle = unitStyle,
             )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "(from",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.spiraExtras.mutedForeground,
-            )
-            NumberField(
-                value = trimNumber(start),
-                label = "Start value",
-                onTyping = { raw -> preview(raw) { Triple(target.current, total, it) } },
-                onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(startValue = it) } },
-                muted = true,
-            )
-            Text(
-                ")",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.spiraExtras.mutedForeground,
-            )
+            // The "(from …)" group is **one** flow item, in a Row of its own. Left as three
+            // siblings, the wrap could fall between "(from" and its number, or leave the closing
+            // bracket alone on the next line — which is exactly what it did.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 4.dp),
+            ) {
+                Text(
+                    "(from ",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.spiraExtras.mutedForeground,
+                )
+                NumberField(
+                    value = trimNumber(start),
+                    label = "Start value",
+                    onTyping = { raw -> preview(raw) { Triple(target.current, total, it) } },
+                    onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(startValue = it) } },
+                    muted = true,
+                )
+                Text(
+                    ")",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.spiraExtras.mutedForeground,
+                )
+            }
         }
 
         if (message != null) {
@@ -605,12 +636,22 @@ private fun NumericProgressBody(
                     .clip(CircleShape)
                     .background(Kale300), // the distance still to cover, same as the card strip
             ) {
+                // **Guava, not Kale.** The web has always drawn this inner bar in the warm accent
+                // and only turns it teal once the target is done (`ProgressBar.tsx`); Android had
+                // it teal throughout, so the one measure that is meant to stand out on an opened
+                // card was the same colour as the card's own chrome.
                 Box(
                     Modifier
                         .fillMaxWidth(target.progress.coerceIn(0f, 1f))
                         .fillMaxHeight()
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(
+                            if (target.progress >= 1f) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Guava500
+                            },
+                        ),
                 )
             }
             Text(
@@ -722,7 +763,7 @@ private fun TaskRow(
         // right there is nothing for them to overlap, and a task is worked on far more often
         // than an option or a reality item.
         Icon(
-            if (item.deadline != null) SpiraIcons.Calendar else SpiraIcons.CalendarPlus,
+            if (item.deadline != null) SpiraIcons.Calendar else SpiraIcons.Calendar,
             contentDescription = if (item.deadline != null) "Change the deadline" else "Set a deadline",
             tint = when {
                 item.deadline == null -> MaterialTheme.spiraExtras.mutedForeground
@@ -808,7 +849,8 @@ private fun AddTaskControl(enabled: Boolean, onAdd: (String) -> Unit) {
             )
             Text(
                 "Add task",
-                style = MaterialTheme.typography.bodyMedium,
+                // Trimmed leading so the word centres on the plus rather than riding above it.
+                style = addActionTextStyle(),
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.spiraExtras.mutedForeground,
             )
@@ -845,6 +887,22 @@ private fun AddTaskControl(enabled: Boolean, onAdd: (String) -> Unit) {
     }
 }
 
+/**
+ * How wide a string is in a given style, so a `BasicTextField` can be sized to its own content.
+ *
+ * Compose gives a text field no intrinsic width — it fills whatever it is offered — so the only
+ * honest answer is to measure the glyphs. Used by the numeric row, where seven small pieces have
+ * to sit together as one sentence rather than drift apart across the card.
+ */
+@Composable
+private fun textWidth(text: String, style: androidx.compose.ui.text.TextStyle): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    return remember(text, style, density) {
+        with(density) { measurer.measure(text.ifEmpty { "0" }, style).size.width.toDp() }
+    }
+}
+
 /** A single inline number, right-sized so the current/total row stays on one line. */
 @Composable
 private fun NumberField(
@@ -855,26 +913,39 @@ private fun NumberField(
     placeholder: String = "",
     muted: Boolean = false,
 ) {
+    val style = if (muted) {
+        MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.spiraExtras.mutedForeground)
+    } else {
+        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+    }
     InlineEditText(
         value = value,
         onCommit = onCommit,
+        // **Measured to its own text.** A `BasicTextField` takes every pixel it is offered, so
+        // these fields have to be told how wide they are or they each swallow a whole line: at a
+        // flat 64dp a two-digit value floated in the middle of an empty box and "65 / 54 kg" read
+        // as four things scattered across the row; with only a minimum they wrapped one per line.
+        // Measuring the string is the one way to get "65" to occupy exactly as much room as "65".
         modifier = Modifier
-            .width(if (muted) 48.dp else 64.dp)
+            .width(textWidth(value.ifBlank { placeholder }, style) + 8.dp)
             .semantics { contentDescription = label },
-        textStyle = if (muted) {
-            MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.spiraExtras.mutedForeground)
-        } else {
-            MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-        },
+        textStyle = style,
         placeholder = placeholder,
         keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
         required = true,
-        textAlign = TextAlign.Center,
         onTextChanged = onTyping,
     )
 }
 
-/** A square ± button beside the numeric progress bar. */
+/**
+ * A ± button beside the numeric progress bar, drawn after the reference the owner supplied
+ * (2026-08-14): a **wide, softly rounded rectangle on white, with a hairline Kale border and a
+ * Kale sign**. It used to be a 36dp square with a 2dp grey border and a near-black sign, which
+ * read as heavy, disabled chrome sitting either side of the bar.
+ *
+ * The pair stays split — one before the bar, one after — even though the reference joins them into
+ * a segmented control: the bar between them is what they act on.
+ */
 @Composable
 private fun StepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -882,22 +953,21 @@ private fun StepButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(8.dp)
+    val ink = if (enabled) MaterialTheme.colorScheme.primary else Salt400
     Box(
         Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(
-                2.dp,
-                if (enabled) MaterialTheme.spiraExtras.border else Salt400,
-                RoundedCornerShape(8.dp),
-            )
+            .size(width = 46.dp, height = 34.dp)
+            .clip(shape)
+            .background(MaterialTheme.spiraExtras.surfaceRaised)
+            .border(1.dp, ink, shape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.spiraExtras.mutedForeground,
+            tint = ink,
             modifier = Modifier.size(16.dp),
         )
     }

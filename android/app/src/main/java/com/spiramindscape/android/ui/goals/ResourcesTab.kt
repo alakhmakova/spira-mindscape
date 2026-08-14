@@ -49,6 +49,13 @@ import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.ui.components.InlineEditText
+import com.spiramindscape.android.ui.components.SpiraChoice
+import com.spiramindscape.android.ui.components.SpiraFilterTrigger
+import com.spiramindscape.android.ui.components.SpiraListToolbar
+import com.spiramindscape.android.ui.components.SpiraMenuChoice
+import com.spiramindscape.android.ui.components.SpiraMenuColumns
+import com.spiramindscape.android.ui.components.SpiraMenuGroup
+import com.spiramindscape.android.ui.components.SpiraSortTrigger
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Guava100
 import com.spiramindscape.android.ui.theme.Guava200
@@ -115,8 +122,12 @@ fun ResourcesTabContent(
     goal: GoalDetail,
     actions: GoalWorkspaceActions,
     onOpenFull: (String) -> Unit = {},
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
 ) {
     var openId by remember { mutableStateOf<String?>(null) }
+    val view = rememberResourceViewState()
+    val visible = applyResourceView(goal.resources, query, view.sort, view.ascending, view.filter)
 
     Column(
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -144,6 +155,42 @@ fun ResourcesTabContent(
             )
         }
 
+        // Search, sort and filter — the same chrome the Targets and Options pages carry. Adding
+        // stays on the bottom-right "+" button; a round add action never sits at the top of a list.
+        SpiraListToolbar(
+            query = query,
+            onQueryChange = onQueryChange,
+            placeholder = "Search resources",
+            sort = {
+                SpiraSortTrigger(
+                    options = ResourceSort.entries.map { SpiraChoice(it, it.label) },
+                    selected = view.sort,
+                    onSelect = { view.sort = it },
+                    ascending = view.ascending,
+                    onAscendingChange = { view.ascending = it },
+                    contentDescription = "Sort resources",
+                )
+            },
+            filter = {
+                SpiraFilterTrigger(
+                    count = if (view.filter == ResourceFilter.All) 0 else 1,
+                    contentDescription = "Filter resources",
+                ) { dismiss ->
+                    SpiraMenuColumns {
+                        SpiraMenuGroup("Kind") {
+                            ResourceFilter.entries.forEach { f ->
+                                SpiraMenuChoice(
+                                    label = f.label,
+                                    selected = f == view.filter,
+                                    onClick = { view.filter = f; dismiss() },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
         if (goal.resources.isEmpty()) {
             Text(
                 "No resources yet — tap the plus button to add a note, link, file or contact.",
@@ -152,9 +199,17 @@ fun ResourcesTabContent(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
+        } else if (visible.isEmpty()) {
+            Text(
+                "No resources match that search or filter.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.spiraExtras.mutedForeground,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
         }
 
-        goal.resources.forEach { res ->
+        visible.forEach { res ->
             ResourceCard(
                 res = res,
                 expanded = openId == res.id,
@@ -275,7 +330,7 @@ private fun NoteBody(res: ResourceItem, actions: GoalWorkspaceActions) {
     )
     Spacer(Modifier.height(14.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        ResourcePrimaryButton("Open note", SpiraIcons.Maximize, Modifier.weight(1f)) {
+        ResourcePrimaryButton("Open note", SpiraIcons.Expand, Modifier.weight(1f)) {
             context.startActivity(
                 NoteEditorActivity.intent(context, res.id, res.title ?: "", res.body ?: ""),
             )
@@ -323,7 +378,7 @@ private fun EmailBody(res: ResourceItem, actions: GoalWorkspaceActions) {
             openUri(context, "mailto:${res.email}")
         }
         if (!res.phone.isNullOrBlank()) {
-            ResourceIconButton(SpiraIcons.Phone, "Call") { openUri(context, "tel:${res.phone}") }
+            ResourceIconButton(SpiraIcons.Smartphone, "Call") { openUri(context, "tel:${res.phone}") }
         }
         ResourceIconButton(SpiraIcons.Copy, "Copy all fields") {
             val all = listOfNotNull(
@@ -405,7 +460,7 @@ private fun FileBody(res: ResourceItem, actions: GoalWorkspaceActions, onOpenFul
             val saveFile = rememberFileSaver()
             // One row: Open (primary), then Download / Copy(image only) / Delete icons.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                ResourcePrimaryButton("Open", SpiraIcons.Maximize, Modifier.weight(1f)) { onOpenFull(res.id) }
+                ResourcePrimaryButton("Open", SpiraIcons.Expand, Modifier.weight(1f)) { onOpenFull(res.id) }
                 ResourceIconButton(SpiraIcons.Download, "Download") {
                     saveFile(downloadFileName(res.title, res.mime), res.mime ?: "application/octet-stream", bytes)
                 }

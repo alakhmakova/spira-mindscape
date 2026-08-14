@@ -72,10 +72,17 @@ val MaterialTheme.spiraExtras: SpiraExtraColors
 
 @Composable
 fun SpiraTheme(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalSpiraExtraColors provides SpiraExtraColors()) {
+    // The body face is a live choice while the owner picks one (Settings → Fonts, GRO-122).
+    // Reading it here is what makes a tap on that page re-font the whole app at once, which is the
+    // only way to judge a candidate — a specimen sheet never shows you a 10sp label in a badge.
+    val appFont = rememberAppFontState()
+    CompositionLocalProvider(
+        LocalSpiraExtraColors provides SpiraExtraColors(),
+        LocalAppFont provides appFont,
+    ) {
         MaterialTheme(
             colorScheme = SpiraColors,
-            typography = SpiraTypography,
+            typography = spiraTypography(appFont.current.fontFamily),
             shapes = SpiraShapes,
             content = content,
         )

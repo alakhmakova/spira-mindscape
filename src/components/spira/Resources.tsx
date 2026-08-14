@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Trash2,
-  ExternalLink,
   Download,
   Copy,
   Check,
@@ -36,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
+import { OpenNewWindow } from "@/components/spira/brand-icons";
 import { AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { PdfViewer } from "@/components/spira/PdfViewer";
@@ -938,7 +938,7 @@ function PreviewBody({
             rel="noreferrer"
             className="inline-flex items-center gap-2 link-action text-sm font-semibold"
           >
-            <ExternalLink className="h-4 w-4" />
+            <OpenNewWindow className="h-4 w-4" />
             {resource.url}
           </a>
         )}

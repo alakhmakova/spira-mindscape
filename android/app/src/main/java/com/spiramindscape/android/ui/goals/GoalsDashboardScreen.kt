@@ -80,6 +80,7 @@ import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraInlineBanner
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
+import com.spiramindscape.android.ui.components.HeaderCircleClose
 import com.spiramindscape.android.ui.components.SpiraSearchField
 import com.spiramindscape.android.ui.components.SpiraTopBar
 import com.spiramindscape.android.ui.icons.SpiraIcons
@@ -90,7 +91,12 @@ import com.spiramindscape.android.ui.util.deadlineCountdown
 import kotlinx.coroutines.launch
 
 @Composable
-fun GoalsRoute(user: AuthUser, onGoalClick: (String) -> Unit, onLogout: () -> Unit) {
+fun GoalsRoute(
+    user: AuthUser,
+    onGoalClick: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val viewModel: GoalsViewModel = viewModel(factory = GoalsViewModel.Factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val allGoals by GoalsStore.goals.collectAsStateWithLifecycle()
@@ -158,6 +164,7 @@ fun GoalsRoute(user: AuthUser, onGoalClick: (String) -> Unit, onLogout: () -> Un
             onGoalClick = onGoalClick,
             onRetry = viewModel::load,
             onLogout = onLogout,
+            onOpenSettings = onOpenSettings,
             onOpenAssistant = { assistantOpen = true },
             actionError = actionError,
             onDismissActionError = viewModel::clearActionError,
@@ -212,6 +219,8 @@ fun GoalsDashboardScreen(
     onGoalClick: (String) -> Unit = {},
     onRetry: () -> Unit = {},
     onLogout: () -> Unit = {},
+    /** The header's figure: the account's own page, not the navigation drawer. */
+    onOpenSettings: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
     /** An action that failed without changing the screen (e.g. a create that didn't land). */
     actionError: String? = null,
@@ -247,7 +256,7 @@ fun GoalsDashboardScreen(
                         onMenu = { scope.launch { drawerState.open() } },
                         onSearch = { searchOpen = true },
                         onAssistant = onOpenAssistant,
-                        onProfile = { scope.launch { drawerState.open() } },
+                        onProfile = onOpenSettings,
                     )
                 }
             },
@@ -384,7 +393,7 @@ fun SpiraDrawer(
                 }
             }
             // Home is the All-goals page: it is only "where you are" when no goal is open.
-            DrawerRow(SpiraIcons.NavHome, "Home", selected = goalTitle == null, onClick = onHome)
+            DrawerRow(SpiraIcons.Home, "Home", selected = goalTitle == null, onClick = onHome)
             if (goalTitle != null) {
                 Spacer(Modifier.height(8.dp))
                 // The rubric is the goal's own name. It can't be the word "Goal" — the first
@@ -393,15 +402,17 @@ fun SpiraDrawer(
                 DrawerSection(
                     title = goalTitle,
                     items = GoalTab.entries.map { it.label } + "Resources",
-                    icon = SpiraIcons.NavTrophy,
-                    selected = true,
+                    icon = SpiraIcons.ChartColumn,
                     selectedItem = currentPlace,
                     onItem = onGoalPlace,
                 )
             }
             Spacer(Modifier.height(8.dp))
-            DrawerSection("About Spira", listOf("How to use", "What is GROW"), SpiraIcons.NavHelp)
-            DrawerSection("Resources", listOf("Useful links", "My resources"), SpiraIcons.NavResources)
+            DrawerSection("About Spira", listOf("How to use", "What is GROW"), SpiraIcons.CircleQuestion)
+            // "Knowledge", not "Resources": these are links and reading worth coming back to,
+            // while the footer's Resources are the material attached to one goal. Two places with
+            // the same name and the same mark had the user expecting one to be the other.
+            DrawerSection("Knowledge", listOf("Useful links", "My resources"), SpiraIcons.BookOpen)
 
             Spacer(Modifier.weight(1f)) // push the account block to the bottom
             HorizontalDivider()
@@ -488,20 +499,29 @@ private fun DrawerRow(
     }
 }
 
-/** A rubric with a vertical line down its left, and its sub-items sitting inside that line. */
+/**
+ * A rubric with a vertical line down its left, and its sub-items sitting inside that line.
+ *
+ * **The rubric itself is never marked as "you are here"** — only the open sub-item is. A heading
+ * that carries a place (the goal's own name) is not a place you can be; lighting it as well as the
+ * child said the user was in two places at once, and the eye had nothing to land on.
+ */
+/** The sub-item rail: a hairline for the places you are not, the full lane in Kale for the one you are. */
+private val RAIL_LANE = 3.dp
+private val RAIL_HAIRLINE = 1.5.dp
+
 @Composable
 private fun DrawerSection(
     title: String,
     items: List<String>,
     icon: ImageVector? = null,
-    selected: Boolean = false,
     /** Index of the sub-item the user is on, or -1. Switching screens has to show up here. */
     selectedItem: Int = -1,
     onItem: (Int) -> Unit = {},
 ) {
     Column(Modifier.padding(top = 8.dp)) {
         if (icon != null) {
-            DrawerRow(icon, title, selected = selected)
+            DrawerRow(icon, title)
         } else {
             Text(
                 title,
@@ -511,19 +531,37 @@ private fun DrawerSection(
                 modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 6.dp),
             )
         }
-        // IntrinsicSize.Min: the line is only as tall as the items next to it. (A plain
-        // fillMaxHeight here once made the Row swallow the whole screen and pushed the
-        // Resources section + account block off-screen.)
-        Row(Modifier.padding(start = 26.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-            Box(
-                Modifier
-                    .width(1.5.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.spiraExtras.border),
-            )
-            Column {
-                items.forEachIndexed { index, item ->
-                    val here = index == selectedItem
+        // The rail is drawn **per item**, not as one line down the side, because the open sub-item
+        // marks itself by turning its own stretch of it Kale. One shared line could only be one
+        // colour.
+        //
+        // The lane is a fixed width whichever state an item is in, so lighting one up never nudges
+        // the words. IntrinsicSize.Min keeps each segment exactly as tall as its own row — a plain
+        // fillMaxHeight here once made the Row swallow the whole screen and pushed the Knowledge
+        // section and the account block off the bottom.
+        Column(Modifier.padding(start = 26.dp)) {
+            items.forEachIndexed { index, item ->
+                val here = index == selectedItem
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(androidx.compose.foundation.layout.IntrinsicSize.Min)
+                        .clickable { onItem(index) },
+                ) {
+                    Box(Modifier.width(RAIL_LANE), contentAlignment = Alignment.CenterStart) {
+                        Box(
+                            Modifier
+                                .width(if (here) RAIL_LANE else RAIL_HAIRLINE)
+                                .fillMaxHeight()
+                                .background(
+                                    if (here) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.spiraExtras.border
+                                    },
+                                ),
+                        )
+                    }
                     Text(
                         item,
                         style = MaterialTheme.typography.bodyMedium,
@@ -533,10 +571,12 @@ private fun DrawerSection(
                         } else {
                             MaterialTheme.spiraExtras.mutedForeground
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onItem(index) }
-                            .padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 20.dp),
+                        modifier = Modifier.padding(
+                            start = 16.dp,
+                            top = 10.dp,
+                            bottom = 10.dp,
+                            end = 20.dp,
+                        ),
                     )
                 }
             }
@@ -566,21 +606,9 @@ private fun SearchTopBar(query: String, onQueryChange: (String) -> Unit, onClose
             placeholder = "Search for goals",
             modifier = Modifier.weight(1f),
         )
-        Box(
-            Modifier
-                .size(36.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Color.White.copy(alpha = 0.16f))
-                .clickable(onClick = onClose),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                SpiraIcons.X,
-                contentDescription = "Close search",
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(16.dp),
-            )
-        }
+        // The same white-disc-with-a-teal-cross the workspace header uses, so the two teal bars
+        // close the same way.
+        HeaderCircleClose("Close search", onClose)
     }
 }
 
@@ -626,7 +654,7 @@ private fun FilterMenu(
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(
-                SpiraIcons.SlidersHorizontal,
+                SpiraIcons.Filter,
                 contentDescription = "Filter",
                 modifier = Modifier.size(24.dp),
                 tint = if (active) MaterialTheme.colorScheme.primary else androidx.compose.material3.LocalContentColor.current,

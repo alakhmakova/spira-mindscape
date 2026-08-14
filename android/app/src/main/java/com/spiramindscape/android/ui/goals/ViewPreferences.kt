@@ -77,11 +77,21 @@ class TargetViewPreferences(private val prefs: SharedPreferences) {
         get() = prefs.readEnum(KEY_FILTER, TargetFilter.entries, TargetFilter.All)
         set(value) = prefs.write(KEY_FILTER, value)
 
+    var deadlineFilter: TargetDeadlineFilter
+        get() = prefs.readEnum(KEY_DEADLINE, TargetDeadlineFilter.entries, TargetDeadlineFilter.All)
+        set(value) = prefs.write(KEY_DEADLINE, value)
+
+    var lockFilter: TargetLockFilter
+        get() = prefs.readEnum(KEY_LOCK, TargetLockFilter.entries, TargetLockFilter.All)
+        set(value) = prefs.write(KEY_LOCK, value)
+
     companion object {
         private const val PREFS_NAME = "spira_target_view"
         private const val KEY_SORT = "sort"
         private const val KEY_ASCENDING = "ascending"
         private const val KEY_FILTER = "filter"
+        private const val KEY_DEADLINE = "deadline_filter"
+        private const val KEY_LOCK = "lock_filter"
 
         fun from(context: Context) = TargetViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
@@ -98,6 +108,8 @@ class TargetViewState internal constructor(
     private val sortState: MutableState<TargetSort>,
     private val ascendingState: MutableState<Boolean>,
     private val filterState: MutableState<TargetFilter>,
+    private val deadlineFilterState: MutableState<TargetDeadlineFilter>,
+    private val lockFilterState: MutableState<TargetLockFilter>,
 ) {
     var sort: TargetSort
         get() = sortState.value
@@ -119,6 +131,32 @@ class TargetViewState internal constructor(
             filterState.value = value
             preferences.filter = value
         }
+
+    var deadlineFilter: TargetDeadlineFilter
+        get() = deadlineFilterState.value
+        set(value) {
+            deadlineFilterState.value = value
+            preferences.deadlineFilter = value
+        }
+
+    var lockFilter: TargetLockFilter
+        get() = lockFilterState.value
+        set(value) {
+            lockFilterState.value = value
+            preferences.lockFilter = value
+        }
+
+    /**
+     * How many of the three questions are narrowing the list — what the trigger shows in brackets.
+     * A question left on `All` is not a filter, so an untouched toolbar reads "Filter", not
+     * "Filter (0)".
+     */
+    val activeCount: Int
+        get() = listOf(
+            filter != TargetFilter.All,
+            deadlineFilter != TargetDeadlineFilter.All,
+            lockFilter != TargetLockFilter.All,
+        ).count { it }
 }
 
 @Composable
@@ -127,6 +165,84 @@ fun rememberTargetViewState(): TargetViewState {
     return remember(context) {
         val preferences = TargetViewPreferences.from(context)
         TargetViewState(
+            preferences = preferences,
+            sortState = mutableStateOf(preferences.sort),
+            ascendingState = mutableStateOf(preferences.ascending),
+            filterState = mutableStateOf(preferences.filter),
+            deadlineFilterState = mutableStateOf(preferences.deadlineFilter),
+            lockFilterState = mutableStateOf(preferences.lockFilter),
+        )
+    }
+}
+
+/**
+ * The Resources page's sort + filter. Its own store, so it can never disturb the target one — the
+ * existing keys are load-bearing for every installed copy of the app.
+ *
+ * The default is [ResourceSort.Added] ascending, which is the server's own order: the page looked
+ * like that before it had a toolbar, so nobody's list rearranges itself on upgrade.
+ */
+class ResourceViewPreferences(private val prefs: SharedPreferences) {
+
+    var sort: ResourceSort
+        get() = prefs.readEnum(KEY_SORT, ResourceSort.entries, ResourceSort.Added)
+        set(value) = prefs.write(KEY_SORT, value)
+
+    var ascending: Boolean
+        get() = prefs.getBoolean(KEY_ASCENDING, true)
+        set(value) = prefs.edit().putBoolean(KEY_ASCENDING, value).apply()
+
+    var filter: ResourceFilter
+        get() = prefs.readEnum(KEY_FILTER, ResourceFilter.entries, ResourceFilter.All)
+        set(value) = prefs.write(KEY_FILTER, value)
+
+    companion object {
+        private const val PREFS_NAME = "spira_resource_view"
+        private const val KEY_SORT = "sort"
+        private const val KEY_ASCENDING = "ascending"
+        private const val KEY_FILTER = "filter"
+
+        fun from(context: Context) = ResourceViewPreferences(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+        )
+    }
+}
+
+/** [TargetViewState]'s twin for resources: read the stored choice, set it to recompose and store. */
+class ResourceViewState internal constructor(
+    private val preferences: ResourceViewPreferences,
+    private val sortState: MutableState<ResourceSort>,
+    private val ascendingState: MutableState<Boolean>,
+    private val filterState: MutableState<ResourceFilter>,
+) {
+    var sort: ResourceSort
+        get() = sortState.value
+        set(value) {
+            sortState.value = value
+            preferences.sort = value
+        }
+
+    var ascending: Boolean
+        get() = ascendingState.value
+        set(value) {
+            ascendingState.value = value
+            preferences.ascending = value
+        }
+
+    var filter: ResourceFilter
+        get() = filterState.value
+        set(value) {
+            filterState.value = value
+            preferences.filter = value
+        }
+}
+
+@Composable
+fun rememberResourceViewState(): ResourceViewState {
+    val context = LocalContext.current
+    return remember(context) {
+        val preferences = ResourceViewPreferences.from(context)
+        ResourceViewState(
             preferences = preferences,
             sortState = mutableStateOf(preferences.sort),
             ascendingState = mutableStateOf(preferences.ascending),

@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import {
   Search,
   SlidersHorizontal,
-  ArrowDownUp,
   ChevronDown,
   LogOut,
   X,
@@ -15,6 +14,7 @@ import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { useSpira } from "@/lib/spira/store";
 import { useAuth } from "@/lib/spira/auth";
+import { useApplyAppFont } from "@/lib/spira/app-font";
 import { useActivityGate } from "@/lib/useActivityGate";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import {
@@ -35,9 +35,24 @@ import {
   DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import {
+  MenuChoice,
+  MenuGroup,
+  ToolbarMenu,
+  ToolbarTrigger,
+} from "@/components/spira/ListToolbar";
 import { cn } from "@/lib/utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** The goal sort keys and their words — shared by the desktop menu and the mobile drawer. */
+const SORT_CHOICES = [
+  { value: "recent", label: "Most recent" },
+  { value: "deadline", label: "Deadline soonest" },
+  { value: "progress", label: "Progress" },
+  { value: "confidence", label: "Confidence" },
+  { value: "title", label: "Title A-Z" },
+] as const;
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -86,6 +101,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // A search is scoped to the screen it was typed on — see useResetQueryOnNavigate.
   useResetQueryOnNavigate(path);
 
+  // The body face the owner picked in Settings → Fonts, applied to the whole app. Mounted here
+  // because the shell wraps every route, so the choice survives navigation without a flash.
+  useApplyAppFont();
+
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const isDashboard = path === "/";
@@ -93,10 +112,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isWorkspace = path.startsWith("/goals/");
   // "not-achieved" is the default view, so it isn't counted as an active filter —
   // only deviating from it (All / Only achieved) or setting a date/confidence lights
-  // the "Filters on" chip and the reset button.
+  // the reset button and adds to the trigger's bracketed count.
   const filtersActive = Boolean(
     deadlineFrom || deadlineTo || confidence || status !== "not-achieved",
   );
+  const activeFilterCount =
+    (deadlineFrom || deadlineTo ? 1 : 0) +
+    (confidence ? 1 : 0) +
+    (status !== "not-achieved" ? 1 : 0);
   const sortActive = sort !== "recent" || sortDirection !== "desc";
   // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)
   const showFilterControls = !isWorkspace && !isCalendar;
@@ -337,16 +360,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {showFilterControls && (
                 <div className="hidden lg:flex items-center gap-1">
                   <DropdownMenu>
-                    <DropdownMenuTrigger
-                      className={cn(
-                        "inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
-                        filtersActive &&
-                          "border-primary/40 text-primary bg-primary-soft",
-                      )}
-                    >
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      {filtersActive ? "Filters on" : "Filters"}
-                    </DropdownMenuTrigger>
+                    <ToolbarTrigger
+                      label="Filter"
+                      count={activeFilterCount}
+                      ariaLabel="Filter goals"
+                    />
                     <DropdownMenuContent
                       align="end"
                       className="w-72 space-y-2 p-2"
@@ -413,56 +431,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {/* Sort */}
               {showSortControls && (
                 <div className="hidden lg:flex items-center gap-1">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      className={cn(
-                        "inline-flex items-center gap-1.5 h-9 px-3 rounded-md border hairline-strong text-sm hover:bg-accent text-foreground/80",
-                        sortActive &&
-                          "border-primary/40 text-primary bg-primary-soft",
-                      )}
-                    >
-                      <ArrowDownUp className="h-3.5 w-3.5" />
-                      {sortActive
-                        ? `Sort ${sortDirection === "asc" ? "up" : "down"}`
-                        : "Sort"}
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuRadioGroup
-                        value={sort}
-                        onValueChange={(v) => setSort(v as SortKey)}
-                      >
-                        <DropdownMenuRadioItem value="recent">
-                          Most recent
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="deadline">
-                          Deadline soonest
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="progress">
-                          Progress
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="confidence">
-                          Confidence
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="title">
-                          Title A-Z
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup
-                        value={sortDirection}
-                        onValueChange={(v) =>
-                          setSortDirection(v as SortDirection)
-                        }
-                      >
-                        <DropdownMenuRadioItem value="asc">
-                          Ascending
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="desc">
-                          Descending
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* The two questions side by side: what to order by, then which way. */}
+                  <ToolbarMenu
+                    label={
+                      SORT_CHOICES.find((c) => c.value === sort)?.label ??
+                      "Sort"
+                    }
+                    ariaLabel="Sort goals"
+                  >
+                    <MenuGroup title="Sort by">
+                      {SORT_CHOICES.map((c) => (
+                        <MenuChoice
+                          key={c.value}
+                          label={c.label}
+                          selected={sort === c.value}
+                          onSelect={() => setSort(c.value)}
+                        />
+                      ))}
+                    </MenuGroup>
+                    <MenuGroup title="Direction" divided>
+                      <MenuChoice
+                        label="Ascending"
+                        selected={sortDirection === "asc"}
+                        onSelect={() => setSortDirection("asc")}
+                      />
+                      <MenuChoice
+                        label="Descending"
+                        selected={sortDirection === "desc"}
+                        onSelect={() => setSortDirection("desc")}
+                      />
+                    </MenuGroup>
+                  </ToolbarMenu>
                   {sortActive && (
                     <button
                       onPointerDown={resetSort}
@@ -521,6 +520,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       {authUser?.email}
                     </div>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onSelect={() => void navigate({ to: "/settings" })}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="gap-2 text-destructive focus:text-destructive"
@@ -683,18 +690,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             Sort by
                           </p>
                           <div className="space-y-0.5">
-                            {(
-                              [
-                                { value: "recent", label: "Most recent" },
-                                {
-                                  value: "deadline",
-                                  label: "Deadline soonest",
-                                },
-                                { value: "progress", label: "Progress" },
-                                { value: "confidence", label: "Confidence" },
-                                { value: "title", label: "Title A-Z" },
-                              ] as const
-                            ).map((opt) => (
+                            {SORT_CHOICES.map((opt) => (
                               <button
                                 key={opt.value}
                                 onClick={() => setSort(opt.value)}

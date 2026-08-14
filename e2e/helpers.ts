@@ -60,13 +60,13 @@ export async function createGoal(page: Page, title: string) {
  */
 export function optionCards(page: Page) {
   return page.locator("li", {
-    has: page.getByRole("button", { name: "Rate strategy" }),
+    has: page.getByRole("button", { name: "Rate option" }),
   });
 }
 
-/** Add strategies to the Options section via the inline "Add a strategy" input. */
+/** Add options to the Options section via the inline "Add an option" input. */
 export async function addOptions(page: Page, texts: string[]) {
-  const input = page.getByPlaceholder("Add a strategy…");
+  const input = page.getByPlaceholder("Add an option…");
   for (const text of texts) {
     await input.fill(text);
     await input.press("Enter");

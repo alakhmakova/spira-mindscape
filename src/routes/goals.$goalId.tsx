@@ -25,7 +25,17 @@ import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
-import { OptionsList } from "@/components/spira/OptionsList";
+import {
+  OPTION_LEAN_CHOICES,
+  OptionsList,
+  type OptionLeanFilter,
+} from "@/components/spira/OptionsList";
+import {
+  MenuChoice,
+  MenuGroup,
+  ToolbarMenu,
+} from "@/components/spira/ListToolbar";
+import { FrownFilled, SmileFilled } from "@/components/spira/brand-icons";
 import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import {
   ResourcesList,
@@ -76,6 +86,9 @@ function GoalWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [optionsReordering, setOptionsReordering] = useState(false);
+  // Which thumb lean the Options list is narrowed to. It lives here, not in OptionsList, because
+  // its trigger sits in the section header beside the Reorder toggle.
+  const [optionsLean, setOptionsLean] = useState<OptionLeanFilter>("all");
 
   useEffect(() => {
     setContext({ goalId });
@@ -248,23 +261,52 @@ function GoalWorkspace() {
         <div id="options-section" className="scroll-mt-32">
           <Section
             title="Options"
-            hint="Strategies — pick one to commit"
+            hint="Options — pick one to commit"
             count={goal.options.length}
             action={
-              goal.options.length > 1 ? (
-                <button
-                  onClick={() => setOptionsReordering((v) => !v)}
-                  className="inline-flex items-center px-3 h-9 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary/90"
+              // Reorder on the left, the lean filter beside it — the same two controls, in the
+              // same order, as the Android Options page. Reorder is hidden while the filter
+              // narrows the list, because a drop would then save the wrong position.
+              <div className="flex items-center gap-1">
+                {goal.options.length > 1 && optionsLean === "all" && (
+                  <button
+                    onClick={() => setOptionsReordering((v) => !v)}
+                    className="rounded-md px-1.5 py-1.5 text-sm font-semibold text-primary transition-colors hover:text-primary/75"
+                  >
+                    {optionsReordering ? "Save" : "Reorder"}
+                  </button>
+                )}
+                <ToolbarMenu
+                  label="Filter"
+                  count={optionsLean === "all" ? 0 : 1}
+                  ariaLabel="Filter options"
                 >
-                  {optionsReordering ? "Save" : "Reorder"}
-                </button>
-              ) : undefined
+                  <MenuGroup title="Idea">
+                    {OPTION_LEAN_CHOICES.map((c) => (
+                      <MenuChoice
+                        key={c.value}
+                        label={c.label}
+                        selected={optionsLean === c.value}
+                        onSelect={() => setOptionsLean(c.value)}
+                        icon={
+                          c.value === "good_idea" ? (
+                            <SmileFilled className="h-4 w-4 shrink-0" />
+                          ) : c.value === "didnt_work" ? (
+                            <FrownFilled className="h-4 w-4 shrink-0" />
+                          ) : undefined
+                        }
+                      />
+                    ))}
+                  </MenuGroup>
+                </ToolbarMenu>
+              </div>
             }
           >
             <OptionsList
               goal={goal}
               reordering={optionsReordering}
               onReorderingChange={setOptionsReordering}
+              leanFilter={optionsLean}
             />
           </Section>
         </div>

@@ -60,6 +60,11 @@ import com.spiramindscape.android.graphql.type.UpdateResourceInput
 import com.spiramindscape.android.ui.components.ResourceTopBar
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraTextField
+import com.spiramindscape.android.core.SpiraLog
+import com.spiramindscape.android.ui.components.ConfirmDialog
+import com.spiramindscape.android.ui.components.HeaderCircleAction
+import com.spiramindscape.android.ui.components.SpiraInlineBanner
+import kotlinx.coroutines.withContext
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.SpiraTheme
 import com.spiramindscape.android.ui.theme.spiraExtras
@@ -110,18 +115,36 @@ class NoteEditorActivity : ComponentActivity() {
 
         setContent {
             SpiraTheme {
+                // A failed delete is invisible and loses the user's intent, so it is reported both
+                // ways: a log for us, a banner for them (CLAUDE.md "Logging" — the BUG-034 class).
+                var deleteError by remember { mutableStateOf<String?>(null) }
                 NoteEditorScreen(
                     initialTitle = initialTitle,
                     initialHtml = initialHtml,
                     onTitleCommit = ::saveTitle,
                     onBodyChange = ::saveBody,
                     onDone = { finish() },
+                    deleteError = deleteError,
+                    onDismissDeleteError = { deleteError = null },
+                    onDelete = {
+                        saveScope.launch {
+                            runCatching { repository.removeResource(resourceId) }
+                                .onSuccess { withContext(Dispatchers.Main) { finish() } }
+                                .onFailure { e ->
+                                    SpiraLog.w(TAG, "note_delete_failed resourceId=$resourceId", e)
+                                    withContext(Dispatchers.Main) {
+                                        deleteError = "Couldn't delete this note. Check your connection and try again."
+                                    }
+                                }
+                        }
+                    },
                 )
             }
         }
     }
 
     companion object {
+        private const val TAG = "NoteEditor"
         private const val EXTRA_RESOURCE_ID = "resourceId"
         private const val EXTRA_INITIAL_TITLE = "initialTitle"
         private const val EXTRA_INITIAL_HTML = "initialHtml"
@@ -301,7 +324,11 @@ private fun NoteEditorScreen(
     onTitleCommit: (String) -> Unit,
     onBodyChange: (String) -> Unit,
     onDone: () -> Unit,
+    onDelete: () -> Unit = {},
+    deleteError: String? = null,
+    onDismissDeleteError: () -> Unit = {},
 ) {
+    var confirmDelete by remember { mutableStateOf(false) }
     val controller = remember { NoteEditorController() }
     val context = LocalContext.current
     var title by remember { mutableStateOf(initialTitle) }
@@ -326,10 +353,18 @@ private fun NoteEditorScreen(
                 title = it
                 onTitleCommit(it)
             },
-            // No right-hand action: the note autosaves as it is typed, so a "Done" here fixed
-            // nothing the chevron doesn't — two controls calling the same finish(), one of them
-            // implying a save that had already happened.
+            // There is still no "Done" — the note autosaves as it is typed, so it would imply a
+            // save that had already happened. The X deletes, matching the file viewer's header.
             onBack = { finish() },
+            action = {
+                HeaderCircleAction(SpiraIcons.X, "Delete note") { confirmDelete = true }
+            },
+        )
+
+        SpiraInlineBanner(
+            message = deleteError,
+            onDismiss = onDismissDeleteError,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
 
         // Native formatting toolbar.
@@ -376,6 +411,18 @@ private fun NoteEditorScreen(
                 )
             }
         }
+    }
+
+    if (confirmDelete) {
+        ConfirmDialog(
+            title = "Delete this note?",
+            message = "\"${title.ifBlank { "Untitled" }}\" will be permanently deleted. You can't undo this.",
+            subject = "\"${title.ifBlank { "Untitled" }}\"",
+            confirmLabel = "Yes, delete",
+            cancelLabel = "No, keep it",
+            onConfirm = { confirmDelete = false; onDelete() },
+            onDismiss = { confirmDelete = false },
+        )
     }
 
     if (showLinkDialog) {

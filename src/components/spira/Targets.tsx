@@ -14,8 +14,6 @@ import {
   Trash2,
   TriangleAlert,
   X,
-  Lock,
-  LockOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Goal, Target } from "@/lib/spira/types";
@@ -35,6 +33,7 @@ import { ResizableSheet } from "@/components/spira/Resources";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { LockFilled, LockOpenFilled } from "@/components/spira/brand-icons";
 import { CalendarPageArt, PlusMarkArt } from "./TargetTileArt";
 import {
   Table,
@@ -49,12 +48,15 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { Section } from "@/components/spira/Section";
+import {
+  MenuChoice,
+  MenuColumns,
+  MenuGroup,
+  ToolbarTrigger,
+} from "@/components/spira/ListToolbar";
 import { InlineText } from "@/components/spira/Inline";
 import {
   AttachResourceButton,
@@ -119,7 +121,7 @@ function ProgressLockButton({
   className?: string;
   iconClassName?: string;
 }) {
-  const Icon = locked ? Lock : LockOpen;
+  const Icon = locked ? LockFilled : LockOpenFilled;
   return (
     <button
       type="button"
@@ -135,14 +137,18 @@ function ProgressLockButton({
           : "Lock progress so it can't be changed by accident"
       }
       className={cn(
+        // No fill behind the padlock, in either state: the mark is a piece of state sitting on the
+        // card, and a tinted or white plate under it read as a second button stuck to the corner.
         "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
         locked
-          ? "text-primary hover:bg-primary-soft"
+          ? "text-primary hover:text-primary/75"
           : "text-muted-foreground/60 hover:text-foreground",
         className,
       )}
     >
-      <Icon className={cn("h-4 w-4", iconClassName)} />
+      {/* The glyph nearly fills its circle. At h-4 it was a speck in an 8-unit box, and on the
+          mobile card a 14px mark inside a 28px ring read as an empty ring with a dot in it. */}
+      <Icon className={cn("h-5 w-5", iconClassName)} />
     </button>
   );
 }
@@ -153,6 +159,17 @@ function ProgressLockButton({
  * a PNG for it too.
  */
 const TILE_ART = { done: "/images/party-popper.png" } as const;
+
+/**
+ * Where the calendar tile prints — **the paper's own middle**, used for both the date block and
+ * the "no deadline yet" plus so the two states never sit at different heights.
+ *
+ * In the artwork's 50-unit box the page runs y 11 → 45 and the coral band takes y 11 → 18.6, so
+ * the writable paper is 18.6 → 45 and its centre lands at 0.636 of the height. Android's tile
+ * carries the identical figure (`TargetCard.kt` → `PAPER_CENTRE`); the two must not drift, because
+ * the same card is read on both surfaces.
+ */
+const PAPER_CENTRE = "63.6%";
 
 /**
  * The deadline as a compact calendar tile — month above, the day in big digits — so a card reads
@@ -193,8 +210,12 @@ function DeadlineTile({
           as well made the whole tile shout. */}
       <CalendarPageArt className="h-16 w-16" />
       {!info && (
-        // No date yet: the page shows the hand-drawn plus, so the tile still invites a tap.
-        <span className="absolute inset-x-0 top-[68%] flex -translate-y-1/2 justify-center">
+        // No date yet: the page shows the hand-drawn plus, so the tile still invites a tap. Same
+        // anchor as the date below — the two states must not sit at different heights.
+        <span
+          className="absolute inset-x-0 flex -translate-y-1/2 justify-center"
+          style={{ top: PAPER_CENTRE }}
+        >
           <PlusMarkArt className="h-5 w-5" />
         </span>
       )}
@@ -222,14 +243,13 @@ function DeadlineTile({
         </span>
       )}
       {info && (
-        // What is printed sits on the PAPER, not on the tile. In the artwork's 50-unit box the
-        // page runs y 11 -> 45 and the band takes y 11 -> 18.6, so the writable paper's middle is
-        // well below the tile's own centre — hence 68%, the same figure the Android tile uses.
-        // The date stays black when overdue: the red badge is what says so, and red digits on the
-        // page only muddy it.
+        // What is printed sits on the PAPER, not on the tile — see PAPER_CENTRE. The date stays
+        // black when overdue: the red badge is what says so, and red digits on the page only
+        // muddy it.
         <span
-          className="absolute inset-x-0 top-[68%] flex -translate-y-1/2 flex-col items-center
+          className="absolute inset-x-0 flex -translate-y-1/2 flex-col items-center
                      leading-none text-foreground"
+          style={{ top: PAPER_CENTRE }}
         >
           <span className="text-[9px] font-semibold uppercase tracking-wide">
             {info.monthLabel}
@@ -279,6 +299,40 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
   return { dateStr, countdown, isOverdue, monthLabel, dayLabel };
 }
 
+/**
+ * Is this target past its deadline and still unfinished?
+ *
+ * The same rule the card's own badge uses ({@link formatDeadlineInfo}), not merely "the date has
+ * passed": a target that was achieved late is finished, and listing it as overdue would be telling
+ * the user to act on something that is done.
+ */
+function isTargetOverdue(t: Target): boolean {
+  const done = targetProgress(t) >= 1;
+  return !!formatDeadlineInfo(t.deadline, done)?.isOverdue;
+}
+
+/** The three filter questions and their words, so the menu and the drawer can't disagree. */
+const STATUS_CHOICES = [
+  { value: "all", label: "All" },
+  { value: "done", label: "Done" },
+  { value: "not-done", label: "Not done" },
+  { value: "started", label: "Started" },
+  { value: "not-started", label: "Not started" },
+] as const;
+
+const DEADLINE_CHOICES = [
+  { value: "all", label: "All" },
+  { value: "overdue", label: "Overdue" },
+  { value: "not-overdue", label: "Not overdue" },
+  { value: "none", label: "No deadline" },
+] as const;
+
+const LOCK_CHOICES = [
+  { value: "all", label: "All" },
+  { value: "locked", label: "Locked" },
+  { value: "unlocked", label: "Unlocked" },
+] as const;
+
 /* ─────────────────────────────────────────────────────────────────────────────
    TargetsSection — wraps Section with search, filter and mobile-sort controls
 ───────────────────────────────────────────────────────────────────────────── */
@@ -295,10 +349,14 @@ export function TargetsSection({
   const [deadlineTo, setDeadlineTo] = useState("");
   const [achievedFrom, setAchievedFrom] = useState("");
   const [achievedTo, setAchievedTo] = useState("");
-  // The status choice is a stored preference (see shell-store): it survives navigation and
-  // reloads, and only changes when the user picks something else.
+  // The three filter questions are stored preferences (see shell-store): they survive navigation
+  // and reloads, and only change when the user picks something else.
   const statusFilter = useShellFilters((s) => s.targetStatus);
   const setStatusFilter = useShellFilters((s) => s.setTargetStatus);
+  const deadlineFilter = useShellFilters((s) => s.targetDeadline);
+  const setDeadlineFilter = useShellFilters((s) => s.setTargetDeadline);
+  const lockFilter = useShellFilters((s) => s.targetLock);
+  const setLockFilter = useShellFilters((s) => s.setTargetLock);
   const [sortField, setSortField] = useState<SortField>("deadline");
   const [sortDesc, setSortDesc] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -320,18 +378,27 @@ export function TargetsSection({
   }, [achievedCount]);
 
   const isDefaultSort = sortField === "deadline" && !sortDesc;
-  // The status is a standing preference, not a filter — only the date ranges light the chip and
-  // only they are cleared by "Reset filters".
-  const filtersActive =
+  // What the trigger counts, in brackets: every question that is narrowing the list. A question
+  // left on "All" is not a filter, so an untouched toolbar reads "Filter", not "Filter (0)".
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (deadlineFilter !== "all" ? 1 : 0) +
+    (lockFilter !== "all" ? 1 : 0) +
+    (deadlineFrom || deadlineTo ? 1 : 0) +
+    (achievedFrom || achievedTo ? 1 : 0);
+  // Only the date ranges are cleared by "Reset filters" — the three questions are standing
+  // preferences, and this button is not allowed to undo the user's own choice.
+  const datesActive =
     !!deadlineFrom || !!deadlineTo || !!achievedFrom || !!achievedTo;
-  const hasAnyActive = !!search.trim() || filtersActive || !isDefaultSort;
+  const hasAnyActive =
+    !!search.trim() || activeFilterCount > 0 || !isDefaultSort;
 
   const resetFilters = () => {
     setDeadlineFrom("");
     setDeadlineTo("");
     setAchievedFrom("");
     setAchievedTo("");
-    // The status filter is deliberately left alone — it is the user's choice, not a filter.
+    // The status/deadline/lock filters are deliberately left alone.
   };
 
   const processedTargets = useMemo(() => {
@@ -368,9 +435,24 @@ export function TargetsSection({
       });
     }
 
+    // The three questions are independent — a target has to pass all of them.
     if (statusFilter === "done") ts = ts.filter((t) => targetProgress(t) >= 1);
     else if (statusFilter === "not-done")
       ts = ts.filter((t) => targetProgress(t) < 1);
+    else if (statusFilter === "started")
+      ts = ts.filter((t) => targetProgress(t) > 0 && targetProgress(t) < 1);
+    else if (statusFilter === "not-started")
+      ts = ts.filter((t) => targetProgress(t) <= 0);
+
+    if (deadlineFilter === "none") ts = ts.filter((t) => !t.deadline);
+    else if (deadlineFilter === "overdue")
+      ts = ts.filter((t) => isTargetOverdue(t));
+    else if (deadlineFilter === "not-overdue")
+      ts = ts.filter((t) => !!t.deadline && !isTargetOverdue(t));
+
+    if (lockFilter === "locked") ts = ts.filter((t) => isProgressLocked(t));
+    else if (lockFilter === "unlocked")
+      ts = ts.filter((t) => !isProgressLocked(t));
 
     return ts;
   }, [
@@ -381,6 +463,8 @@ export function TargetsSection({
     achievedFrom,
     achievedTo,
     statusFilter,
+    deadlineFilter,
+    lockFilter,
   ]);
 
   const processedGoal = useMemo(
@@ -416,110 +500,110 @@ export function TargetsSection({
               )}
             </div>
 
+            {/* Three questions, three columns, a hairline between each — plus the two date
+                ranges under a rule at the foot, because those are a different kind of thing
+                (a span, not a choice) and don't belong in a column of words. */}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={cn(
-                    "h-8 px-2.5 rounded-md border text-sm flex items-center gap-1.5 transition-colors whitespace-nowrap",
-                    filtersActive
-                      ? "border-primary/40 text-primary bg-primary/5"
-                      : "border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
-                  )}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden lg:inline text-xs">
-                    {filtersActive ? "Filters on" : "Filters"}
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72 p-2 space-y-2">
-                <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
+              <ToolbarTrigger
+                label="Filter"
+                count={activeFilterCount}
+                ariaLabel="Filter targets"
+              />
+              <DropdownMenuContent align="end" className="w-auto p-1">
+                <MenuColumns>
+                  <MenuGroup title="Status">
+                    {STATUS_CHOICES.map((c) => (
+                      <MenuChoice
+                        key={c.value}
+                        label={c.label}
+                        selected={statusFilter === c.value}
+                        onSelect={() => setStatusFilter(c.value)}
+                      />
+                    ))}
+                  </MenuGroup>
+                  <MenuGroup title="Deadline" divided>
+                    {DEADLINE_CHOICES.map((c) => (
+                      <MenuChoice
+                        key={c.value}
+                        label={c.label}
+                        selected={deadlineFilter === c.value}
+                        onSelect={() => setDeadlineFilter(c.value)}
+                      />
+                    ))}
+                  </MenuGroup>
+                  <MenuGroup title="Lock" divided>
+                    {LOCK_CHOICES.map((c) => (
+                      <MenuChoice
+                        key={c.value}
+                        label={c.label}
+                        selected={lockFilter === c.value}
+                        onSelect={() => setLockFilter(c.value)}
+                      />
+                    ))}
+                  </MenuGroup>
+                </MenuColumns>
+                <DropdownMenuSeparator />
                 <div
-                  className="grid grid-cols-2 gap-2 px-2"
+                  className="space-y-2 p-1"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <DeadlinePopover
-                    iso={deadlineFrom || undefined}
-                    onChange={(next) => setDeadlineFrom(next ?? "")}
-                    variant="button"
-                    placeholder="From"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                  <DeadlinePopover
-                    iso={deadlineTo || undefined}
-                    onChange={(next) => setDeadlineTo(next ?? "")}
-                    variant="button"
-                    placeholder="To"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Achieved date range</DropdownMenuLabel>
-                <div
-                  className="grid grid-cols-2 gap-2 px-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <DeadlinePopover
-                    iso={achievedFrom || undefined}
-                    onChange={(next) => setAchievedFrom(next ?? "")}
-                    variant="button"
-                    placeholder="From"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                  <DeadlinePopover
-                    iso={achievedTo || undefined}
-                    onChange={(next) => setAchievedTo(next ?? "")}
-                    variant="button"
-                    placeholder="To"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Status</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={statusFilter}
-                  onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-                >
-                  <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="done">
-                    Done
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="not-done">
-                    Not done
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                {filtersActive && (
-                  <>
-                    <DropdownMenuSeparator />
+                  <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Deadline between
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 px-2">
+                    <DeadlinePopover
+                      iso={deadlineFrom || undefined}
+                      onChange={(next) => setDeadlineFrom(next ?? "")}
+                      variant="button"
+                      placeholder="From"
+                      hideDaysLeft
+                      disableScroll
+                      className="h-9 justify-start px-2 text-xs"
+                    />
+                    <DeadlinePopover
+                      iso={deadlineTo || undefined}
+                      onChange={(next) => setDeadlineTo(next ?? "")}
+                      variant="button"
+                      placeholder="To"
+                      hideDaysLeft
+                      disableScroll
+                      className="h-9 justify-start px-2 text-xs"
+                    />
+                  </div>
+                  <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Achieved between
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 px-2">
+                    <DeadlinePopover
+                      iso={achievedFrom || undefined}
+                      onChange={(next) => setAchievedFrom(next ?? "")}
+                      variant="button"
+                      placeholder="From"
+                      hideDaysLeft
+                      disableScroll
+                      className="h-9 justify-start px-2 text-xs"
+                    />
+                    <DeadlinePopover
+                      iso={achievedTo || undefined}
+                      onChange={(next) => setAchievedTo(next ?? "")}
+                      variant="button"
+                      placeholder="To"
+                      hideDaysLeft
+                      disableScroll
+                      className="h-9 justify-start px-2 text-xs"
+                    />
+                  </div>
+                  {datesActive && (
                     <button
                       onClick={resetFilters}
-                      className="w-full text-left text-xs text-primary hover:text-primary/80 font-semibold px-2 py-1.5 rounded-md hover:bg-primary/5 transition-colors"
+                      className="w-full rounded-md px-2 py-1.5 text-left text-xs font-semibold text-primary transition-colors hover:bg-primary/5 hover:text-primary/80"
                     >
-                      Reset filters
+                      Clear dates
                     </button>
-                  </>
-                )}
+                  )}
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {filtersActive && (
-              <button
-                onPointerDown={resetFilters}
-                onClick={resetFilters}
-                className="h-8 w-8 grid place-items-center rounded-md border border-primary/40 text-primary hover:bg-primary/5 transition-colors"
-                aria-label="Reset filters"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
           </div>
 
           {/* Mobile: single icon → drawer with search + sort + filters */}
@@ -682,25 +766,64 @@ export function TargetsSection({
                     </div>
                   </div>
 
-                  {/* Status */}
+                  {/* The same three questions the desktop menu asks in columns. A drawer has the
+                      height for them stacked, so here they are three labelled blocks. */}
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
                       Status
                     </p>
                     <div className="space-y-0.5">
-                      {(
-                        [
-                          { value: "all", label: "All" },
-                          { value: "done", label: "Done" },
-                          { value: "not-done", label: "Not done" },
-                        ] as const
-                      ).map((opt) => (
+                      {STATUS_CHOICES.map((opt) => (
                         <button
                           key={opt.value}
                           onClick={() => setStatusFilter(opt.value)}
                           className={cn(
                             "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
                             statusFilter === opt.value
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Deadline
+                    </p>
+                    <div className="space-y-0.5">
+                      {DEADLINE_CHOICES.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setDeadlineFilter(opt.value)}
+                          className={cn(
+                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                            deadlineFilter === opt.value
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-foreground hover:bg-secondary",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+                      Lock
+                    </p>
+                    <div className="space-y-0.5">
+                      {LOCK_CHOICES.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setLockFilter(opt.value)}
+                          className={cn(
+                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
+                            lockFilter === opt.value
                               ? "bg-primary/10 text-primary font-semibold"
                               : "text-foreground hover:bg-secondary",
                           )}
@@ -982,8 +1105,14 @@ export function DesktopTargetsTable({
       <Table>
         <TableHeader className="bg-muted">
           <TableRow className="border-0 border-b">
+            {/* The padlock gets a column of its own rather than trailing the title. Inline, it
+                sat at a different x on every row (wherever that target's name happened to end),
+                which read as clutter instead of as a column of state you can scan down. */}
+            <TableHead className="w-[5%] pl-6">
+              <span className="sr-only">Progress lock</span>
+            </TableHead>
             <TableHead
-              className="cursor-pointer hover:text-foreground w-[45%] pl-6"
+              className="cursor-pointer hover:text-foreground w-[40%]"
               onClick={() => toggleSort("title")}
             >
               <div className="flex items-center">
@@ -1029,34 +1158,31 @@ export function DesktopTargetsTable({
                   done ? "hover:bg-[#E0F2F5]" : "hover:bg-[#fff2df]",
                 )}
               >
+                {/* The padlock is always visible — it is state, not a hidden action — and it now
+                    has its own column, so it lines up down the table. */}
                 <TableCell className="pl-6">
-                  {/* `w-fit` keeps the padlock hugging the title instead of drifting out to the
-                      column's edge; the title still wraps when it runs out of room. */}
-                  <div className="flex w-fit max-w-full items-center gap-1">
-                    <InlineText
-                      value={t.title}
-                      onChange={(title) =>
-                        updateTarget(goal.id, t.id, { title })
-                      }
-                      placeholder="Untitled target"
-                      ariaLabel="Edit target title"
-                      maxLength={FIELD_LIMITS.targetTitle}
-                      maxLengthLabel="Target title"
-                      className={cn(
-                        "block min-w-0 text-sm font-medium text-foreground",
-                        ACHIEVED_LINK_TONE(done),
-                      )}
-                    />
-                    {/* The padlock is always visible — it is state, not a hidden action. */}
-                    <ProgressLockButton
-                      locked={locked}
-                      onToggle={(next) =>
-                        updateTarget(goal.id, t.id, { progressLocked: next })
-                      }
-                      className="h-5 w-5 shrink-0"
-                      iconClassName="h-3.5 w-3.5"
-                    />
-                  </div>
+                  <ProgressLockButton
+                    locked={locked}
+                    onToggle={(next) =>
+                      updateTarget(goal.id, t.id, { progressLocked: next })
+                    }
+                    className="h-6 w-6"
+                    iconClassName="h-4 w-4"
+                  />
+                </TableCell>
+                <TableCell>
+                  <InlineText
+                    value={t.title}
+                    onChange={(title) => updateTarget(goal.id, t.id, { title })}
+                    placeholder="Untitled target"
+                    ariaLabel="Edit target title"
+                    maxLength={FIELD_LIMITS.targetTitle}
+                    maxLengthLabel="Target title"
+                    className={cn(
+                      "block min-w-0 text-sm font-medium text-foreground",
+                      ACHIEVED_LINK_TONE(done),
+                    )}
+                  />
                 </TableCell>
                 <TableCell>
                   <span
@@ -1384,8 +1510,8 @@ export function TargetRow({
         onToggle={(next) =>
           onUpdate({ progressLocked: next } as Partial<Target>)
         }
-        className="absolute -right-2 -top-2 z-10 h-7 w-7 rounded-full border border-border bg-surface shadow-sm"
-        iconClassName="h-3.5 w-3.5"
+        className="absolute -right-2 -top-2 z-10 h-7 w-7 rounded-full border border-border"
+        iconClassName="h-[18px] w-[18px]"
       />
 
       {/* Head: the deadline tile, then the title. The tile centres beside a short title and
@@ -1964,7 +2090,7 @@ function TasksResizableSheet({
           >
             {locked && (
               <p className="mb-2 flex items-center gap-2 rounded-md bg-secondary/60 px-3 py-2 text-[13px] text-muted-foreground">
-                <Lock className="h-3.5 w-3.5 shrink-0" />
+                <LockFilled className="h-3.5 w-3.5 shrink-0" />
                 {PROGRESS_LOCKED_MESSAGE} Task names stay editable; ticking,
                 adding and removing tasks are paused.
               </p>

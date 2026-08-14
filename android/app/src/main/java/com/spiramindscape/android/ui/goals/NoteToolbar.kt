@@ -73,7 +73,7 @@ fun NoteToolbar(
         TbIcon(SpiraIcons.Italic, "Italic", state.italic) { onCmd("italic", null) }
         TbIcon(SpiraIcons.Underline, "Underline", state.underline) { onCmd("underline", null) }
         TbIcon(SpiraIcons.Strikethrough, "Strikethrough", state.strike) { onCmd("strike", null) }
-        TbIcon(SpiraIcons.Highlighter, "Highlight", state.highlight) { onCmd("highlight", null) }
+        TbIcon(SpiraIcons.PenLine, "Highlight", state.highlight) { onCmd("highlight", null) }
         TbIcon(SpiraIcons.Code, "Code", state.code) { onCmd("code", null) }
         TbDivider()
         TbIcon(SpiraIcons.List, "Bullet list", state.bullet) { onCmd("bullet", null) }

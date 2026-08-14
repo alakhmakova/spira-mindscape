@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -25,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +57,8 @@ import com.spiramindscape.android.data.ai.AiApi
 import com.spiramindscape.android.data.ai.ChatMessage
 import com.spiramindscape.android.data.ai.ChatRole
 import com.spiramindscape.android.data.ai.Proposal
+import com.spiramindscape.android.data.ai.ProposalStatus
+import com.spiramindscape.android.data.ai.ProposalKind
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraBadge
@@ -60,11 +67,15 @@ import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.goals.copyPlainText
 import com.spiramindscape.android.ui.icons.SpiraArt
+import com.spiramindscape.android.ui.components.addActionTextStyle
+import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Brand1100
 import com.spiramindscape.android.ui.theme.Guava300
 import com.spiramindscape.android.ui.theme.Intelligence300
 import com.spiramindscape.android.ui.theme.Intelligence500
+import com.spiramindscape.android.ui.theme.Intelligence900
+import com.spiramindscape.android.ui.theme.Kale500
 import com.spiramindscape.android.ui.theme.Kale600
 
 /**
@@ -84,6 +95,11 @@ fun AiChatScreen(
     goal: GoalDetail? = null,
     /** Apply an accepted proposal. Returns the message to show, or null when it was applied. */
     onApplyProposal: (Proposal, Set<String>) -> String? = { _, _ -> "This build can't apply that yet." },
+    /**
+     * Opens the note the assistant last created, for the "Open note" action on an applied card.
+     * Null in the all-goals chat, which has no goal to hang a resource on.
+     */
+    onOpenNote: (() -> Unit)? = null,
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val streaming by viewModel.streaming.collectAsStateWithLifecycle()
@@ -93,6 +109,14 @@ fun AiChatScreen(
     val needsKey by viewModel.needsKey.collectAsStateWithLifecycle()
     val remaining by viewModel.remainingSeconds.collectAsStateWithLifecycle()
     val totalMinutes by viewModel.sessionMinutes.collectAsStateWithLifecycle()
+
+    // A pending proposal card **is** the input: the web renders it in the footer, where the
+    // composer would be, so it sits right above the keyboard instead of scrolling away up the
+    // transcript. Android used to draw it inline with the message, which meant a card could be
+    // off-screen while its Accept button was the only thing the chat was waiting for.
+    val pendingMessage = messages.firstOrNull { m ->
+        m.proposals.any { it.status == ProposalStatus.PENDING }
+    }
 
     var providerSheet by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -107,32 +131,48 @@ fun AiChatScreen(
     Column(
         modifier
             .fillMaxSize()
-            .background(PANEL_GROUND)
-            // The panel is a drawer now, not a screen: it never reaches the status bar, so it
-            // pads for its own grab handle instead of for the system inset.
-            .padding(top = 14.dp),
+            .background(PANEL_GROUND),
     ) {
-        PanelHeader(
-            inGrow = inGrow,
-            canClear = messages.isNotEmpty(),
-            busy = streaming,
-            remainingSeconds = remaining,
-            totalMinutes = totalMinutes,
-            onClose = onClose,
-            onNewChat = viewModel::clearChat,
-            onEndSession = viewModel::closeGrow,
-        )
-
-        if (!inGrow) {
-            ProviderStrip(
-                provider = provider,
-                connected = keys.any { it.provider.equals(provider, ignoreCase = true) },
-                onOpen = { providerSheet = true },
+        // The chrome band: wordmark, actions and the provider strip together on Kale-600, so the
+        // header reads as chrome rather than as the top of the conversation.
+        //
+        // It carries the drawer's own top padding, so the **rounded top corners are the band's
+        // colour**. With the padding on the body instead, a 14dp sliver of the lighter ground sat
+        // above the header and the curve read as an unpainted edge.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(PANEL_CHROME)
+                // Room for the grab handle the drawer draws over this band.
+                .padding(top = 14.dp),
+        ) {
+            PanelHeader(
+                inGrow = inGrow,
+                canClear = messages.isNotEmpty(),
+                busy = streaming,
+                remainingSeconds = remaining,
+                totalMinutes = totalMinutes,
+                onClose = onClose,
+                onNewChat = viewModel::clearChat,
+                onEndSession = viewModel::closeGrow,
             )
+
+            if (!inGrow) {
+                ProviderStrip(
+                    // The MODEL is what the user chose and what answers them — "Mistral" says only
+                    // whose door it came through. Falls back to the provider when no model is
+                    // stored yet, and the web strip says the same thing (`activeProvider.activeModel`).
+                    label = keys.firstOrNull { it.provider.equals(provider, ignoreCase = true) }
+                        ?.model?.takeIf { it.isNotBlank() }
+                        ?: providerLabel(provider),
+                    connected = keys.any { it.provider.equals(provider, ignoreCase = true) },
+                    onOpen = { providerSheet = true },
+                )
+            }
         }
 
         if (mode == ChatMode.GROW_CLOSING) {
-            Banner(SpiraIcons.Leaf, "The session is gently moving toward a close")
+            Banner(SpiraIcons.CheckShape, "The session is gently moving toward a close")
         }
         notice?.let { NoticeBanner(it) { notice = null } }
 
@@ -147,7 +187,6 @@ fun AiChatScreen(
                     EmptyChat(
                         goal = goal,
                         needsKey = needsKey,
-                        onPick = viewModel::send,
                         onAddKey = { providerSheet = true },
                     )
                 }
@@ -155,6 +194,9 @@ fun AiChatScreen(
             items(messages, key = { it.id }) { message ->
                 MessageRow(
                     message = message,
+                    // Its card is in the footer; the row keeps only the settled result line.
+                    cardInFooter = message.id == pendingMessage?.id,
+                    onOpenNote = onOpenNote,
                     onAcceptProposal = { proposal, excluded ->
                         notice = onApplyProposal(proposal, excluded)
                         viewModel.settleProposal(message.id, proposal.id, approved = notice == null)
@@ -167,12 +209,12 @@ fun AiChatScreen(
             }
         }
 
-        when (mode) {
-            ChatMode.GROW_START -> GrowStartOverlay(
+        when {
+            mode == ChatMode.GROW_START -> GrowStartOverlay(
                 onStart = viewModel::startGrow,
                 onCancel = viewModel::cancelGrow,
             )
-            ChatMode.GROW_END -> GrowEndCard(
+            mode == ChatMode.GROW_END -> GrowEndCard(
                 summary = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty(),
                 onSave = { summary ->
                     viewModel.saveSessionMemory(summary) { error ->
@@ -182,6 +224,34 @@ fun AiChatScreen(
                 },
                 onDiscard = viewModel::finishGrow,
             )
+            // The card takes the composer's place while it is waiting to be answered. Capped and
+            // scrollable: a stepped card with a long note can outgrow the panel, and without this
+            // its Save button ends up below the bottom edge.
+            pendingMessage != null && !inGrow -> Box(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 4.dp, bottom = 12.dp)
+                    .imePadding()
+                    .navigationBarsPadding(),
+            ) {
+                ProposalGroup(
+                    proposals = pendingMessage.proposals,
+                    onAccept = { proposal, excluded ->
+                        notice = onApplyProposal(proposal, excluded)
+                        viewModel.settleProposal(
+                            pendingMessage.id, proposal.id, approved = notice == null,
+                        )
+                    },
+                    onDismiss = { proposal ->
+                        viewModel.settleProposal(pendingMessage.id, proposal.id, approved = false)
+                    },
+                    onRevise = viewModel::reviseProposal,
+                    onOpenNote = onOpenNote,
+                )
+            }
             else -> {
                 if (inGrow) {
                     Text(
@@ -192,6 +262,10 @@ fun AiChatScreen(
                             .padding(start = 16.dp, bottom = 4.dp)
                             .clickable(onClick = viewModel::closeGrow),
                     )
+                }
+                // The starters ride with the composer, not with the empty state above it.
+                if (!inGrow && messages.isEmpty() && !needsKey) {
+                    ComposerSuggestions(goal = goal, onPick = viewModel::send)
                 }
                 Composer(
                     enabled = !needsKey,
@@ -220,10 +294,17 @@ internal val WHITE_20 = Color.White.copy(alpha = 0.20f)
 internal val WHITE_10 = Color.White.copy(alpha = 0.10f)
 
 /**
- * The panel's ground: **Kale-600** `#005961` — sampled straight from the reference the owner
- * supplied. (brand-1200 was tried and came back too dark for a surface this size.)
+ * The panel's ground: **Kale-500**, the brand's working primary.
+ *
+ * It used to be Kale-600 for the whole panel, header included, so the wordmark and the provider
+ * strip floated on the same field as the conversation and the chrome had no edge of its own. The
+ * two steps are both on the palette, and a darker band over a lighter body is the same idiom the
+ * goal workspace uses (2026-08-13).
  */
-internal val PANEL_GROUND = Kale600
+internal val PANEL_GROUND = Kale500
+
+/** The band behind the wordmark and the provider strip — one step darker than [PANEL_GROUND]. */
+internal val PANEL_CHROME = Kale600
 
 /** Dark type on the white bubbles and composer — brand-1100, the same step the web uses. */
 internal val ON_WHITE = Brand1100
@@ -332,7 +413,7 @@ private fun PanelHeader(
 
 /** "Bring your own key" on the left, the live provider and its status dot on the right. */
 @Composable
-private fun ProviderStrip(provider: String, connected: Boolean, onOpen: () -> Unit) {
+private fun ProviderStrip(label: String, connected: Boolean, onOpen: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 18.dp, end = 20.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -344,7 +425,7 @@ private fun ProviderStrip(provider: String, connected: Boolean, onOpen: () -> Un
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(SpiraIcons.NavKey, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(13.dp))
+            Icon(SpiraIcons.Key, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(13.dp))
             Spacer(Modifier.size(6.dp))
             Text(
                 "Bring your own key",
@@ -380,7 +461,7 @@ private fun ProviderStrip(provider: String, connected: Boolean, onOpen: () -> Un
         }
         Spacer(Modifier.size(6.dp))
         Text(
-            providerLabel(provider),
+            label,
             style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium,
@@ -457,16 +538,19 @@ private fun NoticeBanner(text: String, onDismiss: () -> Unit) {
     }
 }
 
-/** The opening screen: a leaf medallion, one line of orientation, then the starters. */
+/**
+ * The opening screen: a leaf medallion and one line of orientation.
+ *
+ * The starters used to live here, at the top of an empty panel, with the whole height of the
+ * screen between them and the composer — so the first thing you could tap was as far as possible
+ * from where you were about to type. They are [ComposerSuggestions] now, directly above the field.
+ */
 @Composable
 private fun EmptyChat(
     goal: GoalDetail?,
     needsKey: Boolean,
-    onPick: (String) -> Unit,
     onAddKey: () -> Unit,
 ) {
-    val suggestions = remember(goal) { if (goal != null) buildGoalSuggestions(goal) else GLOBAL_SUGGESTIONS }
-
     Column(
         Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -505,10 +589,25 @@ private fun EmptyChat(
 
         if (needsKey) {
             SuggestionButton(SpiraIcons.Key, "Add an API key to start chatting", onAddKey)
-            Spacer(Modifier.height(8.dp))
         }
-        suggestions.forEachIndexed { index, suggestion ->
-            if (index > 0) Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * The opening prompts, sitting **directly above the composer** — the place the eye and the thumb
+ * are already at when the panel opens (the web puts them the same distance from its own field).
+ *
+ * They are only ever shown on an empty chat: once there is a conversation they would be answering
+ * a question nobody asked.
+ */
+@Composable
+private fun ComposerSuggestions(goal: GoalDetail?, onPick: (String) -> Unit) {
+    val suggestions = remember(goal) { if (goal != null) buildGoalSuggestions(goal) else GLOBAL_SUGGESTIONS }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        suggestions.forEach { suggestion ->
             SuggestionButton(suggestion.icon, suggestion.text) { onPick(suggestion.text) }
         }
     }
@@ -548,12 +647,18 @@ private fun MessageRow(
     onAcceptProposal: (Proposal, Set<String>) -> Unit,
     onDismissProposal: (Proposal) -> Unit,
     onReviseProposal: (Proposal, String) -> Unit,
+    /** True while this message's card is pinned in the footer — see [AiChatScreen]. */
+    cardInFooter: Boolean = false,
+    /** Opens the note an applied NOTE proposal created — see [AiChatScreen]. */
+    onOpenNote: (() -> Unit)? = null,
 ) {
     when {
         message.role == ChatRole.USER -> UserTurn(message)
         message.role == ChatRole.SYSTEM -> SystemPill(message.content)
         message.isError -> ErrorTurn(message.content)
-        else -> AssistantTurn(message, onAcceptProposal, onDismissProposal, onReviseProposal)
+        else -> AssistantTurn(
+            message, onAcceptProposal, onDismissProposal, onReviseProposal, onOpenNote, cardInFooter,
+        )
     }
 }
 
@@ -641,6 +746,9 @@ private fun AssistantTurn(
     onAcceptProposal: (Proposal, Set<String>) -> Unit,
     onDismissProposal: (Proposal) -> Unit,
     onReviseProposal: (Proposal, String) -> Unit,
+    /** Opens the note an applied NOTE proposal created — see [AiChatScreen]. */
+    onOpenNote: (() -> Unit)? = null,
+    cardInFooter: Boolean = false,
 ) {
     Column(Modifier.fillMaxWidth()) {
         if (message.streaming && message.content.isBlank()) {
@@ -661,16 +769,83 @@ private fun AssistantTurn(
             if (!message.streaming) CopyRow(message.content)
         }
 
-        if (message.proposals.isNotEmpty()) {
+        // A pending card lives in the footer (the card IS the input). Once it is answered only a
+        // compact result line stays here — the web's `ResultSummary`, not the whole card again.
+        if (message.proposals.isNotEmpty() && !cardInFooter && !message.streaming) {
             Spacer(Modifier.height(10.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                message.proposals.forEach { proposal ->
-                    ProposalCard(
-                        proposal = proposal,
-                        onAccept = onAcceptProposal,
-                        onDismiss = onDismissProposal,
-                        onRevise = onReviseProposal,
-                    )
+            ResultSummary(message.proposals, onOpenNote)
+        }
+    }
+}
+
+/**
+ * What is left in the transcript once a card has been answered — the web's `ResultSummary`: a
+ * pill per approved change with an Open shortcut, or one muted "Dismissed" when nothing was kept.
+ */
+@Composable
+private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) {
+    val approved = proposals.filter { it.status == ProposalStatus.APPROVED }
+    if (approved.isEmpty()) {
+        Row(
+            Modifier
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.08f))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(SpiraIcons.X, contentDescription = null, tint = WHITE_60, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.size(6.dp))
+            Text("Dismissed", style = MaterialTheme.typography.labelMedium, color = WHITE_60)
+        }
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        approved.forEach { proposal ->
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(WHITE_10)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    SpiraIcons.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    proposal.title.ifBlank { kindLabel(proposal.kind) },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.80f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (proposal.kind == ProposalKind.NOTE && onOpenNote != null) {
+                    Spacer(Modifier.size(8.dp))
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onOpenNote)
+                            .padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            SpiraIcons.SwitchArrows,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            "Open",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -728,7 +903,7 @@ private fun CopyRow(text: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (copied) SpiraIcons.Check else SpiraIcons.Copy,
+            if (copied) SpiraIcons.CopyCheck else SpiraIcons.Copy,
             contentDescription = "Copy message",
             tint = WHITE_60,
             modifier = Modifier.size(12.dp),
@@ -821,18 +996,42 @@ private fun Composer(
                 }
             }
 
-            InlineEditText(
+            // A plain BasicTextField, NOT the shared InlineEditText.
+            //
+            // InlineEditText keeps its own copy of the text and re-seeds it from `value` only
+            // while the field is **unfocused** — the guard that stops a background refetch wiping
+            // what someone is halfway through typing. A chat composer keeps focus when you press
+            // Send, so `draft = ""` never reached the field and the message you had just sent sat
+            // there waiting to be sent again (GRO-80). Here `draft` IS the field's state, so
+            // clearing it clears what you see.
+            //
+            // It also has no business committing on blur: this field is sent explicitly, and
+            // tapping away from it must not do anything at all.
+            BasicTextField(
                 value = draft,
-                onCommit = { draft = it },
-                onTextChanged = { draft = it },
-                placeholder = placeholder,
+                onValueChange = { draft = it },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = 14.5.sp,
                     lineHeight = 21.sp,
                     color = ON_WHITE,
                 ),
-                singleLine = false,
+                cursorBrush = SolidColor(ON_WHITE),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                decorationBox = { field ->
+                    Box {
+                        if (draft.isEmpty()) {
+                            Text(
+                                placeholder,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 14.5.sp,
+                                    lineHeight = 21.sp,
+                                ),
+                                color = ON_WHITE.copy(alpha = 0.45f),
+                            )
+                        }
+                        field()
+                    }
+                },
             )
 
             Row(
@@ -875,17 +1074,31 @@ private fun Composer(
                     }
                 }
                 growAction?.let { start ->
-                    // A badge, not a text button: it is the assistant offering a mode, so it
-                    // takes the palette's `intelligence` tone — the colour reserved for AI.
-                    SpiraBadge(
-                        "Start GROW session",
-                        tone = SpiraBadgeTone.Intelligence,
-                        modifier = Modifier.clickable(onClick = start),
-                        icon = SpiraIcons.NavAi, // the same two-star mark the assistant uses
-                        // Its small star hangs below the big one, so the glyph's ink sits 2px
-                        // under the word; lift it back onto the label's centre.
-                        iconModifier = Modifier.offset(y = (-2).dp),
-                    )
+                    // A plain text action, not a badge. A pill reads as a *status* — a thing the
+                    // assistant is telling you — and this is something you press. It is **Kale-500**,
+                    // the working primary: the `intelligence` violet marks what the assistant IS,
+                    // and starting a session is the user acting, not the assistant speaking.
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(SpiraRadii.md))
+                            .clickable(onClick = start)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            SpiraIcons.SparklesFilled,
+                            contentDescription = null,
+                            tint = Kale500,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            "Start GROW session",
+                            style = addActionTextStyle(),
+                            fontWeight = FontWeight.Medium,
+                            color = Kale500,
+                        )
+                    }
                 }
                 Spacer(Modifier.weight(1f))
 
@@ -935,7 +1148,7 @@ private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(SpiraIcons.Leaf, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Icon(SpiraIcons.CheckShape, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
             Spacer(Modifier.size(8.dp))
             Text(
                 "Start a GROW session",

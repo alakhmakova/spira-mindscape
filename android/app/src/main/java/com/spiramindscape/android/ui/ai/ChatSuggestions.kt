@@ -18,7 +18,7 @@ import java.time.temporal.ChronoUnit
 data class ChatSuggestion(val id: String, val icon: ImageVector, val text: String)
 
 val GLOBAL_SUGGESTIONS: List<ChatSuggestion> = listOf(
-    ChatSuggestion("new-goal", SpiraIcons.NavTrophy, "Help me create a new goal"),
+    ChatSuggestion("new-goal", SpiraIcons.ChartColumn, "Help me create a new goal"),
     ChatSuggestion("edit", SpiraIcons.Pencil, "Change a goal's confidence or deadline"),
     ChatSuggestion("delete", SpiraIcons.Trash, "Delete a goal"),
 )
@@ -43,7 +43,7 @@ fun buildGoalSuggestions(goal: GoalDetail): List<ChatSuggestion> {
     if (goal.confidence <= 3) {
         s += ChatSuggestion(
             "confidence",
-            SpiraIcons.Brain,
+            SpiraIcons.Idea,
             "My confidence is low — help me identify what's blocking me",
         )
     }
@@ -82,12 +82,12 @@ fun buildGoalSuggestions(goal: GoalDetail): List<ChatSuggestion> {
     }
 
     if (goal.actions.isEmpty() && s.size < 3) {
-        s += ChatSuggestion("action", SpiraIcons.Zap, "What's the best next action I can take today?")
+        s += ChatSuggestion("action", SpiraIcons.Thunderbolt, "What's the best next action I can take today?")
     }
 
     if (s.isEmpty()) {
-        s += ChatSuggestion("reflect", SpiraIcons.Brain, "Help me think through where I'm stuck")
-        s += ChatSuggestion("reality", SpiraIcons.Leaf, "What's actually true about this goal right now?")
+        s += ChatSuggestion("reflect", SpiraIcons.Idea, "Help me think through where I'm stuck")
+        s += ChatSuggestion("reality", SpiraIcons.CheckShape, "What's actually true about this goal right now?")
         s += ChatSuggestion("options", SpiraIcons.SwitchArrows, "What are my options from here?")
     }
 

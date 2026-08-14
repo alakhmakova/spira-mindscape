@@ -64,22 +64,24 @@ class VisualCheckOptionsTabTest : VisualCheckTestBase() {
         compose.onNodeWithText("Take an evening course twice a week").assertIsDisplayed()
         compose.onNodeWithText("Pair with a mentor on weekends").assertIsDisplayed()
         // The active option is marked by the filled radio in the left cell, not a band or a label.
-        compose.onNodeWithContentDescription("Deselect strategy").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Select strategy").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Deselect option").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Select option").assertIsDisplayed()
         // Each row carries the smiley rating badge.
-        compose.onAllNodesWithContentDescription("Rate strategy")[0].assertIsDisplayed()
-        // Strategies are typed into the field at the foot of the list — the tab has no "+" FAB.
-        compose.onNodeWithText("Add a strategy…").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Rate option")[0].assertIsDisplayed()
+        // Strategies are created from the round button bottom-right, the same way a new goal is
+        // — an add action never sits at the top of a list.
+        compose.onNodeWithContentDescription("Add option").assertIsDisplayed()
+        compose.onNodeWithText("Search options").assertIsDisplayed()
         // Two options, so the Reorder toggle is offered.
         compose.onNodeWithText("Reorder").assertIsDisplayed()
 
         // The ⋯ menu is NOT part of the resting card: it appears with the editing caret, which is
         // what tapping the strategy text asks for (web parity).
-        compose.onAllNodesWithContentDescription("Strategy actions").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Option actions").assertCountEquals(0)
         compose.onNodeWithText("Pair with a mentor on weekends").performClick()
         compose.waitForIdle()
         saveWindow("options-tab-editing")
-        compose.onAllNodesWithContentDescription("Strategy actions").assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Option actions").assertCountEquals(1)
     }
 
     /**
@@ -128,8 +130,8 @@ class VisualCheckOptionsTabTest : VisualCheckTestBase() {
         // strategy is forced back to its collapsed height so one slot is one small finger move.
         compose.onNodeWithText("Drag cards to reorder.").assertIsDisplayed()
         compose.onNodeWithText("Save").assertIsDisplayed()
-        compose.onAllNodesWithContentDescription("Strategy actions").assertCountEquals(0)
-        compose.onAllNodesWithText("Add a strategy…").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Option actions").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Add option").assertCountEquals(1)
         compose.onAllNodesWithText("Show less").assertCountEquals(0)
     }
 }

@@ -605,7 +605,7 @@ export function AiPanel() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#005961] text-white">
+        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -622,7 +622,7 @@ export function AiPanel() {
   return (
     <aside
       className={cn(
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#005961] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
       style={{ width: `${width}px` }}
@@ -2473,78 +2473,84 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="spira-ai-dark flex flex-col h-full min-h-0 relative">
-      {/* Header */}
-      <header className="h-[62px] shrink-0 flex items-center justify-between px-5">
-        <div className="flex items-baseline gap-[7px]">
-          <Wordmark />
-        </div>
-        <div className="flex items-center gap-2">
-          {inGrow ? (
-            <>
-              <TimerPill
-                frac={timerFrac}
-                closing={closing}
-                label={timerLabel}
-              />
-              <button
-                onClick={() => mode !== "grow-end" && setConfirmEnd(true)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 transition-colors"
-              >
-                <Ic path={PATHS.x} size={12} /> End
-              </button>
-            </>
-          ) : (
-            <>
-              {list.length > 0 && (
+      {/* Chrome band — the wordmark row and the provider strip together.
+          It carries **Kale-600** against the panel's Kale-500 body, so the header reads as
+          chrome rather than as the top of the conversation. Both steps are on the palette, and
+          it is the same darker-band-over-lighter-page idiom the goal workspace uses. */}
+      <div className="shrink-0 bg-[#005961]">
+        {/* Header */}
+        <header className="h-[62px] shrink-0 flex items-center justify-between px-5">
+          <div className="flex items-baseline gap-[7px]">
+            <Wordmark />
+          </div>
+          <div className="flex items-center gap-2">
+            {inGrow ? (
+              <>
+                <TimerPill
+                  frac={timerFrac}
+                  closing={closing}
+                  label={timerLabel}
+                />
                 <button
-                  onClick={newChat}
-                  disabled={busy}
-                  className="inline-flex items-center gap-1.5 px-2.5 h-[34px] rounded-[9px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white disabled:opacity-40 transition-colors"
-                  title="Start a new chat — clears the history so context uses only this goal's data"
-                  aria-label="New chat"
+                  onClick={() => mode !== "grow-end" && setConfirmEnd(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 transition-colors"
                 >
-                  <Ic path={PATHS.plus} size={13} /> New chat
+                  <Ic path={PATHS.x} size={12} /> End
                 </button>
-              )}
-              <button
-                onClick={onClose}
-                className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-white/74 hover:bg-white/12 hover:text-white transition-colors"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </>
-          )}
-        </div>
-      </header>
+              </>
+            ) : (
+              <>
+                {list.length > 0 && (
+                  <button
+                    onClick={newChat}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 px-2.5 h-[34px] rounded-[9px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white disabled:opacity-40 transition-colors"
+                    title="Start a new chat — clears the history so context uses only this goal's data"
+                    aria-label="New chat"
+                  >
+                    <Ic path={PATHS.circlePlus} size={14} /> New chat
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-white/74 hover:bg-white/12 hover:text-white transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
+        </header>
 
-      {/* Context / provider strip */}
-      {!inGrow && (
-        <div className="flex items-center justify-between gap-2 px-5 pb-3">
-          <button
-            onClick={() => setShowProvider(true)}
-            className="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hover:bg-white/10 rounded-lg px-2 py-1 -mx-2 transition-colors"
-          >
-            <Ic path={PATHS.key} size={12} />
-            Bring your own key
-            <Ic path={PATHS.chevron} size={12} className="opacity-60" />
-          </button>
-          <span className="inline-flex items-center gap-[6px] text-[12px] font-medium text-white shrink-0 font-mono">
-            <span
-              className={cn(
-                "w-[7px] h-[7px] rounded-full",
-                // The `intelligence` ramp, not the semantic greens/ambers: this dot marks the
-                // assistant's own provider, so it belongs to the AI accent. Connected takes the
-                // bright step, a missing key the pale one, so the state still reads.
-                activeProvider.connected
-                  ? "bg-[#A28DFF] shadow-[0_0_0_3px_rgba(162,141,255,0.2)]"
-                  : "bg-[#E6DFF9] shadow-[0_0_0_3px_rgba(230,223,249,0.2)]",
-              )}
-            />
-            {activeLabel}
-          </span>
-        </div>
-      )}
+        {/* Context / provider strip */}
+        {!inGrow && (
+          <div className="flex items-center justify-between gap-2 px-5 pb-3">
+            <button
+              onClick={() => setShowProvider(true)}
+              className="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hover:bg-white/10 rounded-lg px-2 py-1 -mx-2 transition-colors"
+            >
+              <Ic path={PATHS.key} size={12} />
+              Bring your own key
+              <Ic path={PATHS.chevron} size={12} className="opacity-60" />
+            </button>
+            <span className="inline-flex items-center gap-[6px] text-[12px] font-medium text-white shrink-0 font-mono">
+              <span
+                className={cn(
+                  "w-[7px] h-[7px] rounded-full",
+                  // The `intelligence` ramp, not the semantic greens/ambers: this dot marks the
+                  // assistant's own provider, so it belongs to the AI accent. Connected takes the
+                  // bright step, a missing key the pale one, so the state still reads.
+                  activeProvider.connected
+                    ? "bg-[#A28DFF] shadow-[0_0_0_3px_rgba(162,141,255,0.2)]"
+                    : "bg-[#E6DFF9] shadow-[0_0_0_3px_rgba(230,223,249,0.2)]",
+                )}
+              />
+              {activeLabel}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Closing banner */}
       {closing && (
@@ -2796,9 +2802,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               !inGrow && goal ? (
                 <button
                   onClick={() => setMode("grow-start")}
-                  className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
                 >
-                  <Ic path={PATHS.sparkles} size={14} /> Start GROW session
+                  <Ic path={PATHS.growSparkles} size={15} /> Start GROW session
                 </button>
               ) : undefined
             }
@@ -2973,11 +2979,18 @@ const PATHS = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   sparkles:
     '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/>',
+  // Iconoir `sparks` - the GROW mark, the same glyph Android uses.
+  growSparkles:
+    '<path d="M8 15C12.8747 15 15 12.949 15 8C15 12.949 17.1104 15 22 15C17.1104 15 15 17.1104 15 22C15 17.1104 12.8747 15 8 15Z"/><path d="M2 6.5C5.13376 6.5 6.5 5.18153 6.5 2C6.5 5.18153 7.85669 6.5 11 6.5C7.85669 6.5 6.5 7.85669 6.5 11C6.5 7.85669 5.13376 6.5 2 6.5Z"/>',
   brain:
     '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>',
   shield:
     '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  // The add action is a CIRCLED plus everywhere else in the app; the bare one made "New chat"
+  // the odd one out.
+  circlePlus:
+    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><path d="M8 12h8"/><path d="M12 8v8"/>',
   switch_:
     '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
   pencil:

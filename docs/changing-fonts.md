@@ -28,6 +28,70 @@ This is the **single source of truth** for swapping the app's fonts.
 >
 > The original "how to add them" steps below are kept for reference / re-adding after a font swap.
 >
+
+## The Fonts tab — trying a candidate without a swap (GRO-122, 2026-08-13)
+
+The owner is choosing Spira's **body** face and wanted to judge candidates in the product rather
+than on a specimen sheet, so the app carries a **runtime switch**: **Settings → Fonts** offers
+GCentra (the default) plus **Toronto, Guidy, Kalamayka, Leggibilmente, BIM and Spartan**, and
+picking one re-fonts the whole app at once. The choice is per device and survives a restart.
+
+This is deliberately **not** the swap procedure above:
+
+- It moves **only the body face**. `--font-heading` / `HeadingSerif` stay on ITC Clearface, because
+  the heading serif is not what is being chosen. A candidate that only wins by also replacing the
+  headline face has not been compared fairly.
+- It applies **no metric overrides**. GCentra's `ascent/descent/line-gap-override` exist to stop
+  body text drifting against adjacent icons — but forcing every candidate into GCentra's box would
+  hide exactly the difference the owner is looking at. So a candidate that sits high or low in its
+  line is *showing you that*, not misbehaving.
+- Most candidates ship **Regular only**, so their bolds are synthesised (Kalamayka and
+  Leggibilmente are variable; Spartan ships SemiBold). Worth remembering when judging a heavy label.
+
+### The Cyrillic group (2026-08-14)
+
+That first shortlist is **Latin-only — GCentra included**, so Russian in any of those rows is drawn
+by the system sans and the row is quietly showing two faces at once. Only Guidy and BIM carry the
+Russian alphabet.
+
+So the tab now has a second group, **With Cyrillic**, and the list is ordered with it first:
+**Moderustic, Akt, LT Superior, Fontimer, LINE Seed, KS Bistra, Lineyka, Stetica, Involve,
+Hikasami, Farabee, J Audio Cassette, Gros Ventre, Deledda Open** and **Deledda Closed** — fifteen
+grotesques, all free for commercial use, each carrying the full 66-letter Russian alphabet.
+(Deledda ships as two families that differ only in aperture, so both are offered rather than one
+being chosen on the owner's behalf.) They were picked from the intersection of
+fontesk's *grotesk* and *Cyrillic* tags by measuring **x-height and average advance width against
+GCentra's** and then looking at a rendered specimen, because metrics alone cannot tell a grotesque
+from a display face. Moderustic is the closest on both numbers (3% / 1%).
+
+Two things to know about the files:
+
+- Eleven of them ship a second, heavier face registered for 500–900 exactly as GCentra's Medium is,
+  so their bold labels are real rather than synthesised (for LINE Seed and the two Deleddas that
+  face is a Bold/SemiBold — neither has a Medium). KS Bistra, Lineyka and J Audio Cassette are
+  single-weight.
+- **LINE Seed is the one file we modified.** Cyrillic only exists in its Korean release, which
+  carries the whole syllabary at 3.2 MB, so it ships subset to Latin + Cyrillic (30 KB). Every other
+  file is exactly as the foundry released it. Licences are in `public/fonts/licences/`.
+
+| Where | File |
+|---|---|
+| Web catalogue + the CSS-variable switch | `src/lib/spira/app-font.ts` |
+| Web `@font-face` blocks | `src/styles.css` ("Candidate body faces") |
+| Web page | `src/routes/settings.tsx` |
+| Android catalogue + preference | `ui/theme/AppFont.kt` |
+| Android type scale, now a function of the body family | `ui/theme/Type.kt` → `spiraTypography(bodySans)` |
+| Android page | `ui/settings/UserSettingsScreen.kt` |
+
+**Keep the two lists in step.** The point of the tab is comparing a face on a phone against the
+same face on a laptop; if one surface offers a candidate the other doesn't, that comparison is
+quietly broken.
+
+**When the choice is made**, this tab is throwaway: follow the swap steps above to make the winner
+the real `--font-sans` / `BodySans` (with its own metric overrides), then delete the catalogue, the
+tab and the unused font files. Font files are not small — the twenty candidates now cost the APK
+about 2.7 MB, which is worth deleting the moment the choice is made.
+
 > **Web:** download the licensed files from Gusto's Brandfolder and drop them into **`public/fonts/`**
 > with the names listed in **`public/fonts/README.md`** (`GCentra-*.woff2`, `ITCClearface-*.woff2`).
 > The `@font-face` blocks in `src/styles.css` pick them up automatically — no code change.
