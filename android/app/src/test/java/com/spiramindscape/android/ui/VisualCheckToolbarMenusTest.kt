@@ -9,14 +9,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.spiramindscape.android.ui.components.MenuChoiceVariant
 import com.spiramindscape.android.ui.components.SpiraMenuChoice
-import com.spiramindscape.android.ui.components.SpiraMenuColumnDivider
 import com.spiramindscape.android.ui.components.SpiraMenuColumns
 import com.spiramindscape.android.ui.components.SpiraMenuGroup
 import com.spiramindscape.android.ui.components.SpiraMenuSurface
 import com.spiramindscape.android.ui.goals.TargetDeadlineFilter
 import com.spiramindscape.android.ui.goals.TargetFilter
 import com.spiramindscape.android.ui.goals.TargetLockFilter
+import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.SpiraTheme
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,10 +29,11 @@ import org.robolectric.annotation.GraphicsMode
  * The two toolbar menu bodies drawn at phone width, right-aligned exactly as the popup places
  * them, with the 12dp margin the position provider keeps.
  *
- * This is the picture that matters for the 2026-08-13 redesign: **three columns plus their
- * hairlines have to fit across a phone**, and an existence assertion stays perfectly green with
- * the "Lock" column hanging off the right of the screen. It also shows the drop shadow, which used
- * to be `shadowElevation = 12.dp` — a hard grey band round the card rather than depth.
+ * This is the picture that matters for the 2026-08-15 redesign: the menus are **stacked groups,
+ * each under its heading with a hairline beneath it** (no vertical divider), the Direction rows are
+ * the `Aux` pale-grey look with the ascending/descending glyphs, and the whole card still fits the
+ * phone. It also shows the drop shadow, which used to be `shadowElevation = 12.dp` — a hard grey
+ * band round the card rather than depth.
  *
  * Rendered directly rather than by opening a real menu: a [androidx.compose.ui.window.Popup] lives
  * in its own window, which the screenshot helper (it draws the activity's decor view) cannot
@@ -62,21 +64,35 @@ class VisualCheckToolbarMenusTest : VisualCheckTestBase() {
                                     SpiraMenuChoice(label, {}, selected = i == 0)
                                 }
                             }
-                            SpiraMenuColumnDivider()
                             SpiraMenuGroup("Direction") {
-                                SpiraMenuChoice("Ascending", {}, selected = true)
-                                SpiraMenuChoice("Descending", {})
+                                SpiraMenuChoice(
+                                    "Ascending",
+                                    {},
+                                    selected = true,
+                                    variant = MenuChoiceVariant.Aux,
+                                    icon = SpiraIcons.SortAscending,
+                                )
+                                SpiraMenuChoice(
+                                    "Descending",
+                                    {},
+                                    variant = MenuChoiceVariant.Aux,
+                                    icon = SpiraIcons.SortDescending,
+                                )
                             }
                         }
                     }
                     SpiraMenuSurface {
                         SpiraMenuColumns {
                             SpiraMenuGroup("Status") {
-                                TargetFilter.entries.forEach {
+                                listOf(TargetFilter.All, TargetFilter.Done, TargetFilter.NotDone).forEach {
                                     SpiraMenuChoice(it.label, {}, selected = it == TargetFilter.All)
                                 }
                             }
-                            SpiraMenuColumnDivider()
+                            SpiraMenuGroup("Progress") {
+                                listOf(TargetFilter.Started, TargetFilter.NotStarted).forEach {
+                                    SpiraMenuChoice(it.label, {}, selected = false)
+                                }
+                            }
                             SpiraMenuGroup("Deadline") {
                                 TargetDeadlineFilter.entries.forEach {
                                     SpiraMenuChoice(
@@ -86,7 +102,6 @@ class VisualCheckToolbarMenusTest : VisualCheckTestBase() {
                                     )
                                 }
                             }
-                            SpiraMenuColumnDivider()
                             SpiraMenuGroup("Lock") {
                                 TargetLockFilter.entries.forEach {
                                     SpiraMenuChoice(

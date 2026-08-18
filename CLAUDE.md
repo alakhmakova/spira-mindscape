@@ -213,27 +213,36 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
 
 - **No emoji anywhere** — not in UI text, notifications, empty states, badges, or AI/assistant
   replies. (Use a word like "Achieved", not `✓`/`🎉`.)
-- **Android is on Gravity UI** (MIT, (c) 2022 YANDEX LLC) — **every glyph**, in
-  `ui/icons/SpiraIcons.kt`, ported by the owner's decision on 2026-08-14. Gravity was measured
-  against five other collections in **`specs/icon-sets.md`** and was the only exact match for the
-  drawing system Spira's look was modelled on: a **16 box**, a **1.5 wall**, `.75` radii, the
-  `1.06` diagonal, and the line drawn as an even-odd **fill** rather than a stroke.
-  - There is exactly **one builder**, `gravity()`. The Iconoir, Phosphor and hand-drawn builders
+- **Both surfaces are on Gravity UI** (MIT, (c) 2022 YANDEX LLC) — **every glyph**. Android ported
+  first (2026-08-14, `ui/icons/SpiraIcons.kt`), the web followed the same day
+  (`src/components/spira/icons.tsx`). `lucide-react` is **removed** (dependency and all imports),
+  the hand-drawn `brand-icons.tsx` is **deleted**, and the AI panel's inline Lucide path map is
+  Gravity too. Gravity was measured against five other collections in **`specs/icon-sets.md`** and
+  was the only exact match for the drawing system Spira's look was modelled on: a **16 box**, a
+  **1.5 wall**, `.75` radii, the `1.06` diagonal, and the line drawn as an even-odd **fill** rather
+  than a stroke.
+  - **Android** has exactly one builder, `gravity()`; the Iconoir, Phosphor and hand-drawn builders
     are gone, and with them the ink-weight corrections they needed — one set cannot disagree with
     itself, which is what `PHOSPHOR_INK_BOOST` existed to paper over.
+  - **Web** has one module, `src/components/spira/icons.tsx`: each icon is a `make(...)` component
+    on a `0 0 16 16` viewBox with `currentColor` fill, a drop-in for the Lucide component it
+    replaced (same `className`, same `size`). Import icons from there — never add `lucide-react`
+    back, and don't hand-draw SVGs in a component.
+  - **The two surfaces move together now.** A glyph the owner picks goes to **both**; the web module
+    mirrors the Android names where they overlap (`Trophy` → `chart-column`, `SlidersHorizontal` →
+    `bars-descending-align-center`, and so on) so a change lands the same on the phone and the laptop.
   - **Take the glyph Gravity already has.** If it has nothing that suits, **ask the owner** rather
     than drawing one or reaching into another set. Six marks had no Gravity equivalent (a brain, a
     marker, a calendar-plus, a leaf) and the owner chose the substitutes.
-  - **One glyph, one name, and the name must describe the glyph.** No `Nav` prefix: it used to
-    mean "the 16-grid twin of a 24-grid icon" and means nothing now that there is one set. A name
-    that survives its glyph is a defect — `NavTrophy` drew a bar chart, `SlidersHorizontal` drew
-    aligned bars, `ChevronDownSolid` drew a caret. Rename with the glyph, or don't change it.
-  - **Web is still on Lucide** (`lucide-react`), plus the glyphs in
-    `src/components/spira/brand-icons.tsx`. The two surfaces are deliberately apart until the web
-    is ported too; a glyph the owner supplies goes to **both**.
+  - **One glyph, one name, and the name must describe the glyph** (Android). No `Nav` prefix: it
+    used to mean "the 16-grid twin of a 24-grid icon" and means nothing now that there is one set. A
+    name that survives its glyph is a defect — `NavTrophy` drew a bar chart, `SlidersHorizontal`
+    drew aligned bars, `ChevronDownSolid` drew a caret. (The **web** module keeps the old Lucide
+    export names on purpose, so the port stayed a mechanical import swap; the glyph each draws is
+    Gravity's.)
 - **Never put a solid mark in a column of outline ones.** Gravity's `-fill` twins exist for exactly
   one purpose: marking the **selected** footer item next to its outline sibling
-  (`NavResources` / `NavResourcesFilled`). The drawer's trophy was once a filled cup beside five
+  (`FolderOpen` / `FolderOpenFilled`). The drawer's trophy was once a filled cup beside five
   hollow glyphs and it was the loudest thing on the sheet.
 - Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc drawn shapes, and
   **no emoji as icons**. **No hollow dots**: an icon whose eyes are drawn as tiny rings reads at
@@ -263,8 +272,11 @@ Four faults the owner found in one screenshot, all of which passed every asserti
   drawn it warm (`ProgressBar.tsx`); Android had it teal, so the one measure meant to stand out on
   an opened card was the same colour as the card's own chrome. The **card strip** across the top
   stays teal on both surfaces — that one is not the same bar.
-- **The ± buttons are wide, softly rounded, white, with a hairline Kale border and a Kale sign.**
-  Not grey squares with a 2dp border. They stay split, one either side of the bar.
+- **The ± buttons are the web's exact button** (`Targets.tsx`): a **36dp square, `rounded-md` (6dp),
+  a 2dp grey border, a near-black sign**. They stay split, one either side of the bar. (A brief
+  detour drew them wide with a Kale border from a reference screenshot; the owner then asked for the
+  Android card to match the web, so they are the grey square again — when the two disagree, the web
+  wins.)
 - **The value fields are measured to their own text** (`textWidth`, a `rememberTextMeasurer`).
   A `BasicTextField` takes every pixel offered, so a fixed 64dp box left "65" floating in the
   middle and "65 / 54 kg" read as four things scattered across the row; a bare `widthIn(min=…)`
@@ -273,6 +285,90 @@ Four faults the owner found in one screenshot, all of which passed every asserti
 - **The row is a `FlowRow`, and "(from …)" is one item inside a `Row`.** Seven pieces do not fit
   across a phone; a plain Row squeezes the last ones to nothing, and ungrouped the wrap fell
   between "(from" and its number.
+
+### 3c. Pills — one shape, and it is an OUTLINE (hard spec, 2026-08-17)
+
+Anywhere a short word is set in a capsule — a status, a kind, a state, **or one answer of a
+one-line filter question** — it is the app's one pill shape, and nothing else:
+
+| | Value |
+|---|---|
+| Shape | fully rounded capsule |
+| Border | **1px, the ramp's bright solid step** (`success-900 #007A4B`, `info-900 #006CC1`, `warning-900 #896500`, `error-900 #C53336`, `Kale-500`, `intelligence-900 #6E56CF`, `neutral-1200 #6B6B6B`) |
+| Fill | **the same ramp's `100` step** — nearly white on purpose |
+| Label | **near-black (`Salt-1000`) in every tone**, semibold, ~12px, **sentence case** |
+
+The components are **`ui/components/SpiraBadge.kt`** (Android) and **`src/components/spira/Pill.tsx`**
+(web). Use them; don't hand-roll a capsule.
+
+Two rules that are the whole point:
+
+- **The outline carries the meaning, not the fill and not the type.** A row of pills then reads as
+  one family in different states. Colouring the word as well only makes the label harder to read.
+- **A FILLED capsule is not a pill — it is a button.** The goal-status filter shipped once as solid
+  green capsules and read as a row of buttons rather than as a set of answers. For a filter row the
+  chosen answer takes its tone and **every other answer is `Neutral`**; that difference is what
+  makes the choice legible, without a second colour.
+
+### 3d. Notices — one card, and the colour family is what changes (hard spec, 2026-08-18)
+
+Every message the app shows — a transient toast **and** a notice sitting inside a block — is the
+same card on both surfaces: web `src/components/ui/sonner.tsx`, Android
+`ui/components/SpiraNotice.kt` (`SpiraNoticeCard`, drawn by `SpiraToast` and `SpiraInlineBanner`).
+
+- a **1px border in the kind's colour** over a **very pale tint from the same family**, an **8px
+  radius**, and the shadow `0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)`;
+- a **filled semantic glyph** on the left **in the border's colour**, aligned to the message's
+  **first line** (not centred against a message that wraps):
+
+  | Kind | Glyph | Border + glyph | Fill |
+  |---|---|---|---|
+  | Success | `circle-check-fill` | **Kale-500 `#0A8080`** | brand-100 `#F9FDFC` |
+  | Error | `circle-exclamation-fill` | `error-900 #C53336` | error-100 `#FFFBFB` |
+  | Warning | `triangle-exclamation-fill` | **`warning-500 #C99500`** | warning-100 `#FFFBF7` |
+  | Info | `circle-info-fill` | `info-900 #006CC1` | info-100 `#FDFCFF` |
+
+  **All four are Gravity's `-fill` twins** (owner, 2026-08-18). This is the one place a solid mark
+  is right in a set of four: they are one family saying one kind of thing, and an outline among
+  them read as a different sort of message. It does not license a solid mark in a column of outline
+  ones anywhere else.
+
+  **Warning is a real yellow, never the brown `#896500`.** `warning-900` is brown on screen, and a
+  brown triangle on a warning was rejected on sight (owner, 2026-08-18). It is the same `#C99500`
+  the assistant's error turn uses. An `intelligence` pair is available on the same pattern if an AI
+  message ever needs one — border `#BDAEFF`, fill `#FEFBFF`.
+
+- **near-black text in every kind** — the border and the mark carry the meaning, not the type (the
+  same rule the pills follow);
+- an **X on the right** to dismiss, so a long message is never in the way.
+
+**The tint is nearly white and must stay that way.** The card still has to read as a white card on
+the page; the border is what tells the kinds apart. A fill any stronger turns a message into a
+block of colour, which is the thing the earlier "never a coloured block" rule was aimed at — that
+rule is superseded by this table, not by a licence to tint harder.
+
+**Say what happened, not that something happened.** "Bold and italic copied — select text to apply
+it" is a message that confirms; "Formatting copied" only reassures. The two surfaces word the same
+event identically (`describeMarks` on the web, `describeMarks` in `NoteEditorActivity.kt`).
+
+**A notice INSIDE a block is the same card** (owner, 2026-08-18) — an action that failed without
+changing the screen, a filter that hid every row, a fact the page has to state. One picture is the
+reference for both, so on Android there is one component, **`SpiraNoticeCard`**, and `SpiraToast`
+and `SpiraInlineBanner` are only *where* it sits: the toast floats and times itself out, the banner
+sits in the flow. Do not invent a second shape for a message — the app had four (a red-tinted error
+block, a translucent white strip in the AI panel, bare red type on the sign-in and provider screens,
+and a raw platform `Toast`), and every one of them said the same kind of thing differently.
+
+Two rules that follow:
+
+- **The kind changes the border, the fill and the mark — never the type.** Near-black words in every
+  kind; colouring them as well only makes them harder to read.
+- **A notice the user cannot act on has no X.** "No goals match that search or filter" stands until
+  the filter changes, so a dismiss button on it would be a lie; pass `onDismiss = null`.
+
+**A list emptied by its own search or filter is a `Warning` notice, not a grey empty state.** The
+empty state is for a list with nothing in it — an invitation. A list the user has just hidden is a
+different sentence, and a muted line centred in a blank page reads as "there is nothing here".
 
 ### 4. Verify UI changes visually before shipping
 
@@ -368,7 +464,19 @@ surfaces implement the same thing — Android `ui/components/SpiraListToolbar.kt
   state, *including when nothing is chosen* — never near-black, never a chip that lights up once a
   filter is on. That old treatment made an untouched toolbar the heaviest row on the page.
 - **The sort trigger's word is the active key** ("Deadline"); the filter trigger's is "Filter",
-  with the number of narrowing filters **in brackets** — "Filter (2)" — and nothing at zero.
+  with the number of narrowing filters **in brackets** — "Filter (2)" — and nothing at zero. **On a
+  phone the filter trigger shrinks to its glyph alone with a Guava dot**: no word, no chevron, no
+  number (`iconOnlyOnMobile` on the web).
+- **The dot goes ON the glyph, and only where the glyph stands alone.** A trigger that carries its
+  word shows the count **in brackets** instead — "Filter & Sort (2)" — and never both: the words and
+  the number already say a filter is on, so a dot beside them is the same fact told twice.
+- **A menu asking ONE question with one answer dismisses itself on the pick** (`closeOnSelect`).
+  Menus asking several questions stay open.
+- **On a phone the web opens a drawer, not a dropdown** — `ToolbarSheet` in `ListToolbar.tsx`, with
+  the Android twin `SpiraFilterSheet`. Both have a **Kale head**, the questions under small
+  uppercase headings, one-line questions as **pills** (see 3c), and **Reset all** beside **Apply**
+  at the foot. The confirm word is **Apply**, never "Done", and **Reset all is always present**,
+  not only once something is on.
 - **A menu is columns**: one column per question, under its own small heading, separated by a
   **vertical hairline** (`SpiraMenuColumns` / `SpiraMenuGroup` / `SpiraMenuColumnDivider`, and the
   web twins). Sort asks two questions (key, then direction); the target filter asks three.
@@ -420,12 +528,16 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
 `public/fonts/README.md`) and **`res/font/`** (Android). Full steps for any font swap live in
 **`docs/changing-fonts.md`**.
 
-> **The body face is switchable at runtime while the owner picks one** (GRO-122, 2026-08-13):
-> **Settings → Fonts** offers GCentra plus Toronto, Guidy, Kalamayka, Leggibilmente, BIM and
-> Spartan, and a tap re-fonts the whole app. It moves **only** the body face — headings stay ITC
-> Clearface — and it is **not** the swap procedure: see `docs/changing-fonts.md` → "The Fonts tab".
-> Keep the web (`src/lib/spira/app-font.ts`) and Android (`ui/theme/AppFont.kt`) lists identical,
-> or the phone and the laptop stop being comparable, which is the whole point of the tab.
+> **The body face is switchable at runtime while the owner picks one** (GRO-122): **Settings →
+> Fonts** carries **many** candidates at once — fifteen as of 2026-08-17, grouped by whether they
+> have Cyrillic — and a tap re-fonts the whole app. It moves **only** the body face; headings stay
+> ITC Clearface.
+>
+> **Adding one more is a routine five-file operation, and it is NOT the brand-swap procedure.**
+> Both are written out in `docs/changing-fonts.md` — §1 to add a candidate, §3 to swap a brand face.
+> Keep the web (`src/lib/spira/app-font.ts`) and Android (`ui/theme/AppFont.kt`) lists identical
+> down to the wording, or the phone and the laptop stop being comparable, which is the whole point
+> of the tab.
 
 - **Leading:** headline line-height = 110% of size; body = 130%. (Applied in `Type.kt` via
   `lineHeight`.)
@@ -536,6 +648,64 @@ Guava-500 (accent marks only, no large fills), foreground = Salt-1000, muted = S
 Salt-500, background = Parsnip-100, cards/menus = White, destructive =
 Guava-600. (`success` is a functional green — new work should take it from the **success** ramp
 above rather than picking a fresh green.)
+
+#### The AI chat gradient (allowed)
+
+The assistant's conversation area is painted with a two-stop vertical gradient — **teal `#83D2D2`
+at the top fading to near-white `#F2FFFF` at the bottom** (owner, 2026-08-17). Both stops are
+**allowed colours** wherever the AI panel needs them: the chat background
+(`linear-gradient(180deg, #83D2D2 3.43%, #F2FFFF 118.85%)` on the web, the equivalent
+`Brush.verticalGradient` on Android), the light composer area that continues the bottom stop, and
+the provider status dot (connected = `#83D2D2`, missing key = `#F2FFFF`). The header stays dark teal
+(web Kale-500, Android Kale-600). `#83D2D2` sits between Kale-300 and Brand-400 and `#F2FFFF` is an
+off-white — they are the AI surface's own pair and are not a fourth progress-bar variant.
+
+#### The gradient border (allowed)
+
+A second gradient the owner has approved (2026-08-18): a **near-white card inside a warm-to-cool
+diagonal gradient border**. It is one declaration — the fill is painted to the padding box and the
+gradient to the border box, so the border is the only thing the gradient touches:
+
+```css
+background:
+  linear-gradient(#fdfdfb, #fdfdfb) padding-box,
+  linear-gradient(228.47deg, #ff4833 48.94%, #ed7ffe 89.8%, #7f8eff 143.09%) border-box;
+```
+
+The stops are `#FF4833` (a coral a shade hotter than Guava) → `#ED7FFE` (orchid) → `#7F8EFF`
+(periwinkle), over the fill `#FDFDFB`. **Those five values are allowed only in this pairing** — the
+gradient is a border treatment, not a palette. Do not fill a surface with any of them, do not pull
+one stop out to tint type or an icon, and do not add a fifth progress-bar variant out of it.
+
+On Android the same thing is a `Brush.linearGradient` painted into a rounded **border**
+(`Modifier.border(width, brush, shape)`) over a `#FDFDFB` background — never a `background(brush)`,
+which would fill the card instead of outlining it.
+
+### Progress bars — exactly four variants (hard rule)
+
+**Every** progress bar/ring in the app (web + Android) — goal cards, target cards and strips,
+numeric target bars, any linear or circular progress — must be **one of these four pairs**, track
+then fill, and nothing else. No `#EA580C` (a Tailwind orange that is **not** in the palette and was
+the old "in progress" colour), no grey `bg-secondary` / `surfaceSunken` track.
+
+| Variant | Track (unfilled) | Fill (progress) |
+|---|---|---|
+| **Guava** — a target/goal still *in progress* | Reserved-200 `#FFEDEA` | Guava-500 `#F45D48` |
+| **Contrast** — coral on teal; the **All-goals** cards | Brand-200 `#E5F4F3` | Reserved-700 `#E4523E` |
+| **Brand** — a lighter teal alternative | Brand-200 `#E5F4F3` | Brand-500 `#4CACAC` |
+| **Kale** — a *done* bar, and the card strip | Kale-300 `#8DD3D4` | Kale-500 `#0A8080` |
+
+The convention in use: a target/goal that is **in progress** uses **Guava**, and it flips to
+**Kale** once **done** (100%). The card's thin **progress strip** is always **Kale**. Use **Brand**
+only where a deliberately quieter teal progress is wanted.
+
+**Contrast** (owner, 2026-08-17) is the pair on the **All-goals goal cards**: the two brand colours
+against each other rather than two steps of one, so a bar reads at a glance down a long list. It is
+the only variant whose track and fill come from *different* families — which is the point of it, and
+also why it must not be mixed into the target card, where Guava→Kale already carries the done-ness.
+
+Web: `ProgressBar.tsx` (`tone`) and the strips in `Targets.tsx`. Android: `CircularProgress` /
+`SpiraLinearProgress` in `CoreComponents.kt` and the strips/bars in `TargetCard.kt`.
 
 > The type params above (**leading / tracking / alignment**) are **font-independent** — they're set
 > on the type scale (`Type.kt`) and per-usage alignment, so they hold no matter which heading font

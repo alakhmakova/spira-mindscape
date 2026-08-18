@@ -6,6 +6,9 @@ import {
   Check,
   CirclePlus,
   CircleCheck,
+  CircleCheckFill,
+  CircleX,
+  ArrowUturnCwDown,
   Minus,
   Plus,
   Search,
@@ -14,7 +17,7 @@ import {
   Trash2,
   TriangleAlert,
   X,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { toast } from "sonner";
 import type { Goal, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
@@ -33,7 +36,13 @@ import { ResizableSheet } from "@/components/spira/Resources";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { LockFilled, LockOpenFilled } from "@/components/spira/brand-icons";
+import {
+  LockFilled,
+  LockOpenFilled,
+  Filter,
+  ChevronUp,
+  ChevronDown,
+} from "@/components/spira/icons";
 import { CalendarPageArt, PlusMarkArt } from "./TargetTileArt";
 import {
   Table,
@@ -56,12 +65,20 @@ import {
   MenuColumns,
   MenuGroup,
   ToolbarTrigger,
+  FilterIconTrigger,
+  RoundAddButton,
+  SectionSearchButton,
+  SectionSearchField,
+  SheetChoiceCards,
+  SheetGroup,
+  SheetPills,
+  SheetSegmented,
+  ToolbarSheet,
 } from "@/components/spira/ListToolbar";
 import { InlineText } from "@/components/spira/Inline";
 import {
   AttachResourceButton,
   ElementActionsMenu,
-  REVEAL_ON_ROW_ACTIVITY,
   appendResourceToken,
   useIsSingleLine,
   useReadableText,
@@ -115,11 +132,18 @@ function ProgressLockButton({
   onToggle,
   className,
   iconClassName,
+  neutralTone = false,
 }: {
   locked: boolean;
   onToggle: (next: boolean) => void;
   className?: string;
   iconClassName?: string;
+  /**
+   * In the desktop table the padlock is a scannable column of state, not a per-row accent: the
+   * owner wants it the same grey whether locked or not, going Kale only on hover. Cards keep the
+   * default (locked = Kale) so a locked card still reads as locked at a glance.
+   */
+  neutralTone?: boolean;
 }) {
   const Icon = locked ? LockFilled : LockOpenFilled;
   return (
@@ -137,12 +161,15 @@ function ProgressLockButton({
           : "Lock progress so it can't be changed by accident"
       }
       className={cn(
-        // No fill behind the padlock, in either state: the mark is a piece of state sitting on the
-        // card, and a tinted or white plate under it read as a second button stuck to the corner.
+        // No plate of its own: in the table the padlock is a bare mark in a column. The CARD
+        // passes its own badge chrome (ring + white + shadow) so that corner matches the option
+        // card's smiley exactly — the two hang off the same corner and must read as one component.
         "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
-        locked
-          ? "text-primary hover:text-primary/75"
-          : "text-muted-foreground/60 hover:text-foreground",
+        neutralTone
+          ? "text-muted-foreground hover:text-primary"
+          : locked
+            ? "text-primary hover:text-primary/75"
+            : "text-muted-foreground/60 hover:text-foreground",
         className,
       )}
     >
@@ -312,10 +339,16 @@ function isTargetOverdue(t: Target): boolean {
 }
 
 /** The three filter questions and their words, so the menu and the drawer can't disagree. */
+// One mutually-exclusive status filter, shown as two blocks: "Status" (done/not-done) and a
+// separate "Progress" block (started/not-started), because started-ness is a different question
+// from done-ness and reading them in one column ran them together.
 const STATUS_CHOICES = [
   { value: "all", label: "All" },
   { value: "done", label: "Done" },
   { value: "not-done", label: "Not done" },
+] as const;
+
+const STARTED_CHOICES = [
   { value: "started", label: "Started" },
   { value: "not-started", label: "Not started" },
 ] as const;
@@ -333,6 +366,18 @@ const LOCK_CHOICES = [
   { value: "unlocked", label: "Unlocked" },
 ] as const;
 
+/** The sort question and its direction — shared by the desktop menu and the mobile sheet. */
+const TARGET_SORT_CHOICES = [
+  { value: "title", label: "Name" },
+  { value: "deadline", label: "Deadline" },
+  { value: "progress", label: "Progress" },
+] as const;
+
+const TARGET_DIRECTION_CHOICES = [
+  { value: "asc", label: "Ascending" },
+  { value: "desc", label: "Descending" },
+] as const;
+
 /* ─────────────────────────────────────────────────────────────────────────────
    TargetsSection — wraps Section with search, filter and mobile-sort controls
 ───────────────────────────────────────────────────────────────────────────── */
@@ -344,7 +389,10 @@ export function TargetsSection({
   goal: Goal;
   onNewTarget: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
+  // The phone's search is a glyph until it is opened; the field then takes the header row.
+  const [searchOpen, setSearchOpen] = useState(false);
   const [deadlineFrom, setDeadlineFrom] = useState("");
   const [deadlineTo, setDeadlineTo] = useState("");
   const [achievedFrom, setAchievedFrom] = useState("");
@@ -477,6 +525,20 @@ export function TargetsSection({
       title="Will do"
       count={goal.targets.length}
       countVariant="orange"
+      // The open search takes the whole header row on a phone — the Android All-goals pattern.
+      // On desktop the field has always sat beside the title, so nothing is overridden there.
+      // `isMobile` as well as `searchOpen`: the glyph that opens this only exists on a phone, so a
+      // window widened while it is open would otherwise leave the header with a field and no title.
+      headerOverride={
+        searchOpen && isMobile ? (
+          <SectionSearchField
+            value={search}
+            onChange={setSearch}
+            onClose={() => setSearchOpen(false)}
+            placeholder="Search targets"
+          />
+        ) : undefined
+      }
       action={
         <div className="flex items-center gap-2">
           {/* Desktop: search + filters */}
@@ -508,6 +570,7 @@ export function TargetsSection({
                 label="Filter"
                 count={activeFilterCount}
                 ariaLabel="Filter targets"
+                leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
               />
               <DropdownMenuContent align="end" className="w-auto p-1">
                 <MenuColumns>
@@ -521,7 +584,17 @@ export function TargetsSection({
                       />
                     ))}
                   </MenuGroup>
-                  <MenuGroup title="Deadline" divided>
+                  <MenuGroup title="Progress">
+                    {STARTED_CHOICES.map((c) => (
+                      <MenuChoice
+                        key={c.value}
+                        label={c.label}
+                        selected={statusFilter === c.value}
+                        onSelect={() => setStatusFilter(c.value)}
+                      />
+                    ))}
+                  </MenuGroup>
+                  <MenuGroup title="Deadline">
                     {DEADLINE_CHOICES.map((c) => (
                       <MenuChoice
                         key={c.value}
@@ -531,7 +604,7 @@ export function TargetsSection({
                       />
                     ))}
                   </MenuGroup>
-                  <MenuGroup title="Lock" divided>
+                  <MenuGroup title="Lock">
                     {LOCK_CHOICES.map((c) => (
                       <MenuChoice
                         key={c.value}
@@ -606,268 +679,143 @@ export function TargetsSection({
             </DropdownMenu>
           </div>
 
-          {/* Mobile: single icon → drawer with search + sort + filters */}
-          <div className="sm:hidden">
-            <button
+          {/* Mobile: a bare search glyph and a bare filter glyph, both opening the shared chrome —
+              no bordered box around either. The search takes the whole header row when open
+              (`headerOverride`), the way the Android All-goals header does. */}
+          <div className="flex items-center gap-0.5 sm:hidden">
+            <SectionSearchButton
+              onOpen={() => setSearchOpen(true)}
+              active={!!search}
+              ariaLabel="Search targets"
+            />
+            <FilterIconTrigger
+              active={hasAnyActive}
               onClick={() => setMobileOpen(true)}
-              className={cn(
-                "h-9 w-9 rounded-md border flex items-center justify-center transition-colors",
-                hasAnyActive
-                  ? "border-primary/40 text-primary bg-primary/5"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-              aria-label="Search, sort and filter targets"
+              ariaLabel="Filter and sort targets"
+            />
+            <ToolbarSheet
+              open={mobileOpen}
+              onOpenChange={setMobileOpen}
+              title="Filter & Sort"
+              onReset={() => {
+                resetFilters();
+                setSortField("deadline");
+                setSortDesc(false);
+              }}
+              resetDisabled={!hasAnyActive}
             >
-              <SlidersHorizontal className="h-4 w-4" />
-            </button>
-            <Drawer open={mobileOpen} onOpenChange={setMobileOpen}>
-              <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col">
-                <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
-                  <h2 className="font-sans font-bold text-lg">
-                    Filters & Sort
-                  </h2>
-                  <button
-                    onClick={() => setMobileOpen(false)}
-                    className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+              {/* One-line questions are pills; the rest are rows. Sort sits beside its direction,
+                  and the chosen direction takes the quiet "aux" look so it cannot be read as a
+                  second sort key. */}
+              <SheetGroup title="Status">
+                <SheetPills
+                  options={STATUS_CHOICES}
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                />
+              </SheetGroup>
+              <SheetGroup title="Progress">
+                <SheetPills
+                  options={STARTED_CHOICES}
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  tone="info"
+                />
+              </SheetGroup>
+              <SheetGroup title="Deadline">
+                <SheetPills
+                  options={DEADLINE_CHOICES}
+                  value={deadlineFilter}
+                  onChange={setDeadlineFilter}
+                  tone="warning"
+                />
+              </SheetGroup>
+              <SheetGroup title="Lock">
+                <SheetPills
+                  options={LOCK_CHOICES}
+                  value={lockFilter}
+                  onChange={setLockFilter}
+                  tone="teal"
+                />
+              </SheetGroup>
+
+              {/* Direction first (one short line), then the keys as cards — the same three shapes
+                  the All-goals sheet uses, so the two sheets are one design. */}
+              <SheetGroup title="Direction">
+                <SheetSegmented
+                  options={TARGET_DIRECTION_CHOICES}
+                  value={sortDesc ? "desc" : "asc"}
+                  onChange={(v) => setSortDesc(v === "desc")}
+                />
+              </SheetGroup>
+              <SheetGroup title="Sort by">
+                <SheetChoiceCards
+                  options={TARGET_SORT_CHOICES}
+                  value={sortField}
+                  onChange={setSortField}
+                />
+              </SheetGroup>
+
+              <SheetGroup title="Deadline range">
+                <div className="grid grid-cols-2 gap-2">
+                  <DeadlinePopover
+                    iso={deadlineFrom || undefined}
+                    onChange={(next) => setDeadlineFrom(next ?? "")}
+                    variant="button"
+                    placeholder="From"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                  <DeadlinePopover
+                    iso={deadlineTo || undefined}
+                    onChange={(next) => setDeadlineTo(next ?? "")}
+                    variant="button"
+                    placeholder="To"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
                 </div>
+              </SheetGroup>
 
-                <div className="overflow-y-auto flex-1 min-h-0 px-6 pt-2 pb-8 space-y-5">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search targets…"
-                      className="h-9 w-full pl-8 pr-7 rounded-md border border-border bg-surface text-sm outline-none focus:border-primary placeholder:text-muted-foreground/75 transition-colors"
-                    />
-                    {search && (
-                      <button
-                        onClick={() => setSearch("")}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Sort by */}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Sort by
-                    </p>
-                    <div className="space-y-0.5">
-                      {(
-                        [
-                          { value: "title", label: "Name" },
-                          { value: "deadline", label: "Deadline" },
-                          { value: "progress", label: "Progress" },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setSortField(opt.value)}
-                          className={cn(
-                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
-                            sortField === opt.value
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-foreground hover:bg-secondary",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Direction */}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Direction
-                    </p>
-                    <div className="space-y-0.5">
-                      {(
-                        [
-                          { value: false, label: "Ascending" },
-                          { value: true, label: "Descending" },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={String(opt.value)}
-                          onClick={() => setSortDesc(opt.value)}
-                          className={cn(
-                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
-                            sortDesc === opt.value
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-foreground hover:bg-secondary",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Deadline range */}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Deadline range
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <DeadlinePopover
-                        iso={deadlineFrom || undefined}
-                        onChange={(next) => setDeadlineFrom(next ?? "")}
-                        variant="button"
-                        placeholder="From"
-                        hideDaysLeft
-                        disableScroll
-                        className="h-9 justify-start px-2 text-xs"
-                      />
-                      <DeadlinePopover
-                        iso={deadlineTo || undefined}
-                        onChange={(next) => setDeadlineTo(next ?? "")}
-                        variant="button"
-                        placeholder="To"
-                        hideDaysLeft
-                        disableScroll
-                        className="h-9 justify-start px-2 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Achieved date range */}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Achieved date range
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <DeadlinePopover
-                        iso={achievedFrom || undefined}
-                        onChange={(next) => setAchievedFrom(next ?? "")}
-                        variant="button"
-                        placeholder="From"
-                        hideDaysLeft
-                        disableScroll
-                        className="h-9 justify-start px-2 text-xs"
-                      />
-                      <DeadlinePopover
-                        iso={achievedTo || undefined}
-                        onChange={(next) => setAchievedTo(next ?? "")}
-                        variant="button"
-                        placeholder="To"
-                        hideDaysLeft
-                        disableScroll
-                        className="h-9 justify-start px-2 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* The same three questions the desktop menu asks in columns. A drawer has the
-                      height for them stacked, so here they are three labelled blocks. */}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Status
-                    </p>
-                    <div className="space-y-0.5">
-                      {STATUS_CHOICES.map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setStatusFilter(opt.value)}
-                          className={cn(
-                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
-                            statusFilter === opt.value
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-foreground hover:bg-secondary",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Deadline
-                    </p>
-                    <div className="space-y-0.5">
-                      {DEADLINE_CHOICES.map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setDeadlineFilter(opt.value)}
-                          className={cn(
-                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
-                            deadlineFilter === opt.value
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-foreground hover:bg-secondary",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
-                      Lock
-                    </p>
-                    <div className="space-y-0.5">
-                      {LOCK_CHOICES.map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setLockFilter(opt.value)}
-                          className={cn(
-                            "w-full text-left text-sm px-2.5 py-2 rounded-md transition-colors",
-                            lockFilter === opt.value
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-foreground hover:bg-secondary",
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              <SheetGroup title="Achieved date range">
+                <div className="grid grid-cols-2 gap-2">
+                  <DeadlinePopover
+                    iso={achievedFrom || undefined}
+                    onChange={(next) => setAchievedFrom(next ?? "")}
+                    variant="button"
+                    placeholder="From"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
+                  <DeadlinePopover
+                    iso={achievedTo || undefined}
+                    onChange={(next) => setAchievedTo(next ?? "")}
+                    variant="button"
+                    placeholder="To"
+                    hideDaysLeft
+                    disableScroll
+                    className="h-9 justify-start px-2 text-xs"
+                  />
                 </div>
-
-                <div
-                  className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
-                  style={{
-                    paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
-                  }}
-                >
-                  {hasAnyActive && (
-                    <button
-                      onClick={() => {
-                        setSearch("");
-                        resetFilters();
-                        setSortField("deadline");
-                        setSortDesc(false);
-                      }}
-                      className="flex-1 h-12 rounded-md border-2 border-border text-foreground font-semibold text-[15px] hover:bg-secondary transition-colors"
-                    >
-                      Reset all
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setMobileOpen(false)}
-                    className="flex-1 h-12 rounded-md bg-primary text-primary-foreground font-semibold text-[15px] hover:bg-primary/90 transition-colors"
-                  >
-                    Done
-                  </button>
-                </div>
-              </DrawerContent>
-            </Drawer>
+              </SheetGroup>
+            </ToolbarSheet>
           </div>
 
+          {/* A round + on a phone: the word, a search glyph and a filter glyph do not fit across a
+              narrow header, and "Add target" is the piece the section's own title already implies. */}
+          <span className="sm:hidden">
+            <RoundAddButton
+              onClick={onNewTarget}
+              ariaLabel="Add target"
+              tone="accent"
+            />
+          </span>
           <button
             onClick={onNewTarget}
-            className="inline-flex items-center px-3 h-9 rounded-md bg-[#ea580c] text-white text-sm font-medium hover:bg-[#ea580c]/90"
+            className="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-medium hover:bg-[#F45D48]/90"
           >
             Add target
           </button>
@@ -1071,32 +1019,21 @@ export function DesktopTargetsTable({
     return () => window.removeEventListener("hashchange", handleHash);
   }, [goal.targets]);
 
+  // The sort indicator is a set glyph, not a hand-drawn double triangle: the active column shows a
+  // ChevronUp (ascending) or ChevronDown (descending) in Kale; an inactive column shows a muted
+  // chevron that lifts on row hover, hinting the column is sortable.
   const SortIcon = ({ field }: { field: string }) => {
     const active = sortField === field;
+    const Icon = active && sortDesc ? ChevronDown : ChevronUp;
     return (
-      <span
+      <Icon
         className={cn(
-          "inline-flex flex-col items-center justify-center gap-[3px] ml-1.5",
-          !active && "opacity-30 group-hover:opacity-60 transition-opacity",
+          "ml-1.5 h-4 w-4 shrink-0 transition-opacity",
+          active
+            ? "text-primary opacity-100"
+            : "opacity-30 group-hover:opacity-60",
         )}
-      >
-        <svg
-          width="8"
-          height="5"
-          viewBox="0 0 8 5"
-          className={cn(active && !sortDesc ? "opacity-100" : "opacity-50")}
-        >
-          <path d="M4 0L8 5H0L4 0Z" fill="currentColor" />
-        </svg>
-        <svg
-          width="8"
-          height="5"
-          viewBox="0 0 8 5"
-          className={cn(active && sortDesc ? "opacity-100" : "opacity-50")}
-        >
-          <path d="M4 5L0 0H8L4 5Z" fill="currentColor" />
-        </svg>
-      </span>
+      />
     );
   };
 
@@ -1155,14 +1092,19 @@ export function DesktopTargetsTable({
                 id={`target-desktop-${t.id}`}
                 className={cn(
                   "group scroll-mt-24 transition-colors bg-white",
-                  done ? "hover:bg-[#E0F2F5]" : "hover:bg-[#fff2df]",
+                  // A paler hover step from the palette (CLAUDE.md): Kale-100 when done,
+                  // Warning-100 when not — visible, but not the loud earlier tints.
+                  done ? "hover:bg-[#F3FAFB]" : "hover:bg-[#FFFBF7]",
                 )}
               >
                 {/* The padlock is always visible — it is state, not a hidden action — and it now
-                    has its own column, so it lines up down the table. */}
-                <TableCell className="pl-6">
+                    has its own column, so it lines up down the table. It top-aligns to sit level
+                    with the title's first line, and stays grey (Kale on hover) rather than
+                    lighting up when locked. */}
+                <TableCell className="pl-6 align-top">
                   <ProgressLockButton
                     locked={locked}
+                    neutralTone
                     onToggle={(next) =>
                       updateTarget(goal.id, t.id, { progressLocked: next })
                     }
@@ -1170,7 +1112,7 @@ export function DesktopTargetsTable({
                     iconClassName="h-4 w-4"
                   />
                 </TableCell>
-                <TableCell>
+                <TableCell className="align-top">
                   <InlineText
                     value={t.title}
                     onChange={(title) => updateTarget(goal.id, t.id, { title })}
@@ -1263,7 +1205,7 @@ export function DesktopTargetsTable({
                       <div
                         className={cn(
                           "h-2 w-2 rounded-full shrink-0",
-                          done ? "bg-success" : "bg-[#ea580c]",
+                          done ? "bg-success" : "bg-[#F45D48]",
                         )}
                       ></div>
                       <span className="text-sm text-foreground group-hover:text-foreground/75 transition-colors">
@@ -1316,7 +1258,8 @@ export function DesktopTargetsTable({
                         if (next) updateTarget(goal.id, t.id, { title: next });
                       }}
                       className={cn(
-                        REVEAL_ON_ROW_ACTIVITY,
+                        // Always visible in the table — the owner wants the actions kebab present
+                        // without having to hover the row first (unlike the inline card overlays).
                         "inline-flex rounded-md p-1.5 text-foreground hover:text-primary",
                       )}
                     />
@@ -1371,7 +1314,6 @@ export function DesktopTargetsTable({
                         onUpdate={(patch) =>
                           updateTarget(goal.id, target.id, patch)
                         }
-                        progress={targetProgress(target)}
                         locked={isProgressLocked(target)}
                       />
                     </div>
@@ -1504,14 +1446,17 @@ export function TargetRow({
         "surface-card relative scroll-mt-24",
       )}
     >
-      {/* Padlock stuck on the card's corner — always present, never in the content flow. */}
+      {/* Padlock stuck on the card's corner — always present, never in the content flow.
+          **The same badge as the option card's smiley** (`OptionsList.tsx`): 28px, a hairline ring,
+          a white plate and a soft shadow. It used to be a bare ring with the page showing through,
+          so beside an option it read as a different component hanging off the corner. */}
       <ProgressLockButton
         locked={locked}
         onToggle={(next) =>
           onUpdate({ progressLocked: next } as Partial<Target>)
         }
-        className="absolute -right-2 -top-2 z-10 h-7 w-7 rounded-full border border-border"
-        iconClassName="h-[18px] w-[18px]"
+        className="absolute -right-2 -top-2 z-10 h-7 w-7 rounded-full border border-border bg-surface shadow-sm"
+        iconClassName="h-4 w-4"
       />
 
       {/* Head: the deadline tile, then the title. The tile centres beside a short title and
@@ -1596,7 +1541,6 @@ export function TargetRow({
             <NumericBody
               target={target}
               onUpdate={onUpdate}
-              progress={progress}
               locked={locked}
               onPreviewProgress={setPreviewProgress}
             />
@@ -1674,7 +1618,18 @@ export function TargetRow({
               if (next) onUpdate({ title: next } as Partial<Target>);
             }}
           />
-          <div className="mt-4 flex items-center justify-end gap-3">
+          {/* Delete is the **twin of "Attach resource"** — a circled mark and a 14px label, in red
+              rather than teal. As a filled near-black button it was the heaviest thing on an
+              opened card, which is the wrong weight for the one action you can't undo. */}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="mt-2 flex items-center gap-2 py-1 text-left text-sm font-semibold text-destructive transition-colors hover:text-destructive/80"
+          >
+            <CircleX className="h-[18px] w-[18px] shrink-0" />
+            Delete target
+          </button>
+          <div className="mt-4 flex items-center justify-end">
             <button
               type="button"
               onClick={() => setExpanded(false)}
@@ -1683,13 +1638,6 @@ export function TargetRow({
               {/* It collapses the panel; nothing is discarded — every edit here saves as it is
                   made, so "Cancel" promised an undo that never existed. */}
               Close
-            </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="h-10 rounded-md bg-[#222525] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#525257]"
-            >
-              Delete target
             </button>
           </div>
         </div>
@@ -1701,13 +1649,11 @@ export function TargetRow({
 function NumericBody({
   target,
   onUpdate,
-  progress,
   locked = false,
   onPreviewProgress,
 }: {
   target: Extract<Target, { type: "numeric" }>;
   onUpdate: (patch: Partial<Target>) => void;
-  progress: number;
   /** Progress is pinned: the numbers are read-only (the unit and title are not). */
   locked?: boolean;
   /** The typed-but-not-yet-saved progress, so an enclosing card can show the same number
@@ -1717,15 +1663,12 @@ function NumericBody({
   const [validationMessage, setValidationMessage] = useState<string | null>(
     null,
   );
-  // What the bar shows WHILE the user is typing. The value itself still commits on blur/Enter
-  // (never per keystroke) — but without this the bar sits still until focus moves, which on a
-  // large target reads as "progress is broken": typing 4000 against 1 900 000 changes nothing
-  // visible until you tab away.
-  const [preview, setPreview] = useState<number | null>(null);
-  const setPreviewProgress = (p: number | null) => {
-    setPreview(p);
-    onPreviewProgress?.(p);
-  };
+  // What the card's strip shows WHILE the user is typing. The value itself still commits on
+  // blur/Enter (never per keystroke) — but without this the strip sits still until focus moves,
+  // which on a large target reads as "progress is broken": typing 4000 against 1 900 000 changes
+  // nothing visible until you tab away. The editor no longer draws a bar of its own, so the
+  // preview only has to reach the enclosing card.
+  const setPreviewProgress = (p: number | null) => onPreviewProgress?.(p);
   const previewFrom = (field: "current" | "total" | "start", raw: string) => {
     const text = raw.trim();
     // Only a plainly valid number previews; anything else (empty, "1.", "-2") leaves the bar
@@ -1737,7 +1680,6 @@ function NumericBody({
     const next = { ...target, [field]: parseFloat(text) };
     setPreviewProgress(validatePatch(next) ? null : targetProgress(next));
   };
-  const shownProgress = preview ?? progress;
   const start = target.start ?? 0;
   const minValue = Math.min(start, target.total);
   const maxValue = Math.max(start, target.total);
@@ -1785,73 +1727,77 @@ function NumericBody({
       // (the store already holds it) or been reverted, so `progress` is the truth again.
       onBlur={() => setPreviewProgress(null)}
     >
-      {/* Inline-editable current / total / unit — centered above the bar */}
-      <div className="flex items-center justify-center gap-1 num font-semibold tabular-nums text-sm text-foreground">
-        <InlineEditable
-          value={String(target.current)}
-          numeric
-          onChange={(v) => commitPatch({ current: parseFloat(v) })}
-          onTyping={(raw) => previewFrom("current", raw)}
-          onInvalid={setValidationMessage}
-          ariaLabel="Current value"
-        />
-        <span>/</span>
-        <InlineEditable
-          value={String(target.total)}
-          numeric
-          onChange={(v) => commitPatch({ total: parseFloat(v) })}
-          onTyping={(raw) => previewFrom("total", raw)}
-          onInvalid={setValidationMessage}
-          ariaLabel="Total value"
-        />
-        <InlineEditable
-          value={target.unit ?? ""}
-          placeholder="unit"
-          onChange={(v) =>
-            onUpdate({ unit: v || undefined } as Partial<Target>)
-          }
-          onInvalid={setValidationMessage}
-          maxLength={FIELD_LIMITS.targetUnit}
-          maxLengthLabel="Unit"
-          ariaLabel="Unit"
-          className="ml-0.5"
-        />
-        <div className="text-muted-foreground font-normal text-xs ml-2 flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
-          <span>(from</span>
-          <InlineEditable
-            value={String(target.start ?? 0)}
-            numeric
-            onChange={(v) => commitPatch({ start: parseFloat(v) })}
-            onTyping={(raw) => previewFrom("start", raw)}
-            onInvalid={setValidationMessage}
-            ariaLabel="Start value"
-          />
-          <span>)</span>
-        </div>
-      </div>
       {validationMessage && (
         <p className="text-xs font-medium text-destructive" role="alert">
           {validationMessage}
         </p>
       )}
-      {/* Single progress bar with ± controls; percentage sits inline before the + */}
+      {/*
+        The ± pair with the **numbers between them**, not a bar. The inner progress bar and its
+        percentage used to sit here; the card's own strip already prints the same measure at the
+        top, so the row was saying it twice and the values it edits were exiled to a line above.
+        Now the thing the buttons act on is the thing between them.
+      */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => commitPatch({ current: target.current - 1 })}
           disabled={target.current <= minValue}
-          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-40"
+          className="gradient-ring h-9 w-9 grid place-items-center rounded-md hover:text-primary disabled:opacity-40"
           aria-label="Decrement"
         >
           <Minus className="h-4 w-4" />
         </button>
-        <ProgressBar value={shownProgress} className="flex-1" />
-        <span className="num text-xs font-semibold tabular-nums text-foreground/80 min-w-[4ch] text-right">
-          {formatPercent(shownProgress, progressSteps(target))}%
-        </span>
+        {/* Inline-editable current / total / unit / start — wraps rather than squeezing, the way
+            the Android FlowRow does, so seven small pieces still read as one sentence. */}
+        <div className="flex-1 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 num font-semibold tabular-nums text-sm text-foreground">
+          <InlineEditable
+            value={String(target.current)}
+            numeric
+            onChange={(v) => commitPatch({ current: parseFloat(v) })}
+            onTyping={(raw) => previewFrom("current", raw)}
+            onInvalid={setValidationMessage}
+            ariaLabel="Current value"
+          />
+          <span>/</span>
+          <InlineEditable
+            value={String(target.total)}
+            numeric
+            onChange={(v) => commitPatch({ total: parseFloat(v) })}
+            onTyping={(raw) => previewFrom("total", raw)}
+            onInvalid={setValidationMessage}
+            ariaLabel="Total value"
+          />
+          <InlineEditable
+            value={target.unit ?? ""}
+            placeholder="unit"
+            onChange={(v) =>
+              onUpdate({ unit: v || undefined } as Partial<Target>)
+            }
+            onInvalid={setValidationMessage}
+            maxLength={FIELD_LIMITS.targetUnit}
+            maxLengthLabel="Unit"
+            ariaLabel="Unit"
+          />
+          {/* `gap-0`, so the closing bracket sits against its number: the row's gap used to fall
+              between them and printed "(from 0 )". The space after "from" is written into the
+              word instead of coming from the layout. */}
+          <div className="text-muted-foreground font-normal text-xs ml-1 flex items-center gap-0 opacity-70 hover:opacity-100 transition-opacity">
+            <span>(from&nbsp;</span>
+            <InlineEditable
+              value={String(target.start ?? 0)}
+              numeric
+              onChange={(v) => commitPatch({ start: parseFloat(v) })}
+              onTyping={(raw) => previewFrom("start", raw)}
+              onInvalid={setValidationMessage}
+              ariaLabel="Start value"
+            />
+            <span>)</span>
+          </div>
+        </div>
         <button
           onClick={() => commitPatch({ current: target.current + 1 })}
           disabled={target.current >= maxValue}
-          className="h-9 w-9 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary disabled:opacity-40"
+          className="gradient-ring h-9 w-9 grid place-items-center rounded-md hover:text-primary disabled:opacity-40"
           aria-label="Increment"
         >
           <Plus className="h-4 w-4" />
@@ -2229,15 +2175,27 @@ function ChecklistRow({
         className={cn(
           "shrink-0 rounded-full transition-colors",
           !singleLine && "mt-0.5",
-          it.done ? "text-primary" : "text-border-strong hover:text-primary/70",
+          // Guava once done — the accent mark that says "finished", the same warm colour the
+          // in-progress bar uses. A small accent mark, not a fill (CLAUDE.md).
+          it.done
+            ? "text-[#F45D48]"
+            : "text-border-strong hover:text-primary/70",
         )}
       >
-        <CircleCheck
-          className={compact ? "h-[18px] w-[18px]" : "h-5 w-5"}
-          strokeWidth={2}
-          fill={it.done ? "currentColor" : "none"}
-          stroke={it.done ? "#FFFFFF" : "currentColor"}
-        />
+        {/*
+          Gravity's `circle-check` / `circle-check-fill` pair — one control's two states, which is
+          the one case a solid glyph may sit beside its outline twin. The filled one knocks the
+          tick OUT of the disc, so a Guava tint prints a Guava disc with a white tick through it;
+          the old version passed `fill`/`stroke` props that a Gravity path (which sets its own
+          `fill="currentColor"`) simply ignores, so a done task looked identical to an open one.
+        */}
+        {it.done ? (
+          <CircleCheckFill
+            className={compact ? "h-[18px] w-[18px]" : "h-5 w-5"}
+          />
+        ) : (
+          <CircleCheck className={compact ? "h-[18px] w-[18px]" : "h-5 w-5"} />
+        )}
       </button>
 
       <div ref={textRef} className="min-w-0 flex-1">
@@ -2363,13 +2321,11 @@ function AddTaskControl({
     inputRef.current?.focus();
   };
 
+  // **The same mark and the same word-size as "Attach resource"** — an 18px circled plus and a
+  // 14px semibold teal label, in every layout. The compact (mobile) variant used to shrink both,
+  // so on a phone the two rows sat one under the other at visibly different sizes.
   const plus = (
-    <CirclePlus
-      className={cn(
-        "shrink-0 text-primary",
-        compact ? "h-4 w-4" : "h-[18px] w-[18px]",
-      )}
-    />
+    <CirclePlus className="h-[18px] w-[18px] shrink-0 text-primary" />
   );
 
   if (!open) {
@@ -2378,8 +2334,7 @@ function AddTaskControl({
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "flex items-center gap-2 py-1 text-left font-semibold text-primary transition-colors hover:text-primary/80",
-          compact ? "text-sm" : "text-[15px]",
+          "flex items-center gap-2 py-1 text-left text-sm font-semibold text-primary transition-colors hover:text-primary/80",
           className,
         )}
       >
@@ -2422,9 +2377,13 @@ function AddTaskControl({
             onClick={commit}
             disabled={overBy > 0}
             aria-label="Add"
+            title="Press Enter to add"
             className="shrink-0 rounded-full text-primary transition-colors hover:text-primary/80 disabled:opacity-40"
           >
-            <CirclePlus className="h-5 w-5" />
+            {/* The **Enter** mark, not a second circled plus: the row already opens with one, and
+                the same glyph at both ends of the field read as two different buttons for the
+                same job. Gravity `arrow-uturn-cw-down` is the return key. */}
+            <ArrowUturnCwDown className="h-[18px] w-[18px]" />
           </button>
         )}
       </div>

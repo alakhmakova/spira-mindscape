@@ -1,6 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, Flag, ListChecks, Target as TargetIcon } from "lucide-react";
+import {
+  Check,
+  Flag,
+  ListChecks,
+  Target as TargetIcon,
+} from "@/components/spira/icons";
 import { differenceInCalendarDays, isPast, format } from "date-fns";
 import type { Goal, Target } from "@/lib/spira/types";
 import {
@@ -339,7 +344,7 @@ function TimelineRow({
   const achievedButtonColor =
     item.kind === "goal"
       ? "bg-primary border-primary"
-      : "bg-[#ea580c] border-[#ea580c]";
+      : "bg-[#F45D48] border-[#F45D48]";
 
   return (
     <div className="group relative flex gap-5">
@@ -421,10 +426,12 @@ function TimelineRow({
 
         {item.kind === "goal" && (
           <div className="mt-3 flex max-w-xs items-center gap-3">
+            {/* The **Contrast** pair, like the cards view — this is the same All-goals page, and
+                two views of one list must not colour the same measure differently. */}
             <ProgressBar
               value={item.progress}
               className="h-1 flex-1"
-              tone="primary"
+              tone="contrast"
             />
             <span className="num text-[11px] font-bold tabular-nums text-muted-foreground/60">
               {formatPercent(item.progress, goalProgressSteps(item.goal))}%
@@ -527,12 +534,12 @@ function getItemMeta(item: TimelineItem) {
     return {
       icon: TargetIconSvg,
       label: "Target",
-      badge: "border-[#ea580c]/60 bg-[#ea580c]/5 text-foreground",
+      badge: "border-[#F45D48]/60 bg-[#F45D48]/5 text-foreground",
     };
   }
   return {
     icon: TaskIcon,
     label: "Task",
-    badge: "border-[#3b82f6]/60 bg-[#3b82f6]/5 text-foreground",
+    badge: "border-[#4793EA]/60 bg-[#4793EA]/5 text-foreground",
   };
 }

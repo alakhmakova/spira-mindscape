@@ -49,7 +49,20 @@ enum class AppFont(
     Arimo("Arimo", "Neo-grotesque, metric-compatible with Arial.", cyrillic = true),
     IbmPlexSans("IBM Plex Sans", "IBM's corporate grotesque; neutral, with a few engineered details.", cyrillic = true),
     Onest("Onest", "Contemporary geometric grotesque drawn for screens.", cyrillic = true),
-    GolosText("Golos Text", "Russian-first grotesque; its Cyrillic is the point rather than an afterthought.", cyrillic = true);
+    GolosText("Golos Text", "Russian-first grotesque; its Cyrillic is the point rather than an afterthought.", cyrillic = true),
+    Montserrat("Montserrat", "Geometric sans inspired by old Buenos Aires signage; even, wide letterforms. Cyrillic included.", cyrillic = true),
+    Futura("Futura (Jost*)", "Futura, via indestructible type's free Jost* revival. Geometric with a low waist. Cyrillic included.", cyrillic = true),
+
+    /**
+     * The real Futura rather than the Jost* revival above — ParaType's Cyrillic cut, supplied by
+     * the owner (2026-08-17). Both are in the list on purpose: a revival and its original differ
+     * most at exactly the small sizes this app is made of.
+     */
+    FuturaFuturis(
+        "Futura Futuris",
+        "ParaType's Cyrillic Futura — the real face, not the Jost* revival. Set a weight lighter than it ships: Light carries the body, its regular the bold.",
+        cyrillic = true,
+    );
 
     /**
      * The family this choice resolves to.
@@ -78,6 +91,13 @@ enum class AppFont(
             IbmPlexSans -> twoWeights(R.font.ibm_plex_sans_regular, R.font.ibm_plex_sans_medium)
             Onest -> twoWeights(R.font.onest_regular, R.font.onest_medium)
             GolosText -> twoWeights(R.font.golos_text_regular, R.font.golos_text_medium)
+            Montserrat -> twoWeights(R.font.montserrat_regular, R.font.montserrat_medium)
+            Futura -> twoWeights(R.font.jost_regular, R.font.jost_medium)
+            // **Shifted down a weight** (owner, 2026-08-17: it read too heavy). `..._regular` is
+            // the family's LIGHT cut and `..._medium` its regular; the real Bold is unused. The
+            // file names keep their role rather than the foundry's name, so the pairing here reads
+            // the same as every other candidate's.
+            FuturaFuturis -> twoWeights(R.font.futura_futuris_regular, R.font.futura_futuris_medium)
         }
 
     /** The GCentra arrangement: the heavier file carries Medium *and* Bold, as GCentra's does. */

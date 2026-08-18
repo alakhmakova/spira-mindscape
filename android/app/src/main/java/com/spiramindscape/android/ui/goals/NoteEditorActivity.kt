@@ -3,12 +3,11 @@ package com.spiramindscape.android.ui.goals
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.MotionEvent
 import android.webkit.JavascriptInterface
+import android.content.ClipboardManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -41,16 +40,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.text.font.FontWeight
-import android.widget.Toast
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import android.view.MotionEvent
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.border
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.apollographql.apollo.api.Optional
@@ -65,6 +73,8 @@ import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.HeaderCircleAction
 import com.spiramindscape.android.ui.components.SpiraInlineBanner
 import kotlinx.coroutines.withContext
+import com.spiramindscape.android.ui.components.SpiraToast
+import com.spiramindscape.android.ui.components.SpiraToastKind
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.SpiraTheme
 import com.spiramindscape.android.ui.theme.spiraExtras
@@ -98,17 +108,28 @@ class NoteEditorActivity : ComponentActivity() {
         val initialTitle = intent.getStringExtra(EXTRA_INITIAL_TITLE).orEmpty()
         val initialHtml = intent.getStringExtra(EXTRA_INITIAL_HTML).orEmpty()
 
-        fun saveBody(html: String) {
+        // A note autosaves as it is typed. A failed save used to be swallowed silently: nothing was
+        // logged and nothing was shown, so a note that didn't persist looked exactly like one that
+        // did — the "invisible AND lost" class the logging rules call out, and the difference the
+        // owner saw versus the web (whose optimistic store surfaces a sync error). Both a save that
+        // fails now surface: a WARN for us, and a banner for them.
+        fun saveBody(html: String, onError: () -> Unit) {
             saveScope.launch {
                 runCatching {
                     repository.updateResource(resourceId, UpdateResourceInput(body = Optional.present(html)))
+                }.onFailure { e ->
+                    SpiraLog.w(TAG, "note_body_save_failed resourceId=$resourceId", e)
+                    withContext(Dispatchers.Main) { onError() }
                 }
             }
         }
-        fun saveTitle(title: String) {
+        fun saveTitle(title: String, onError: () -> Unit) {
             saveScope.launch {
                 runCatching {
                     repository.updateResource(resourceId, UpdateResourceInput(title = Optional.present(title)))
+                }.onFailure { e ->
+                    SpiraLog.w(TAG, "note_title_save_failed resourceId=$resourceId", e)
+                    withContext(Dispatchers.Main) { onError() }
                 }
             }
         }
@@ -118,12 +139,24 @@ class NoteEditorActivity : ComponentActivity() {
                 // A failed delete is invisible and loses the user's intent, so it is reported both
                 // ways: a log for us, a banner for them (CLAUDE.md "Logging" — the BUG-034 class).
                 var deleteError by remember { mutableStateOf<String?>(null) }
+                // Same treatment for a save that didn't land, so lost edits stop being silent.
+                var saveError by remember { mutableStateOf<String?>(null) }
                 NoteEditorScreen(
                     initialTitle = initialTitle,
                     initialHtml = initialHtml,
-                    onTitleCommit = ::saveTitle,
-                    onBodyChange = ::saveBody,
+                    onTitleCommit = { title ->
+                        saveTitle(title) {
+                            saveError = "Couldn't save the note title. Check your connection and try again."
+                        }
+                    },
+                    onBodyChange = { html ->
+                        saveBody(html) {
+                            saveError = "Couldn't save this note — your latest edits may not be stored. Check your connection."
+                        }
+                    },
                     onDone = { finish() },
+                    saveError = saveError,
+                    onDismissSaveError = { saveError = null },
                     deleteError = deleteError,
                     onDismissDeleteError = { deleteError = null },
                     onDelete = {
@@ -183,138 +216,96 @@ private class NoteEditorController {
         }
     }
 
-    /**
-     * Select the word under a point in the page and report it back.
-     *
-     * This exists because the WebView's own selection menu offers **only "Select all"** here: the
-     * page's selection is ProseMirror's, and Chromium doesn't contribute Cut/Copy for it — so a
-     * long press produced a caret and no way to copy anything (BUG-032). Rather than fight a menu
-     * that isn't ours, the app selects the word itself and offers its own Copy.
-     *
-     * [then] receives the selected text and the selection's rectangle in **CSS pixels**, relative
-     * to the WebView's top-left, or null when the press didn't land on a word.
-     */
-    fun selectWordAt(x: Float, y: Float, then: (SelectedWord?) -> Unit) {
-        val web = webView ?: return then(null)
-        // caretRangeFromPoint is the Chromium spelling; the standard caretPositionFromPoint is
-        // the fallback so this keeps working if the WebView ever changes engine.
-        val js = """
-            (function () {
-              var x = $x, y = $y, r = null;
-              if (document.caretRangeFromPoint) {
-                r = document.caretRangeFromPoint(x, y);
-              } else if (document.caretPositionFromPoint) {
-                var p = document.caretPositionFromPoint(x, y);
-                if (p) { r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); }
-              }
-              if (!r || r.startContainer.nodeType !== 3) return null;
-              var t = r.startContainer.textContent || '', i = r.startOffset;
-              var isWord = function (c) { return c && /[^\s]/.test(c); };
-              var a = i, b = i;
-              while (a > 0 && isWord(t[a - 1])) a--;
-              while (b < t.length && isWord(t[b])) b++;
-              if (a === b) return null;
-              var sel = document.getSelection();
-              var range = document.createRange();
-              range.setStart(r.startContainer, a);
-              range.setEnd(r.startContainer, b);
-              sel.removeAllRanges();
-              sel.addRange(range);
-              // Remember where this selection started. The far end moves with the finger, so the
-              // anchor has to live on the page side — a DOM node can't be handed to Kotlin.
-              window.__spiraAnchor = { node: r.startContainer, offset: a };
-              var box = range.getBoundingClientRect();
-              // The RANGE's text, not the selection's: ProseMirror reasserts its own selection in
-              // the same tick, so getSelection().toString() comes back empty here. The range is
-              // ours and answers regardless.
-              return JSON.stringify({
-                text: range.toString(),
-                left: box.left, top: box.top, right: box.right, bottom: box.bottom
-              });
-            })()
-        """.trimIndent()
-        web.evaluateJavascript(js) { raw -> then(parseWord(raw)) }
-    }
+    // ── Selection ──────────────────────────────────────────────────────────────
+    //
+    // The app carries text selection itself, because the platform will not do it here: in a
+    // **WebView**, a long press inside a `contenteditable` drops an insertion caret and offers a
+    // one-item "Select all" — no word, no drag handles, no Copy. The **same page in stock Chrome**
+    // on the same emulator selects the word, raises both handles and offers Cut / Copy / Select all
+    // (2026-08-18; the screenshots are in the bug file). So it is not the page, and it is not ours
+    // to fix from inside it.
+    //
+    // Each call answers with the selected text and where its two ends sit — see the matching
+    // section of `embeds/note-editor/main.ts`, which does the work through ProseMirror.
 
-    /** The JS above answers with a JSON string (or null) — the two callers share this reading. */
-    private fun parseWord(raw: String?): SelectedWord? = runCatching {
-        val inner = JSONTokener(raw).nextValue() as? String ?: return null
-        val o = JSONObject(inner)
-        val text = o.getString("text")
-        if (text.isBlank()) null
-        else SelectedWord(
-            text = text,
-            left = o.getDouble("left").toFloat(),
-            top = o.getDouble("top").toFloat(),
-            right = o.getDouble("right").toFloat(),
-            bottom = o.getDouble("bottom").toFloat(),
+    /** Select the word under a point (CSS pixels from the WebView's top-left). */
+    fun selectWordAt(x: Float, y: Float, then: (NoteSelection?) -> Unit) =
+        call("window.spiraSelectWordAt ? window.spiraSelectWordAt($x, $y) : null", then)
+
+    /** Drag one end of the selection — [which] is "start" or "end" — to a point. */
+    fun moveSelectionEnd(which: String, x: Float, y: Float, then: (NoteSelection?) -> Unit) =
+        call(
+            "window.spiraMoveSelectionEnd ? " +
+                "window.spiraMoveSelectionEnd(${JSONObject.quote(which)}, $x, $y) : null",
+            then,
         )
-    }.getOrNull()
 
-    /**
-     * Grow the open selection so its far end follows the finger, and report what is covered.
-     *
-     * The near end is the anchor [selectWordAt] left on the page. Dragging backwards past it is
-     * handled by comparing document order, so a selection can be pulled either way.
-     */
-    fun extendSelectionTo(x: Float, y: Float, then: (SelectedWord?) -> Unit) {
-        val web = webView ?: return then(null)
-        val js = """
-            (function () {
-              var a = window.__spiraAnchor;
-              if (!a || !a.node) return null;
-              var x = $x, y = $y, r = null;
-              if (document.caretRangeFromPoint) {
-                r = document.caretRangeFromPoint(x, y);
-              } else if (document.caretPositionFromPoint) {
-                var p = document.caretPositionFromPoint(x, y);
-                if (p) { r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); }
-              }
-              if (!r) return null;
-              var range = document.createRange();
-              // Whichever end comes first in the document is the start — that is what lets the
-              // drag run backwards as naturally as forwards.
-              var probe = document.createRange();
-              probe.setStart(a.node, a.offset);
-              var backwards = probe.comparePoint(r.startContainer, r.startOffset) < 0;
-              if (backwards) {
-                range.setStart(r.startContainer, r.startOffset);
-                range.setEnd(a.node, a.offset);
-              } else {
-                range.setStart(a.node, a.offset);
-                range.setEnd(r.startContainer, r.startOffset);
-              }
-              var sel = document.getSelection();
-              sel.removeAllRanges();
-              sel.addRange(range);
-              var text = range.toString();
-              if (!text) return null;
-              var box = range.getBoundingClientRect();
-              return JSON.stringify({
-                text: text,
-                left: box.left, top: box.top, right: box.right, bottom: box.bottom
-              });
-            })()
-        """.trimIndent()
-        web.evaluateJavascript(js) { raw -> then(parseWord(raw)) }
+    /** Take the whole note. */
+    fun selectAll(then: (NoteSelection?) -> Unit) =
+        call("window.spiraSelectAll ? window.spiraSelectAll() : null", then)
+
+    /** Where the selection is now — used to redraw the handles after an edit. */
+    fun selectionInfo(then: (NoteSelection?) -> Unit) =
+        call("window.spiraSelectionInfo ? window.spiraSelectionInfo() : null", then)
+
+    /** Collapse the selection, so the highlight goes when the menu does. */
+    fun clearSelection() {
+        webView?.evaluateJavascript("window.spiraClearSelection && window.spiraClearSelection()", null)
     }
 
-    /** Whatever is selected right now — the user may have widened the word with the handles. */
+    /** The selected text, read live — the user may have widened it with a handle. */
     fun withSelection(then: (String) -> Unit) {
         val web = webView ?: return then("")
-        web.evaluateJavascript("document.getSelection().toString()") { raw ->
+        web.evaluateJavascript("window.spiraSelectedText ? window.spiraSelectedText() : ''") { raw ->
             then(runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty())
+        }
+    }
+
+    /** Every selection call answers with the same JSON (or null); this is the shared reading. */
+    private fun call(js: String, then: (NoteSelection?) -> Unit) {
+        val web = webView ?: return then(null)
+        web.evaluateJavascript(js) { raw ->
+            then(
+                runCatching {
+                    val inner = JSONTokener(raw).nextValue() as? String ?: return@runCatching null
+                    val o = JSONObject(inner)
+                    val text = o.getString("text")
+                    if (text.isBlank()) {
+                        null
+                    } else {
+                        NoteSelection(
+                            text = text,
+                            startX = o.getDouble("sx").toFloat(),
+                            startY = o.getDouble("sy").toFloat(),
+                            startTop = o.getDouble("st").toFloat(),
+                            endX = o.getDouble("ex").toFloat(),
+                            endY = o.getDouble("ey").toFloat(),
+                        )
+                    }
+                }.getOrNull(),
+            )
         }
     }
 }
 
-/** A word the user long-pressed, with where it sits so the Copy bubble can point at it. */
-private data class SelectedWord(
+/**
+ * A live selection in the note body: what it covers, and where its two ends are.
+ *
+ * The coordinates are **CSS pixels from the WebView's top-left**, which on Android is the same
+ * number as dp — the page is at `initial-scale=1` with `textZoom = 100` — so they can be used as
+ * offsets in the Compose overlay without conversion. [startX]/[startY] is the bottom-left of the
+ * first character, [endX]/[endY] the bottom-right of the last.
+ *
+ * [startTop] is the **top** of the first character's line. The menu needs it: lifted a fixed
+ * distance above the baseline instead, it sat on the very words it was describing.
+ */
+private data class NoteSelection(
     val text: String,
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float,
+    val startX: Float,
+    val startY: Float,
+    val startTop: Float,
+    val endX: Float,
+    val endY: Float,
 )
 
 @Composable
@@ -325,6 +316,8 @@ private fun NoteEditorScreen(
     onBodyChange: (String) -> Unit,
     onDone: () -> Unit,
     onDelete: () -> Unit = {},
+    saveError: String? = null,
+    onDismissSaveError: () -> Unit = {},
     deleteError: String? = null,
     onDismissDeleteError: () -> Unit = {},
 ) {
@@ -334,12 +327,42 @@ private fun NoteEditorScreen(
     var title by remember { mutableStateOf(initialTitle) }
     var state by remember { mutableStateOf(NoteEditorState()) }
     var showLinkDialog by remember { mutableStateOf(false) }
-    var copyBubble by remember { mutableStateOf<BubbleAt?>(null) }
+    // What is selected in the note body right now, or null. The app draws the highlight's handles
+    // and its menu from this — see the note on the editor Box below.
+    var selection by remember { mutableStateOf<NoteSelection?>(null) }
+    // What the last toolbar action did, in words. A format painter (or a paste) that says nothing
+    // is one the user cannot tell has worked — which is exactly what was reported on the web.
+    var noteToast by remember { mutableStateOf<NoteToast?>(null) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val clipboard = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
 
     fun finish() {
         // Capture the very last keystrokes before leaving (continuous autosave covers the rest).
-        controller.withHtml { html -> if (html.isNotEmpty()) onBodyChange(html) }
-        onDone()
+        //
+        // **Wait for the read.** `withHtml` goes through `evaluateJavascript`, which is
+        // asynchronous: calling `onDone()` straight after it navigated away and tore the WebView
+        // down while the request was still in flight, so the callback carrying the final HTML
+        // often never arrived. That is a lost edit with nothing on screen to say so — and it is
+        // precisely the "my last changes weren't saved" the owner reported (see
+        // `backlog/android-note-edits-can-be-lost-silently.md`). The web has no equivalent because
+        // its editor writes through the optimistic store rather than reading itself on the way out.
+        //
+        // `once` guards the pair: whichever of the callback and the timeout comes first wins, so
+        // the screen is never left open by a WebView that fails to answer, and `onDone` is never
+        // called twice.
+        var left = false
+        fun once(block: () -> Unit) {
+            if (left) return
+            left = true
+            block()
+        }
+        mainHandler.postDelayed({ once(onDone) }, FINAL_READ_TIMEOUT_MS)
+        controller.withHtml { html ->
+            if (html.isNotEmpty()) onBodyChange(html)
+            once(onDone)
+        }
     }
 
     Column(
@@ -361,55 +384,147 @@ private fun NoteEditorScreen(
             },
         )
 
-        SpiraInlineBanner(
-            message = deleteError,
-            onDismiss = onDismissDeleteError,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
+        // The banner carries its own margin, so neither of these adds one.
+        SpiraInlineBanner(message = saveError, onDismiss = onDismissSaveError)
+
+        SpiraInlineBanner(message = deleteError, onDismiss = onDismissDeleteError)
 
         // Native formatting toolbar.
         NoteToolbar(
             state = state,
             onCmd = { name, arg -> controller.cmd(name, arg) },
             onLink = { showLinkDialog = true },
+            onPaste = {
+                // Read the clipboard NATIVELY: a WebView gives the page no usable
+                // `navigator.clipboard.read()`, so the web half's approach (read the rich flavour
+                // in JS) simply does nothing here. The HTML flavour is preferred so headings, bold
+                // and lists survive; plain text is the fallback, and an empty clipboard says so
+                // rather than looking like a dead button.
+                val clip = clipboard.primaryClip
+                val item = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                val html = item?.htmlText
+                val text = item?.coerceToText(context)?.toString()
+                when {
+                    !html.isNullOrBlank() -> {
+                        controller.cmd("insertHtml", html)
+                        noteToast = NoteToast("Pasted, keeping its formatting", error = false)
+                    }
+                    !text.isNullOrBlank() -> {
+                        controller.cmd("insertHtml", text)
+                        noteToast = NoteToast("Pasted as plain text", error = false)
+                    }
+                    else -> noteToast = NoteToast("Nothing to paste", error = true)
+                }
+            },
             modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface),
         )
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.spiraExtras.border))
 
-        // The editor content fills the rest. The Copy bubble is drawn over it, anchored on the
-        // selected word, so it has to share a Box with the WebView rather than sit in the column.
+        // The editor content fills the rest. The selection handles and the selection menu are
+        // drawn OVER it, so they share a Box with the WebView rather than sitting in the column.
+        //
+        // **One selection system, and it is the app's** (owner, 2026-08-18). What the owner met —
+        // one word selected, no handles to widen it, and a platform "Select all" bubble fighting
+        // the app's own Copy card — was two systems on one gesture. Re-tested on an emulator that
+        // day: in a **WebView** a long press in this editor drops a caret and offers "Select all"
+        // and nothing else, while the **same page in stock Chrome** selects the word and raises
+        // both handles. The host is what differs, and we cannot reach it from the page — so the
+        // platform's half is switched off (the long press is consumed) and the app draws all of
+        // it: the word on the press, either end draggable afterwards, and one menu.
         Box(Modifier.fillMaxWidth().weight(1f)) {
             NoteEditorWebView(
                 controller = controller,
                 initialHtml = initialHtml,
                 onHtmlChange = onBodyChange,
                 onStateChange = { state = it },
-                onWordSelected = { word, x, top, bottom ->
-                    copyBubble = BubbleAt(x.dp, top.dp, bottom.dp, word)
+                onPainterMessage = { noteToast = NoteToast(it, error = false) },
+                onLongPress = { x, y -> controller.selectWordAt(x, y) { selection = it } },
+                onTap = {
+                    if (selection != null) {
+                        selection = null
+                        controller.clearSelection()
+                    }
                 },
-                onSelectionDismissed = { copyBubble = null },
                 modifier = Modifier.fillMaxSize(),
             )
-            copyBubble?.let { at ->
-                CopySelectionBubble(
-                    at = at,
-                    onCopy = {
-                        // Read the selection at the moment of the tap, not at long-press: the
-                        // user may have widened it with the handles in between.
-                        controller.withSelection { live ->
-                            // Prefer whatever is selected now — the user may have widened the
-                            // word with the handles — and fall back to the word we captured,
-                            // because the page reasserts its own selection right after ours.
-                            val text = live.ifBlank { at.word }
-                            if (text.isNotBlank()) {
-                                copyPlainText(context, "Note", text)
-                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                            }
+
+            selection?.let { sel ->
+                // Read the text live rather than trusting what the long press captured: the user
+                // may have widened the range with a handle since.
+                fun withSelected(action: (String) -> Unit) {
+                    controller.withSelection { live ->
+                        val text = live.ifBlank { sel.text }
+                        if (text.isNotBlank()) action(text)
+                    }
+                }
+                fun finish() {
+                    selection = null
+                    controller.clearSelection()
+                }
+
+                SelectionHandles(
+                    selection = sel,
+                    onMove = { which, x, y ->
+                        controller.moveSelectionEnd(which, x, y) { moved ->
+                            if (moved != null) selection = moved
                         }
-                        copyBubble = null
                     },
                 )
+                SelectionMenu(
+                    selection = sel,
+                    onCopy = {
+                        withSelected { text ->
+                            copyPlainText(context, "Note", text)
+                            noteToast = NoteToast("Copied", error = false)
+                        }
+                        finish()
+                    },
+                    onCut = {
+                        withSelected { text ->
+                            copyPlainText(context, "Note", text)
+                            // `insertHtml` with an empty string replaces the selection with
+                            // nothing, which is exactly a cut.
+                            controller.cmd("insertHtml", "")
+                            noteToast = NoteToast("Cut", error = false)
+                        }
+                        selection = null
+                    },
+                    onPaste = {
+                        val item = clipboard.primaryClip
+                            ?.takeIf { it.itemCount > 0 }
+                            ?.getItemAt(0)
+                        val html = item?.htmlText
+                        val text = item?.coerceToText(context)?.toString()
+                        // Replaces the selection, which is what "paste over what I picked" means.
+                        when {
+                            !html.isNullOrBlank() -> {
+                                controller.cmd("insertHtml", html)
+                                noteToast = NoteToast("Pasted, keeping its formatting", error = false)
+                            }
+                            !text.isNullOrBlank() -> {
+                                controller.cmd("insertHtml", text)
+                                noteToast = NoteToast("Pasted as plain text", error = false)
+                            }
+                            else -> noteToast = NoteToast("Nothing to paste", error = true)
+                        }
+                        selection = null
+                    },
+                    // The platform's own "Select all" was the only item its menu ever offered here,
+                    // and losing it would be a step back — so it is on ours.
+                    onSelectAll = { controller.selectAll { if (it != null) selection = it } },
+                )
             }
+
+            // The toast floats over the editor at the foot, clear of the toolbar at the top and of
+            // the keyboard, which the column above already pads for.
+            SpiraToast(
+                message = noteToast?.text,
+                kind = if (noteToast?.error == true) SpiraToastKind.Error else SpiraToastKind.Success,
+                onDismiss = { noteToast = null },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
+            )
         }
     }
 
@@ -454,47 +569,197 @@ private fun LinkDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-/** Where the Copy bubble points: the middle of the word, and the band the word occupies. */
-private data class BubbleAt(val x: Dp, val top: Dp, val bottom: Dp, val word: String)
-
 /**
- * The app's own selection menu — a single **Copy**, floating over the word.
+ * The two teardrops at the ends of a selection, and the drags that widen it.
  *
- * The WebView's menu offers only "Select all" for this editor (BUG-032), so the copy is carried
- * by the app instead. It is the same white floating card as every other Spira menu, and it sits
- * just above the word, clamped so it can't run off either edge.
+ * They exist because the WebView draws none of its own for a selection the page made (see the note
+ * on the editor Box). Without them a long press could only ever take one word, which the owner
+ * rightly called useless: a quotation is a sentence, not a word.
+ *
+ * Each handle sits under its end of the highlight, pointing up at the character it holds. A drag
+ * moves **that** end only; pulling one past the other swaps them rather than emptying the range, so
+ * a handle dragged the wrong way keeps selecting. The page snaps each end to a character boundary
+ * and answers with where it landed, which is what moves the teardrop.
  */
 @Composable
-private fun CopySelectionBubble(at: BubbleAt, onCopy: () -> Unit) {
-    val width = 104.dp
-    // Squared off with a small radius rather than a pill: it reads as a menu, not as a chip.
-    val shape = RoundedCornerShape(8.dp)
+private fun BoxScope.SelectionHandles(
+    selection: NoteSelection,
+    onMove: (which: String, x: Float, y: Float) -> Unit,
+) {
+    SelectionHandle("start", selection.startX, selection.startY, onMove)
+    SelectionHandle("end", selection.endX, selection.endY, onMove)
+}
+
+/** One end's teardrop. [x]/[y] are CSS pixels — the same number as dp — from the WebView corner. */
+@Composable
+private fun BoxScope.SelectionHandle(
+    which: String,
+    x: Float,
+    y: Float,
+    onMove: (which: String, x: Float, y: Float) -> Unit,
+) {
+    val density = LocalDensity.current
+    // Where the finger is asking to put this end, in the page's own coordinates. Tracked separately
+    // from the selection: the page snaps to characters, and re-seeding this from the snapped result
+    // would drag the finger backwards a fraction of a character at a time.
+    var pointX by remember { mutableStateOf(0f) }
+    var pointY by remember { mutableStateOf(0f) }
     Box(
         Modifier
-            // Above the word by preference, below it when the word sits too near the top to
-            // leave room — otherwise the card lands on the line it is describing and hides it.
+            .align(Alignment.TopStart)
+            // The teardrop hangs below the line and to the outside of its end, the way the
+            // platform's own do — inside, the pair would cover the first and last characters.
             .offset(
-                x = (at.x - width / 2).coerceAtLeast(8.dp),
-                y = (at.top - 50.dp).let { if (it >= 8.dp) it else at.bottom + 10.dp },
+                x = (if (which == "start") x - HANDLE_SIZE.value else x).dp,
+                y = y.dp,
             )
+            .size(HANDLE_SIZE)
+            .pointerInput(which) {
+                detectDragGestures(
+                    onDragStart = {
+                        pointX = x
+                        // Aim at the middle of the line rather than at the baseline the handle sits
+                        // on: a point exactly on the baseline lands between two lines as often as
+                        // on either of them.
+                        pointY = y - HANDLE_AIM.value
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        pointX += amount.x / density.density
+                        pointY += amount.y / density.density
+                        onMove(which, pointX, pointY)
+                    },
+                )
+            }
+            .semantics {
+                contentDescription =
+                    if (which == "start") "Selection start handle" else "Selection end handle"
+            },
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val r = size.minDimension / 2f
+            // A circle with one square corner pointing back at the character it holds — the shape
+            // Android's own selection handles use, so the gesture reads as the familiar one.
+            drawCircle(HANDLE_INK, radius = r, center = Offset(r, r))
+            drawPath(
+                Path().apply {
+                    if (which == "start") {
+                        moveTo(r, 0f)
+                        lineTo(size.width, 0f)
+                        lineTo(size.width, r)
+                        close()
+                    } else {
+                        moveTo(0f, 0f)
+                        lineTo(r, 0f)
+                        lineTo(0f, r)
+                        close()
+                    }
+                },
+                color = HANDLE_INK,
+            )
+        }
+    }
+}
+
+/** The teardrop's diameter — a comfortable target without covering the words around it. */
+private val HANDLE_SIZE = 22.dp
+
+/** How far above its baseline a dragged handle aims, so it lands on the line rather than between. */
+private val HANDLE_AIM = 8.dp
+
+/** Kale, like every other thing in the app the finger can move. */
+private val HANDLE_INK = Color(0xFF0A8080)
+
+/**
+ * The app's selection menu — **the only menu on this screen** (owner, 2026-08-18).
+ *
+ * The platform's used to appear beside it offering "Select all" and nothing else, so the two fought
+ * over the same words. The long press is consumed now, and everything the platform's menu could do
+ * is here: Copy, Cut, Paste over the selection, and Select all.
+ *
+ * The same floating white card as every other Spira menu. It sits above the selection by preference
+ * and drops below it when the words are too near the top to leave room, so it never covers the line
+ * it is describing.
+ */
+@Composable
+private fun BoxScope.SelectionMenu(
+    selection: NoteSelection,
+    onCopy: () -> Unit,
+    onCut: () -> Unit,
+    onPaste: () -> Unit,
+    onSelectAll: () -> Unit,
+) {
+    val width = 296.dp
+    val shape = RoundedCornerShape(8.dp)
+    val density = LocalDensity.current
+    // **Measured, not assumed.** The menu was placed a fixed 54dp above the baseline of the
+    // selection's first line, which is only ~10dp above the line itself — so it covered the words
+    // it belongs to (owner, 2026-08-18). Its own height is the number that matters, and only the
+    // menu knows it.
+    var height by remember { mutableStateOf(0.dp) }
+    val lineTop = selection.startTop.dp
+    val lastBottom = maxOf(selection.startY, selection.endY).dp
+    val centre = ((selection.startX + selection.endX) / 2f).dp
+    // Above the selection's FIRST line by preference, clear of its top edge. When there is no room
+    // up there it goes below the LAST line — and below the handles hanging off it, which would
+    // otherwise be buried under the card.
+    val above = lineTop - height - MENU_GAP
+    Row(
+        Modifier
+            .align(Alignment.TopStart)
+            .offset(
+                x = (centre - width / 2).coerceAtLeast(8.dp),
+                y = if (above >= 8.dp) above else lastBottom + HANDLE_SIZE + MENU_GAP,
+            )
+            .onSizeChanged { height = with(density) { it.height.toDp() } }
             .width(width)
-            // The same floating white card as every other Spira menu: on a white page the fill
-            // alone is invisible, so the hairline and the shadow are what make it a card.
+            // On a white page the fill alone is invisible: the hairline and the shadow are what
+            // make it a card.
             .shadow(12.dp, shape)
             .clip(shape)
             .background(MaterialTheme.spiraExtras.surfaceRaised)
-            .border(1.dp, MaterialTheme.spiraExtras.border, shape)
-            .clickable(onClick = onCopy)
-            .padding(horizontal = 20.dp, vertical = 11.dp),
+            .border(1.dp, MaterialTheme.spiraExtras.border, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SelectionMenuAction("Copy", Modifier.weight(1f), onCopy)
+        SelectionMenuDivider()
+        SelectionMenuAction("Cut", Modifier.weight(1f), onCut)
+        SelectionMenuDivider()
+        SelectionMenuAction("Paste", Modifier.weight(1f), onPaste)
+        SelectionMenuDivider()
+        SelectionMenuAction("Select all", Modifier.weight(1.4f), onSelectAll)
+    }
+}
+
+/** The air between the menu and the words — above the selection, or below the handles. */
+private val MENU_GAP = 10.dp
+
+@Composable
+private fun SelectionMenuAction(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.clickable(onClick = onClick).padding(vertical = 11.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            "Copy",
+            label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
         )
     }
+}
+
+/** A hairline between the menu's actions, inset so it doesn't touch the card's edges. */
+@Composable
+private fun SelectionMenuDivider() {
+    Box(
+        Modifier
+            .padding(vertical = 8.dp)
+            .width(1.dp)
+            .height(20.dp)
+            .background(MaterialTheme.spiraExtras.border),
+    )
 }
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -504,14 +769,19 @@ private fun NoteEditorWebView(
     initialHtml: String,
     onHtmlChange: (String) -> Unit,
     onStateChange: (NoteEditorState) -> Unit,
-    onWordSelected: (String, Float, Float, Float) -> Unit,
-    onSelectionDismissed: () -> Unit,
+    /** What the format painter just did, already worded — shown as a toast. */
+    onPainterMessage: (String) -> Unit,
+    /** A long press, in CSS pixels from the view's top-left: the gesture that selects a word. */
+    onLongPress: (Float, Float) -> Unit,
+    /** A plain touch: whatever was selected stops being selected. */
+    onTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val onChange = rememberUpdatedState(onHtmlChange)
     val onState = rememberUpdatedState(onStateChange)
-    val onWord = rememberUpdatedState(onWordSelected)
-    val onDismiss = rememberUpdatedState(onSelectionDismissed)
+    val onPainter = rememberUpdatedState(onPainterMessage)
+    val onPress = rememberUpdatedState(onLongPress)
+    val onTouch = rememberUpdatedState(onTap)
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val seedHtml = remember { initialHtml }
     val pageBg = MaterialTheme.colorScheme.surface.toArgb()
@@ -529,68 +799,28 @@ private fun NoteEditorWebView(
                 setBackgroundColor(pageBg)
                 isFocusable = true
                 isFocusableInTouchMode = true
-                // Where the finger last went down, in CSS pixels — what the long press needs to
-                // find the word. The page's coordinate space is density-independent, the view's
-                // is not, so the touch has to be converted on the way in.
+                // Where the finger last went down, in CSS pixels: what the long press needs to
+                // find the word. The page's coordinate space is density-independent and the view's
+                // is not, so the touch is converted on the way in.
                 var lastX = 0f
                 var lastY = 0f
-                // True from a long press until the finger lifts: the gesture that picks a range.
-                // A word on its own is rarely what someone wants to quote, so the press only
-                // OPENS the selection — dragging then grows it, and the Copy appears on release.
-                var picking = false
                 setOnTouchListener { v, e ->
-                    val cssX = e.x / density.density
-                    val cssY = e.y / density.density
-                    when (e.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            lastX = cssX
-                            lastY = cssY
-                            picking = false
-                            onDismiss.value()
-                        }
-                        MotionEvent.ACTION_MOVE -> if (picking) {
-                            // Drag the far end of the selection with the finger. The near end
-                            // stays where the press landed, held on the page side.
-                            controller.extendSelectionTo(cssX, cssY) { }
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            if (picking) {
-                                picking = false
-                                // Ask the page what ended up selected and put the Copy on it.
-                                controller.extendSelectionTo(cssX, cssY) { word ->
-                                    if (word != null) {
-                                        onWord.value(
-                                            word.text,
-                                            (word.left + word.right) / 2f,
-                                            word.top,
-                                            word.bottom,
-                                        )
-                                    }
-                                }
-                            } else if (!v.hasFocus()) {
-                                v.requestFocus()
-                            }
-                        }
+                    if (e.action == MotionEvent.ACTION_DOWN) {
+                        lastX = e.x / density.density
+                        lastY = e.y / density.density
+                        // A touch puts the caret somewhere new, so any open selection is over.
+                        onTouch.value()
                     }
-                    // While picking, the events are ours: handing them on would let the page
-                    // scroll under the finger and move the caret out from under the selection.
-                    picking && e.action == MotionEvent.ACTION_MOVE
+                    // Take focus on a touch, so the IME opens — that is why this is a WebView at
+                    // all. Nothing is consumed; the gesture goes on to the page.
+                    if (e.action == MotionEvent.ACTION_UP && !v.hasFocus()) v.requestFocus()
+                    false
                 }
-                // The press opens a selection on the word under the finger — see
-                // NoteEditorController.selectWordAt for why the WebView's own menu can't do this.
+                // **Consumed.** Returning false would let Chromium put its own caret bubble up
+                // beside ours — the "two menus" half of what the owner reported. Its bubble has
+                // only ever offered "Select all" in this editor, and ours offers that too.
                 setOnLongClickListener {
-                    picking = true
-                    controller.selectWordAt(lastX, lastY) { word ->
-                        if (word != null) {
-                            onWord.value(
-                                word.text,
-                                (word.left + word.right) / 2f,
-                                word.top,
-                                word.bottom,
-                            )
-                        }
-                    }
-                    // Consumed: letting it through re-opens Chromium's one-item menu on top.
+                    onPress.value(lastX, lastY)
                     true
                 }
                 addJavascriptInterface(
@@ -604,6 +834,12 @@ private fun NoteEditorWebView(
                         fun onState(json: String) {
                             val parsed = parseState(json)
                             mainHandler.post { onState.value(parsed) }
+                        }
+
+                        @JavascriptInterface
+                        fun onPainter(json: String) {
+                            val message = describePainter(json)
+                            mainHandler.post { onPainter.value(message) }
                         }
                     },
                     "SpiraNote",
@@ -643,6 +879,63 @@ private fun seedWhenReady(web: WebView, html: String, handler: Handler, attempt:
     }
 }
 
+/**
+ * How long leaving the editor waits for the WebView to hand back its final HTML.
+ *
+ * Long enough for a normal `evaluateJavascript` round trip (single-digit milliseconds), short
+ * enough that a wedged page cannot strand the user on a screen they asked to leave.
+ */
+private const val FINAL_READ_TIMEOUT_MS = 400L
+
+/** One toast's text and whether it reports a failure — the only two things the card varies by. */
+private data class NoteToast(val text: String, val error: Boolean)
+
+/**
+ * The words for what the format painter just did, from the JSON the editor reports.
+ *
+ * It names the marks — "Bold and italic copied" — rather than saying "formatting copied", which is
+ * the difference between a message that confirms and one that only reassures. The web's
+ * `describeMarks` (`RichTextEditor.tsx`) says the same words for the same marks; keep them in step.
+ */
+private fun describePainter(json: String): String = runCatching {
+    val o = JSONObject(json)
+    val picked = o.optJSONArray("picked")
+    val applied = o.optJSONArray("applied")
+    val array = picked ?: applied
+    val names = buildList { for (i in 0 until (array?.length() ?: 0)) add(array!!.getString(i)) }
+    val words = describeMarks(names)
+    // The same words the web says (`RichTextEditor.tsx`): putting an empty style down is not
+    // "plain formatting applied", it is the selection's own formatting being taken off.
+    if (picked != null) {
+        "$words copied — select text to apply it"
+    } else if (names.isEmpty()) {
+        "Formatting cleared from the selection"
+    } else {
+        "$words applied"
+    }
+}.getOrDefault("Formatting copied")
+
+/** The human word for each TipTap mark name. Mirrors the web's map exactly. */
+private fun describeMarks(names: List<String>): String {
+    val words = names.mapNotNull { name ->
+        when (name) {
+            "bold" -> "Bold"
+            "italic" -> "Italic"
+            "underline" -> "Underline"
+            "strike" -> "Strikethrough"
+            "code" -> "Code"
+            "highlight" -> "Highlight"
+            "textStyle" -> "Colour"
+            else -> name
+        }
+    }
+    return when {
+        words.isEmpty() -> "Plain formatting"
+        words.size == 1 -> words.single()
+        else -> words.dropLast(1).joinToString(", ") + " and " + words.last().lowercase()
+    }
+}
+
 private fun parseState(json: String): NoteEditorState = runCatching {
     val o = JSONObject(json)
     NoteEditorState(
@@ -660,5 +953,6 @@ private fun parseState(json: String): NoteEditorState = runCatching {
         task = o.optBoolean("task"),
         quote = o.optBoolean("quote"),
         link = o.optBoolean("link"),
+        painter = o.optBoolean("painter"),
     )
 }.getOrDefault(NoteEditorState())

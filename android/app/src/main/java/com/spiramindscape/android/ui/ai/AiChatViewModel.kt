@@ -19,13 +19,23 @@ import com.spiramindscape.android.data.ai.proposalFromToolArgs
 import com.spiramindscape.android.data.ai.randomProposalId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** Which conversation the panel is in. Mirrors the web `Mode` state machine. */
 enum class ChatMode { CHAT, GROW_START, GROW_ACTIVE, GROW_CLOSING, GROW_END }
+
+/**
+ * Whether a GROW session is live (its own messages are showing). `GROW_START` is the setup screen,
+ * before any message exists, so it is deliberately excluded — same as the web's `inGrow`.
+ */
+private fun isGrowMode(mode: ChatMode): Boolean =
+    mode == ChatMode.GROW_ACTIVE || mode == ChatMode.GROW_CLOSING || mode == ChatMode.GROW_END
 
 /**
  * The AI assistant on Android — the conversation, its transcript, the chosen provider and the
@@ -43,11 +53,32 @@ class AiChatViewModel(
     /** The goal this panel is scoped to, or null for the all-goals chat. */
     val scopeGoalId: String? = goalId
 
-    private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    /** The persisted general chat — the only list ever written to the server transcript. */
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    /**
+     * The live GROW session's own messages. A GROW session is deliberately **ephemeral**: its
+     * conversation is kept apart from the chat and is **never persisted**, mirroring the web's
+     * `gmsgs`/`msgs` split (`AiPanel.tsx` — "GROW sessions are intentionally ephemeral and not
+     * persisted"). Folding it into [_chatMessages] — as this used to — dropped the whole coaching
+     * session into the general chat, which is exactly what a separate session must not do.
+     */
+    private val _growMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
     private val _mode = MutableStateFlow(ChatMode.CHAT)
     val mode: StateFlow<ChatMode> = _mode.asStateFlow()
+
+    /**
+     * The list the panel shows: the GROW session while one is live, otherwise the chat transcript.
+     */
+    val messages: StateFlow<List<ChatMessage>> =
+        combine(_mode, _chatMessages, _growMessages) { m, chat, grow ->
+            if (isGrowMode(m)) grow else chat
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The message list writes go to right now — the GROW session's, or the chat's. */
+    private fun activeList(): MutableStateFlow<List<ChatMessage>> =
+        if (isGrowMode(_mode.value)) _growMessages else _chatMessages
 
     private val _streaming = MutableStateFlow(false)
     val streaming: StateFlow<Boolean> = _streaming.asStateFlow()
@@ -70,6 +101,39 @@ class AiChatViewModel(
 
     private val _remainingSeconds = MutableStateFlow(0)
     val remainingSeconds: StateFlow<Int> = _remainingSeconds.asStateFlow()
+
+    /**
+     * The composer's unsent draft and its pending attachments live **here**, not in the composable.
+     *
+     * Taking a photo launches the camera, and a memory-hungry camera app routinely gets this
+     * activity recreated while it is in front. A `remember` in the composer loses everything in that
+     * moment — so a note attached before the photo simply vanished, leaving only the photo
+     * (BUG-030 follow-up). The ViewModel survives that recreation, so what was half-composed
+     * survives with it.
+     */
+    private val _composerDraft = MutableStateFlow("")
+    val composerDraft: StateFlow<String> = _composerDraft.asStateFlow()
+
+    private val _composerAttachments = MutableStateFlow<List<AiApi.ChatAttachment>>(emptyList())
+    val composerAttachments: StateFlow<List<AiApi.ChatAttachment>> = _composerAttachments.asStateFlow()
+
+    fun setComposerDraft(text: String) {
+        _composerDraft.value = text
+    }
+
+    /** Append attachments (from the file picker, the camera, or the resource sheet), capped. */
+    fun addComposerAttachments(picked: List<AiApi.ChatAttachment>) {
+        _composerAttachments.value = (_composerAttachments.value + picked).takeLast(ATTACH_MAX_COUNT)
+    }
+
+    fun removeComposerAttachment(attachment: AiApi.ChatAttachment) {
+        _composerAttachments.value = _composerAttachments.value - attachment
+    }
+
+    private fun clearComposer() {
+        _composerDraft.value = ""
+        _composerAttachments.value = emptyList()
+    }
 
     private var streamJob: Job? = null
     private var timerJob: Job? = null
@@ -147,7 +211,7 @@ class AiChatViewModel(
             .getOrNull() ?: return
         val parsed = parseTranscript(stored.content) ?: return
         lastSyncedAt = stored.updatedAt
-        _messages.value = mergeAttachmentBytes(_messages.value, parsed)
+        _chatMessages.value = mergeAttachmentBytes(_chatMessages.value, parsed)
     }
 
     /**
@@ -157,6 +221,9 @@ class AiChatViewModel(
      */
     fun syncTranscript() {
         if (_streaming.value) return
+        // A live GROW session is ephemeral and off to the side; never let a sync pull the chat
+        // transcript in over it (the web's sync effect returns early the same way).
+        if (isGrowMode(_mode.value)) return
         viewModelScope.launch {
             val stored = runCatching { api.getTranscript(goalId) }
                 .onFailure { SpiraLog.w(TAG, "ai_transcript_sync_failed goalId=$goalId", it) }
@@ -164,12 +231,12 @@ class AiChatViewModel(
             if (stored.updatedAt != null && stored.updatedAt == lastSyncedAt) return@launch
             val parsed = parseTranscript(stored.content) ?: return@launch
             lastSyncedAt = stored.updatedAt
-            _messages.value = mergeAttachmentBytes(_messages.value, parsed)
+            _chatMessages.value = mergeAttachmentBytes(_chatMessages.value, parsed)
         }
     }
 
     private fun persist() {
-        val json = encodeTranscript(_messages.value)
+        val json = encodeTranscript(_chatMessages.value)
         viewModelScope.launch {
             // The highest-value one: a failure here means the whole conversation is not
             // saved, and the UI gives no sign of it until the next device shows nothing.
@@ -182,7 +249,7 @@ class AiChatViewModel(
     /** "New chat" — clears this scope everywhere. */
     fun clearChat() {
         cancelStream()
-        _messages.value = emptyList()
+        _chatMessages.value = emptyList()
         _mode.value = ChatMode.CHAT
         stopTimer()
         // The screen clears regardless, so a failure leaves the old chat on the server and
@@ -208,6 +275,9 @@ class AiChatViewModel(
         if (trimmed.isEmpty() && attachments.isEmpty()) return
         if (_streaming.value) return
 
+        // The message is on its way — empty the composer so the draft and chips don't linger.
+        clearComposer()
+
         val userMessage = ChatMessage(
             id = randomProposalId(),
             role = ChatRole.USER,
@@ -216,12 +286,16 @@ class AiChatViewModel(
             revisedLabel = revisedLabel,
         )
         val placeholderId = randomProposalId()
-        _messages.update {
+        // Whichever conversation we're in, this turn stays in it — a GROW turn never touches the
+        // chat list, and the captured [target] is used for every update below so a mode flip
+        // mid-stream (active → closing → end) can't misroute the streaming reply.
+        val growing = _mode.value == ChatMode.GROW_ACTIVE || _mode.value == ChatMode.GROW_CLOSING
+        val target = if (isGrowMode(_mode.value)) _growMessages else _chatMessages
+        target.update {
             it + userMessage + ChatMessage(placeholderId, ChatRole.ASSISTANT, "", streaming = true)
         }
 
-        val history = buildHistory(_messages.value.dropLast(2) + userMessage)
-        val growing = _mode.value == ChatMode.GROW_ACTIVE || _mode.value == ChatMode.GROW_CLOSING
+        val history = buildHistory(target.value.dropLast(2) + userMessage)
 
         _streaming.value = true
         streamJob = viewModelScope.launch {
@@ -242,17 +316,17 @@ class AiChatViewModel(
                 when (event) {
                     is AiApi.ChatEvent.Token -> {
                         answer.append(event.text)
-                        updateMessage(placeholderId) { it.copy(content = answer.toString()) }
+                        updateMessage(target, placeholderId) { it.copy(content = answer.toString()) }
                     }
                     is AiApi.ChatEvent.Proposal ->
                         proposalFromToolArgs(event.argsJson)?.let { proposals += it }
                     is AiApi.ChatEvent.Status ->
-                        updateMessage(placeholderId) { it.copy(status = event.message) }
+                        updateMessage(target, placeholderId) { it.copy(status = event.message) }
                     AiApi.ChatEvent.Done -> Unit
                     is AiApi.ChatEvent.Error -> {
                         failed = true
                         if (event.message == AiApi.ERROR_NO_KEY) _needsKey.value = true
-                        updateMessage(placeholderId) {
+                        updateMessage(target, placeholderId) {
                             it.copy(
                                 content = errorText(event.message),
                                 streaming = false,
@@ -265,7 +339,7 @@ class AiChatViewModel(
             }
 
             if (!failed) {
-                updateMessage(placeholderId) {
+                updateMessage(target, placeholderId) {
                     it.copy(
                         // A reply that is only a tool call has no prose; say something rather
                         // than leaving an empty bubble above the card.
@@ -278,14 +352,15 @@ class AiChatViewModel(
                     )
                 }
                 // An assistant turn that produced nothing at all is noise — drop it.
-                _messages.update { list ->
+                target.update { list ->
                     list.filterNot { it.id == placeholderId && it.content.isBlank() && it.proposals.isEmpty() }
                 }
             }
 
             _streaming.value = false
             if (growing && _mode.value == ChatMode.GROW_CLOSING) _mode.value = ChatMode.GROW_END
-            persist()
+            // Only the chat transcript is persisted; a GROW session is ephemeral by design.
+            if (!growing) persist()
         }
     }
 
@@ -294,7 +369,7 @@ class AiChatViewModel(
         streamJob?.cancel()
         streamJob = null
         _streaming.value = false
-        _messages.update { list ->
+        activeList().update { list ->
             list.mapNotNull { m ->
                 when {
                     !m.streaming -> m
@@ -305,8 +380,12 @@ class AiChatViewModel(
         }
     }
 
-    private fun updateMessage(id: String, transform: (ChatMessage) -> ChatMessage) {
-        _messages.update { list -> list.map { if (it.id == id) transform(it) else it } }
+    private fun updateMessage(
+        target: MutableStateFlow<List<ChatMessage>>,
+        id: String,
+        transform: (ChatMessage) -> ChatMessage,
+    ) {
+        target.update { list -> list.map { if (it.id == id) transform(it) else it } }
     }
 
     private fun errorText(code: String): String = when (code) {
@@ -325,7 +404,10 @@ class AiChatViewModel(
     fun settleProposal(messageId: String, proposalId: String, approved: Boolean) {
         var serverId: Long? = null
         val next = if (approved) ProposalStatus.APPROVED else ProposalStatus.REJECTED
-        _messages.update { list ->
+        // A GROW session's cards live in the ephemeral list; settle them there and do not persist
+        // (the change itself is still applied on the server below).
+        val inGrow = isGrowMode(_mode.value)
+        activeList().update { list ->
             list.map { message ->
                 if (message.id != messageId) {
                     message
@@ -348,7 +430,7 @@ class AiChatViewModel(
                 runCatching { if (approved) api.approveProposal(id) else api.rejectProposal(id) }
             }
         }
-        persist()
+        if (!inGrow) persist()
     }
 
     /**
@@ -374,6 +456,7 @@ class AiChatViewModel(
 
     fun cancelGrow() {
         _mode.value = ChatMode.CHAT
+        _growMessages.value = emptyList()
         stopTimer()
     }
 
@@ -381,6 +464,8 @@ class AiChatViewModel(
     fun startGrow(minutes: Int) {
         _sessionMinutes.value = minutes
         _remainingSeconds.value = minutes * 60
+        // A fresh, empty session — never carrying over a previous one's messages.
+        _growMessages.value = emptyList()
         _mode.value = ChatMode.GROW_ACTIVE
         startTimer()
         send("Let's start a GROW session.")
@@ -397,6 +482,8 @@ class AiChatViewModel(
 
     fun finishGrow() {
         _mode.value = ChatMode.CHAT
+        // The session is over and was never persisted — drop its messages so they can't reappear.
+        _growMessages.value = emptyList()
         stopTimer()
     }
 

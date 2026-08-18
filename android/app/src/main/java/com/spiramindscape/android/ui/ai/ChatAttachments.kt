@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -73,6 +72,12 @@ class ChatAttachActions(
 @Composable
 fun rememberChatAttachmentPicker(
     onPicked: (List<AiApi.ChatAttachment>) -> Unit,
+    /**
+     * A failure the user has to be told about. It is raised to the caller rather than shown here,
+     * so it can be said in the app's own toast — a platform `Toast` is a raw un-themed element and
+     * has no business in product UI.
+     */
+    onError: (String) -> Unit = {},
 ): ChatAttachActions {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -121,7 +126,7 @@ fun rememberChatAttachmentPicker(
                 // The shot was taken but couldn't be read or was too large. Silence here is what
                 // makes a feature feel broken, so say it and record it.
                 SpiraLog.w(TAG, "camera_photo_unreadable uri=$uri")
-                Toast.makeText(context, "Couldn't attach that photo. Please try again.", Toast.LENGTH_LONG).show()
+                onError("Couldn't attach that photo. Please try again.")
             }
         }
     }

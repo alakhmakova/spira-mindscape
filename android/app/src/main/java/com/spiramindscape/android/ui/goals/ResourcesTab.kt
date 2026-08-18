@@ -50,7 +50,13 @@ import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.ResourceItem
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraChoice
+import com.spiramindscape.android.ui.components.SpiraBadgeTone
 import com.spiramindscape.android.ui.components.SpiraFilterTrigger
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.rememberCopyFlash
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
+import com.spiramindscape.android.ui.components.SpiraSheetGroup
+import com.spiramindscape.android.ui.components.SpiraSheetPills
 import com.spiramindscape.android.ui.components.SpiraListToolbar
 import com.spiramindscape.android.ui.components.SpiraMenuChoice
 import com.spiramindscape.android.ui.components.SpiraMenuColumns
@@ -142,6 +148,7 @@ fun ResourcesTabContent(
             Text(
                 "Resources",
                 style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
             )
@@ -175,17 +182,18 @@ fun ResourcesTabContent(
                 SpiraFilterTrigger(
                     count = if (view.filter == ResourceFilter.All) 0 else 1,
                     contentDescription = "Filter resources",
-                ) { dismiss ->
-                    SpiraMenuColumns {
-                        SpiraMenuGroup("Kind") {
-                            ResourceFilter.entries.forEach { f ->
-                                SpiraMenuChoice(
-                                    label = f.label,
-                                    selected = f == view.filter,
-                                    onClick = { view.filter = f; dismiss() },
-                                )
-                            }
-                        }
+                    onReset = { view.filter = ResourceFilter.All },
+                ) {
+                    // "Type", not "Kind" (owner, 2026-08-18) — it is the word the resource cards
+                    // and the web's own filter already use, and the sheet was the last place still
+                    // asking the question by another name.
+                    SpiraSheetGroup("Type") {
+                        SpiraSheetPills(
+                            options = ResourceFilter.entries.map { SpiraChoice(it, it.label) },
+                            value = view.filter,
+                            onChange = { view.filter = it },
+                            tone = SpiraBadgeTone.Info,
+                        )
                     }
                 }
             },
@@ -200,12 +208,13 @@ fun ResourcesTabContent(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
         } else if (visible.isEmpty()) {
-            Text(
-                "No resources match that search or filter.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.spiraExtras.mutedForeground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            // A search or filter that hides everything is a **warning**, not a quiet grey line
+            // (owner, 2026-08-18): the page is not empty, the user's own filter is what emptied it,
+            // and a muted sentence in the middle of a blank page reads as "there is nothing here".
+            SpiraNoticeCard(
+                message = "No resources match that search or filter.",
+                kind = SpiraNoticeKind.Warning,
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
 
@@ -335,7 +344,11 @@ private fun NoteBody(res: ResourceItem, actions: GoalWorkspaceActions) {
                 NoteEditorActivity.intent(context, res.id, res.title ?: "", res.body ?: ""),
             )
         }
-        ResourceIconButton(SpiraIcons.Copy, "Copy note") { copyPlainText(context, "Note", preview) }
+        val copyNote = rememberCopyFlash()
+        ResourceIconButton(copyNote.icon, "Copy note") {
+            copyPlainText(context, "Note", preview)
+            copyNote.fire()
+        }
         ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) { actions.onRemoveResource(res.id) }
     }
 }
@@ -353,7 +366,11 @@ private fun LinkBody(res: ResourceItem, actions: GoalWorkspaceActions) {
         ResourcePrimaryButton("Open link", SpiraIcons.ExternalLink, Modifier.weight(1f), enabled = !res.url.isNullOrBlank()) {
             openUri(context, res.url)
         }
-        ResourceIconButton(SpiraIcons.Copy, "Copy link") { copyPlainText(context, "Link", res.url ?: "") }
+        val copyLink = rememberCopyFlash()
+        ResourceIconButton(copyLink.icon, "Copy link") {
+            copyPlainText(context, "Link", res.url ?: "")
+            copyLink.fire()
+        }
         ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) { actions.onRemoveResource(res.id) }
     }
 }
@@ -380,7 +397,8 @@ private fun EmailBody(res: ResourceItem, actions: GoalWorkspaceActions) {
         if (!res.phone.isNullOrBlank()) {
             ResourceIconButton(SpiraIcons.Smartphone, "Call") { openUri(context, "tel:${res.phone}") }
         }
-        ResourceIconButton(SpiraIcons.Copy, "Copy all fields") {
+        val copyContact = rememberCopyFlash()
+        ResourceIconButton(copyContact.icon, "Copy all fields") {
             val all = listOfNotNull(
                 res.name?.takeIf { it.isNotBlank() },
                 res.role?.takeIf { it.isNotBlank() },
@@ -388,6 +406,7 @@ private fun EmailBody(res: ResourceItem, actions: GoalWorkspaceActions) {
                 res.phone?.takeIf { it.isNotBlank() },
             ).joinToString("\n")
             copyPlainText(context, "Contact", all)
+            copyContact.fire()
         }
         ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) { actions.onRemoveResource(res.id) }
     }
@@ -465,7 +484,11 @@ private fun FileBody(res: ResourceItem, actions: GoalWorkspaceActions, onOpenFul
                     saveFile(downloadFileName(res.title, res.mime), res.mime ?: "application/octet-stream", bytes)
                 }
                 if (isImageMime(res.mime)) {
-                    ResourceIconButton(SpiraIcons.Copy, "Copy image") { copyImageToClipboard(context, res.mime, bytes) }
+                    val copyImage = rememberCopyFlash()
+                    ResourceIconButton(copyImage.icon, "Copy image") {
+                        copyImageToClipboard(context, res.mime, bytes)
+                        copyImage.fire()
+                    }
                 }
                 ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) { actions.onRemoveResource(res.id) }
             }
@@ -530,12 +553,21 @@ private fun BoxedField(
                 )
             }
             if (!copyValue.isNullOrBlank()) {
+                val copyField = rememberCopyFlash()
                 Box(
                     Modifier.size(34.dp).clip(RoundedCornerShape(8.dp))
-                        .clickable { copyPlainText(context, label, copyValue) },
+                        .clickable {
+                            copyPlainText(context, label, copyValue)
+                            copyField.fire()
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(SpiraIcons.Copy, contentDescription = "Copy $label", tint = MaterialTheme.spiraExtras.mutedForeground, modifier = Modifier.size(17.dp))
+                    Icon(
+                        copyField.icon,
+                        contentDescription = "Copy $label",
+                        tint = MaterialTheme.spiraExtras.mutedForeground,
+                        modifier = Modifier.size(17.dp),
+                    )
                 }
             }
         }

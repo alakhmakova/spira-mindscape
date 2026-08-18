@@ -18,6 +18,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.spiramindscape.android.ui.components.SpiraDropdownMenu
+import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.spiraExtras
 
@@ -44,9 +50,29 @@ data class NoteEditorState(
     val task: Boolean = false,
     val quote: Boolean = false,
     val link: Boolean = false,
+    /** The format painter is holding a style, waiting to put it down. */
+    val painter: Boolean = false,
 )
 
 private val TextColors = listOf("#222525", "#0a8080", "#f45d48", "#6c6c72")
+
+/**
+ * Font, size and line spacing — **the web's own three lists, value for value**
+ * (`RichTextEditor.tsx`). They are the last three controls Android's toolbar was missing, and they
+ * could not have been added before: the editor bundle did not register `FontFamily` / `FontSize` /
+ * `LineHeight`, so the commands behind them did not exist (owner, 2026-08-17).
+ *
+ * Each is a `SpiraDropdownMenu` rather than the web's `<select>`, because a native picker is what
+ * the rest of the app uses — but the values must stay identical, or the same note reads at a
+ * different size on the phone.
+ */
+private val FontFamilies = listOf(
+    "Sans" to "Arial, Helvetica, sans-serif",
+    "Serif" to "Georgia, 'Times New Roman', serif",
+    "Mono" to "'Courier New', monospace",
+)
+private val FontSizes = listOf("12", "14", "16", "18", "24", "32")
+private val LineHeights = listOf("1.0" to "1", "1.15" to "1.15", "1.5" to "1.5", "2.0" to "2")
 
 /**
  * The NATIVE Spira formatting toolbar for notes. A horizontally scrollable row of themed buttons
@@ -58,6 +84,8 @@ fun NoteToolbar(
     state: NoteEditorState,
     onCmd: (name: String, arg: String?) -> Unit,
     onLink: () -> Unit,
+    /** Reads the system clipboard natively — a WebView has no usable `navigator.clipboard.read()`. */
+    onPaste: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -85,6 +113,16 @@ fun NoteToolbar(
         TbIcon(SpiraIcons.Link, "Link", state.link) { onLink() }
         TbIcon(SpiraIcons.Unlink, "Remove link", false) { onCmd("unlink", null) }
         TbDivider()
+        TbMenu("Font", FontFamilies.map { it.first }) { index ->
+            onCmd("fontFamily", index?.let { FontFamilies[it].second })
+        }
+        TbMenu("Size", FontSizes) { index ->
+            index?.let { onCmd("fontSize", "${FontSizes[it]}px") }
+        }
+        TbMenu("Spacing", LineHeights.map { it.first }) { index ->
+            index?.let { onCmd("lineHeight", LineHeights[it].second) }
+        }
+        TbDivider()
         TextColors.forEach { hex ->
             Box(
                 Modifier.size(24.dp).clip(CircleShape)
@@ -93,6 +131,16 @@ fun NoteToolbar(
                     .clickable { onCmd("color", hex) },
             )
         }
+        // **Paste keeping formatting** and the **format painter** — the two the web toolbar had
+        // and this one did not (owner, 2026-08-17). The painter is one button with two steps: the
+        // first press picks the style up, the second puts it down, and it stays lit in between so
+        // the two steps are visible rather than implied.
+        TbIcon(SpiraIcons.Paste, "Paste (keep formatting)", false) { onPaste() }
+        TbIcon(
+            SpiraIcons.Paintbrush,
+            if (state.painter) "Apply the copied formatting" else "Copy formatting from here",
+            state.painter,
+        ) { onCmd("painter", null) }
         TbIcon(SpiraIcons.Eraser, "Clear formatting", false) { onCmd("clear", null) }
         TbDivider()
         TbIcon(SpiraIcons.Undo, "Undo", false) { onCmd("undo", null) }
@@ -122,6 +170,48 @@ private fun TbText(label: String, active: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+/**
+ * A worded toolbar control that opens a [SpiraDropdownMenu] of choices — Font, Size and Spacing.
+ *
+ * The word plus a small solid chevron, the same trigger shape the list toolbars use, so the note
+ * bar does not invent a fourth kind of control. Picking the first row ("Default") clears the
+ * attribute, which is what the web's empty `<option>` does.
+ */
+@Composable
+private fun TbMenu(label: String, options: List<String>, onPick: (Int?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .height(40.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .clickable { open = true }
+                .padding(horizontal = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.spiraExtras.mutedForeground,
+            )
+            Icon(
+                SpiraIcons.CaretDown,
+                contentDescription = label,
+                tint = MaterialTheme.spiraExtras.mutedForeground,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        SpiraDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            SpiraMenuItem(label = "Default", onClick = { open = false; onPick(null) })
+            options.forEachIndexed { index, option ->
+                SpiraMenuItem(label = option, onClick = { open = false; onPick(index) })
+            }
+        }
     }
 }
 

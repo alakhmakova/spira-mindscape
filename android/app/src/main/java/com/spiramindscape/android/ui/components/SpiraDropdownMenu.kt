@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,9 +48,10 @@ import com.spiramindscape.android.ui.theme.spiraExtras
  * corners read as a flat grey box) so it matches the reference exactly:
  *
  *  - **Pure white** background — never tinted/elevated grey.
- *  - **Width fits its content** ([IntrinsicSize.Max]); it never stretches full-width.
- *  - **Generously rounded** corners (20dp), a **hairline border**, and a soft **shadow** — reads
- *    as a floating card, not a rectangle.
+ *  - **Width fits its content** ([IntrinsicSize.Max]) with no floor of any kind; it never
+ *    stretches full-width and never sits in a box wider than its words.
+ *  - **Barely rounded** corners (8dp, the web's `rounded-md`), a **hairline border**, and a soft
+ *    hand-drawn **shadow** — reads as a floating card, not a rectangle.
  *  - Items are [SpiraMenuItem]s: **icon on the left, then the label**, with a fixed icon slot so
  *    every label starts at the same x. Destructive items are red; the selected one is a filled
  *    teal row with white content.
@@ -119,7 +118,11 @@ fun SpiraMenuSurface(
 ) {
     Surface(
         modifier = modifier
-            .widthIn(min = 168.dp)
+            // **No width floor at all** — the menu is exactly as wide as its widest row
+            // (`IntrinsicSize.Max` below) plus 4dp of container padding. A floor is what made every
+            // narrow kebab as wide as the sort menu, with a band of empty space beside two short
+            // words; 168dp was the first version of that mistake and 120dp was the same mistake,
+            // smaller. The web does the same with `w-max` (`ui/dropdown-menu.tsx`).
             .shadow(
                 elevation = MENU_SHADOW,
                 shape = RoundedCornerShape(MENU_RADIUS),
@@ -208,22 +211,22 @@ fun SpiraMenuDivider() {
 }
 
 /**
- * Lays a menu out as **columns side by side** rather than as one long list.
+ * Lays a menu out as **columns side by side** — one column per question.
  *
- * A sort menu is two questions (what to order by, and which way) and a target filter is three
- * (state, deadline, lock). Stacked, they became a column of a dozen rows where the user had to
- * remember which group each row belonged to and scroll to reach the last one. Across, each
- * question is its own short list under its own word, and the whole menu is read at a glance.
- *
- * Put a [SpiraMenuColumnDivider] between groups: `IntrinsicSize.Min` makes the rule exactly as
- * tall as the tallest column, so it never overshoots a short one.
+ * The owner asked only for the vertical divider between columns to go, not for the columns to be
+ * stacked into one tall list (2026-08-15). So the horizontal layout stays; each column is set
+ * apart by its own heading's hairline (see [SpiraMenuGroup]), not by a rule between columns.
+ * `IntrinsicSize.Min` keeps every column the height of the tallest so the row reads level.
  */
 @Composable
 fun SpiraMenuColumns(content: @Composable RowScope.() -> Unit) {
     Row(Modifier.height(IntrinsicSize.Min), content = content)
 }
 
-/** One column of a [SpiraMenuColumns] menu: its question, then that question's answers. */
+/**
+ * One column of a [SpiraMenuColumns] menu: its question, a **hairline under the heading**, then
+ * that question's answers below it.
+ */
 @Composable
 fun SpiraMenuGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.width(IntrinsicSize.Max)) {
@@ -234,25 +237,34 @@ fun SpiraMenuGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
             color = MaterialTheme.spiraExtras.mutedForeground,
             modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
         )
+        HorizontalDivider(
+            color = MaterialTheme.spiraExtras.border,
+            modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 4.dp),
+        )
         content()
     }
 }
 
-/** The hairline between two [SpiraMenuGroup]s. */
-@Composable
-fun SpiraMenuColumnDivider() {
-    VerticalDivider(
-        color = MaterialTheme.spiraExtras.border,
-        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-    )
+/** Which look a chosen [SpiraMenuChoice] takes. */
+enum class MenuChoiceVariant {
+    /** A real filter value — chosen = a filled teal row (the list-menu selection). */
+    Primary,
+
+    /** A modifier (Ascending / Descending) — chosen = the pale-grey "hover" look, so it reads as a
+     *  modifier rather than as the filter itself. */
+    Aux,
 }
 
+/** The pale grey a hovered/aux-selected row takes — neutral-150, matching the web's `#F6F6F6`. */
+private val MENU_AUX_SELECTED_BG = Color(0xFFF6F6F6)
+
 /**
- * A [SpiraMenuItem] for a **column** menu: no icon slot.
+ * A [SpiraMenuItem] for a grouped menu, with an optional leading [icon] (the direction glyphs on
+ * Ascending / Descending carry one).
  *
- * Three columns of rows each reserving 26dp for a mark that none of them carries would push the
- * menu past the width of a phone. Selection is said by the filled teal row, exactly as it is in
- * the list menus — the slot was only ever there to keep labels aligned down a single column.
+ * [variant] `Primary` (default) is a real filter value: chosen → a **filled teal row**. `Aux` is a
+ * modifier: chosen → the **pale-grey look with Kale text**, so a direction reads as a modifier and
+ * not as the filter itself.
  */
 @Composable
 fun SpiraMenuChoice(
@@ -260,27 +272,41 @@ fun SpiraMenuChoice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    variant: MenuChoiceVariant = MenuChoiceVariant.Primary,
+    icon: ImageVector? = null,
 ) {
+    val primarySelected = selected && variant == MenuChoiceVariant.Primary
+    val auxSelected = selected && variant == MenuChoiceVariant.Aux
+    val rowBg = when {
+        primarySelected -> MaterialTheme.colorScheme.primary
+        auxSelected -> MENU_AUX_SELECTED_BG
+        else -> Color.Unspecified
+    }
+    val contentColor = when {
+        primarySelected -> MaterialTheme.colorScheme.onPrimary
+        auxSelected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     Row(
         modifier
             .fillMaxWidth()
             .padding(horizontal = 2.dp, vertical = 1.dp)
             .clip(RoundedCornerShape(6.dp))
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primary) else Modifier)
+            .then(if (rowBg != Color.Unspecified) Modifier.background(rowBg) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
+            color = contentColor,
         )
     }
 }

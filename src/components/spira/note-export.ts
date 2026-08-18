@@ -198,7 +198,7 @@ const PDF_STYLES = `
   li { margin: 0 0 0.15em; }
   li p { margin: 0; }
   blockquote { border-left: 3px solid #ccc; margin: 0.3em 0 0.3em 0; padding-left: 0.8em; color: #444; }
-  a { color: #0c69a3; }
+  a { color: #005397; }
   /* Avoid awkward breaks right after a heading and trim trailing space. */
   h1, h2, h3 { break-after: avoid; }
   body > *:first-child { margin-top: 0; }

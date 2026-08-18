@@ -77,6 +77,31 @@ object SpiraIcons {
             ".75 0 0 0 0 1.5 h 12 a .75 .75 0 0 0 0 -1.5 z",
     )
 
+    /** Gravity `circle-dashed` - a task that is not done yet (owner, 2026-08-18) */
+    val CircleDashed = gravity(
+        "M 6.906 1.085 a 7 7 0 0 1 2.188 0 .75 .75 0 0 1 -.232 1.482 5.6 5.6 0 0 0 -1.724 0 .75 .75 0 0 1 " +
+            "-.232 -1.482 M 4.933 2.502 a .75 .75 0 0 1 -.166 1.048 c -.466 .34 -.878 .75 -1.217 1.217 a .75 " +
+            ".75 0 0 1 -1.213 -.882 7 7 0 0 1 1.548 -1.548 .75 .75 0 0 1 1.048 .165 m 6.135 0 a .75 .75 0 0 1 " +
+            "1.047 -.165 7 7 0 0 1 1.548 1.548 .75 .75 0 0 1 -1.213 .882 5.5 5.5 0 0 0 -1.217 -1.217 .75 .75 " +
+            "0 0 1 -.165 -1.048 M 1.943 6.28 a .75 .75 0 0 1 .624 .857 5.6 5.6 0 0 0 0 1.724 .75 .75 0 0 1 " +
+            "-1.482 .232 7 7 0 0 1 0 -2.188 .75 .75 0 0 1 .858 -.625 m 12.115 0 a .75 .75 0 0 1 .857 .625 7 7 " +
+            "0 0 1 0 2.188 .75 .75 0 1 1 -1.482 -.232 5.5 5.5 0 0 0 0 -1.724 .75 .75 0 0 1 .624 -.857 M 2.502 " +
+            "11.068 a .75 .75 0 0 1 1.048 .165 c .34 .466 .75 .878 1.217 1.217 a .75 .75 0 0 1 -.882 1.213 7 " +
+            "7 0 0 1 -1.548 -1.548 .75 .75 0 0 1 .165 -1.047 m 10.996 0 a .75 .75 0 0 1 .165 1.047 7 7 0 0 1 " +
+            "-1.548 1.548 .75 .75 0 0 1 -.883 -1.213 5.5 5.5 0 0 0 1.218 -1.217 .75 .75 0 0 1 1.048 -.165 m " +
+            "-7.217 2.99 a .75 .75 0 0 1 .857 -.625 5.5 5.5 0 0 0 1.724 0 .75 .75 0 0 1 .232 1.482 7 7 0 0 1 " +
+            "-2.188 0 .75 .75 0 0 1 -.625 -.857",
+    )
+
+    /** Gravity `dots-9` - the nine-dot grip on a draggable card (owner, 2026-08-18) */
+    val Dots9 = gravity(
+        "M 9.5 3 a 1.5 1.5 0 1 1 -3 0 a 1.5 1.5 0 0 1 3 0 M 3 9.5 a 1.5 1.5 0 1 0 0 -3 a 1.5 1.5 0 0 0 " +
+            "0 3 M 9.5 8 a 1.5 1.5 0 1 1 -3 0 a 1.5 1.5 0 0 1 3 0 m 5 0 a 1.5 1.5 0 1 1 -3 0 a 1.5 1.5 0 " +
+            "0 1 3 0 M 13 4.5 a 1.5 1.5 0 1 0 0 -3 a 1.5 1.5 0 0 0 0 3 M 4.5 3 a 1.5 1.5 0 1 1 -3 0 a 1.5 " +
+            "1.5 0 0 1 3 0 M 8 14.5 a 1.5 1.5 0 1 0 0 -3 a 1.5 1.5 0 0 0 0 3 m 6.5 -1.5 a 1.5 1.5 0 1 1 " +
+            "-3 0 a 1.5 1.5 0 0 1 3 0 M 3 14.5 a 1.5 1.5 0 1 0 0 -3 a 1.5 1.5 0 0 0 0 3",
+    )
+
     /** Gravity `check` */
     val Check = gravity(
         "M 13.488 3.43 a .75 .75 0 0 1 .081 1.058 l -6 7 a .75 .75 0 0 1 -1.1 .042 l -3.5 -3.5 A .75 .75 " +
@@ -484,6 +509,59 @@ object SpiraIcons {
             ".75 .75 0 0 0 1.13 -.08 z",
     )
 
+    /**
+     * Gravity `circle-check-fill` - the **done** state of a checklist item, drawn as a solid disc
+     * with the tick knocked out of it. Its outline twin above is the not-done state; this is the
+     * one place a filled glyph may sit beside its outline sibling (CLAUDE.md), because the pair is
+     * one control's two states rather than a column of unrelated marks.
+     */
+    val CircleCheckFill = gravity(
+        "M 8 15 A 7 7 0 1 0 8 1 a 7 7 0 0 0 0 14 m 3.1 -8.55 a .75 .75 0 1 0 -1.2 -.9 L 7.419 8.858 L 6.03 " +
+            "7.47 a .75 .75 0 0 0 -1.06 1.06 l 2 2 a .75 .75 0 0 0 1.13 -.08 z",
+    )
+
+    /** Gravity `circle-xmark` - the destructive twin of [CirclePlus], for a "Delete …" action row. */
+    val CircleXmark = gravity(
+        "M 13.5 8 a 5.5 5.5 0 1 1 -11 0 a 5.5 5.5 0 0 1 11 0 M 15 8 A 7 7 0 1 1 1 8 a 7 7 0 0 1 14 0 M 6.53 " +
+            "5.47 a .75 .75 0 0 0 -1.06 1.06 L 6.94 8 L 5.47 9.47 a .75 .75 0 1 0 1.06 1.06 L 8 9.06 l 1.47 " +
+            "1.47 a .75 .75 0 1 0 1.06 -1.06 L 9.06 8 l 1.47 -1.47 a .75 .75 0 1 0 -1.06 -1.06 L 8 6.94 z",
+    )
+
+    /** Gravity `arrow-uturn-cw-down` - the "press Enter to add" hint at the end of a draft row. */
+    val ArrowUturnCwDown = gravity(
+        "M 11.28 13.53 a .75 .75 0 0 1 -1.06 0 l -3 -3 a .75 .75 0 1 1 1.06 -1.06 L 10 11.19 V 7 a 3.25 " +
+            "3.25 0 0 0 -6.5 0 v 1 A .75 .75 0 0 1 2 8 V 7 a 4.75 4.75 0 0 1 9.5 0 v 4.19 l 1.72 -1.72 a .75 " +
+            ".75 0 1 1 1.06 1.06 z",
+    )
+
+    /** Gravity `paintbrush` - the note editor's format painter. */
+    val Paintbrush = gravity(
+        "M 8.135 .693 A 1.003 1.003 0 0 1 9.567 .486 l .091 .082 5.559 5.559 c .39 .39 .39 1.025 0 1.416 l -4.332 " +
+            "4.332 a 2.003 2.003 0 0 1 -2.833 0 l -.383 -.383 c -.11 -.11 -.295 -.084 -.391 .038 l -2.391 3.01 a " +
+            "2.467 2.467 0 1 1 -3.464 -3.464 l 3.014 -2.389 c .122 -.096 .148 -.28 .038 -.39 l -.312 -.311 a 2.004 " +
+            "2.004 0 0 1 .001 -2.834 L 6.917 2.4 a 6 6 0 0 0 1.031 -1.378 l .123 -.224 z M 5.227 6.215 a .5 .5 0 0 0 " +
+            "-.001 .708 l .311 .313 c .86 .86 .525 2.08 -.167 2.629 l -3.013 2.389 a .963 .963 0 1 0 1.353 1.352 l " +
+            "2.39 -3.01 h .002 c .555 -.698 1.776 -1.02 2.63 -.167 l .382 .383 a .5 .5 0 0 0 .708 0 l .416 -.416 L " +
+            "5.64 5.8 z m 3.835 -4.12 c -.307 .497 -.67 .956 -1.082 1.368 L 6.703 4.738 11.3 9.335 l 2.502 -2.5 " +
+            "-.759 -.76 -1.067 1.082 a .405 .405 0 0 1 -.68 -.384 l .493 -1.951 z",
+    )
+
+    /**
+     * Gravity `arrow-down-to-square` - **paste**, keeping formatting.
+     *
+     * Gravity has no clipboard glyph at all, and the web's paste button was drawn with Gravity's
+     * `copy` - which is why the owner saw "two copy icons" in one toolbar (2026-08-17). Something
+     * dropping into a box is the nearest thing the set has to paste, and it cannot be confused with
+     * the copy family.
+     */
+    val Paste = gravity(
+        "M 8.53 11.78 a .75 .75 0 0 1 -1.06 0 l -2.5 -2.5 a .75 .75 0 0 1 1.06 -1.06 l 1.22 1.22 V 1.75 a .75 .75 " +
+            "0 0 1 1.5 0 v 7.69 l 1.22 -1.22 a .75 .75 0 1 1 1.06 1.06 z M 4.25 4 a .75 .75 0 1 1 0 1.5 H 4 A 1.5 " +
+            "1.5 0 0 0 2.5 7 v 5 A 1.5 1.5 0 0 0 4 13.5 h 8 a 1.5 1.5 0 0 0 1.5 -1.5 V 7 A 1.5 1.5 0 0 0 12 5.5 h " +
+            "-.25 a .75 .75 0 0 1 0 -1.5 H 12 a 3 3 0 0 1 3 3 v 5 a 3 3 0 0 1 -3 3 H 4 a 3 3 0 0 1 -3 -3 V 7 a 3 3 " +
+            "0 0 1 3 -3 z",
+    )
+
     /** Gravity `camera` */
     val Camera = gravity(
         "M 4.273 5 h 1.05 l .36 -.987 l .248 -.684 A .5 .5 0 0 1 6.401 3 h 3.198 a .5 .5 0 0 1 .47 .33 l " +
@@ -520,6 +598,19 @@ object SpiraIcons {
     )
 
     /** Gravity `circle-exclamation-fill` - was AlertCircleFilled - the overdue mark */
+    /** Gravity `circle-info-fill` - the info mark on a notice (owner, 2026-08-18) */
+    val CircleInfoFill = gravity(
+        "M 8 15 A 7 7 0 1 0 8 1 a 7 7 0 0 0 0 14 m 1 -9.5 a 1 1 0 1 1 -2 0 a 1 1 0 0 1 2 0 M 8 7.75 a .75 " +
+            ".75 0 0 1 .75 .75 V 11 a .75 .75 0 0 1 -1.5 0 V 8.5 A .75 .75 0 0 1 8 7.75",
+    )
+
+    /** Gravity `triangle-exclamation-fill` - the warning mark on a notice (owner, 2026-08-18) */
+    val TriangleExclamationFill = gravity(
+        "M 5.835 2.244 c .963 -1.665 3.367 -1.665 4.33 0 l 4.916 8.505 c .964 1.666 -.24 3.751 -2.164 " +
+            "3.751 H 3.083 c -1.925 0 -3.128 -2.085 -2.165 -3.751 z M 8 5 a .75 .75 0 0 1 .75 .75 v 2 a " +
+            ".75 .75 0 1 1 -1.5 0 v -2 A .75 .75 0 0 1 8 5 m 1 5.75 a 1 1 0 1 1 -2 0 a 1 1 0 0 1 2 0",
+    )
+
     val CircleExclamationFilled = gravity(
         "M 15 8 A 7 7 0 1 1 1 8 a 7 7 0 0 1 14 0 m -6 2.5 a 1 1 0 1 1 -2 0 a 1 1 0 0 1 2 0 M 8.75 5 a .75 " +
             ".75 0 0 0 -1.5 0 v 2.5 a .75 .75 0 0 0 1.5 0 z",

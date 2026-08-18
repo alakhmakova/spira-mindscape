@@ -209,6 +209,28 @@
   font-style: normal;
   font-display: swap;
 }
+/* Futura Futuris C — a real Futura with Cyrillic, sent by the owner (2026-08-17). The only
+   candidate here shipped as woff2 rather than ttf/otf: the archive carried woff2 and it is both
+   the smallest and universally supported, so there was nothing to gain by converting it.
+
+   **Shifted down a weight** (owner, 2026-08-17: "слишком жирный"). The family's regular is a
+   sturdy face, and at 14–15px it read heavier than every other candidate in the list — so
+   **Light** carries 400 and the family's **regular** plays the Medium/heavy role. The Bold is not
+   used at all. */
+@font-face {
+  font-family: "Futura Futuris";
+  src: url("/fonts/FuturaFuturis-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Futura Futuris";
+  src: url("/fonts/FuturaFuturis-Medium.woff2") format("woff2");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
 @font-face {
   font-family: "Archivo";
   src: url("/fonts/Archivo-Regular.ttf") format("truetype");
@@ -275,6 +297,34 @@
 @font-face {
   font-family: "Golos Text";
   src: url("/fonts/GolosText-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/Montserrat-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/Montserrat-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Jost";
+  src: url("/fonts/Jost-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Jost";
+  src: url("/fonts/Jost-Medium.ttf") format("truetype");
   font-weight: 500 900;
   font-style: normal;
   font-display: swap;
@@ -486,6 +536,25 @@
   }
   .text-balance {
     text-wrap: balance;
+  }
+  /*
+   * The owner's gradient ring — a hairline border painted with a diagonal coral → violet → blue
+   * sweep instead of the flat grey one. Drawn with the two-background trick because a border
+   * cannot take a gradient directly: the paint-box fill covers the padding box, the gradient shows
+   * only in the 1px the transparent border leaves. Used by the target card's ± buttons; Android
+   * mirrors it with a `Brush.linearGradient` of the same three stops.
+   */
+  .gradient-ring {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(#fdfdfb, #fdfdfb) padding-box,
+      linear-gradient(
+          228.47deg,
+          #ff4833 48.94%,
+          #ed7ffe 89.8%,
+          #7f8eff 143.09%
+        )
+        border-box;
   }
   .num {
     font-family: var(--font-sans);

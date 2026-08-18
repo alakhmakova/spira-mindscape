@@ -31,8 +31,8 @@ object AiApi {
     private const val BASE = "/api/ai"
 
     /**
-     * A separate client for the chat stream: OkHttp's default 10s read timeout would cut a long
-     * answer mid-sentence, and a streamed response has no natural "response received" moment.
+     * A separate client for the chat stream: the shared client's read and call timeouts would cut a
+     * long answer mid-sentence, and a streamed response has no natural "response received" moment.
      * Everything else (the cookie jar, the CSRF header) is inherited from the shared client.
      */
     private val streamClient: OkHttpClient by lazy {
@@ -50,11 +50,18 @@ object AiApi {
     data class HistoryEntry(val role: String, val content: String)
 
     /**
-     * A file attached directly to a chat message: an image, PDF or DOCX. [dataUrl] is a
-     * `data:<mime>;base64,…` URL. Ephemeral — sent with this message only, never saved as a
-     * resource.
+     * A file attached to a chat message, from one of two sources:
+     *  - a **device file** — [dataUrl] carries the bytes as a `data:<mime>;base64,…` URL;
+     *  - a **saved resource** (BUG-030) — [resourceId] names one of the goal's resources and the
+     *    server inlines its bytes/text, so nothing is re-uploaded from here.
+     * Exactly one of [dataUrl] / [resourceId] is set. Ephemeral either way.
      */
-    data class ChatAttachment(val name: String, val mime: String, val dataUrl: String)
+    data class ChatAttachment(
+        val name: String,
+        val mime: String,
+        val dataUrl: String = "",
+        val resourceId: Long? = null,
+    )
 
     /** What the stream emits. The flow completes after [Done] or [Error]. */
     sealed interface ChatEvent {
@@ -110,12 +117,19 @@ object AiApi {
                 } else {
                     JSONArray().apply {
                         attachments.forEach {
-                            put(
-                                JSONObject()
-                                    .put("name", it.name)
-                                    .put("mime", it.mime)
-                                    .put("dataUrl", it.dataUrl),
-                            )
+                            // A resource attachment sends its id and no bytes; the server inlines
+                            // what it already holds. dataUrl is left NULL so the server's
+                            // "exactly one source" check sees only the resource id.
+                            val obj = JSONObject()
+                                .put("name", it.name)
+                                .put("mime", it.mime)
+                            if (it.resourceId != null) {
+                                obj.put("resourceId", it.resourceId)
+                                obj.put("dataUrl", JSONObject.NULL)
+                            } else {
+                                obj.put("dataUrl", it.dataUrl)
+                            }
+                            put(obj)
                         }
                     }
                 },

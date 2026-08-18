@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.combinedClickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -113,10 +115,15 @@ import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraButtonVariant
 import com.spiramindscape.android.ui.components.SpiraAddButton
 import com.spiramindscape.android.ui.components.SpiraChoice
+import com.spiramindscape.android.ui.components.SpiraBadgeTone
 import com.spiramindscape.android.ui.components.SpiraFilterTrigger
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
+import com.spiramindscape.android.ui.components.SpiraSheetDateRange
+import com.spiramindscape.android.ui.components.SpiraSheetGroup
+import com.spiramindscape.android.ui.components.SpiraSheetPills
 import com.spiramindscape.android.ui.components.SpiraListToolbar
 import com.spiramindscape.android.ui.components.SpiraMenuChoice
-import com.spiramindscape.android.ui.components.SpiraMenuColumnDivider
 import com.spiramindscape.android.ui.components.SpiraMenuColumns
 import com.spiramindscape.android.ui.components.SpiraMenuGroup
 import com.spiramindscape.android.ui.components.SpiraSortTrigger
@@ -382,6 +389,13 @@ fun GoalWorkspaceScreen(
         },
     ) {
         Scaffold(
+            // **The keyboard must not cover what is being typed** (BUG-042). `MainActivity` calls
+            // `enableEdgeToEdge()`, and that switches off the window's own `adjustResize` — from
+            // then on the IME inset is the app's to apply. The three screens that already handled
+            // typing well (the AI panel, the note editor, the provider sheet) are exactly the three
+            // that had an `imePadding()`; this one did not, so "Add task" opened its field behind
+            // the keyboard, as did every inline edit on a phase screen.
+            modifier = Modifier.imePadding(),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 Column {
@@ -803,37 +817,76 @@ private fun GoalTabContent(
                             SpiraFilterTrigger(
                                 count = targetView.activeCount,
                                 contentDescription = "Filter targets",
-                            ) { dismiss ->
-                                SpiraMenuColumns {
-                                    SpiraMenuGroup("Status") {
-                                        TargetFilter.entries.forEach { f ->
-                                            SpiraMenuChoice(
-                                                label = f.label,
-                                                selected = f == targetView.filter,
-                                                onClick = { targetView.filter = f; dismiss() },
-                                            )
-                                        }
-                                    }
-                                    SpiraMenuColumnDivider()
-                                    SpiraMenuGroup("Deadline") {
-                                        TargetDeadlineFilter.entries.forEach { f ->
-                                            SpiraMenuChoice(
-                                                label = f.label,
-                                                selected = f == targetView.deadlineFilter,
-                                                onClick = { targetView.deadlineFilter = f; dismiss() },
-                                            )
-                                        }
-                                    }
-                                    SpiraMenuColumnDivider()
-                                    SpiraMenuGroup("Lock") {
-                                        TargetLockFilter.entries.forEach { f ->
-                                            SpiraMenuChoice(
-                                                label = f.label,
-                                                selected = f == targetView.lockFilter,
-                                                onClick = { targetView.lockFilter = f; dismiss() },
-                                            )
-                                        }
-                                    }
+                                onReset = {
+                                    targetView.filter = TargetFilter.All
+                                    targetView.deadlineFilter = TargetDeadlineFilter.All
+                                    targetView.lockFilter = TargetLockFilter.All
+                                    targetView.typeFilter = TargetTypeFilter.All
+                                    targetView.deadlineFrom = ""
+                                    targetView.deadlineTo = ""
+                                },
+                            ) {
+                                // Five independent questions, each a line of pills - the All-goals
+                                // sheet's shape. As menu columns they could not fit across a phone,
+                                // which is what this replaces.
+                                //
+                                // Done-ness and started-ness are one mutually-exclusive filter shown
+                                // as two questions: the started answers read as a different question
+                                // from the done ones. **Done-ness is the "Progress" question and
+                                // started-ness the "Status" one** (owner, 2026-08-18) — finishing is
+                                // the far end of a progress bar, while having begun is a state the
+                                // target is in.
+                                SpiraSheetGroup("Progress") {
+                                    SpiraSheetPills(
+                                        options = listOf(TargetFilter.All, TargetFilter.Done, TargetFilter.NotDone)
+                                            .map { SpiraChoice(it, it.label) },
+                                        value = targetView.filter,
+                                        onChange = { targetView.filter = it },
+                                    )
+                                }
+                                SpiraSheetGroup("Status") {
+                                    SpiraSheetPills(
+                                        options = listOf(TargetFilter.Started, TargetFilter.NotStarted)
+                                            .map { SpiraChoice(it, it.label) },
+                                        value = targetView.filter,
+                                        onChange = { targetView.filter = it },
+                                        tone = SpiraBadgeTone.Info,
+                                    )
+                                }
+                                SpiraSheetGroup("Deadline") {
+                                    SpiraSheetPills(
+                                        options = TargetDeadlineFilter.entries.map { SpiraChoice(it, it.label) },
+                                        value = targetView.deadlineFilter,
+                                        onChange = { targetView.deadlineFilter = it },
+                                        tone = SpiraBadgeTone.Warning,
+                                    )
+                                }
+                                SpiraSheetGroup("Type") {
+                                    SpiraSheetPills(
+                                        options = TargetTypeFilter.entries.map { SpiraChoice(it, it.label) },
+                                        value = targetView.typeFilter,
+                                        onChange = { targetView.typeFilter = it },
+                                        tone = SpiraBadgeTone.Intelligence,
+                                    )
+                                }
+                                SpiraSheetGroup("Lock") {
+                                    SpiraSheetPills(
+                                        options = TargetLockFilter.entries.map { SpiraChoice(it, it.label) },
+                                        value = targetView.lockFilter,
+                                        onChange = { targetView.lockFilter = it },
+                                        tone = SpiraBadgeTone.Teal,
+                                    )
+                                }
+                                // The dates themselves, under the "Overdue / Not overdue" question
+                                // that reads them relative to today. The web sheet has carried this
+                                // pair since 2026-08-17 (`Targets.tsx`); this is the phone's twin.
+                                SpiraSheetGroup("Deadline range") {
+                                    SpiraSheetDateRange(
+                                        from = targetView.deadlineFrom,
+                                        to = targetView.deadlineTo,
+                                        onFromChange = { targetView.deadlineFrom = it },
+                                        onToChange = { targetView.deadlineTo = it },
+                                    )
                                 }
                             }
                         },
@@ -842,9 +895,18 @@ private fun GoalTabContent(
                 val visible = applyTargetView(
                     goal.targets, targetView.sort, targetView.ascending, targetView.filter,
                     targetsQuery, targetView.deadlineFilter, targetView.lockFilter,
+                    targetView.deadlineFrom, targetView.deadlineTo, targetView.typeFilter,
                 )
                 if (goal.targets.isEmpty()) item { EmptyLine("No targets yet.") }
-                else if (visible.isEmpty()) item { EmptyLine("No targets match the search or filter.") }
+                // Not a grey line: the list has targets, and it is the user's own search or filter
+                // that is hiding them (owner, 2026-08-18).
+                else if (visible.isEmpty()) item {
+                    SpiraNoticeCard(
+                        message = "No targets match that search or filter.",
+                        kind = SpiraNoticeKind.Warning,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
                 else items(visible, key = { "target-${it.id}" }) { target ->
                     TargetCard(target, actions)
                 }
@@ -881,6 +943,9 @@ private fun GoalTabIntro(
         Text(
             title,
             style = PHASE_HEADING_STYLE(),
+            // Regular serif weight — a phase name is a heading, not a bold label (owner asked for
+            // Options / Resources / Targets and the rest not to read as bold).
+            fontWeight = FontWeight.Normal,
             color = titleColor,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
@@ -1427,24 +1492,27 @@ private fun OptionsTabContent(
                 "active — the one you're actually pursuing.",
         )
 
-        // Options has **no sort** — position IS the meaning of this list. Its second line is
-        // Reorder on the left, then the lean filter beside it, in the slots the other pages give
-        // to sort and filter, so the three toolbars line their controls up at the same x.
+        // Options has **no sort** — position IS the meaning of this list. Its second line is the
+        // lean filter first, then the Reorder toggle in the slot the other pages give to sort, so
+        // the three toolbars line their controls up at the same x (owner, 2026-08-17: filter first).
         SpiraListToolbar(
             query = query,
             onQueryChange = onQueryChange,
             placeholder = "Search options",
-            sort = {
-                if (sortedOptions.size > 1 && !narrowed) {
-                    Text(
-                        if (reordering) "Save" else "Reorder",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(SpiraRadii.sm))
-                            .clickable { reordering = !reordering }
-                            .padding(horizontal = 6.dp, vertical = 6.dp),
+            // **The far right of the row, not beside the filter** (owner, 2026-08-18). Reorder is
+            // the page's action, not a third way of narrowing the list, and sitting shoulder to
+            // shoulder with the filter it read as one of them.
+            action = {
+                if (sortedOptions.size > 1) {
+                    // A filled Kale button, like "Add target" on the web — not a bare teal word.
+                    // It stays put while the list is narrowed and is **disabled** instead: a
+                    // control that vanishes rearranges the toolbar under the user's hand and never
+                    // says the filter is what took it away. What must not happen is a *drop* on a
+                    // narrowed list, and a dead button prevents that just as well.
+                    SpiraAddButton(
+                        label = if (reordering) "Save" else "Reorder",
+                        enabled = !narrowed,
+                        onClick = { reordering = !reordering },
                     )
                 }
             },
@@ -1454,79 +1522,54 @@ private fun OptionsTabContent(
                 SpiraFilterTrigger(
                     count = if (optionFilter == OptionFilter.All) 0 else 1,
                     contentDescription = "Filter options",
-                ) { dismiss ->
-                    OptionFilter.entries.forEach { f ->
-                        SpiraMenuItem(
-                            label = f.label,
-                            icon = when (f) {
-                                OptionFilter.GoodIdea -> SpiraIcons.Smile
-                                OptionFilter.BadIdea -> SpiraIcons.Frown
-                                else -> null
-                            },
-                            selected = f == optionFilter,
-                            onClick = { optionFilter = f; dismiss() },
+                    onReset = { optionFilter = OptionFilter.All },
+                ) {
+                    SpiraSheetGroup("Idea") {
+                        SpiraSheetPills(
+                            // "Good idea" and "Bad idea" carry the very glyphs the cards wear on
+                            // their badge, so the answer and the thing it hides are one mark rather
+                            // than two words that happen to agree (owner, 2026-08-18).
+                            options = OptionFilter.entries.map { SpiraChoice(it, it.label, it.icon) },
+                            value = optionFilter,
+                            onChange = { optionFilter = it },
+                            tone = SpiraBadgeTone.Teal,
                         )
                     }
                 }
             },
         )
 
-        if (sortedOptions.size > 1) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                if (narrowed) {
-                    // Not merely disabled: a drop while the list is narrowed would write the wrong
-                    // position, so the action is gone and the reason is on screen.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            SpiraIcons.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.spiraExtras.mutedForeground,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Text(
-                            "Clear the search and filter to rearrange.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.spiraExtras.mutedForeground,
-                        )
-                    }
-                } else {
-                    Spacer(Modifier.size(0.dp))
-                }
-            }
-        }
-
-        if (ordered.isEmpty()) {
-            Text(
-                if (narrowed) {
-                    "No options match that search."
-                } else {
-                    "What options could move you forward? Add a few, then choose one."
-                },
-                style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
-                color = MaterialTheme.spiraExtras.mutedForeground,
+        // The reason Reorder is unavailable. The app's one notice card, like every other thing the
+        // app says to the user (owner, 2026-08-18) — it used to be a grey line with a bare glyph.
+        if (sortedOptions.size > 1 && narrowed) {
+            SpiraNoticeCard(
+                message = "Clear the search and filter to rearrange.",
+                kind = SpiraNoticeKind.Info,
             )
         }
 
-        if (reordering) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(
-                    SpiraIcons.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.spiraExtras.mutedForeground,
-                    modifier = Modifier.size(14.dp),
+        if (ordered.isEmpty()) {
+            // Two different things: an empty list is an invitation, while a list emptied by the
+            // user's own search or lean filter is a warning (owner, 2026-08-18).
+            if (narrowed) {
+                SpiraNoticeCard(
+                    message = "No options match that search or filter.",
+                    kind = SpiraNoticeKind.Warning,
                 )
+            } else {
                 Text(
-                    "Drag cards to reorder.",
-                    style = MaterialTheme.typography.bodySmall,
+                    "What options could move you forward? Add a few, then choose one.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
                     color = MaterialTheme.spiraExtras.mutedForeground,
                 )
             }
+        }
+
+        if (reordering) {
+            SpiraNoticeCard(
+                message = "Drag a card by the handle at its top. Swiping still scrolls the page.",
+                kind = SpiraNoticeKind.Info,
+            )
         }
 
         ordered.forEach { opt ->
@@ -1650,10 +1693,18 @@ private fun OptionCard(
             .then(
                 if (reordering) {
                     Modifier.pointerInput(option.id) {
+                        // **After a long press**, not on any touch (owner, 2026-08-18). While the
+                        // whole card grabbed every drag, scrolling a reorder list was close to
+                        // impossible: a swipe meant to move the page picked a card up instead.
+                        // A scroll is a swipe and a drag is a press — so the press is what this
+                        // waits for, and everything shorter falls through to the list's own scroll.
+                        // The handle at the top of the card is the immediate way in; this is the
+                        // shortcut for someone whose finger is already on the card.
+                        //
                         // Tracked by hand rather than re-read from layout: the finger must stay
                         // located even when it stops moving and only the page scrolls.
                         var fingerY = 0f
-                        detectDragGestures(
+                        detectDragGesturesAfterLongPress(
                             onDragStart = { start ->
                                 fingerY = cardTopInRoot + start.y
                                 onPointerY(fingerY)
@@ -1698,24 +1749,46 @@ private fun OptionCard(
                         if (reordering) Modifier
                         else Modifier.clickable(onClick = onToggleSelect),
                     )
-                    .semantics {
-                        contentDescription =
-                            if (active) "Deselect option" else "Select option"
-                    },
+                    .then(
+                        // While reordering the cell IS the grip, so it must not also announce
+                        // itself as the select control.
+                        if (reordering) {
+                            Modifier
+                        } else {
+                            Modifier.semantics {
+                                contentDescription =
+                                    if (active) "Deselect option" else "Select option"
+                            }
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    Modifier
-                        .size(20.dp)
-                        .border(
-                            2.dp,
-                            if (active) primary else MaterialTheme.spiraExtras.borderStrong,
-                            CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (active) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(primary))
+                // **The grip stands in the radio's place** while reordering (owner, 2026-08-18):
+                // the same cell, the same width, and nothing else on the card moves. The cell keeps
+                // its teal wash and the card its teal border for the active option, so which one is
+                // active stays visible while the list is being rearranged.
+                if (reordering) {
+                    OptionDragHandle(
+                        active = active,
+                        onPointerY = onPointerY,
+                        onDragStart = onDragStart,
+                        onDragBy = onDragBy,
+                        onDragEnd = onDragEnd,
+                    )
+                } else {
+                    Box(
+                        Modifier
+                            .size(20.dp)
+                            .border(
+                                2.dp,
+                                if (active) primary else MaterialTheme.spiraExtras.borderStrong,
+                                CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (active) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(primary))
+                        }
                     }
                 }
             }
@@ -1804,6 +1877,72 @@ private fun OptionCard(
                 modifier = Modifier.size(16.dp),
             )
         }
+    }
+}
+
+/**
+ * The grip that stands in the radio button's place while the list is in reorder mode.
+ *
+ * It exists because a scroll and a drag are different gestures and were sharing one target: with
+ * the whole card listening for a drag, a swipe meant to move the page picked a card up instead, and
+ * reaching anything below the fold was a fight (owner, 2026-08-18). Now a touch that lands **here**
+ * moves the card immediately, and a touch anywhere else on the card scrolls the page exactly as it
+ * does outside reorder mode. (Pressing and holding the card still works too — see [OptionCard] —
+ * for the finger that is already on it.)
+ *
+ * **Where it sits took three goes, so don't move it again without asking.** A full-width band
+ * across the top of the card was rejected: it lay over the radio cell's column, cutting the card's
+ * left edge in two, and on its teal wash a list of cards read as a row of headers. Inside the
+ * content column above the words was rejected too. It belongs in the **left cell, exactly where the
+ * radio is** — the card's shape does not change at all between the two modes, only what that one
+ * cell holds.
+ *
+ * [active] keeps the chosen option legible while the list is being rearranged: the cell's teal wash
+ * and the card's teal border stay, and the grip takes the teal too.
+ */
+@Composable
+private fun OptionDragHandle(
+    active: Boolean,
+    onPointerY: (Float) -> Unit,
+    onDragStart: () -> Unit,
+    onDragBy: (delta: Float) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    // Where the cell is on the page, so the finger can be reported in root coordinates and the
+    // auto-scroll loop can tell how near the screen edge it is.
+    var topInRoot by remember { mutableStateOf(0f) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { topInRoot = it.positionInRoot().y }
+            .pointerInput(Unit) {
+                var fingerY = 0f
+                detectDragGestures(
+                    onDragStart = { start ->
+                        fingerY = topInRoot + start.y
+                        onPointerY(fingerY)
+                        onDragStart()
+                    },
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragEnd,
+                    onDrag = { change, amount ->
+                        change.consume()
+                        fingerY += amount.y
+                        onPointerY(fingerY)
+                        onDragBy(amount.y)
+                    },
+                )
+            }
+            .semantics { contentDescription = "Drag to reorder" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            // Gravity's `dots-9` — the owner's pick for a grip.
+            SpiraIcons.Dots9,
+            contentDescription = null,
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.spiraExtras.borderStrong,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

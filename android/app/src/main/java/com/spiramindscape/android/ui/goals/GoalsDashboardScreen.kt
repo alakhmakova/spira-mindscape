@@ -82,6 +82,19 @@ import com.spiramindscape.android.ui.components.SpiraMenuDivider
 import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.components.HeaderCircleClose
 import com.spiramindscape.android.ui.components.SpiraSearchField
+import com.spiramindscape.android.ui.components.SpiraBadgeTone
+import com.spiramindscape.android.ui.components.SpiraChoice
+import com.spiramindscape.android.ui.components.SpiraFilterSheet
+import com.spiramindscape.android.ui.components.SpiraFilterSortTrigger
+import com.spiramindscape.android.ui.components.SpiraSegmented
+import com.spiramindscape.android.ui.components.SpiraSheetCards
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
+import com.spiramindscape.android.ui.components.SpiraSheetConfidence
+import com.spiramindscape.android.ui.components.SpiraSheetDateRange
+import com.spiramindscape.android.ui.components.SpiraSheetChoices
+import com.spiramindscape.android.ui.components.SpiraSheetGroup
+import com.spiramindscape.android.ui.components.SpiraSheetPills
 import com.spiramindscape.android.ui.components.SpiraTopBar
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Kale600
@@ -107,9 +120,18 @@ fun GoalsRoute(
     val sortAscending by viewModel.sortAscending.collectAsStateWithLifecycle()
     val status by viewModel.statusFilter.collectAsStateWithLifecycle()
     val deadlineFilter by viewModel.deadlineFilter.collectAsStateWithLifecycle()
+    val deadlineFrom by viewModel.deadlineFrom.collectAsStateWithLifecycle()
+    val deadlineTo by viewModel.deadlineTo.collectAsStateWithLifecycle()
+    val confidence by viewModel.confidence.collectAsStateWithLifecycle()
 
-    val visibleGoals = remember(allGoals, query, sortKey, sortAscending, status, deadlineFilter) {
-        applyGoalView(allGoals, query, sortKey, sortAscending, status, deadlineFilter)
+    val visibleGoals = remember(
+        allGoals, query, sortKey, sortAscending, status, deadlineFilter,
+        deadlineFrom, deadlineTo, confidence,
+    ) {
+        applyGoalView(
+            allGoals, query, sortKey, sortAscending, status, deadlineFilter,
+            deadlineFrom, deadlineTo, confidence,
+        )
     }
 
     // Sort and filters are a standing preference, remembered across sessions (web parity: they
@@ -156,7 +178,26 @@ fun GoalsRoute(
             status = status,
             onStatusChange = { viewModel.statusFilter.value = it; viewPreferences.status = it },
             deadlineFilter = deadlineFilter,
-            onDeadlineFilterChange = { viewModel.deadlineFilter.value = it; viewPreferences.deadline = it },
+            // Through the view model, which is where the "no deadline OR a range, never both"
+            // rule lives — so the stored preference follows whatever it settled on.
+            onDeadlineFilterChange = {
+                viewModel.setDeadlineFilter(it)
+                viewPreferences.deadline = viewModel.deadlineFilter.value
+            },
+            // The range and the confidence are not written to [viewPreferences] — see the view
+            // model, where the reason lives with the fields.
+            deadlineFrom = deadlineFrom,
+            onDeadlineFromChange = {
+                viewModel.setDeadlineFrom(it)
+                viewPreferences.deadline = viewModel.deadlineFilter.value
+            },
+            deadlineTo = deadlineTo,
+            onDeadlineToChange = {
+                viewModel.setDeadlineTo(it)
+                viewPreferences.deadline = viewModel.deadlineFilter.value
+            },
+            confidence = confidence,
+            onConfidenceChange = { viewModel.confidence.value = it },
             creating = creating,
             onCreateGoal = { title, description, confidence, deadline ->
                 viewModel.createGoal(title, description, confidence, deadline)
@@ -197,6 +238,35 @@ private fun applyGlobalProposal(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The status question as **three short words**, so it fits on one line of pills. The enum's own
+ * labels ("All goals" / "Only achieved" / "Only not achieved") carry a qualifier the sheet's
+ * heading already supplies, and three of those cannot fit across a phone. The web's
+ * `GOAL_STATUS_CHOICES` uses the same three words.
+ */
+private val STATUS_PILLS = listOf(
+    SpiraChoice(StatusFilter.All, "All"),
+    SpiraChoice(StatusFilter.Achieved, "Achieved"),
+    SpiraChoice(StatusFilter.NotAchieved, "Not achieved"),
+)
+
+/**
+ * The deadline question, also as **one line of pills** (owner, 2026-08-17). The enum's labels
+ * ("Any deadline" / "Has a deadline" / "No deadline") repeat the heading the pills already sit
+ * under, and three of those cannot fit across a phone.
+ */
+private val DEADLINE_PILLS = listOf(
+    SpiraChoice(DeadlineFilter.Any, "Any"),
+    SpiraChoice(DeadlineFilter.Has, "Deadline"),
+    SpiraChoice(DeadlineFilter.None, "No deadline"),
+)
+
+/** Sort direction as a two-value question, so it can sit in a column beside the sort key. */
+private val DIRECTION_CHOICES = listOf(
+    SpiraChoice(true, "Ascending"),
+    SpiraChoice(false, "Descending"),
+)
+
 @Composable
 fun GoalsDashboardScreen(
     state: GoalsUiState,
@@ -213,6 +283,14 @@ fun GoalsDashboardScreen(
     onStatusChange: (StatusFilter) -> Unit = {},
     deadlineFilter: DeadlineFilter = DeadlineFilter.Any,
     onDeadlineFilterChange: (DeadlineFilter) -> Unit = {},
+    /** The deadline range's two ends, as ISO instants; "" is an open end. */
+    deadlineFrom: String = "",
+    onDeadlineFromChange: (String) -> Unit = {},
+    deadlineTo: String = "",
+    onDeadlineToChange: (String) -> Unit = {},
+    /** One confidence 1..10, or 0 for "any". */
+    confidence: Int = 0,
+    onConfidenceChange: (Int) -> Unit = {},
     creating: Boolean = false,
     onCreateGoal: (title: String, description: String?, confidence: Int, deadline: String?) -> Unit =
         { _, _, _, _ -> },
@@ -230,6 +308,7 @@ fun GoalsDashboardScreen(
     val scope = rememberCoroutineScope()
     var showNewGoal by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
+    var filterSheetOpen by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -275,13 +354,36 @@ fun GoalsDashboardScreen(
                     message = actionError,
                     onDismiss = onDismissActionError,
                 )
-                Text(
-                    "All goals",
-                    style = MaterialTheme.typography.headlineMedium,
-                    // The same 28dp of air the goal-workspace headings sit under, so the two
-                    // screens open the same way.
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp),
-                )
+                // The page's own name and its **Filter & Sort** opener on ONE line (owner,
+                // 2026-08-17). The screen used to have no filter chrome at all — `SortMenu` and
+                // `FilterMenu` were written and then never mounted — so the sort and status the
+                // view model kept could only be changed on the web.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 10.dp, top = 28.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "All goals",
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SpiraFilterSortTrigger(
+                        // Only the narrowing questions are counted. The sort is not a filter — it
+                        // reorders the same goals — so "(1)" for having picked Deadline would say
+                        // something is hidden when nothing is.
+                        count = listOf(
+                            status != StatusFilter.All,
+                            deadlineFilter != DeadlineFilter.Any,
+                            // One question, whichever of its ends is set: "(2)" for picking a From
+                            // and a To would say two things are hidden.
+                            deadlineFrom.isNotBlank() || deadlineTo.isNotBlank(),
+                            confidence in 1..10,
+                        ).count { it },
+                        onClick = { filterSheetOpen = true },
+                    )
+                }
 
                 Box(Modifier.fillMaxSize()) {
                     when {
@@ -293,9 +395,15 @@ fun GoalsDashboardScreen(
                         !hasAnyGoals -> Centered {
                             EmptyState(title = "No goals yet", subtitle = "Create your first goal to get started.")
                         }
-                        visibleGoals.isEmpty() -> Centered {
-                            EmptyState(title = "No goals match", subtitle = "Try a different search or filter.")
-                        }
+                        // The list is not empty — the user's own search or filter emptied it, which
+                        // is a **warning**, not the blank-page empty state above (owner,
+                        // 2026-08-18). It sits at the top where the cards would start, not centred
+                        // in the middle of nothing.
+                        visibleGoals.isEmpty() -> SpiraNoticeCard(
+                            message = "No goals match that search or filter.",
+                            kind = SpiraNoticeKind.Warning,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
                         else -> LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
@@ -305,6 +413,86 @@ fun GoalsDashboardScreen(
                                 GoalCard(goal, onClick = { onGoalClick(goal.id) })
                             }
                         }
+                    }
+                }
+            }
+
+            if (filterSheetOpen) {
+                // The same questions, in the same shapes, as the web's mobile drawer
+                // (`AppShell.tsx` → `ToolbarSheet`): status as one line of success pills, then
+                // deadline, then sort with its direction in a column beside it.
+                SpiraFilterSheet(
+                    title = "Filter & Sort",
+                    onDismiss = { filterSheetOpen = false },
+                    onReset = {
+                        onStatusChange(StatusFilter.All)
+                        onDeadlineFilterChange(DeadlineFilter.Any)
+                        onDeadlineFromChange("")
+                        onDeadlineToChange("")
+                        onConfidenceChange(0)
+                        onSortChange(SortKey.Recent)
+                        if (sortAscending) onToggleSortDir()
+                    },
+                    resetEnabled = status != StatusFilter.All ||
+                        deadlineFilter != DeadlineFilter.Any ||
+                        deadlineFrom.isNotBlank() ||
+                        deadlineTo.isNotBlank() ||
+                        confidence in 1..10 ||
+                        sortKey != SortKey.Recent ||
+                        sortAscending,
+                ) {
+                    SpiraSheetGroup("Status") {
+                        SpiraSheetPills(
+                            options = STATUS_PILLS,
+                            value = status,
+                            onChange = onStatusChange,
+                        )
+                    }
+                    SpiraSheetGroup("Deadline") {
+                        // One line of pills, like Status: three short words that would otherwise
+                        // take three full-width rows. The words are shortened for the row — the
+                        // enum's own "Any deadline" / "Has a deadline" repeat the heading above.
+                        SpiraSheetPills(
+                            options = DEADLINE_PILLS,
+                            value = deadlineFilter,
+                            onChange = onDeadlineFilterChange,
+                            tone = SpiraBadgeTone.Info,
+                        )
+                    }
+                    // The dates themselves, under the question that only asks whether there is one.
+                    // Both are the web's dashboard filters (`AppShell.tsx`), which the phone could
+                    // not reach at all until now (owner, 2026-08-18).
+                    SpiraSheetGroup("Deadline range") {
+                        SpiraSheetDateRange(
+                            from = deadlineFrom,
+                            to = deadlineTo,
+                            onFromChange = onDeadlineFromChange,
+                            onToChange = onDeadlineToChange,
+                        )
+                    }
+                    SpiraSheetGroup("Confidence") {
+                        SpiraSheetConfidence(value = confidence, onChange = onConfidenceChange)
+                    }
+                    // Three questions, three shapes (owner, 2026-08-17): filter values are pills,
+                    // sort keys are **cards in a grid**, and the direction — a modifier, not a
+                    // value — is a **segmented control**. Stacked in two tall columns the sort
+                    // pushed Apply off the bottom of a short phone.
+                    // **Direction first, then the key** (owner, 2026-08-17): the direction is one
+                    // short line and the keys are a grid, so asking the small question first keeps
+                    // the sheet from opening on a wall of cards.
+                    SpiraSheetGroup("Direction") {
+                        SpiraSegmented(
+                            options = DIRECTION_CHOICES,
+                            value = sortAscending,
+                            onChange = { asc -> if (asc != sortAscending) onToggleSortDir() },
+                        )
+                    }
+                    SpiraSheetGroup("Sort by") {
+                        SpiraSheetCards(
+                            options = SortKey.entries.map { SpiraChoice(it, it.label) },
+                            value = sortKey,
+                            onChange = onSortChange,
+                        )
                     }
                 }
             }
@@ -612,74 +800,6 @@ private fun SearchTopBar(query: String, onQueryChange: (String) -> Unit, onClose
     }
 }
 
-@Composable
-private fun SortMenu(
-    sortKey: SortKey,
-    sortAscending: Boolean,
-    onSortChange: (SortKey) -> Unit,
-    onToggleSortDir: () -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(SpiraIcons.ArrowUpDown, contentDescription = "Sort", modifier = Modifier.size(24.dp))
-        }
-        SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            SortKey.entries.forEach { key ->
-                SpiraMenuItem(
-                    label = key.label,
-                    onClick = { onSortChange(key); expanded = false },
-                    selected = key == sortKey,
-                )
-            }
-            SpiraMenuDivider()
-            SpiraMenuItem(
-                label = if (sortAscending) "Ascending" else "Descending",
-                onClick = { onToggleSortDir(); expanded = false },
-                icon = if (sortAscending) SpiraIcons.ArrowUp else SpiraIcons.ArrowDown,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FilterMenu(
-    status: StatusFilter,
-    onStatusChange: (StatusFilter) -> Unit,
-    deadlineFilter: DeadlineFilter,
-    onDeadlineFilterChange: (DeadlineFilter) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val active = status != StatusFilter.All || deadlineFilter != DeadlineFilter.Any
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                SpiraIcons.Filter,
-                contentDescription = "Filter",
-                modifier = Modifier.size(24.dp),
-                tint = if (active) MaterialTheme.colorScheme.primary else androidx.compose.material3.LocalContentColor.current,
-            )
-        }
-        SpiraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            StatusFilter.entries.forEach { s ->
-                SpiraMenuItem(
-                    label = s.label,
-                    onClick = { onStatusChange(s); expanded = false },
-                    selected = s == status,
-                )
-            }
-            SpiraMenuDivider()
-            DeadlineFilter.entries.forEach { d ->
-                SpiraMenuItem(
-                    label = d.label,
-                    onClick = { onDeadlineFilterChange(d); expanded = false },
-                    selected = d == deadlineFilter,
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GoalCard(goal: GoalSummary, onClick: () -> Unit) {
@@ -742,7 +862,7 @@ private fun GoalCard(goal: GoalSummary, onClick: () -> Unit) {
 private fun ConfidenceBanner(confidence: Int) {
     val bg = confidenceColor(confidence)
     // Pick black or white text by the background's luminance so it's always readable.
-    val textColor = if (bg.luminance() > 0.5f) androidx.compose.ui.graphics.Color(0xFF1A1A1A)
+    val textColor = if (bg.luminance() > 0.5f) androidx.compose.ui.graphics.Color(0xFF1C1C1C)
     else androidx.compose.ui.graphics.Color.White
     Box(
         Modifier.fillMaxWidth().background(bg).padding(vertical = 5.dp),

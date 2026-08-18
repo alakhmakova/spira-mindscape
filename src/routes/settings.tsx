@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { LogOut } from "@/components/spira/icons";
 import { useAuth } from "@/lib/spira/auth";
 import {
   APP_FONTS,
@@ -90,12 +91,16 @@ function SettingsPage() {
 }
 
 /**
- * The address, and nothing else.
+ * The address, and the one action on the page — Sign out.
  *
- * Deliberately **not editable**: the account is a Google account, and Spira has no say over the
- * address on it. Offering a field that cannot save anything is worse than showing a fact.
+ * The address is deliberately **not editable**: the account is a Google account, and Spira has no
+ * say over it. Sign out lives here (not in a header menu) so this page mirrors the Android Settings
+ * screen, where the account figure opens exactly this — profile plus sign-out — rather than a menu.
  */
 function ProfileTab({ email, name }: { email: string; name: string }) {
+  const navigate = useNavigate();
+  const logout = useAuth((s) => s.logout);
+
   return (
     <div className="pt-8" role="tabpanel">
       <SettingRow label="Email">
@@ -105,6 +110,20 @@ function ProfileTab({ email, name }: { email: string; name: string }) {
           change your address — it belongs to that account.
         </p>
       </SettingRow>
+
+      <div className="mt-8">
+        <button
+          type="button"
+          onClick={async () => {
+            await logout();
+            void navigate({ to: "/login" });
+          }}
+          className="inline-flex items-center gap-2 rounded-md border-2 border-border px-4 py-2 text-sm font-semibold text-destructive transition-colors hover:border-destructive/60"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }

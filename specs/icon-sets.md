@@ -2,10 +2,10 @@
 
 A comparison of the free icon sets Spira could standardise on.
 
-> **Decided (2026-08-14): Android is on Gravity UI, every glyph.** The owner chose it from this
-> comparison and picked the substitutes for the marks Gravity does not have. The port is done —
-> `ui/icons/SpiraIcons.kt` has a single `gravity()` builder and no Iconoir, Phosphor or hand-drawn
-> glyphs left. **The web is still on Lucide** and is the remaining half of the move.
+> **Decided (2026-08-14): both surfaces are on Gravity UI, every glyph.** The owner chose it from
+> this comparison and picked the substitutes for the marks Gravity does not have. Android
+> (`ui/icons/SpiraIcons.kt`, one `gravity()` builder) and the web (`src/components/spira/icons.tsx`,
+> one `make()` factory) are both done; `lucide-react` and the hand-drawn `brand-icons.tsx` are gone.
 >
 > The rest of this file is kept as the reasoning behind that choice, not as an open question.
 

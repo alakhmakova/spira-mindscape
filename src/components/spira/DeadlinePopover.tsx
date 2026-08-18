@@ -4,7 +4,7 @@ import {
   Trash2,
   X,
   ChevronRight,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { format, isPast, differenceInCalendarDays } from "date-fns";
 import {
   Popover,
@@ -140,12 +140,14 @@ export function DeadlinePopover({
       ) : variant === "button" ? (
         <PopoverTrigger
           className={cn(
-            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-semibold",
-            "bg-primary-soft text-primary border border-primary/30 hover:bg-primary-soft/80 transition-colors",
+            "w-full inline-flex items-center justify-center gap-2 h-10 rounded-md text-sm font-medium",
+            // Plain white field with a neutral border and text — a date-range filter reads as an
+            // input, not as a coloured teal fill (owner, 2026-08-15).
+            "bg-white text-foreground border hairline hover:bg-secondary transition-colors",
             className,
           )}
         >
-          <CalendarIcon className="h-3.5 w-3.5" />
+          <CalendarIcon className="h-3.5 w-3.5 opacity-60" />
           {date ? format(date, "MMM d, yyyy") : placeholder || "Set deadline"}
         </PopoverTrigger>
       ) : variant === "text" ? (

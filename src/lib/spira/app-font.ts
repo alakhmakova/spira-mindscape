@@ -30,7 +30,10 @@ export type AppFontId =
   | "arimo"
   | "ibm-plex-sans"
   | "onest"
-  | "golos-text";
+  | "golos-text"
+  | "montserrat"
+  | "futura"
+  | "futura-futuris";
 
 export type AppFontChoice = {
   id: AppFontId;
@@ -144,6 +147,32 @@ export const APP_FONTS: AppFontChoice[] = [
     note: "Russian-first grotesque; its Cyrillic is the point rather than an afterthought.",
     cyrillic: true,
   },
+  {
+    id: "montserrat",
+    label: "Montserrat",
+    family: "Montserrat",
+    note: "Geometric sans inspired by old Buenos Aires signage; even, wide letterforms. Cyrillic included.",
+    cyrillic: true,
+  },
+  {
+    id: "futura",
+    label: "Futura (Jost*)",
+    // Jost* — indestructible type's OFL revival of Futura. True Futura is proprietary and can't be
+    // bundled; Jost* is the standard free stand-in and carries the geometric Futura shapes.
+    family: "Jost",
+    note: "Futura, via indestructible type's free Jost* revival. Geometric with a low waist. Cyrillic included.",
+    cyrillic: true,
+  },
+  {
+    id: "futura-futuris",
+    label: "Futura Futuris",
+    family: '"Futura Futuris"',
+    // The real thing rather than the Jost* stand-in above — ParaType's Cyrillic Futura, supplied
+    // by the owner. Worth having both in the list: Jost* is a revival and the two differ most in
+    // exactly the small sizes this app is made of.
+    note: "ParaType's Cyrillic Futura — the real face, not the Jost* revival. Set a weight lighter than it ships: Light carries the body, its regular the bold.",
+    cyrillic: true,
+  },
 ];
 
 export function fontStack(id: AppFontId): string {
@@ -159,7 +188,9 @@ type State = {
 export const useAppFont = create<State>()(
   persist(
     (set) => ({
-      font: "gcentra",
+      // Tilda Sans is the web's working body face (the owner's pick, 2026-08-14). The Fonts tab
+      // still switches freely; this is only the default a fresh device lands on.
+      font: "tilda-sans",
       setFont: (font) => set({ font }),
     }),
     {

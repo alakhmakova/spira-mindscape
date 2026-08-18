@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useAuth } from "@/lib/spira/auth";
+import { Check, Flag, ListChecks, TrendingUp } from "@/components/spira/icons";
 
 // ─── Route definition ─────────────────────────────────────────────────────────
 
@@ -48,56 +49,15 @@ function GoogleIcon() {
 }
 
 function CheckMark() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className="feat-check">
-      <path
-        d="M5 10.5l3.2 3.2L15 7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <Check className="feat-check" />;
 }
 
-/* Target-type glyphs — Lucide icons (lucide.dev) */
+/* Target-type glyphs — the app's own Gravity UI set (`components/spira/icons`), so the sign-in
+   preview shows the same marks as the product behind it. */
 function TargetIcon({ kind }: { kind: "numeric" | "checklist" | "binary" }) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    className: "tcard-glyph",
-  };
-  if (kind === "numeric") {
-    return (
-      <svg {...common}>
-        <path d="M16 7h6v6" />
-        <path d="m22 7-8.5 8.5-5-5L2 17" />
-      </svg>
-    );
-  }
-  if (kind === "checklist") {
-    return (
-      <svg {...common}>
-        <path d="m3 17 2 2 4-4" />
-        <path d="m3 7 2 2 4-4" />
-        <path d="M13 6h8" />
-        <path d="M13 12h8" />
-        <path d="M13 18h8" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-      <line x1="4" x2="4" y1="22" y2="15" />
-    </svg>
-  );
+  const Glyph =
+    kind === "numeric" ? TrendingUp : kind === "checklist" ? ListChecks : Flag;
+  return <Glyph className="tcard-glyph" />;
 }
 
 type TargetCard = {

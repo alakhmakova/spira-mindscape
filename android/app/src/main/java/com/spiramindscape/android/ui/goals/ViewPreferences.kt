@@ -85,6 +85,10 @@ class TargetViewPreferences(private val prefs: SharedPreferences) {
         get() = prefs.readEnum(KEY_LOCK, TargetLockFilter.entries, TargetLockFilter.All)
         set(value) = prefs.write(KEY_LOCK, value)
 
+    var typeFilter: TargetTypeFilter
+        get() = prefs.readEnum(KEY_TYPE, TargetTypeFilter.entries, TargetTypeFilter.All)
+        set(value) = prefs.write(KEY_TYPE, value)
+
     companion object {
         private const val PREFS_NAME = "spira_target_view"
         private const val KEY_SORT = "sort"
@@ -92,6 +96,7 @@ class TargetViewPreferences(private val prefs: SharedPreferences) {
         private const val KEY_FILTER = "filter"
         private const val KEY_DEADLINE = "deadline_filter"
         private const val KEY_LOCK = "lock_filter"
+        private const val KEY_TYPE = "type_filter"
 
         fun from(context: Context) = TargetViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
@@ -110,6 +115,9 @@ class TargetViewState internal constructor(
     private val filterState: MutableState<TargetFilter>,
     private val deadlineFilterState: MutableState<TargetDeadlineFilter>,
     private val lockFilterState: MutableState<TargetLockFilter>,
+    private val typeFilterState: MutableState<TargetTypeFilter>,
+    private val deadlineFromState: MutableState<String>,
+    private val deadlineToState: MutableState<String>,
 ) {
     var sort: TargetSort
         get() = sortState.value
@@ -132,11 +140,23 @@ class TargetViewState internal constructor(
             preferences.filter = value
         }
 
+    /**
+     * The deadline question.
+     *
+     * **"No deadline" and a date range cannot both be on** (owner, 2026-08-18): a range asks which
+     * deadlines to keep and "No deadline" asks for the targets that haven't got one, so together
+     * they can only ever match nothing — the list empties and neither control says why. Picking one
+     * clears the other rather than leaving the user to guess which of two answers to undo.
+     */
     var deadlineFilter: TargetDeadlineFilter
         get() = deadlineFilterState.value
         set(value) {
             deadlineFilterState.value = value
             preferences.deadlineFilter = value
+            if (value == TargetDeadlineFilter.None) {
+                deadlineFromState.value = ""
+                deadlineToState.value = ""
+            }
         }
 
     var lockFilter: TargetLockFilter
@@ -146,16 +166,55 @@ class TargetViewState internal constructor(
             preferences.lockFilter = value
         }
 
+    var typeFilter: TargetTypeFilter
+        get() = typeFilterState.value
+        set(value) {
+            typeFilterState.value = value
+            preferences.typeFilter = value
+        }
+
     /**
-     * How many of the three questions are narrowing the list — what the trigger shows in brackets.
+     * The deadline range's two ends, as ISO instants ("" = open end).
+     *
+     * Deliberately **not** stored: a date range is about a moment ("what is due this month"), not a
+     * standing preference, and a range remembered from a fortnight ago would open the page on a
+     * list that looks empty for no visible reason. The same rule the search box follows.
+     */
+    var deadlineFrom: String
+        get() = deadlineFromState.value
+        set(value) {
+            deadlineFromState.value = value
+            if (value.isNotBlank()) clearNoDeadline()
+        }
+
+    var deadlineTo: String
+        get() = deadlineToState.value
+        set(value) {
+            deadlineToState.value = value
+            if (value.isNotBlank()) clearNoDeadline()
+        }
+
+    /** The other half of the rule on [deadlineFilter]: a range takes "No deadline" back off. */
+    private fun clearNoDeadline() {
+        if (deadlineFilterState.value == TargetDeadlineFilter.None) {
+            deadlineFilterState.value = TargetDeadlineFilter.All
+            preferences.deadlineFilter = TargetDeadlineFilter.All
+        }
+    }
+
+    /**
+     * How many of the questions are narrowing the list — what the trigger shows in brackets.
      * A question left on `All` is not a filter, so an untouched toolbar reads "Filter", not
-     * "Filter (0)".
+     * "Filter (0)". The range counts **once**, whichever of its two ends is set: it is one
+     * question, and "(2)" for picking a From and a To would say two things are hidden.
      */
     val activeCount: Int
         get() = listOf(
             filter != TargetFilter.All,
             deadlineFilter != TargetDeadlineFilter.All,
             lockFilter != TargetLockFilter.All,
+            typeFilter != TargetTypeFilter.All,
+            deadlineFrom.isNotBlank() || deadlineTo.isNotBlank(),
         ).count { it }
 }
 
@@ -171,6 +230,9 @@ fun rememberTargetViewState(): TargetViewState {
             filterState = mutableStateOf(preferences.filter),
             deadlineFilterState = mutableStateOf(preferences.deadlineFilter),
             lockFilterState = mutableStateOf(preferences.lockFilter),
+            typeFilterState = mutableStateOf(preferences.typeFilter),
+            deadlineFromState = mutableStateOf(""),
+            deadlineToState = mutableStateOf(""),
         )
     }
 }

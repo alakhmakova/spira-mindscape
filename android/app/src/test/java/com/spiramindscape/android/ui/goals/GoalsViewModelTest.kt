@@ -87,6 +87,60 @@ class GoalsViewModelTest {
     }
 
     @Test
+    fun `applyGoalView keeps only goals whose deadline falls inside the range`() {
+        val january = GoalSummary("1", "January", 5, "2026-01-15T00:00:00Z", 0f, 0, false)
+        val june = GoalSummary("2", "June", 5, "2026-06-15T00:00:00Z", 0f, 0, false)
+        val undated = GoalSummary("3", "Someday", 5, null, 0f, 0, false)
+
+        val result = applyGoalView(
+            goals = listOf(january, june, undated),
+            query = "",
+            sort = SortKey.Title,
+            ascending = true,
+            status = StatusFilter.All,
+            deadlineFrom = "2026-02-01T00:00:00Z",
+            deadlineTo = "2026-12-31T00:00:00Z",
+        )
+
+        // A goal with no deadline is outside every range, not inside all of them — the web's rule.
+        assertEquals(listOf(june), result)
+    }
+
+    @Test
+    fun `applyGoalView treats both ends of the range as inclusive`() {
+        val onTheDay = GoalSummary("1", "On the day", 5, "2026-03-01T18:00:00Z", 0f, 0, false)
+
+        val result = applyGoalView(
+            goals = listOf(onTheDay),
+            query = "",
+            sort = SortKey.Title,
+            ascending = true,
+            status = StatusFilter.All,
+            deadlineFrom = "2026-03-01T00:00:00Z",
+            deadlineTo = "2026-03-01T00:00:00Z",
+        )
+
+        // Only the date part is compared: a deadline stamped later the same day is still "that day".
+        assertEquals(listOf(onTheDay), result)
+    }
+
+    @Test
+    fun `applyGoalView filters by one confidence, and zero means any`() {
+        val sure = GoalSummary("1", "Sure", 9, null, 0f, 0, false)
+        val unsure = GoalSummary("2", "Unsure", 3, null, 0f, 0, false)
+        val goals = listOf(sure, unsure)
+
+        assertEquals(
+            listOf(sure),
+            applyGoalView(goals, "", SortKey.Title, true, StatusFilter.All, confidence = 9),
+        )
+        assertEquals(
+            goals,
+            applyGoalView(goals, "", SortKey.Title, true, StatusFilter.All, confidence = 0),
+        )
+    }
+
+    @Test
     fun `createGoal creates then refreshes so the new goal appears`() = runTest(dispatcher) {
         var createdWith: Triple<String, Int, String?>? = null
         val newGoal = GoalSummary("g2", "New goal", 8, null, 0f, 0, false)

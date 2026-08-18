@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type React from "react";
-import { X } from "lucide-react";
+import { X } from "@/components/spira/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
  * or solid teal (`tone="primary"`) when the action creates something rather than removes it.
  *
  * The destructive red is **error-900 `#C53336`** from the palette's semantic `error` ramp
- * (CLAUDE.md → "Extended ramps"), hovering to error-1000. It was an ad-hoc `#d13239` before,
+ * (CLAUDE.md → "Extended ramps"), hovering to error-1000. It was an ad-hoc `#C53336` before,
  * which belonged to no ramp; Guava is deliberately not used here — it is the brand accent, not a
  * danger signal.
  */

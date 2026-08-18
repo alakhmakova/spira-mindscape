@@ -39,6 +39,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
 import com.spiramindscape.android.ui.theme.Salt600
 import com.spiramindscape.android.ui.theme.spiraExtras
 
@@ -109,13 +111,9 @@ fun LoginScreen(
 
             if (error != null) {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center,
-                )
+                // The app's one notice card, not a line of red type: a sign-in that failed is the
+                // same kind of message as any other, and it should look like one.
+                SpiraNoticeCard(message = error, kind = SpiraNoticeKind.Error)
             }
 
             Spacer(Modifier.height(28.dp))

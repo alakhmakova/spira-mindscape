@@ -37,7 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -63,6 +67,7 @@ import com.spiramindscape.android.ui.components.InlineRichText
 import com.spiramindscape.android.ui.components.LocalInlineResources
 import com.spiramindscape.android.ui.components.attachTo
 import com.spiramindscape.android.ui.icons.SpiraArt
+import com.spiramindscape.android.ui.components.AddActionIconGap
 import com.spiramindscape.android.ui.components.addActionTextStyle
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Error800
@@ -225,7 +230,7 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
                         )
                     }
 
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(TARGET_ACTION_GAP))
                     AttachResourceButton(
                         attachedTo = target.title,
                         onAttach = { resourceId ->
@@ -233,6 +238,32 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
                                 ?.let { actions.onSetTargetTitle(target.id, it) }
                         },
                     )
+
+                    // Delete is the **twin of "Attach resource"** above it — a circled mark and the
+                    // same 14sp label, in red rather than teal (`Targets.tsx` does the same). As a
+                    // filled near-black button it was the heaviest thing on an opened card, which
+                    // is the wrong weight for the one action you can't undo.
+                    Spacer(Modifier.height(TARGET_ACTION_GAP))
+                    Row(
+                        Modifier
+                            .clickable { confirmDelete = true }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AddActionIconGap),
+                    ) {
+                        Icon(
+                            SpiraIcons.CircleXmark,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            "Delete target",
+                            style = addActionTextStyle(),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
 
                     Spacer(Modifier.height(14.dp))
                     Row(
@@ -243,12 +274,6 @@ fun TargetCard(target: TargetItem, actions: GoalWorkspaceActions, modifier: Modi
                         // It collapses the panel; nothing is discarded — every edit here saves as
                         // it is made, so "Cancel" would promise an undo that never existed.
                         CardActionButton("Close", onClick = { expanded = false })
-                        CardActionButton(
-                            "Delete target",
-                            onClick = { confirmDelete = true },
-                            container = Salt1000,
-                            contentColor = Color.White,
-                        )
                     }
                 }
             }
@@ -415,23 +440,25 @@ private val PAPER_CENTRE_OFFSET = (TILE.value * (PAPER_CENTRE - 0.5f)).dp
  */
 @Composable
 fun ProgressLockBadge(locked: Boolean, onToggle: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    // **The option card's smiley badge, exactly** (`OptionCard` in `GoalWorkspaceScreen.kt`, and
+    // `OptionsList.tsx` on the web): 28dp, a 2dp shadow, a white plate, a hairline ring and a 16dp
+    // glyph. The two hang off the same corner of two cards in the same list, so any difference
+    // between them reads as two different components rather than one convention.
     Box(
         modifier
             .size(28.dp)
+            .shadow(2.dp, CircleShape)
             .clip(CircleShape)
             .background(MaterialTheme.spiraExtras.surfaceRaised)
             .border(1.dp, MaterialTheme.spiraExtras.border, CircleShape)
             .clickable { onToggle(!locked) },
         contentAlignment = Alignment.Center,
     ) {
-        // The padlock nearly fills its ring. At 14dp inside a 28dp circle it read as an empty ring
-        // with a speck in the middle — the ring is the badge, the lock is what you are meant to
-        // see. The circle itself is unchanged, so the corner it hangs off keeps its geometry.
         Icon(
             if (locked) SpiraIcons.Lock else SpiraIcons.LockOpen,
             contentDescription = if (locked) "Unlock progress" else "Lock progress",
             tint = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.spiraExtras.mutedForeground,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -553,65 +580,6 @@ private fun NumericProgressBody(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // **A FlowRow, not a Row.** All seven pieces — current, "/", total, unit, "(from", start,
-        // ")" — do not fit across a phone, and a plain Row does not wrap: it squeezes the last
-        // children to nothing, which is how "65 / 54 kg" ended up as a lone "65" with "(from" set
-        // one letter per line down the right edge. Here the "(from …)" group drops to a second
-        // line instead, which is what the web does when its own row runs out of room.
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            NumberField(
-                value = trimNumber(target.current),
-                label = "Current value",
-                onTyping = { raw -> preview(raw) { Triple(it, total, start) } },
-                onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(current = it) } },
-            )
-            Text("/", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            NumberField(
-                value = total?.let { trimNumber(it) } ?: "",
-                label = "Total value",
-                placeholder = "total",
-                onTyping = { raw -> preview(raw) { Triple(target.current, it, start) } },
-                onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(totalValue = it) } },
-            )
-            val unitStyle = MaterialTheme.typography.bodyMedium
-            InlineEditText(
-                value = target.unit ?: "",
-                onCommit = { actions.onSetTargetUnit(target.id, it.ifBlank { null }) },
-                modifier = Modifier.width(textWidth(target.unit?.ifBlank { null } ?: "unit", unitStyle) + 8.dp),
-                placeholder = "unit",
-                textStyle = unitStyle,
-            )
-            // The "(from …)" group is **one** flow item, in a Row of its own. Left as three
-            // siblings, the wrap could fall between "(from" and its number, or leave the closing
-            // bracket alone on the next line — which is exactly what it did.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 4.dp),
-            ) {
-                Text(
-                    "(from ",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.spiraExtras.mutedForeground,
-                )
-                NumberField(
-                    value = trimNumber(start),
-                    label = "Start value",
-                    onTyping = { raw -> preview(raw) { Triple(target.current, total, it) } },
-                    onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(startValue = it) } },
-                    muted = true,
-                )
-                Text(
-                    ")",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.spiraExtras.mutedForeground,
-                )
-            }
-        }
-
         if (message != null) {
             Text(
                 message!!,
@@ -621,6 +589,10 @@ private fun NumericProgressBody(
             )
         }
 
+        // The ± pair with **the numbers between them**, matching `Targets.tsx`. The inner bar and
+        // its percentage used to sit here and the values sat on a line above; the card's own strip
+        // already prints that measure, so the row said it twice while exiling the thing the
+        // buttons actually change.
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -629,37 +601,61 @@ private fun NumericProgressBody(
             StepButton(SpiraIcons.Minus, "Decrement", enabled = !locked && target.current > lo) {
                 commit(current = (target.current - 1).coerceIn(lo, hi))
             }
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(8.dp)
-                    .clip(CircleShape)
-                    .background(Kale300), // the distance still to cover, same as the card strip
+            // **A FlowRow, not a Row.** All seven pieces — current, "/", total, unit, "(from",
+            // start, ")" — do not fit across a phone, and a plain Row does not wrap: it squeezes
+            // the last children to nothing, which is how "65 / 54 kg" ended up as a lone "65" with
+            // "(from" set one letter per line down the right edge. Here the "(from …)" group drops
+            // to a second line instead, which is what the web does when its row runs out of room.
+            FlowRow(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // **Guava, not Kale.** The web has always drawn this inner bar in the warm accent
-                // and only turns it teal once the target is done (`ProgressBar.tsx`); Android had
-                // it teal throughout, so the one measure that is meant to stand out on an opened
-                // card was the same colour as the card's own chrome.
-                Box(
-                    Modifier
-                        .fillMaxWidth(target.progress.coerceIn(0f, 1f))
-                        .fillMaxHeight()
-                        .clip(CircleShape)
-                        .background(
-                            if (target.progress >= 1f) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                Guava500
-                            },
-                        ),
+                NumberField(
+                    value = trimNumber(target.current),
+                    label = "Current value",
+                    onTyping = { raw -> preview(raw) { Triple(it, total, start) } },
+                    onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(current = it) } },
                 )
+                Text("/", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                NumberField(
+                    value = total?.let { trimNumber(it) } ?: "",
+                    label = "Total value",
+                    placeholder = "total",
+                    onTyping = { raw -> preview(raw) { Triple(target.current, it, start) } },
+                    onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(totalValue = it) } },
+                )
+                val unitStyle = MaterialTheme.typography.bodyMedium
+                InlineEditText(
+                    value = target.unit ?: "",
+                    onCommit = { actions.onSetTargetUnit(target.id, it.ifBlank { null }) },
+                    modifier = Modifier.width(textWidth(target.unit?.ifBlank { null } ?: "unit", unitStyle) + 8.dp),
+                    placeholder = "unit",
+                    textStyle = unitStyle,
+                )
+                // The "(from …)" group is **one** flow item, in a Row of its own. Left as three
+                // siblings, the wrap could fall between "(from" and its number, or leave the
+                // closing bracket alone on the next line — which is exactly what it did.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "(from ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.spiraExtras.mutedForeground,
+                    )
+                    NumberField(
+                        value = trimNumber(start),
+                        label = "Start value",
+                        onTyping = { raw -> preview(raw) { Triple(target.current, total, it) } },
+                        onCommit = { entered -> entered.toDoubleOrNull()?.let { commit(startValue = it) } },
+                        muted = true,
+                    )
+                    Text(
+                        ")",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.spiraExtras.mutedForeground,
+                    )
+                }
             }
-            Text(
-                "${formatPercent(target.progress, progressSteps(target))}%",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
             StepButton(
                 SpiraIcons.Plus,
                 "Increment",
@@ -744,7 +740,10 @@ private fun TaskRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        TaskCheck(done = item.done, onClick = onToggle)
+        // **On the first line, not centred against the whole task** (owner, 2026-08-18). A task
+        // that wraps to two or three lines used to float its check halfway down the block, which
+        // read as a mark for the paragraph rather than for the line the task starts on.
+        TaskCheck(done = item.done, onClick = onToggle, modifier = Modifier.align(Alignment.Top))
         InlineRichText(
             value = item.text,
             onCommit = onCommitText,
@@ -762,6 +761,10 @@ private fun TaskRow(
         // Deadline and ⋮ are always visible on a task row: with a fixed control column on the
         // right there is nothing for them to overlap, and a task is worked on far more often
         // than an option or a reality item.
+        //
+        // Both sit on the task's **first line**, like the check on the other side (owner,
+        // 2026-08-18) — a row whose text wraps to three lines had its controls floating at the
+        // middle of the block, level with nothing.
         Icon(
             if (item.deadline != null) SpiraIcons.Calendar else SpiraIcons.Calendar,
             contentDescription = if (item.deadline != null) "Change the deadline" else "Set a deadline",
@@ -770,12 +773,16 @@ private fun TaskRow(
                 overdue -> Error800
                 else -> MaterialTheme.colorScheme.primary
             },
-            modifier = Modifier.size(18.dp).clickable { showDatePicker = true },
+            modifier = Modifier
+                .align(Alignment.Top)
+                .size(18.dp)
+                .clickable { showDatePicker = true },
         )
         ElementActionsMenu(
             contentDescription = "Subtask actions",
             attachedTo = item.text,
             vertical = true,
+            modifier = Modifier.align(Alignment.Top),
             onAttach = { resourceId ->
                 attachTo(item.text, resourceId, FieldLimits.CHECKLIST_TEXT)?.let(onCommitText)
             },
@@ -793,34 +800,44 @@ private fun TaskRow(
     }
 }
 
-/** The round task check: a filled teal circle with a white tick when done, an outline when not. */
+/**
+ * The air between the opened card's three action rows — Add task, Attach resource, Delete target.
+ * **One value, so the three are evenly spaced** (owner, 2026-08-18): Attach used to sit 14dp below
+ * the body and Delete 4dp below Attach, which grouped Delete with Attach and left Add task adrift.
+ */
+private val TARGET_ACTION_GAP = 8.dp
+
+/**
+ * The round task check: Gravity's **`circle-dashed`** while the task is still to do, and
+ * `circle-check-fill` in **Guava** once it is done (owner, 2026-08-18). The dashed ring says
+ * "not yet" in a way a plain outline circle never did — an unfilled `circle-check` still shows a
+ * tick, so a task that had not been touched already looked half-agreed-to.
+ *
+ * This is the one case a solid mark may sit beside an outline one (CLAUDE.md): they are one
+ * control's two states, not a column of unrelated icons. The filled glyph knocks the tick OUT of
+ * the disc, so tinting it Guava prints a Guava disc with a white tick showing through the card
+ * behind it — no second colour to keep in step.
+ *
+ * [modifier] is how the caller puts it **on the first line** of a task that wraps; see [TaskRow].
+ */
 @Composable
-private fun TaskCheck(done: Boolean, onClick: () -> Unit) {
+private fun TaskCheck(done: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val label = if (done) "Mark subtask not done" else "Mark subtask done"
-    Box(
-        Modifier
+    Icon(
+        if (done) SpiraIcons.CircleCheckFill else SpiraIcons.CircleDashed,
+        contentDescription = null,
+        tint = if (done) Guava500 else MaterialTheme.spiraExtras.borderStrong,
+        modifier = modifier
             .size(20.dp)
             .clip(CircleShape)
-            .then(
-                if (done) {
-                    Modifier.background(MaterialTheme.colorScheme.primary)
-                } else {
-                    Modifier.border(2.dp, MaterialTheme.spiraExtras.borderStrong, CircleShape)
-                },
-            )
             .clickable(onClick = onClick)
-            // The unticked state draws no glyph, so the row carries the label itself — otherwise
-            // there would be nothing to announce (or to find in a test) until a task is done.
+            // The glyph carries no text, so the row carries the label itself — otherwise there
+            // would be nothing to announce (or to find in a test).
             .semantics {
                 contentDescription = label
                 role = Role.Checkbox
             },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (done) {
-            Icon(SpiraIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-        }
-    }
+    )
 }
 
 /**
@@ -858,15 +875,19 @@ private fun AddTaskControl(enabled: Boolean, onAdd: (String) -> Unit) {
         return
     }
 
+    var draft by remember { mutableStateOf("") }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Open, the row wears the **dashed ring** the tasks above it wear (owner, 2026-08-18):
+        // what is being typed is a task-to-be, so it lines up with the list it is joining rather
+        // than repeating the + that opened it.
         Icon(
-            SpiraIcons.CirclePlus,
+            SpiraIcons.CircleDashed,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.spiraExtras.borderStrong,
             modifier = Modifier.size(18.dp),
         )
         InlineEditText(
@@ -880,10 +901,23 @@ private fun AddTaskControl(enabled: Boolean, onAdd: (String) -> Unit) {
             placeholder = "Add task…",
             textStyle = MaterialTheme.typography.bodyMedium,
             autoFocus = true,
+            onTextChanged = { draft = it },
             onFocusChanged = { focused ->
                 if (focused) everFocused = true else if (everFocused) open = false
             },
         )
+        // **A circled plus, not the return arrow** (owner, 2026-08-18) — it is the same mark as the
+        // "Add task" link that opened the row, so the thing you press to finish is the thing you
+        // pressed to start. (The arrow named the keyboard's key rather than the action, and now
+        // that the row leads with a dashed ring there is no longer a + at both ends to confuse.)
+        if (draft.isNotBlank()) {
+            Icon(
+                SpiraIcons.CirclePlus,
+                contentDescription = "Add this task",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
@@ -926,8 +960,12 @@ private fun NumberField(
         // flat 64dp a two-digit value floated in the middle of an empty box and "65 / 54 kg" read
         // as four things scattered across the row; with only a minimum they wrapped one per line.
         // Measuring the string is the one way to get "65" to occupy exactly as much room as "65".
+        //
+        // The muted (start) field is measured **tight**: the 8dp of caret room is what printed
+        // "(from 0 )" with a gap before the bracket. The bracket has to sit against its number,
+        // so that one gets 2dp — enough for a caret, not enough to read as a space.
         modifier = Modifier
-            .width(textWidth(value.ifBlank { placeholder }, style) + 8.dp)
+            .width(textWidth(value.ifBlank { placeholder }, style) + if (muted) 0.dp else 8.dp)
             .semantics { contentDescription = label },
         textStyle = style,
         placeholder = placeholder,
@@ -937,14 +975,35 @@ private fun NumberField(
     )
 }
 
+/** The ± button's side, and the box the gradient ring is measured against. */
+private val STEP_BUTTON = 36.dp
+
 /**
- * A ± button beside the numeric progress bar, drawn after the reference the owner supplied
- * (2026-08-14): a **wide, softly rounded rectangle on white, with a hairline Kale border and a
- * Kale sign**. It used to be a 36dp square with a 2dp grey border and a near-black sign, which
- * read as heavy, disabled chrome sitting either side of the bar.
+ * The gradient ring on a ± button, translated from the web's `.gradient-ring` (`styles.css`):
+ * `linear-gradient(228.47deg, #ff4833 48.94%, #ed7ffe 89.8%, #7f8eff 143.09%)`.
  *
- * The pair stays split — one before the bar, one after — even though the reference joins them into
- * a segmented control: the bar between them is what they act on.
+ * CSS measures a gradient's angle clockwise from "up" and its line from the box's centre, so the
+ * direction is `(sin θ, -cos θ)` with y growing downward — down and to the LEFT here — and the
+ * line is `w·|sin θ| + h·|cos θ|` long. Compose instead wants two pixel offsets, and it has no way
+ * to express a stop past 100%: the line is extended to 143.09% and the three stops re-scaled onto
+ * it (48.94/143.09, 89.8/143.09, 1) so the sweep lands where the browser puts it.
+ */
+@Composable
+private fun stepButtonRingBrush(): Brush {
+    val s = with(LocalDensity.current) { STEP_BUTTON.toPx() }
+    return Brush.linearGradient(
+        0.342f to Color(0xFFFF4833),
+        0.628f to Color(0xFFED7FFE),
+        1f to Color(0xFF7F8EFF),
+        start = Offset(1.0284f * s, 0.0319f * s),
+        end = Offset(-0.4837f * s, 1.3717f * s),
+    )
+}
+
+/**
+ * A ± button beside the numeric row — the **web's exact button** (`Targets.tsx`): a **36dp square,
+ * `rounded-md` (6dp), a near-black sign**, and the owner's **1dp gradient ring** in place of the
+ * old flat 2dp grey. The pair stays split, one either side of the values they act on.
  */
 @Composable
 private fun StepButton(
@@ -953,21 +1012,23 @@ private fun StepButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    val ink = if (enabled) MaterialTheme.colorScheme.primary else Salt400
+    val shape = RoundedCornerShape(6.dp)
+    val ring = stepButtonRingBrush()
     Box(
         Modifier
-            .size(width = 46.dp, height = 34.dp)
+            .size(STEP_BUTTON)
             .clip(shape)
-            .background(MaterialTheme.spiraExtras.surfaceRaised)
-            .border(1.dp, ink, shape)
+            // A disabled button keeps the flat grey: a ring that colourful on a dead control
+            // reads as "press me".
+            .border(1.dp, if (enabled) ring else SolidColor(Salt400), shape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = ink,
+            tint = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.spiraExtras.mutedForeground,
             modifier = Modifier.size(16.dp),
         )
     }

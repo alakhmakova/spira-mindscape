@@ -1,5 +1,5 @@
 import { format, isPast, differenceInCalendarDays } from "date-fns";
-import { Calendar } from "lucide-react";
+import { Calendar } from "@/components/spira/icons";
 import { cn } from "@/lib/utils";
 
 export function DeadlineLabel({

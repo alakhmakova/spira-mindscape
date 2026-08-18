@@ -22,10 +22,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The Will-do toolbar's triggers really open the redesigned menus, and every column is there.
+ * The Will-do toolbar's triggers really open the redesigned **sheet**, and every question is there.
  *
- * What the menu *looks like* is `VisualCheckToolbarMenusTest`; this is the wiring — that the
- * trigger is a word rather than the old pill, and that all three filter questions are behind it.
+ * What it *looks like* is `VisualCheckFilterSheetTest`; this is the wiring — that the trigger is a
+ * word rather than the old pill, and that all four filter questions are behind it.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -72,13 +72,17 @@ class VisualCheckToolbarWiringTest : VisualCheckTestBase() {
         compose.onNodeWithContentDescription("Filter targets").performClick()
         compose.waitForIdle()
 
-        // One heading and one late-column word from each group: a missing or clipped column shows
-        // up as a missing node here, and as a missing column in the sheet above.
-        compose.onNodeWithText("Status").assertIsDisplayed()
+        // One heading and one late answer from each question: a missing or clipped question shows
+        // up as a missing node here.
+        //
+        // **The headings are upper-case** — the filter opens a `SpiraFilterSheet` now, not a
+        // dropdown of columns (owner, 2026-08-17), and `SpiraSheetGroup` sets its heading in caps.
+        // The answers keep their sentence case, because they are pills.
+        compose.onNodeWithText("STATUS").assertIsDisplayed()
         compose.onNodeWithText("Not started").assertIsDisplayed()
-        compose.onNodeWithText("Deadline").assertIsDisplayed()
+        compose.onNodeWithText("DEADLINE").assertIsDisplayed()
         compose.onNodeWithText("No deadline").assertIsDisplayed()
-        compose.onNodeWithText("Lock").assertIsDisplayed()
+        compose.onNodeWithText("LOCK").assertIsDisplayed()
         compose.onNodeWithText("Unlocked").assertIsDisplayed()
     }
 }

@@ -14,7 +14,7 @@ import {
   CircleX,
   Info,
   TriangleAlert,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { cn } from "@/lib/utils";
 import {
   splitInline,
@@ -669,7 +669,7 @@ function Marker({
       <CircleX
         className={cn(
           "mt-0.5 h-5 w-5 shrink-0",
-          onPrimary ? "text-primary-foreground" : "text-[#ea580c]",
+          onPrimary ? "text-primary-foreground" : "text-[#F45D48]",
         )}
         strokeWidth={2}
       />

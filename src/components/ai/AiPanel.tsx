@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { X, ArrowUp, Paperclip } from "lucide-react";
+import { X, ArrowUp, Paperclip } from "@/components/spira/icons";
 import {
   Drawer,
   DrawerContent,
@@ -22,6 +22,7 @@ import { useSpira } from "@/lib/spira/store";
 import { useActivityGate } from "@/lib/useActivityGate";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
+import { SproutArt } from "@/components/spira/SproutArt";
 import type { AiAction, Goal } from "@/lib/spira/types";
 import { toast, type ExternalToast } from "sonner";
 import {
@@ -43,6 +44,7 @@ import {
   type HistoryEntry,
   type ChatAttachment,
 } from "./ai-api";
+import { resourceTypeMeta } from "@/components/spira/resource-meta";
 import {
   type ProposalKind,
   type Proposal,
@@ -432,90 +434,6 @@ const SUGGESTIONS_GLOBAL: Suggestion[] = [
   },
   { id: "delete", icon: "trash", text: "Delete a goal" },
 ];
-
-function buildGoalSuggestions(
-  goal: import("@/lib/spira/types").Goal,
-): Suggestion[] {
-  const s: Suggestion[] = [];
-
-  const deadlineDays = goal.deadline
-    ? Math.ceil((new Date(goal.deadline).getTime() - Date.now()) / 86_400_000)
-    : null;
-  const totalTargets = goal.targets.length;
-  const doneTargets = goal.targets.filter(
-    (t) => (t.type === "binary" && t.done) || !!t.achievedAt,
-  ).length;
-
-  if (goal.confidence <= 3)
-    s.push({
-      id: "confidence",
-      icon: "brain",
-      text: "My confidence is low — help me identify what's blocking me",
-    });
-
-  if (deadlineDays !== null && deadlineDays > 0 && deadlineDays <= 14)
-    s.push({
-      id: "deadline",
-      icon: "clock",
-      text: `${deadlineDays} day${deadlineDays === 1 ? "" : "s"} left — let's decide what still matters`,
-    });
-
-  if (goal.reality.obstacles.length > 0)
-    s.push({
-      id: "obstacles",
-      icon: "shield",
-      text: `I'm facing ${goal.reality.obstacles.length} obstacle${goal.reality.obstacles.length > 1 ? "s" : ""} — help me think through them`,
-    });
-
-  if (doneTargets > 0 && doneTargets < totalTargets)
-    s.push({
-      id: "progress",
-      icon: "trending",
-      text: `${doneTargets}/${totalTargets} targets done — what should I focus on next?`,
-    });
-
-  if (totalTargets === 0)
-    s.push({
-      id: "targets",
-      icon: "target",
-      text: "Help me define concrete targets for this goal",
-    });
-
-  if (goal.options.length === 0 && s.length < 3)
-    s.push({
-      id: "options",
-      icon: "switch_",
-      text: "What are my strategic options?",
-    });
-
-  if (goal.reality.actions.length === 0 && s.length < 3)
-    s.push({
-      id: "action",
-      icon: "zap",
-      text: "What's the best next action I can take today?",
-    });
-
-  if (s.length === 0)
-    s.push(
-      {
-        id: "reflect",
-        icon: "brain",
-        text: "Help me think through where I'm stuck",
-      },
-      {
-        id: "reality",
-        icon: "leaf",
-        text: "What's actually true about this goal right now?",
-      },
-      {
-        id: "options",
-        icon: "switch_",
-        text: "What are my options from here?",
-      },
-    );
-
-  return s.slice(0, 3);
-}
 
 /**
  * Normalises a date to a full ISO-8601 instant. The backend's deadline columns
@@ -2473,11 +2391,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="spira-ai-dark flex flex-col h-full min-h-0 relative">
-      {/* Chrome band — the wordmark row and the provider strip together.
-          It carries **Kale-600** against the panel's Kale-500 body, so the header reads as
-          chrome rather than as the top of the conversation. Both steps are on the palette, and
-          it is the same darker-band-over-lighter-page idiom the goal workspace uses. */}
-      <div className="shrink-0 bg-[#005961]">
+      {/* Chrome band — the wordmark row and the provider strip together. It carries **Kale-500**
+          (the header stays dark teal) while the conversation below sits on a light teal gradient,
+          so the header reads as chrome over the chat. */}
+      <div className="shrink-0 bg-[#0A8080]">
         {/* Header */}
         <header className="h-[62px] shrink-0 flex items-center justify-between px-5">
           <div className="flex items-baseline gap-[7px]">
@@ -2538,12 +2455,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               <span
                 className={cn(
                   "w-[7px] h-[7px] rounded-full",
-                  // The `intelligence` ramp, not the semantic greens/ambers: this dot marks the
-                  // assistant's own provider, so it belongs to the AI accent. Connected takes the
-                  // bright step, a missing key the pale one, so the state still reads.
+                  // The chat gradient's own two colours (owner, 2026-08-17): connected takes the
+                  // teal top-of-gradient step, a missing key the pale bottom step — the state still
+                  // reads and the dot ties back to the conversation's palette.
                   activeProvider.connected
-                    ? "bg-[#A28DFF] shadow-[0_0_0_3px_rgba(162,141,255,0.2)]"
-                    : "bg-[#E6DFF9] shadow-[0_0_0_3px_rgba(230,223,249,0.2)]",
+                    ? "bg-[#83D2D2] shadow-[0_0_0_3px_rgba(131,210,210,0.25)]"
+                    : "bg-[#F2FFFF] shadow-[0_0_0_3px_rgba(242,255,255,0.3)]",
                 )}
               />
               {activeLabel}
@@ -2555,262 +2472,302 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       {/* Closing banner */}
       {closing && (
         <div className="mx-4 mb-2.5 px-3 py-2.5 rounded-[10px] bg-white/10 flex items-center gap-2 text-[12.5px] text-white">
-          <Ic path={PATHS.leaf} size={12} />
+          <SproutArt size={14} />
           The session is gently moving toward a close
         </div>
       )}
 
-      {/* Body */}
+      {/* Body **and footer on one surface** — the light teal gradient (owner's design, 2026-08-15).
+          It used to be painted on the scroll area alone, with the composer's own `#F2FFFF` block
+          butted underneath it; that block was a second visible container, so the white input card
+          read as a box inside a box (owner, 2026-08-17). One gradient, everything on it
+          transparent, and the only thing you see is the field — which is what Android does. */}
       <div
-        ref={scrollRef}
-        data-vaul-no-drag
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-white/20"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, #83D2D2 3.43%, #F2FFFF 118.85%)",
+        }}
+        className="flex min-h-0 flex-1 flex-col"
       >
-        {/* Empty state */}
-        {!inGrow && msgs.length === 0 && (
-          <div className="pt-5 pb-2 text-center">
-            <div className="w-[52px] h-[52px] rounded-full bg-white/10 border border-white/20 grid place-items-center mx-auto mb-4">
-              <Ic path={PATHS.leaf} size={20} />
-            </div>
-            <p className="text-[14px] leading-[1.6] text-white/74 max-w-[30ch] mx-auto mb-5">
-              {goal
-                ? `I'm here to help with "${goal.title}". Ask anything or start a GROW session.`
-                : "I'm here to help you think. Ask me anything, or just say what you want to achieve and I'll help you create a new goal."}
-            </p>
-            <div className="flex flex-col gap-2">
-              {(goal ? buildGoalSuggestions(goal) : SUGGESTIONS_GLOBAL).map(
-                (s) => (
+        <div
+          ref={scrollRef}
+          data-vaul-no-drag
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-black/15"
+        >
+          {/* Empty state */}
+          {!inGrow && msgs.length === 0 && (
+            <div className="pt-5 pb-2 text-center">
+              {/* **The watering can and sprout** — the owner's illustration, the same artwork
+                  Android draws (`SpiraArt.sprout`), and it is vector rather than a bitmap. It
+                  replaced a plain leaf glyph here on 2026-08-17, so the two surfaces head the
+                  assistant with one picture instead of two ideas of it. */}
+              <div className="w-[52px] h-[52px] rounded-full bg-white/70 border border-[#005961]/20 grid place-items-center mx-auto mb-4">
+                <SproutArt size={26} />
+              </div>
+              <p className="text-[14px] leading-[1.6] text-[#003737] max-w-[30ch] mx-auto mb-5">
+                {goal
+                  ? `I'm here to help with "${goal.title}". Ask anything or start a GROW session.`
+                  : "I'm here to help you think. Ask me anything, or just say what you want to achieve and I'll help you create a new goal."}
+              </p>
+              {/* **No starters inside a goal** (owner, 2026-08-17). On the dashboard they answer
+                "what is this for?"; inside a goal the user already knows why they opened the
+                assistant, and a stack of guesses about their own goal was in the way of typing. */}
+              <div className="flex flex-col gap-2">
+                {(goal ? [] : SUGGESTIONS_GLOBAL).map((s) => (
                   <button
                     key={s.id}
                     onClick={() => sendChat(s.text)}
-                    className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl bg-white/10 border border-white/20 text-white text-[13.5px] text-left hover:border-white/35 hover:-translate-y-px transition-all"
+                    className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl bg-white/80 border border-[#005961]/15 text-[#003737] text-[13.5px] text-left shadow-sm hover:border-[#005961]/35 hover:-translate-y-px transition-all"
                   >
                     <Ic
                       path={PATHS[s.icon as IconKey] ?? PATHS.sparkles}
                       size={15}
-                      className="shrink-0 text-white/80"
+                      className="shrink-0 text-[#0A8080]"
                     />
                     <span className="flex-1">{s.text}</span>
                   </button>
-                ),
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        {list.map((m) => {
-          if (m.role === "user") {
-            return (
-              <div key={m.id} className="group flex flex-col items-end gap-1">
-                {/* A change typed on a proposal card — say which card it belongs to, so the
-                    request reads as part of the conversation and not as a stray message. */}
-                {m.revisedLabel && (
-                  <span className="flex max-w-[86%] items-center gap-1.5 pr-1 text-[12px] text-white/60">
-                    <Ic path={PATHS.pencil} size={12} className="shrink-0" />
-                    <span className="truncate">
-                      Change to «{m.revisedLabel}»
-                    </span>
-                  </span>
-                )}
-                {m.attachments && m.attachments.length > 0 && (
-                  <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
-                    {m.attachments.map((a, i) => {
-                      const chipClass =
-                        "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#003737] shadow-sm";
-                      // Image attachments open a preview on click; the dataUrl survives only
-                      // in-session (it's stripped before the transcript is persisted), so a
-                      // reloaded chat falls back to a plain, non-clickable chip.
-                      const canPreview =
-                        a.mime.startsWith("image/") && !!a.dataUrl;
-                      return canPreview ? (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() =>
-                            setContentModal({
-                              title: a.name,
-                              body: "",
-                              image: a.dataUrl,
-                            })
-                          }
-                          aria-label={`Preview ${a.name}`}
-                          className={`${chipClass} cursor-zoom-in transition-colors hover:bg-white`}
-                        >
-                          <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
-                          <span className="truncate">{a.name}</span>
-                        </button>
-                      ) : (
-                        <span key={i} className={chipClass}>
-                          <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
-                          <span className="truncate">{a.name}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#003737] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
-                  {m.content}
-                </div>
-                <CopyButton text={m.content} />
+                ))}
               </div>
-            );
-          }
-          if (m.role === "system") {
-            return (
-              <div
-                key={m.id}
-                className="flex items-center gap-2 self-center text-[12.5px] text-white/74 bg-white/10 px-3 py-1.5 rounded-full"
-              >
-                <Ic path={PATHS.check} size={12} /> {m.content}
-              </div>
-            );
-          }
-          if (m.role === "end") {
-            return (
-              <GrowEndCard
-                key={m.id}
-                proposals={sessionProposals}
-                memory={memoryDraft}
-                revising={memoryRevising}
-                onRevise={reviseMemory}
-                onSave={() => closeSession(true)}
-                onDiscard={() => closeSession(false)}
-              />
-            );
-          }
-          // assistant — error bubbles render with a warning icon (never an emoji)
-          if (m.error) {
-            return (
-              <div
-                key={m.id}
-                className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#FFDEA1] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]"
-              >
-                <Ic
-                  path={PATHS.alert}
-                  size={15}
-                  className="shrink-0 mt-[3px]"
-                />
-                <span className="select-text">{m.content}</span>
-              </div>
-            );
-          }
-          return (
-            <div key={m.id} className="group flex flex-col gap-2.5">
-              <div className="text-[14.5px] leading-[1.62] text-white max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere] select-text selection:bg-white/30 selection:text-white">
-                {m.streaming && m.status && !m.content && (
-                  <p className="text-[12.5px] italic text-white/60 mb-1">
-                    {m.status}
-                  </p>
-                )}
-                <Markdown text={m.content} />
-                {m.streaming && (
-                  <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-white rounded-sm animate-pulse" />
-                )}
-              </div>
-              {!m.streaming && m.content && <CopyButton text={m.content} />}
-              {/* A pending card lives in the footer (the card is the input). Once it's
-                  resolved we only keep a compact result line here, not the full card. */}
-              {!m.streaming &&
-                m.proposals &&
-                m.proposals.length > 0 &&
-                !m.proposals.some((pr) => pr.status === "pending") && (
-                  <ResultSummary
-                    proposals={m.proposals}
-                    goal={goal}
-                    onOpen={onOpenCreated}
-                  />
-                )}
-            </div>
-          );
-        })}
-
-        {/* An undecided session end (restored after a reload): the card stays
-            until the user explicitly saves or discards — never a silent loss. */}
-        {!inGrow && memoryDraft && (
-          <GrowEndCard
-            proposals={0}
-            memory={memoryDraft}
-            revising={memoryRevising}
-            onRevise={reviseMemory}
-            onSave={() => closeSession(true)}
-            onDiscard={() => closeSession(false)}
-          />
-        )}
-      </div>
-
-      {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
-          pending card renders here (the card IS the input); otherwise the composer. */}
-      {mode !== "grow-end" && revising && (
-        <div className="px-3 pb-3 pt-1 shrink-0">
-          <div className="flex items-center gap-2.5 rounded-[14px] border border-white/20 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
-            <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
-            <span className="flex-1 min-w-0 text-[13.5px] truncate">
-              Revising «{revising.label}»…
-            </span>
-            <button
-              onClick={cancelRevise}
-              className="shrink-0 text-[13px] font-medium text-[#003737]/55 hover:text-red-600 transition-colors px-1.5 py-1"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-      {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
-          the user's commitments, and those cards must stay actionable. */}
-      {!revising && pendingMsg && (
-        // Cap the card area and let it scroll: a proposal can be tall (a stepper, a long
-        // preview), and without this the panel simply grew past its own bottom edge, so
-        // Accept/Dismiss became unreachable.
-        <div className="px-3 pb-3 pt-1 shrink-0 max-h-[60%] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20">
-          {proposalGroupFor(pendingMsg)}
-        </div>
-      )}
-      {mode !== "grow-end" && !revising && !pendingMsg && (
-        <>
-          {inGrow && (
-            <div className="px-4 pb-1">
-              <button
-                onClick={() => setConfirmEnd(true)}
-                className="text-white/60 text-[12.5px] underline underline-offset-2 hover:text-white transition-colors"
-              >
-                End session early
-              </button>
             </div>
           )}
-          <Composer
-            onSend={(text, attachments) =>
-              inGrow ? sendGrow(text) : sendChat(text, attachments)
+
+          {/* Messages */}
+          {list.map((m) => {
+            if (m.role === "user") {
+              return (
+                <div key={m.id} className="group flex flex-col items-end gap-1">
+                  {/* A change typed on a proposal card — say which card it belongs to, so the
+                    request reads as part of the conversation and not as a stray message. */}
+                  {m.revisedLabel && (
+                    <span className="flex max-w-[86%] items-center gap-1.5 pr-1 text-[12px] text-[#005961]/80">
+                      <Ic path={PATHS.pencil} size={12} className="shrink-0" />
+                      <span className="truncate">
+                        Change to «{m.revisedLabel}»
+                      </span>
+                    </span>
+                  )}
+                  {m.attachments && m.attachments.length > 0 && (
+                    <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
+                      {m.attachments.map((a, i) => {
+                        const chipClass =
+                          "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#003737] shadow-sm";
+                        // Image attachments open a preview on click; the dataUrl survives only
+                        // in-session (it's stripped before the transcript is persisted), so a
+                        // reloaded chat falls back to a plain, non-clickable chip.
+                        const canPreview =
+                          a.mime.startsWith("image/") && !!a.dataUrl;
+                        return canPreview ? (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() =>
+                              setContentModal({
+                                title: a.name,
+                                body: "",
+                                image: a.dataUrl,
+                              })
+                            }
+                            aria-label={`Preview ${a.name}`}
+                            className={`${chipClass} cursor-zoom-in transition-colors hover:bg-white`}
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                            <span className="truncate">{a.name}</span>
+                          </button>
+                        ) : (
+                          <span key={i} className={chipClass}>
+                            <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
+                            <span className="truncate">{a.name}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="max-w-[86%] min-w-0 px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-white text-[#003737] text-[14px] leading-[1.5] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
+                    {m.content}
+                  </div>
+                  <CopyButton text={m.content} tone="dark" />
+                </div>
+              );
             }
-            allowAttachments={!inGrow}
-            onPreviewImage={(name, dataUrl) =>
-              setContentModal({ title: name, body: "", image: dataUrl })
-            }
-            placeholder={
-              inGrow
-                ? "Answer in your own words…"
-                : "Ask, plan, or request an action…"
-            }
-            busy={busy}
-            onStop={stopStream}
-            initialValue={draftRef.current}
-            onDraftChange={(v) => {
-              draftRef.current = v;
-            }}
-            leftAction={
-              !inGrow && goal ? (
-                <button
-                  onClick={() => setMode("grow-start")}
-                  className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
+            if (m.role === "system") {
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 self-center text-[12.5px] text-[#003737] bg-white/70 px-3 py-1.5 rounded-full"
                 >
-                  <Ic path={PATHS.growSparkles} size={15} /> Start GROW session
-                </button>
-              ) : undefined
+                  <Ic path={PATHS.check} size={12} /> {m.content}
+                </div>
+              );
             }
-          />
-        </>
-      )}
+            if (m.role === "end") {
+              return (
+                <GrowEndCard
+                  key={m.id}
+                  proposals={sessionProposals}
+                  memory={memoryDraft}
+                  revising={memoryRevising}
+                  onRevise={reviseMemory}
+                  onSave={() => closeSession(true)}
+                  onDiscard={() => closeSession(false)}
+                />
+              );
+            }
+            // assistant — error bubbles render with a warning icon (never an emoji)
+            if (m.error) {
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#C99500] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]"
+                >
+                  <Ic
+                    path={PATHS.alert}
+                    size={15}
+                    className="shrink-0 mt-[3px]"
+                  />
+                  <span className="select-text">{m.content}</span>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={m.id}
+                className="group flex flex-col items-start gap-2.5"
+              >
+                {/* **A bubble, like the user's, in a different colour** (owner, 2026-08-17). The
+                  assistant's prose used to sit straight on the gradient, which read as text
+                  floating loose in the page rather than as a message from someone. Same capsule as
+                  the user's, mirrored (the squared corner is bottom-LEFT, so each turn leans to its
+                  own side) and filled **Kale-200 #E0F2F5** — not white, which is the user's, and
+                  not the gradient's own #F2FFFF, which at the foot of the chat IS the ground. */}
+                <div className="max-w-[94%] min-w-0 rounded-2xl rounded-bl-sm bg-[#E0F2F5] px-3.5 py-2.5 text-[14.5px] leading-[1.62] text-[#182928] break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
+                  {m.streaming && !m.content ? (
+                    // Waiting for the answer — the three-dot loader in the chat's own teal.
+                    <ThinkingDots />
+                  ) : (
+                    <>
+                      <Markdown text={m.content} />
+                      {m.streaming && (
+                        <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-[#0A8080] rounded-sm animate-pulse" />
+                      )}
+                    </>
+                  )}
+                </div>
+                {!m.streaming && m.content && (
+                  <CopyButton text={m.content} tone="dark" />
+                )}
+                {/* A pending card lives in the footer (the card is the input). Once it's
+                  resolved we only keep a compact result line here, not the full card. */}
+                {!m.streaming &&
+                  m.proposals &&
+                  m.proposals.length > 0 &&
+                  !m.proposals.some((pr) => pr.status === "pending") && (
+                    <ResultSummary
+                      proposals={m.proposals}
+                      goal={goal}
+                      onOpen={onOpenCreated}
+                    />
+                  )}
+              </div>
+            );
+          })}
+
+          {/* An undecided session end (restored after a reload): the card stays
+            until the user explicitly saves or discards — never a silent loss. */}
+          {!inGrow && memoryDraft && (
+            <GrowEndCard
+              proposals={0}
+              memory={memoryDraft}
+              revising={memoryRevising}
+              onRevise={reviseMemory}
+              onSave={() => closeSession(true)}
+              onDiscard={() => closeSession(false)}
+            />
+          )}
+        </div>
+
+        {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
+          pending card renders here (the card IS the input); otherwise the composer. */}
+        {mode !== "grow-end" && revising && (
+          <div className="bg-[#F2FFFF] px-3 pb-3 pt-1 shrink-0">
+            <div className="flex items-center gap-2.5 rounded-[14px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+              <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
+              <span className="flex-1 min-w-0 text-[13.5px] truncate">
+                Revising «{revising.label}»…
+              </span>
+              <button
+                onClick={cancelRevise}
+                className="shrink-0 text-[13px] font-medium text-[#003737]/55 hover:text-red-600 transition-colors px-1.5 py-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
+          the user's commitments, and those cards must stay actionable. */}
+        {!revising && pendingMsg && (
+          // Cap the card area and let it scroll: a proposal can be tall (a stepper, a long
+          // preview), and without this the panel simply grew past its own bottom edge, so
+          // Accept/Dismiss became unreachable.
+          <div className="px-3 pb-3 pt-1 shrink-0 max-h-[60%] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
+            {proposalGroupFor(pendingMsg)}
+          </div>
+        )}
+        {mode !== "grow-end" && !revising && !pendingMsg && (
+          <>
+            <Composer
+              onSend={(text, attachments) =>
+                inGrow ? sendGrow(text) : sendChat(text, attachments)
+              }
+              allowAttachments={!inGrow}
+              attachResources={
+                !inGrow && goal
+                  ? goal.resources.map((r) => ({
+                      id: r.id,
+                      label: r.type === "email" ? r.name : r.title,
+                      typeLabel: resourceTypeMeta[r.type].label,
+                      mime: r.type === "file" ? r.mime : undefined,
+                    }))
+                  : undefined
+              }
+              onPreviewImage={(name, dataUrl) =>
+                setContentModal({ title: name, body: "", image: dataUrl })
+              }
+              placeholder={
+                inGrow
+                  ? "Answer in your own words…"
+                  : "Ask, plan, or request an action…"
+              }
+              busy={busy}
+              onStop={stopStream}
+              initialValue={draftRef.current}
+              onDraftChange={(v) => {
+                draftRef.current = v;
+              }}
+              leftAction={
+                inGrow ? (
+                  // The early-stop lives where "Start GROW session" was — same slot, so ending a
+                  // session is where starting one is (owner, 2026-08-17).
+                  <button
+                    onClick={() => setConfirmEnd(true)}
+                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 transition-colors"
+                  >
+                    <Ic path={PATHS.x} size={14} /> End session early
+                  </button>
+                ) : goal ? (
+                  <button
+                    onClick={() => setMode("grow-start")}
+                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
+                  >
+                    <Ic path={PATHS.growSparkles} size={15} /> Start GROW
+                    session
+                  </button>
+                ) : undefined
+              }
+            />
+          </>
+        )}
+      </div>
 
       {/* Overlays */}
       {mode === "grow-start" && (
@@ -2971,49 +2928,54 @@ function ContentModal({
 // ── Icon system ────────────────────────────────────────────────────────────
 
 const PATHS = {
-  leaf: '<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
-  key: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L21 5"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>',
-  chevron: '<path d="m6 9 6 6 6-6"/>',
-  clock: '<path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>',
-  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  // Gravity `folder-open` — the attach menu's "From resources" mark, the same glyph the Android
+  // menu carries (`SpiraIcons.FolderOpen`), so the same row reads the same on both surfaces.
+  folderOpen:
+    "<path fill='currentColor' fill-rule='evenodd' d='m6.379 4.5l-.44-.44l-.621-.62A1.5 1.5 0 0 0 4.258 3H3a1.5 1.5 0 0 0-1.5 1.5v5.25l1.376-2.293A3 3 0 0 1 5.45 6h7.05A1.5 1.5 0 0 0 11 4.5zM14 6.026V6a3 3 0 0 0-3-3H7l-.621-.621A3 3 0 0 0 4.257 1.5H3a3 3 0 0 0-3 3V11a3 3 0 0 0 3 3h8.301a3 3 0 0 0 2.573-1.457l1.791-2.985A2.35 2.35 0 0 0 14 6.026M10 12.5h1.301a1.5 1.5 0 0 0 1.287-.728l1.791-2.986l1.286.772l-1.286-.772a.85.85 0 0 0-.728-1.286H5.449a1.5 1.5 0 0 0-1.287.728l-1.791 2.986a.85.85 0 0 0 .728 1.286z'/>",
+  leaf: "<path fill='currentColor' fill-rule='evenodd' d='M6.943 8.703L4.301 6.3a.25.25 0 0 0-.355.02L2.299 8.171a.25.25 0 0 0 .023.355l4.785 4.147a.25.25 0 0 0 .36-.032L13.29 5.36a.25.25 0 0 0-.03-.343l-1.856-1.65a.25.25 0 0 0-.364.034zM6.75 6.5l3.104-4.017a1.75 1.75 0 0 1 2.547-.238l1.857 1.651a1.75 1.75 0 0 1 .204 2.401L8.637 13.58a1.75 1.75 0 0 1-2.512.229L1.339 9.66a1.75 1.75 0 0 1-.162-2.486l1.647-1.852A1.75 1.75 0 0 1 5.31 5.19z'/>",
+  key: "<path fill='currentColor' fill-rule='evenodd' d='M10.313 7.488L9 7.653v5.37a.5.5 0 0 1-.353.478l-1.62.498l-.006.001h-.008l-.007-.006l-.005-.007v-.003L7 13.979V7.653l-1.313-.165a1.5 1.5 0 0 1-1.271-1.144l-.588-2.5A1.5 1.5 0 0 1 5.288 2h5.424a1.5 1.5 0 0 1 1.46 1.844l-.588 2.5a1.5 1.5 0 0 1-1.271 1.144m2.731-.8A3 3 0 0 1 10.5 8.976v4.046a2 2 0 0 1-1.412 1.911l-1.62.499A1.52 1.52 0 0 1 5.5 13.979V8.977a3 3 0 0 1-2.544-2.29l-.588-2.5A3 3 0 0 1 5.288.5h5.424a3 3 0 0 1 2.92 3.687zM6.75 3.5a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5z'/>",
+  chevron:
+    "<path fill='currentColor' fill-rule='evenodd' d='M2.97 5.47a.75.75 0 0 1 1.06 0L8 9.44l3.97-3.97a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 0-1.06'/>",
+  clock:
+    "<path fill='currentColor' fill-rule='evenodd' d='M13.5 8a5.5 5.5 0 1 1-11 0a5.5 5.5 0 0 1 11 0M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0M8.75 4.5a.75.75 0 0 0-1.5 0V8a.75.75 0 0 0 .3.6l2 1.5a.75.75 0 1 0 .9-1.2l-1.7-1.275z'/>",
+  check:
+    "<path fill='currentColor' fill-rule='evenodd' d='M13.488 3.43a.75.75 0 0 1 .081 1.058l-6 7a.75.75 0 0 1-1.1.042l-3.5-3.5A.75.75 0 0 1 4.03 6.97l2.928 2.927l5.473-6.385a.75.75 0 0 1 1.057-.081'/>",
+  x: "<path fill='currentColor' fill-rule='evenodd' d='M3.47 3.47a.75.75 0 0 1 1.06 0L8 6.94l3.47-3.47a.75.75 0 1 1 1.06 1.06L9.06 8l3.47 3.47a.75.75 0 1 1-1.06 1.06L8 9.06l-3.47 3.47a.75.75 0 0 1-1.06-1.06L6.94 8L3.47 4.53a.75.75 0 0 1 0-1.06'/>",
   sparkles:
-    '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/>',
-  // Iconoir `sparks` - the GROW mark, the same glyph Android uses.
+    "<path fill='currentColor' fill-rule='evenodd' d='M13 10a.75.75 0 0 1 .725.556a2.37 2.37 0 0 0 1.72 1.72a.75.75 0 0 1 0 1.449a2.37 2.37 0 0 0-1.72 1.72a.75.75 0 0 1-1.45 0a2.37 2.37 0 0 0-1.72-1.72a.75.75 0 0 1 0-1.45a2.37 2.37 0 0 0 1.72-1.72l.043-.117A.75.75 0 0 1 13 10M7 0a1.5 1.5 0 0 1 1.48 1.253c.242 1.455.696 2.364 1.3 2.968c.603.603 1.512 1.057 2.967 1.3a1.5 1.5 0 0 1 0 2.958c-1.455.243-2.364.697-2.968 1.3c-.603.604-1.057 1.513-1.3 2.968a1.5 1.5 0 0 1-2.958 0c-.243-1.455-.697-2.364-1.3-2.968c-.604-.603-1.513-1.057-2.968-1.3a1.5 1.5 0 0 1 0-2.958c1.455-.243 2.364-.697 2.968-1.3c.603-.604 1.057-1.513 1.3-2.968l.028-.133A1.5 1.5 0 0 1 7 0m0 1.5C6.45 4.8 4.8 6.45 1.5 7c3.3.55 4.95 2.2 5.5 5.5c.55-3.3 2.2-4.95 5.5-5.5C9.2 6.45 7.55 4.8 7 1.5'/>",
   growSparkles:
-    '<path d="M8 15C12.8747 15 15 12.949 15 8C15 12.949 17.1104 15 22 15C17.1104 15 15 17.1104 15 22C15 17.1104 12.8747 15 8 15Z"/><path d="M2 6.5C5.13376 6.5 6.5 5.18153 6.5 2C6.5 5.18153 7.85669 6.5 11 6.5C7.85669 6.5 6.5 7.85669 6.5 11C6.5 7.85669 5.13376 6.5 2 6.5Z"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M13 10a.75.75 0 0 1 .725.556a2.37 2.37 0 0 0 1.72 1.72a.75.75 0 0 1 0 1.449a2.37 2.37 0 0 0-1.72 1.72a.75.75 0 0 1-1.45 0a2.37 2.37 0 0 0-1.72-1.72a.75.75 0 0 1 0-1.45a2.37 2.37 0 0 0 1.72-1.72l.043-.117A.75.75 0 0 1 13 10M7 0a1 1 0 0 1 .986.836c.279 1.67.815 2.8 1.596 3.582c.781.781 1.912 1.317 3.582 1.596a1 1 0 0 1 0 1.972c-1.67.279-2.8.815-3.582 1.596c-.781.781-1.317 1.912-1.596 3.582a1 1 0 0 1-1.972 0c-.279-1.67-.815-2.8-1.596-3.582c-.781-.781-1.912-1.317-3.582-1.596a1 1 0 0 1 0-1.972c1.67-.279 2.8-.815 3.582-1.596c.781-.781 1.317-1.912 1.596-3.582l.018-.089A1 1 0 0 1 7 0'/>",
   brain:
-    '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M6.26 15.109a4 4 0 0 0 3.48 0l.13-.063a2 2 0 0 0 1.13-1.8v-.468c0-1.352.776-2.557 1.54-3.673a5.5 5.5 0 1 0-9.08 0C4.224 10.221 5 11.426 5 12.779v.467a2 2 0 0 0 1.13 1.801zm2.828-1.35l.13-.064a.5.5 0 0 0 .282-.45v-.467q0-.255.025-.5a5.33 5.33 0 0 1-3.05 0q.024.245.025.5v.467a.5.5 0 0 0 .282.45l.13.063a2.5 2.5 0 0 0 2.176 0m-4.39-5.501c.394.576.891 1.302 1.263 2.148a3.79 3.79 0 0 0 4.078 0c.372-.846.869-1.572 1.264-2.148a4 4 0 1 0-6.605 0'/><path fill='currentColor' fill-rule='evenodd' d='M8 3.5A.75.75 0 0 0 8 5a1 1 0 0 1 1 1a.75.75 0 0 0 1.5 0A2.5 2.5 0 0 0 8 3.5'/>",
   shield:
-    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
-  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
-  // The add action is a CIRCLED plus everywhere else in the app; the bare one made "New chat"
-  // the odd one out.
+    "<path fill='currentColor' fill-rule='evenodd' d='m3.003 4.702l4.22-2.025a1.8 1.8 0 0 1 1.554 0l4.22 2.025a.89.89 0 0 1 .503.8V6a8.55 8.55 0 0 1-3.941 7.201l-.986.631a1.06 1.06 0 0 1-1.146 0l-.986-.63A8.55 8.55 0 0 1 2.5 6v-.498c0-.341.196-.652.503-.8m3.57-3.377L2.354 3.35A2.39 2.39 0 0 0 1 5.502V6a10.05 10.05 0 0 0 4.632 8.465l.986.63a2.56 2.56 0 0 0 2.764 0l.986-.63A10.05 10.05 0 0 0 15 6v-.498c0-.918-.526-1.755-1.354-2.152l-4.22-2.025a3.3 3.3 0 0 0-2.852 0M8.47 9.97a.75.75 0 1 0 1.06 1.06c.575-.574 1.118-1.398 1.516-2.195c.386-.772.704-1.653.704-2.335a.75.75 0 0 0-1.5 0c0 .318-.182.937-.546 1.665c-.352.703-.809 1.379-1.234 1.805'/>",
+  plus: "<path fill='currentColor' fill-rule='evenodd' d='M8 1.75a.75.75 0 0 1 .75.75v4.75h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8.75H2.5a.75.75 0 0 1 0-1.5h4.75V2.5A.75.75 0 0 1 8 1.75'/>",
   circlePlus:
-    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><path d="M8 12h8"/><path d="M12 8v8"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M13.5 8a5.5 5.5 0 1 1-11 0a5.5 5.5 0 0 1 11 0M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0M8.75 5.5a.75.75 0 0 0-1.5 0v1.75H5.5a.75.75 0 1 0 0 1.5h1.75v1.75a.75.75 0 0 0 1.5 0V8.75h1.75a.75.75 0 0 0 0-1.5H8.75z'/>",
   switch_:
-    '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M13.78 3.72a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 1 1-1.06-1.06L11.44 5H2.75a.75.75 0 1 1 0-1.5h8.69L9.72 1.78A.75.75 0 0 1 10.78.72zM2 11.75a.75.75 0 0 1 .22-.53l3-3a.75.75 0 1 1 1.06 1.06L4.56 11h8.69a.75.75 0 0 1 0 1.5H4.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3a.75.75 0 0 1-.22-.53'/>",
   pencil:
-    '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M11.423 1A3.577 3.577 0 0 1 15 4.577c0 .27-.108.53-.3.722l-.528.529l-1.971 1.971l-5.059 5.059a3 3 0 0 1-1.533.82l-2.638.528a1 1 0 0 1-1.177-1.177l.528-2.638a3 3 0 0 1 .82-1.533l5.059-5.059l2.5-2.5c.191-.191.451-.299.722-.299m-2.31 4.009l-4.91 4.91a1.5 1.5 0 0 0-.41.766l-.38 1.903l1.902-.38a1.5 1.5 0 0 0 .767-.41l4.91-4.91a2.08 2.08 0 0 0-1.88-1.88m3.098.658a3.6 3.6 0 0 0-1.878-1.879l1.28-1.28c.995.09 1.788.884 1.878 1.88z'/>",
   target:
-    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M8 13.5a5.5 5.5 0 1 0 0-11a5.5 5.5 0 0 0 0 11M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14m0-4.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5M8 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8m0-3a1 1 0 1 0 0-2a1 1 0 0 0 0 2'/>",
+  copy: "<path fill='currentColor' fill-rule='evenodd' d='M12 2.5H8A1.5 1.5 0 0 0 6.5 4v1H8a3 3 0 0 1 3 3v1.5h1A1.5 1.5 0 0 0 13.5 8V4A1.5 1.5 0 0 0 12 2.5M11 11h1a3 3 0 0 0 3-3V4a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v1H4a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3zM4 6.5h4A1.5 1.5 0 0 1 9.5 8v4A1.5 1.5 0 0 1 8 13.5H4A1.5 1.5 0 0 1 2.5 12V8A1.5 1.5 0 0 1 4 6.5'/>",
   expand:
-    '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
-  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
-  trending: '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M7.754 2.004a.75.75 0 0 0 0 1.5h4.75v4.742a.75.75 0 0 0 1.5 0V2.754a.75.75 0 0 0-.75-.75zm.492 11.992a.75.75 0 0 0 0-1.5h-4.75V7.754a.75.75 0 0 0-1.5 0v5.492a.75.75 0 0 0 .75.75z'/>",
+  zap: "<path fill='currentColor' fill-rule='evenodd' d='M9.262.498a.75.75 0 0 1 1.275.717L9.229 5.622h3.272c1.104 0 1.665 1.328.897 2.12l-7.542 7.779a.75.75 0 0 1-1.248-.764l1.602-4.723H3.445c-1.083-.001-1.653-1.286-.926-2.09zM4.01 8.534h3.246a.75.75 0 0 1 .711.99l-.869 2.56l4.813-4.962H8.224a.75.75 0 0 1-.719-.963l.656-2.21z'/>",
+  trending:
+    "<path fill='currentColor' fill-rule='evenodd' d='M14.75 12.5a.75.75 0 0 1 0 1.5H1.25a.75.75 0 0 1 0-1.5zm-.5-10a.75.75 0 0 1 .75.75V6.5a.75.75 0 0 1-1.5 0V5.06l-3.241 3.242a2.25 2.25 0 0 1-2.505.465L5.335 7.69a.75.75 0 0 0-.923.261l-2.044 2.973a.75.75 0 0 1-1.236-.85l2.044-2.972a2.25 2.25 0 0 1 2.767-.782l2.42 1.075a.75.75 0 0 0 .835-.155L12.44 4H11a.75.75 0 0 1 0-1.5z'/>",
   compass:
-    '<path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/><circle cx="12" cy="12" r="10"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M13.5 8a5.5 5.5 0 1 1-11 0a5.5 5.5 0 0 1 11 0M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0m-6.09 2.303l-2.899.805a.909.909 0 0 1-1.12-1.119l.806-2.9A2 2 0 0 1 7.09 5.697l2.9-.805a.909.909 0 0 1 1.12 1.119l-.806 2.9a2 2 0 0 1-1.392 1.392M9 8a1 1 0 1 1-2 0a1 1 0 0 1 2 0'/>",
   alert:
-    '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M7.134 2.994L2.217 11.5a1 1 0 0 0 .866 1.5h9.834a1 1 0 0 0 .866-1.5L8.866 2.993a1 1 0 0 0-1.732 0m3.03-.75c-.962-1.665-3.366-1.665-4.329 0L.918 10.749c-.963 1.666.24 3.751 2.165 3.751h9.834c1.925 0 3.128-2.085 2.164-3.751zM8 5a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2A.75.75 0 0 1 8 5m1 5.75a1 1 0 1 1-2 0a1 1 0 0 1 2 0'/>",
   trophy:
-    '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M11.5 3.5h2a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5m-2.5 9a.5.5 0 0 0 .5-.5V7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5zm-4.5 0A.5.5 0 0 0 5 12v-2a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 .5.5zm-1 1.5h-1a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2h2q.26 0 .5.063V7a2 2 0 0 1 2-2h2q.26 0 .5.063V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z'/>",
   trash:
-    '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+    "<path fill='currentColor' fill-rule='evenodd' d='M9 2H7a.5.5 0 0 0-.5.5V3h3v-.5A.5.5 0 0 0 9 2m2 1v-.5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2V3H2.251a.75.75 0 0 0 0 1.5h.312l.317 7.625A3 3 0 0 0 5.878 15h4.245a3 3 0 0 0 2.997-2.875l.318-7.625h.312a.75.75 0 0 0 0-1.5zm.936 1.5H4.064l.315 7.562A1.5 1.5 0 0 0 5.878 13.5h4.245a1.5 1.5 0 0 0 1.498-1.438zm-6.186 2v5a.75.75 0 0 0 1.5 0v-5a.75.75 0 0 0-1.5 0m3.75-.75a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5a.75.75 0 0 1 .75-.75'/>",
 };
 
-/** Maps a suggestion's icon key to a lucide path (we use lucide icons everywhere — never
- *  emoji). Falls back to the sparkles icon if a key is ever unmapped. */
+/** Maps a suggestion's icon key to a Gravity UI glyph (the app's set — never emoji). Falls back
+ *  to the sparkles icon if a key is ever unmapped. */
 type IconKey = keyof typeof PATHS;
 
 function Ic({
@@ -3027,12 +2989,8 @@ function Ic({
 }) {
   return (
     <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      viewBox="0 0 16 16"
+      fill="currentColor"
       style={{ width: size + 1, height: size + 1 }}
       className={className}
       aria-hidden
@@ -4610,8 +4568,7 @@ function GrowStartOverlay({
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
-          <Ic path={PATHS.leaf} size={14} className="text-[#005961]" /> GROW
-          session
+          <SproutArt size={15} /> GROW session
         </span>
         <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
           Focused time on a single goal
@@ -5176,6 +5133,58 @@ function EndConfirmDialog({
   );
 }
 
+// ── Thinking loader ──────────────────────────────────────────────────────────
+
+/**
+ * The "waiting for the answer" indicator: three dots fading in sequence, in the chat's own deep
+ * teal (owner, 2026-08-17 — the source SVG's blue swapped for `#005961`). Shown while a reply is
+ * streaming but has produced no text yet.
+ */
+function ThinkingDots({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="30"
+      height="15"
+      fill="#005961"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      role="status"
+      aria-label="Thinking"
+    >
+      <circle cx="4" cy="12" r="3" opacity="1">
+        <animate
+          id="spinner_qYjJ"
+          begin="0;spinner_t4KZ.end-0.25s"
+          attributeName="opacity"
+          dur="0.75s"
+          values="1;.2"
+          fill="freeze"
+        />
+      </circle>
+      <circle cx="12" cy="12" r="3" opacity=".4">
+        <animate
+          begin="spinner_qYjJ.begin+0.15s"
+          attributeName="opacity"
+          dur="0.75s"
+          values="1;.2"
+          fill="freeze"
+        />
+      </circle>
+      <circle cx="20" cy="12" r="3" opacity=".3">
+        <animate
+          id="spinner_t4KZ"
+          begin="spinner_qYjJ.begin+0.3s"
+          attributeName="opacity"
+          dur="0.75s"
+          values="1;.2"
+          fill="freeze"
+        />
+      </circle>
+    </svg>
+  );
+}
+
 // ── Copy button ────────────────────────────────────────────────────────────
 
 function CopyButton({
@@ -5406,6 +5415,7 @@ function Composer({
   onDraftChange,
   leftAction,
   allowAttachments,
+  attachResources,
   onPreviewImage,
 }: {
   onSend: (text: string, attachments?: ChatAttachment[]) => void;
@@ -5421,12 +5431,29 @@ function Composer({
   leftAction?: ReactNode;
   /** Show the paperclip to attach files directly to the message (regular chat). */
   allowAttachments?: boolean;
+  /**
+   * This goal's saved resources, offered as a second attach source (BUG-030). When present and
+   * non-empty, the paperclip becomes a small menu — "Choose a file" / "From resources", the same
+   * two rows Android's menu carries — instead of
+   * opening the file dialog straight away.
+   */
+  attachResources?: {
+    id: string;
+    label: string;
+    typeLabel: string;
+    mime?: string;
+  }[];
   /** Preview an attached image before sending (opens in the panel-level modal). */
   onPreviewImage?: (name: string, dataUrl: string) => void;
 }) {
   const [v, setV] = useState(initialValue ?? "");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
+  // Which attach surface is open: the source menu, or the resource picker. Null = closed.
+  const [attachMenu, setAttachMenu] = useState<null | "sources" | "resources">(
+    null,
+  );
+  const [resourceQuery, setResourceQuery] = useState("");
   // Reads in flight (FileReader is async). Send waits for these to reach 0 so a
   // file picked just before hitting Enter isn't silently dropped.
   const [reading, setReading] = useState(0);
@@ -5446,6 +5473,8 @@ function Composer({
   const resetAttachments = () => {
     setAttachments([]);
     setAttachError("");
+    setAttachMenu(null);
+    setResourceQuery("");
     setReading(0);
     claimedRef.current = 0;
   };
@@ -5499,9 +5528,45 @@ function Composer({
     claimedRef.current = Math.max(0, claimedRef.current - 1);
   };
 
+  // Attach one of the goal's saved resources by id (BUG-030): no bytes travel from here — the
+  // server inlines what it already holds. It rides the same count cap and chip UI as a file, and
+  // a resource can't be attached twice.
+  const addResource = (r: { id: string; label: string; mime?: string }) => {
+    const resourceId = Number(r.id);
+    if (!Number.isFinite(resourceId)) return;
+    if (attachments.some((a) => a.resourceId === resourceId)) return;
+    if (attachments.length + reading >= ATTACH_MAX_COUNT) {
+      setAttachError(`You can attach up to ${ATTACH_MAX_COUNT} files.`);
+      return;
+    }
+    claimedRef.current += 1;
+    setAttachments((prev) => [
+      ...prev,
+      { name: r.label, mime: r.mime ?? "", resourceId },
+    ]);
+    setAttachMenu(null);
+    setResourceQuery("");
+  };
+
+  const hasResources = (attachResources?.length ?? 0) > 0;
+  const filteredResources = (attachResources ?? []).filter((r) =>
+    r.label.toLowerCase().includes(resourceQuery.trim().toLowerCase()),
+  );
+  const attachDisabled =
+    busy || attachments.length + reading >= ATTACH_MAX_COUNT;
+
+  // Open the file dialog directly when there are no resources to choose from; otherwise offer the
+  // two-source menu.
+  const onPaperclip = () => {
+    if (hasResources) setAttachMenu((m) => (m ? null : "sources"));
+    else fileRef.current?.click();
+  };
+
   const fire = () => {
     const t = v.trim();
-    if (!t || reading > 0) return; // wait for any in-flight file reads to finish
+    // Send when there is text OR at least one attachment — a photo or resource on its own is a
+    // valid message (the server supplies a default prompt). Wait for any in-flight file reads.
+    if ((!t && attachments.length === 0) || reading > 0) return;
     onSend(t, attachments.length ? attachments : undefined);
     setV("");
     resetAttachments();
@@ -5512,8 +5577,12 @@ function Composer({
   // on top; below it a bottom row with quick actions on the left (e.g. "Start
   // GROW session", like the app's "</> Code" chip) and Send/Stop on the right.
   return (
+    // No ground of its own: the gradient behind the whole chat column shows through, so the white
+    // card is the ONLY container the user can see (owner, 2026-08-17).
     <div className="px-3 pb-3 pt-1 sm:px-4 sm:pb-4">
-      <div className="rounded-2xl border border-white/35 bg-white px-3 pt-2.5 pb-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-white focus-within:ring-[3px] focus-within:ring-white/20">
+      {/* A white card, like every message bubble — the field belongs in a container; it just sits
+          on the light chat area, not on a block of its own. */}
+      <div className="rounded-2xl border border-black/10 bg-white px-3 pt-2.5 pb-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-[#0A8080] focus-within:ring-[3px] focus-within:ring-[#0A8080]/20">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pb-2">
             {attachments.map((a, i) => {
@@ -5533,7 +5602,9 @@ function Composer({
                   {canPreview ? (
                     <button
                       type="button"
-                      onClick={() => onPreviewImage?.(a.name, a.dataUrl)}
+                      onClick={() =>
+                        a.dataUrl && onPreviewImage?.(a.name, a.dataUrl)
+                      }
                       aria-label={`Preview ${a.name}`}
                       className="inline-flex min-w-0 items-center gap-1.5 cursor-zoom-in"
                     >
@@ -5590,18 +5661,112 @@ function Composer({
                 onChange={(e) => addFiles(e.target.files)}
                 className="hidden"
               />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={
-                  busy || attachments.length + reading >= ATTACH_MAX_COUNT
-                }
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#005961] hover:bg-[#005961]/10 disabled:opacity-40 transition-colors"
-                title="Attach a file (image, PDF, or DOCX)"
-                aria-label="Attach a file"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={onPaperclip}
+                  disabled={attachDisabled}
+                  className="grid h-8 w-8 place-items-center rounded-lg text-[#005961] hover:bg-[#005961]/10 disabled:opacity-40 transition-colors"
+                  title={
+                    hasResources
+                      ? "Attach a file or a resource"
+                      : "Attach a file (image, PDF, or DOCX)"
+                  }
+                  aria-label="Attach"
+                  aria-haspopup={hasResources ? "menu" : undefined}
+                  aria-expanded={hasResources ? attachMenu !== null : undefined}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+
+                {attachMenu !== null && (
+                  <>
+                    {/* click-away layer */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => {
+                        setAttachMenu(null);
+                        setResourceQuery("");
+                      }}
+                    />
+                    <div className="absolute bottom-10 left-0 z-50 w-64 rounded-md border border-border bg-white p-1 shadow-lg">
+                      {attachMenu === "sources" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttachMenu(null);
+                              fileRef.current?.click();
+                            }}
+                            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-[#0A8080]/10"
+                          >
+                            <Paperclip className="h-4 w-4 opacity-70" />
+                            {/* Android's wording for the same action (`AiChatScreen.kt`). */}
+                            Choose a file
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAttachMenu("resources")}
+                            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-[#0A8080]/10"
+                          >
+                            {/* **The Android row, word for word and glyph for glyph** (owner,
+                                2026-08-17): "From resources" with Gravity's folder-open. The web
+                                said "From this goal's resources" over a copy mark, so the same
+                                action read as two different things on the two surfaces. */}
+                            <Ic
+                              path={PATHS.folderOpen}
+                              size={16}
+                              className="opacity-70"
+                            />
+                            From resources
+                          </button>
+                        </>
+                      ) : (
+                        <div>
+                          <input
+                            autoFocus
+                            value={resourceQuery}
+                            onChange={(e) => setResourceQuery(e.target.value)}
+                            placeholder="Search resources…"
+                            className="mb-1 w-full rounded-sm border border-border bg-white px-2 py-1.5 text-sm outline-none focus:border-[#0A8080]"
+                          />
+                          <div className="max-h-56 overflow-y-auto">
+                            {filteredResources.length === 0 ? (
+                              <p className="px-2 py-2 text-xs text-muted-foreground">
+                                {hasResources
+                                  ? "No matching resources."
+                                  : "This goal has no resources yet."}
+                              </p>
+                            ) : (
+                              filteredResources.map((r) => {
+                                const already = attachments.some(
+                                  (a) => a.resourceId === Number(r.id),
+                                );
+                                return (
+                                  <button
+                                    key={r.id}
+                                    type="button"
+                                    disabled={already}
+                                    onClick={() => addResource(r)}
+                                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-[#0A8080]/10 disabled:opacity-40"
+                                  >
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {r.label}
+                                    </span>
+                                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                                      {already ? "Added" : r.typeLabel}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
           {leftAction}
@@ -5617,7 +5782,7 @@ function Composer({
           ) : (
             <button
               onClick={fire}
-              disabled={!v.trim() || reading > 0}
+              disabled={(!v.trim() && attachments.length === 0) || reading > 0}
               className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#005961] text-white disabled:opacity-40 hover:bg-[#003737] transition-colors"
               title={reading > 0 ? "Waiting for attachments…" : "Send"}
             >

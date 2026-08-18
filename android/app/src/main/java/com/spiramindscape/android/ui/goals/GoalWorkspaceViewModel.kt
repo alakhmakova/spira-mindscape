@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apollographql.apollo.api.Optional
 import com.spiramindscape.android.core.SpiraLog
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.data.goals.ChecklistItemModel
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.GoalsRepository
@@ -570,7 +572,14 @@ class GoalWorkspaceViewModel(
     }
 }
 
-enum class TargetSort(val label: String) { Name("Name"), Progress("Progress"), Deadline("Deadline") }
+/**
+ * The target sort keys. [Created] is the server's own order — the order the targets were written
+ * in — and it is the one key that never moves when a target is edited, so it is the "leave it as
+ * I built it" answer (owner, 2026-08-18).
+ */
+enum class TargetSort(val label: String) {
+    Name("Name"), Progress("Progress"), Deadline("Deadline"), Created("Created")
+}
 
 /**
  * The three questions the target filter asks, one per column of its menu (see
@@ -600,15 +609,33 @@ enum class TargetDeadlineFilter(val label: String) {
     None("No deadline"),
 }
 
+/**
+ * The **type** question (owner, 2026-08-18): which kind of target this is.
+ *
+ * The words are the ones the create sheet offers, so the answer you filter by is the answer you
+ * gave when you made the target — except that binary reads **"Done/not done"** here rather than the
+ * sheet's bare "Done". This sheet already asks a Progress question whose answer is "Done", and two
+ * pills a thumb apart both saying Done would be asking the reader to work out which was which.
+ */
+enum class TargetTypeFilter(val label: String) {
+    All("All"),
+    Binary("Done/not done"),
+    Numeric("Numeric"),
+    Checklist("Checklist"),
+}
+
 /** The padlock question — whether progress is pinned (see `isProgressLocked`). */
 enum class TargetLockFilter(val label: String) { All("All"), Locked("Locked"), Unlocked("Unlocked") }
 
 /**
  * [Added] is the server's own order, which is the order the resources were created in — so the
  * word for it is **Created**. It used to read "As added", which named the mechanism rather than
- * the thing, and sat oddly beside "Name" and "Type".
+ * the thing.
+ *
+ * There is deliberately **no sort by type** (owner, 2026-08-18): the type question is the filter's,
+ * and grouping the list by it only reshuffled cards that the filter can simply hide.
  */
-enum class ResourceSort(val label: String) { Added("Created"), Title("Name"), Type("Type") }
+enum class ResourceSort(val label: String) { Added("Created"), Title("Name") }
 
 /** The kinds a resource can be filtered to. "All" — the column's heading says what of. */
 enum class ResourceFilter(val label: String) {
@@ -632,10 +659,14 @@ private fun matches(query: String, vararg text: String?): Boolean {
  * [status] is the value stored on the option, so the enum is the single place that knows the
  * server's spelling. `Untried` is the absence of an opinion — the badge's grey outline.
  */
-enum class OptionFilter(val label: String, val status: String?) {
+enum class OptionFilter(val label: String, val status: String?, val icon: ImageVector? = null) {
     All("All", null),
-    GoodIdea("Good idea", "good_idea"),
-    BadIdea("Bad idea", "didnt_work"),
+
+    // The two leans carry the card badge's own glyphs, so the filter's answer and the mark it is
+    // looking for are visibly the same thing (owner, 2026-08-18). "All" and "Didn't try" have no
+    // mark on the card either — a grey outline face is the absence of an opinion, not a third one.
+    GoodIdea("Good idea", "good_idea", SpiraIcons.Smile),
+    BadIdea("Bad idea", "didnt_work", SpiraIcons.Frown),
     Untried("Didn't try", "none"),
 }
 
@@ -684,8 +715,6 @@ fun applyResourceView(
     val comparator: Comparator<ResourceItem> = when (sort) {
         ResourceSort.Added -> return if (ascending) list else list.reversed()
         ResourceSort.Title -> compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it.title }
-        ResourceSort.Type -> compareBy<ResourceItem> { kindFor(it) }
-            .thenBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it.title }
     }
     list = list.sortedWith(comparator)
     return if (ascending) list else list.reversed()
@@ -705,6 +734,11 @@ fun applyTargetView(
     query: String = "",
     deadlineFilter: TargetDeadlineFilter = TargetDeadlineFilter.All,
     lockFilter: TargetLockFilter = TargetLockFilter.All,
+    /** The **from** end of the deadline range, an ISO date/instant; blank means "no lower bound". */
+    deadlineFrom: String = "",
+    /** The **to** end, inclusive. */
+    deadlineTo: String = "",
+    typeFilter: TargetTypeFilter = TargetTypeFilter.All,
 ): List<TargetItem> {
     var list = when (filter) {
         TargetFilter.All -> targets
@@ -722,6 +756,25 @@ fun applyTargetView(
             list.filter { it.deadline != null && deadlineInfo(it.deadline, it.progress >= 1f)?.isOverdue != true }
         TargetDeadlineFilter.None -> list.filter { it.deadline == null }
     }
+    // The range question, the web's rule exactly (`Targets.tsx`): compare the **date part** only,
+    // both ends inclusive, and a target with no deadline is outside every range rather than in all
+    // of them.
+    if (deadlineFrom.isNotBlank() || deadlineTo.isNotBlank()) {
+        list = list.filter { target ->
+            val day = target.deadline?.take(10) ?: return@filter false
+            if (deadlineFrom.isNotBlank() && day < deadlineFrom.take(10)) return@filter false
+            if (deadlineTo.isNotBlank() && day > deadlineTo.take(10)) return@filter false
+            true
+        }
+    }
+    // `Other` is a type the app cannot edit, so it belongs to no answer but "All" — naming it
+    // would offer a filter for something the user cannot have created.
+    list = when (typeFilter) {
+        TargetTypeFilter.All -> list
+        TargetTypeFilter.Binary -> list.filterIsInstance<TargetItem.Binary>()
+        TargetTypeFilter.Numeric -> list.filterIsInstance<TargetItem.Numeric>()
+        TargetTypeFilter.Checklist -> list.filterIsInstance<TargetItem.Checklist>()
+    }
     list = when (lockFilter) {
         TargetLockFilter.All -> list
         TargetLockFilter.Locked -> list.filter { isProgressLocked(it) }
@@ -732,6 +785,9 @@ fun applyTargetView(
         TargetSort.Name -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
         TargetSort.Progress -> compareBy { it.progress }
         TargetSort.Deadline -> compareBy(nullsLast()) { it.deadline }
+        // ISO-8601 instants sort correctly as text, so no parsing is needed — and a target saved
+        // by an older build with no `createdAt` sorts last rather than crashing the comparator.
+        TargetSort.Created -> compareBy(nullsLast()) { it.createdAt }
     }
     list = list.sortedWith(comparator)
     return if (ascending) list else list.reversed()

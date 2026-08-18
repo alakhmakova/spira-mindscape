@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Info, CirclePlus } from "lucide-react";
-import { FrownFilled, SmileFilled } from "@/components/spira/brand-icons";
+import { Plus, Info, CirclePlus } from "@/components/spira/icons";
+import { FrownFilled, SmileFilled } from "@/components/spira/icons";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";

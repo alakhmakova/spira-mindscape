@@ -1,7 +1,15 @@
 package com.spiramindscape.android.ui.ai
 
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,9 +23,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.spiramindscape.android.data.goals.ResourceItem
+import com.spiramindscape.android.ui.components.SpiraTextField
+import com.spiramindscape.android.ui.theme.spiraExtras
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,8 +48,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.asImageBitmap
+import com.spiramindscape.android.ui.goals.decodeDataUrl
+import com.spiramindscape.android.ui.theme.Kale300
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +84,9 @@ import com.spiramindscape.android.ui.components.SpiraBadge
 import com.spiramindscape.android.ui.components.SpiraBadgeTone
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuItem
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.rememberCopyFlash
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
 import com.spiramindscape.android.ui.goals.copyPlainText
 import com.spiramindscape.android.ui.icons.SpiraArt
 import com.spiramindscape.android.ui.components.addActionTextStyle
@@ -82,9 +104,8 @@ import com.spiramindscape.android.ui.theme.Kale600
  * The AI coach panel — the same design as the desktop `AiPanel`, on the brand's Kale-600 ground.
  *
  * The whole surface is teal and the type is white: the wordmark and its actions across the top, a
- * provider strip under it, the conversation on the teal itself (user turns in white bubbles,
- * the assistant's prose set straight on the ground with no bubble at all), and a single white
- * composer card at the foot.
+ * provider strip under it, the conversation on the teal itself (user turns in white bubbles, the
+ * assistant's in Kale-200 ones leaning the other way), and a single composer at the foot.
  */
 @Composable
 fun AiChatScreen(
@@ -109,6 +130,8 @@ fun AiChatScreen(
     val needsKey by viewModel.needsKey.collectAsStateWithLifecycle()
     val remaining by viewModel.remainingSeconds.collectAsStateWithLifecycle()
     val totalMinutes by viewModel.sessionMinutes.collectAsStateWithLifecycle()
+    val composerDraft by viewModel.composerDraft.collectAsStateWithLifecycle()
+    val composerAttachments by viewModel.composerAttachments.collectAsStateWithLifecycle()
 
     // A pending proposal card **is** the input: the web renders it in the footer, where the
     // composer would be, so it sits right above the keyboard instead of scrolling away up the
@@ -119,7 +142,10 @@ fun AiChatScreen(
     }
 
     var providerSheet by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<ChatNotice?>(null) }
+    // The attachment being previewed full-screen, or null. Both the composer chips and a sent
+    // message's chips open it through LocalOpenAttachment.
+    var previewAttachment by remember { mutableStateOf<AiApi.ChatAttachment?>(null) }
     val listState = rememberLazyListState()
     val inGrow = mode != ChatMode.CHAT
 
@@ -128,6 +154,7 @@ fun AiChatScreen(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
+    CompositionLocalProvider(LocalOpenAttachment provides { previewAttachment = it }) {
     Column(
         modifier
             .fillMaxSize()
@@ -172,13 +199,23 @@ fun AiChatScreen(
         }
 
         if (mode == ChatMode.GROW_CLOSING) {
-            Banner(SpiraIcons.CheckShape, "The session is gently moving toward a close")
+            Banner("The session is gently moving toward a close")
         }
         notice?.let { NoticeBanner(it) { notice = null } }
 
         LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0f to CHAT_GRADIENT_TOP,
+                            1f to CHAT_GRADIENT_BOTTOM,
+                        ),
+                    ),
+                ),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -198,8 +235,9 @@ fun AiChatScreen(
                     cardInFooter = message.id == pendingMessage?.id,
                     onOpenNote = onOpenNote,
                     onAcceptProposal = { proposal, excluded ->
-                        notice = onApplyProposal(proposal, excluded)
-                        viewModel.settleProposal(message.id, proposal.id, approved = notice == null)
+                        val error = onApplyProposal(proposal, excluded)
+                        notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
+                        viewModel.settleProposal(message.id, proposal.id, approved = error == null)
                     },
                     onDismissProposal = { proposal ->
                         viewModel.settleProposal(message.id, proposal.id, approved = false)
@@ -209,27 +247,50 @@ fun AiChatScreen(
             }
         }
 
+        // The GROW cards sit on the light chat bottom (not a dark block), padded clear of the nav
+        // bar and scrollable, so a tall card is never clipped behind the system bar (owner, 2026-08-18).
+        val cardHost: @Composable (@Composable () -> Unit) -> Unit = { card ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(CHAT_GRADIENT_BOTTOM)
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .navigationBarsPadding(),
+            ) { card() }
+        }
         when {
-            mode == ChatMode.GROW_START -> GrowStartOverlay(
-                onStart = viewModel::startGrow,
-                onCancel = viewModel::cancelGrow,
-            )
-            mode == ChatMode.GROW_END -> GrowEndCard(
-                summary = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty(),
-                onSave = { summary ->
-                    viewModel.saveSessionMemory(summary) { error ->
-                        notice = error ?: "Saved to this goal."
-                    }
-                    viewModel.finishGrow()
-                },
-                onDiscard = viewModel::finishGrow,
-            )
+            mode == ChatMode.GROW_START -> cardHost {
+                GrowStartOverlay(
+                    onStart = viewModel::startGrow,
+                    onCancel = viewModel::cancelGrow,
+                )
+            }
+            mode == ChatMode.GROW_END -> cardHost {
+                GrowEndCard(
+                    summary = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty(),
+                    onSave = { summary ->
+                        viewModel.saveSessionMemory(summary) { error ->
+                            notice = if (error != null) {
+                                ChatNotice(error, SpiraNoticeKind.Error)
+                            } else {
+                                ChatNotice("Saved to this goal.", SpiraNoticeKind.Success)
+                            }
+                        }
+                        viewModel.finishGrow()
+                    },
+                    onDiscard = viewModel::finishGrow,
+                )
+            }
             // The card takes the composer's place while it is waiting to be answered. Capped and
             // scrollable: a stepped card with a long note can outgrow the panel, and without this
             // its Save button ends up below the bottom edge.
             pendingMessage != null && !inGrow -> Box(
                 Modifier
                     .fillMaxWidth()
+                    // The composer's spot is light now (the gradient's bottom), not a dark band.
+                    .background(CHAT_GRADIENT_BOTTOM)
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp)
@@ -240,9 +301,10 @@ fun AiChatScreen(
                 ProposalGroup(
                     proposals = pendingMessage.proposals,
                     onAccept = { proposal, excluded ->
-                        notice = onApplyProposal(proposal, excluded)
+                        val error = onApplyProposal(proposal, excluded)
+                        notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
                         viewModel.settleProposal(
-                            pendingMessage.id, proposal.id, approved = notice == null,
+                            pendingMessage.id, proposal.id, approved = error == null,
                         )
                     },
                     onDismiss = { proposal ->
@@ -252,17 +314,8 @@ fun AiChatScreen(
                     onOpenNote = onOpenNote,
                 )
             }
-            else -> {
-                if (inGrow) {
-                    Text(
-                        "End session early",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = WHITE_60,
-                        modifier = Modifier
-                            .padding(start = 16.dp, bottom = 4.dp)
-                            .clickable(onClick = viewModel::closeGrow),
-                    )
-                }
+            // The composer sits on the gradient's light bottom, not a dark band (owner, 2026-08-17).
+            else -> Column(Modifier.fillMaxWidth().background(CHAT_GRADIENT_BOTTOM)) {
                 // The starters ride with the composer, not with the empty state above it.
                 if (!inGrow && messages.isEmpty() && !needsKey) {
                     ComposerSuggestions(goal = goal, onPick = viewModel::send)
@@ -271,13 +324,35 @@ fun AiChatScreen(
                     enabled = !needsKey,
                     streaming = streaming,
                     allowAttachments = !inGrow,
+                    // This goal's saved resources, offered as a second attach source (BUG-030).
+                    attachResources = if (!inGrow) goal?.resources ?: emptyList() else emptyList(),
                     placeholder = if (inGrow) "Answer in your own words…" else "Ask, plan, or request an action…",
                     growAction = if (!inGrow && viewModel.scopeGoalId != null) viewModel::openGrowStart else null,
+                    // In a session the left slot ends it early, where Start GROW would be.
+                    endAction = if (inGrow) viewModel::closeGrow else null,
+                    draft = composerDraft,
+                    onDraftChange = viewModel::setComposerDraft,
+                    attachments = composerAttachments,
+                    onAddAttachments = viewModel::addComposerAttachments,
+                    onRemoveAttachment = viewModel::removeComposerAttachment,
                     onSend = { text, attachments -> viewModel.send(text, attachments) },
                     onStop = viewModel::cancelStream,
+                    // A photo that couldn't be read used to say so in a raw platform toast; it is
+                    // the panel's own notice now, like everything else the panel has to report.
+                    onAttachError = { notice = ChatNotice(it, SpiraNoticeKind.Error) },
                 )
             }
         }
+    }
+
+    } // CompositionLocalProvider
+
+    previewAttachment?.let { att ->
+        ChatAttachmentViewer(
+            attachment = att,
+            resources = goal?.resources ?: emptyList(),
+            onClose = { previewAttachment = null },
+        )
     }
 
     if (providerSheet) {
@@ -306,8 +381,31 @@ internal val PANEL_GROUND = Kale500
 /** The band behind the wordmark and the provider strip — one step darker than [PANEL_GROUND]. */
 internal val PANEL_CHROME = Kale600
 
+/**
+ * The assistant bubble's fill — **Kale-200 `#E0F2F5`**, straight from the palette.
+ *
+ * Not white: white is the user's, and two white capsules on one gradient say nothing about who is
+ * speaking. Not the gradient's own `#F2FFFF` either, which at the foot of the chat is the ground
+ * itself, so a bubble in it would be invisible exactly where most messages sit.
+ */
+private val ASSISTANT_BUBBLE = Color(0xFFE0F2F5)
+
 /** Dark type on the white bubbles and composer — brand-1100, the same step the web uses. */
 internal val ON_WHITE = Brand1100
+
+/**
+ * The conversation sits on a **light teal gradient** (owner's design, 2026-08-15) while the header
+ * stays Kale-600 chrome. So message-area text is deep-teal ink instead of the white-on-teal the
+ * panel uses everywhere else. These are the chat-area ink tones; the composer/footer keep white.
+ */
+// Teal at the top, fading to near-white at the bottom (owner, 2026-08-17) — so the conversation
+// meets a light composer rather than a dark band.
+internal val CHAT_GRADIENT_TOP = Color(0xFF83D2D2)
+internal val CHAT_GRADIENT_BOTTOM = Color(0xFFF2FFFF)
+internal val CHAT_INK = ON_WHITE
+internal val CHAT_INK_MUTED = ON_WHITE.copy(alpha = 0.62f)
+/** A pill/chip that sits on the gradient — translucent white plate with dark ink. */
+internal val CHAT_PILL_BG = Color.White.copy(alpha = 0.72f)
 
 /**
  * The wordmark and the panel's actions. In a GROW session the right-hand side becomes the timer
@@ -446,10 +544,10 @@ private fun ProviderStrip(label: String, connected: Boolean, onOpen: () -> Unit)
         // missing entirely. The ring is a fifth of the dot's opacity and three units wide, so the
         // mark reads as a lit indicator rather than a bare speck.
         //
-        // The `intelligence` ramp, not the semantic ones: this dot marks the assistant's own
-        // provider, so it belongs to the AI accent. A connected key takes the bright step, a
-        // missing one the pale step, so the state still reads.
-        val dot = if (connected) Intelligence500 else Intelligence300
+        // The chat gradient's own two colours (owner, 2026-08-17): a connected key takes the teal
+        // top-of-gradient step, a missing one the pale bottom step, so the state still reads and
+        // the dot ties back to the conversation's palette.
+        val dot = if (connected) CHAT_GRADIENT_TOP else CHAT_GRADIENT_BOTTOM
         Box(
             Modifier
                 .size(13.dp)
@@ -494,7 +592,7 @@ private fun TimerPill(seconds: Int, totalMinutes: Int) {
 }
 
 @Composable
-private fun Banner(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+private fun Banner(text: String) {
     Row(
         Modifier
             .padding(horizontal = 16.dp)
@@ -505,38 +603,33 @@ private fun Banner(icon: androidx.compose.ui.graphics.vector.ImageVector, text: 
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+        // The owner's watering-can-and-sprout illustration, never the fat checkmark.
+        Image(imageVector = SpiraArt.sprout(), contentDescription = null, modifier = Modifier.size(14.dp))
         Spacer(Modifier.size(8.dp))
         Text(text, style = MaterialTheme.typography.labelMedium, color = Color.White)
     }
 }
 
+/**
+ * What the panel has to tell the user after an action — an approved change that failed to save, a
+ * session memory that did. It is the app's one notice card ([SpiraNoticeCard]), the same shape a
+ * toast takes, so a message here and a message anywhere else read as the same thing.
+ *
+ * It used to be a translucent white-on-teal strip with no mark at all, which said something had
+ * happened without saying whether it had gone well.
+ */
 @Composable
-private fun NoticeBanner(text: String, onDismiss: () -> Unit) {
-    Row(
-        Modifier
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 10.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(WHITE_10)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
-            modifier = Modifier.weight(1f),
-        )
-        Icon(
-            SpiraIcons.X,
-            contentDescription = "Dismiss",
-            tint = WHITE_60,
-            modifier = Modifier.size(14.dp).clickable(onClick = onDismiss),
-        )
-    }
+private fun NoticeBanner(notice: ChatNotice, onDismiss: () -> Unit) {
+    SpiraNoticeCard(
+        message = notice.text,
+        kind = notice.kind,
+        onDismiss = onDismiss,
+        modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp),
+    )
 }
+
+/** A message the panel is showing, and which of the four kinds it is. */
+private data class ChatNotice(val text: String, val kind: SpiraNoticeKind)
 
 /**
  * The opening screen: a leaf medallion and one line of orientation.
@@ -562,12 +655,13 @@ private fun EmptyChat(
                 .background(Color.White),
             contentAlignment = Alignment.Center,
         ) {
-            // Image, not Icon: the seedling carries its own greens, and Icon would tint them flat.
-            // On white it keeps the ink the source drew it with.
+            // **The watering can WITH the sprout** — the owner's original illustration, restored
+            // on 2026-08-17 after a spell as the leaves alone. Image, not Icon, so its greens and
+            // its white body aren't flattened to one tint.
             Image(
                 imageVector = SpiraArt.sprout(),
                 contentDescription = null,
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
         Spacer(Modifier.height(16.dp))
@@ -581,7 +675,7 @@ private fun EmptyChat(
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 14.sp,
             lineHeight = 22.sp,
-            color = WHITE_74,
+            color = CHAT_INK_MUTED,
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 300.dp),
         )
@@ -599,10 +693,15 @@ private fun EmptyChat(
  *
  * They are only ever shown on an empty chat: once there is a conversation they would be answering
  * a question nobody asked.
+ *
+ * **And never inside a goal** (owner, 2026-08-17). On the dashboard they answer "what is this
+ * for?"; inside a goal the user already knows why they opened the assistant, and a stack of
+ * guesses about their own goal was in the way of typing. The web does the same (`AiPanel.tsx`).
  */
 @Composable
 private fun ComposerSuggestions(goal: GoalDetail?, onPick: (String) -> Unit) {
-    val suggestions = remember(goal) { if (goal != null) buildGoalSuggestions(goal) else GLOBAL_SUGGESTIONS }
+    if (goal != null) return
+    val suggestions = GLOBAL_SUGGESTIONS
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -623,20 +722,22 @@ private fun SuggestionButton(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(WHITE_10)
-            .border(1.dp, WHITE_20, RoundedCornerShape(12.dp))
+            // A white card with a hairline and dark ink — the starters sit on the light composer
+            // area now, so white-on-teal would be invisible.
+            .background(Color.White)
+            .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(15.dp))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
         Spacer(Modifier.size(10.dp))
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 13.5.sp,
             lineHeight = 19.sp,
-            color = Color.White,
+            color = CHAT_INK,
         )
     }
 }
@@ -671,12 +772,12 @@ private fun UserTurn(message: ChatMessage) {
                 Modifier.widthIn(max = 300.dp).padding(end = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(SpiraIcons.Pencil, contentDescription = null, tint = WHITE_60, modifier = Modifier.size(12.dp))
+                Icon(SpiraIcons.Pencil, contentDescription = null, tint = CHAT_INK_MUTED, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.size(6.dp))
                 Text(
                     "Change to «$it»",
                     style = MaterialTheme.typography.labelMedium,
-                    color = WHITE_60,
+                    color = CHAT_INK_MUTED,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -684,6 +785,7 @@ private fun UserTurn(message: ChatMessage) {
         }
 
         if (message.attachments.isNotEmpty()) {
+            val openAttachment = LocalOpenAttachment.current
             Column(horizontalAlignment = Alignment.End) {
                 message.attachments.forEach { attachment ->
                     Row(
@@ -691,11 +793,12 @@ private fun UserTurn(message: ChatMessage) {
                             .padding(bottom = 6.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.White.copy(alpha = 0.85f))
+                            .clickable { openAttachment(attachment) }
                             .padding(horizontal = 8.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            SpiraIcons.Paperclip,
+                            SpiraIcons.Eye,
                             contentDescription = null,
                             tint = ON_WHITE.copy(alpha = 0.6f),
                             modifier = Modifier.size(12.dp),
@@ -730,16 +833,24 @@ private fun UserTurn(message: ChatMessage) {
                     color = ON_WHITE,
                 )
             }
-            // Copy hangs off the LEFT under the bubble, as it does on the desktop — the bubble is
-            // right-aligned, the action that follows it is not.
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+            // Copy sits on the RIGHT, directly under the (right-aligned) bubble it belongs to
+            // (owner, 2026-08-18) — not floated off to the left.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                 CopyRow(message.content)
             }
         }
     }
 }
 
-/** The assistant's turn: prose set straight on the teal, no bubble — as on the desktop. */
+/**
+ * The assistant's turn — **a bubble, like the user's, in a different colour** (owner, 2026-08-17).
+ *
+ * It used to be prose set straight on the teal ground, which read as text floating loose in the
+ * page rather than as a message from someone. It is the same capsule as [UserTurn], mirrored (the
+ * squared corner is bottom-LEFT, so the two turns lean towards their own side) and filled with
+ * **Kale-200** instead of white — an allowed palette step, and the one that stays legible under
+ * deep-teal ink on this gradient.
+ */
 @Composable
 private fun AssistantTurn(
     message: ChatMessage,
@@ -752,20 +863,24 @@ private fun AssistantTurn(
 ) {
     Column(Modifier.fillMaxWidth()) {
         if (message.streaming && message.content.isBlank()) {
-            Text(
-                message.status ?: "Thinking…",
-                style = MaterialTheme.typography.labelMedium,
-                color = WHITE_60,
-            )
+            // Waiting for the answer — the three-dot loader in the chat's own teal.
+            ThinkingDots()
         }
         if (message.content.isNotBlank()) {
-            AiMarkdown(
-                text = message.content,
-                modifier = Modifier.widthIn(max = 340.dp),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, lineHeight = 23.5.sp),
-                color = Color.White,
-                mutedColor = WHITE_60,
-            )
+            Box(
+                Modifier
+                    .widthIn(max = 340.dp)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp))
+                    .background(ASSISTANT_BUBBLE)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                AiMarkdown(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, lineHeight = 23.5.sp),
+                    color = CHAT_INK,
+                    mutedColor = CHAT_INK_MUTED,
+                )
+            }
             if (!message.streaming) CopyRow(message.content)
         }
 
@@ -789,13 +904,13 @@ private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) 
         Row(
             Modifier
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
+                .background(CHAT_PILL_BG)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(SpiraIcons.X, contentDescription = null, tint = WHITE_60, modifier = Modifier.size(12.dp))
+            Icon(SpiraIcons.X, contentDescription = null, tint = CHAT_INK_MUTED, modifier = Modifier.size(12.dp))
             Spacer(Modifier.size(6.dp))
-            Text("Dismissed", style = MaterialTheme.typography.labelMedium, color = WHITE_60)
+            Text("Dismissed", style = MaterialTheme.typography.labelMedium, color = CHAT_INK_MUTED)
         }
         return
     }
@@ -804,21 +919,21 @@ private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) 
             Row(
                 Modifier
                     .clip(CircleShape)
-                    .background(WHITE_10)
+                    .background(CHAT_PILL_BG)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     SpiraIcons.Check,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(12.dp),
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
                     proposal.title.ifBlank { kindLabel(proposal.kind) },
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.80f),
+                    color = CHAT_INK,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -835,7 +950,7 @@ private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) 
                         Icon(
                             SpiraIcons.SwitchArrows,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(12.dp),
                         )
                         Spacer(Modifier.size(4.dp))
@@ -843,7 +958,7 @@ private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) 
                             "Open",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
@@ -852,14 +967,50 @@ private fun ResultSummary(proposals: List<Proposal>, onOpenNote: (() -> Unit)?) 
     }
 }
 
+/**
+ * The "waiting for the answer" loader: three dots fading in sequence, in the chat's deep teal
+ * (owner, 2026-08-17). Shown while a reply is streaming but has produced no text yet.
+ */
+@Composable
+private fun ThinkingDots() {
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val spec: @Composable (Int) -> Float = { offsetMs ->
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 600, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+                initialStartOffset = StartOffset(offsetMs),
+            ),
+            label = "dot",
+        ).value
+    }
+    val a0 = spec(0)
+    val a1 = spec(200)
+    val a2 = spec(400)
+    Row(
+        Modifier.padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(a0, a1, a2).forEach { a ->
+            Box(Modifier.size(7.dp).clip(CircleShape).background(Kale600.copy(alpha = a)))
+        }
+    }
+}
+
 /** An error reads as a warning line on the ground, never as a bubble. */
 @Composable
 private fun ErrorTurn(text: String) {
+    // A bright yellow from the warning ramp — Warning-500 (#C99500), clearly yellow (not the brown
+    // #6B4E00) and legible on the light chat area (owner, 2026-08-18).
+    val warnInk = Color(0xFFC99500)
     Row(Modifier.widthIn(max = 340.dp)) {
         Icon(
             SpiraIcons.TriangleAlert,
             contentDescription = null,
-            tint = Guava300,
+            tint = warnInk,
             modifier = Modifier.padding(top = 3.dp).size(15.dp),
         )
         Spacer(Modifier.size(8.dp))
@@ -868,7 +1019,7 @@ private fun ErrorTurn(text: String) {
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 14.sp,
             lineHeight = 22.sp,
-            color = Guava300,
+            color = warnInk,
         )
     }
 }
@@ -880,13 +1031,13 @@ private fun SystemPill(text: String) {
             Modifier
                 .wrapContentWidth()
                 .clip(CircleShape)
-                .background(WHITE_10)
+                .background(CHAT_PILL_BG)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(SpiraIcons.Check, contentDescription = null, tint = WHITE_74, modifier = Modifier.size(12.dp))
+            Icon(SpiraIcons.Check, contentDescription = null, tint = CHAT_INK_MUTED, modifier = Modifier.size(12.dp))
             Spacer(Modifier.size(8.dp))
-            Text(text, style = MaterialTheme.typography.labelMedium, color = WHITE_74)
+            Text(text, style = MaterialTheme.typography.labelMedium, color = CHAT_INK_MUTED)
         }
     }
 }
@@ -894,25 +1045,28 @@ private fun SystemPill(text: String) {
 @Composable
 private fun CopyRow(text: String) {
     val context = LocalContext.current
-    var copied by remember(text) { mutableStateOf(false) }
+    // The shared flash, so this row says "Copied" for the same couple of seconds as every other
+    // copy button in the app. It used to latch: once pressed it read "Copied" for the rest of the
+    // conversation, which stops being about the press that just happened.
+    val flash = rememberCopyFlash()
     Row(
         Modifier.padding(top = 3.dp).clickable {
             copyPlainText(context, "spira ai coach", text)
-            copied = true
+            flash.fire()
         },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (copied) SpiraIcons.CopyCheck else SpiraIcons.Copy,
+            flash.icon,
             contentDescription = "Copy message",
-            tint = WHITE_60,
+            tint = CHAT_INK_MUTED,
             modifier = Modifier.size(12.dp),
         )
         Spacer(Modifier.size(5.dp))
         Text(
-            if (copied) "Copied" else "Copy",
+            if (flash.copied) "Copied" else "Copy",
             style = MaterialTheme.typography.labelSmall,
-            color = WHITE_60,
+            color = CHAT_INK_MUTED,
         )
     }
 }
@@ -926,17 +1080,30 @@ private fun Composer(
     enabled: Boolean,
     streaming: Boolean,
     allowAttachments: Boolean,
+    attachResources: List<ResourceItem>,
     placeholder: String,
     growAction: (() -> Unit)?,
+    /** Ends a live GROW session — shown in the left slot, in place of [growAction], while in one. */
+    endAction: (() -> Unit)? = null,
+    // Draft and attachments are hoisted to the ViewModel so the camera recreating this activity
+    // does not drop them — see AiChatViewModel.composerAttachments.
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    attachments: List<AiApi.ChatAttachment>,
+    onAddAttachments: (List<AiApi.ChatAttachment>) -> Unit,
+    onRemoveAttachment: (AiApi.ChatAttachment) -> Unit,
     onSend: (String, List<AiApi.ChatAttachment>) -> Unit,
     onStop: () -> Unit,
+    /** An attachment that couldn't be read — reported by the panel, not by a platform toast. */
+    onAttachError: (String) -> Unit = {},
 ) {
-    var draft by remember { mutableStateOf("") }
-    var attachments by remember { mutableStateOf<List<AiApi.ChatAttachment>>(emptyList()) }
     var attachMenu by remember { mutableStateOf(false) }
-    val picker = rememberChatAttachmentPicker { picked ->
-        attachments = (attachments + picked).takeLast(ATTACH_MAX_COUNT)
-    }
+    var showResourcePicker by remember { mutableStateOf(false) }
+    val picker = rememberChatAttachmentPicker(
+        onPicked = { picked -> onAddAttachments(picked) },
+        onError = onAttachError,
+    )
+    val hasResources = attachResources.isNotEmpty()
 
     Column(
         Modifier
@@ -947,15 +1114,18 @@ private fun Composer(
             .padding(top = 4.dp, bottom = 12.dp),
     ) {
         Column(
+            // A white card, like every message bubble — the field belongs in a container, it just
+            // sits on the light chat background now rather than on a dark block (owner, 2026-08-18).
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.White)
-                .border(1.dp, WHITE_35, RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(16.dp))
                 .padding(horizontal = 12.dp)
                 .padding(top = 10.dp, bottom = 8.dp),
         ) {
             if (attachments.isNotEmpty()) {
+                val openAttachment = LocalOpenAttachment.current
                 Column(Modifier.padding(bottom = 8.dp)) {
                     attachments.forEach { attachment ->
                         Row(
@@ -967,21 +1137,32 @@ private fun Composer(
                                 .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                SpiraIcons.Paperclip,
-                                contentDescription = null,
-                                tint = ON_WHITE.copy(alpha = 0.6f),
-                                modifier = Modifier.size(12.dp),
-                            )
-                            Spacer(Modifier.size(6.dp))
-                            Text(
-                                attachment.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = ON_WHITE,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 200.dp),
-                            )
+                            // Tapping the chip (its eye + name) previews it; the X stays a separate
+                            // target so a preview-tap can't remove it by mistake.
+                            Row(
+                                Modifier
+                                    .weight(1f, fill = false)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { openAttachment(attachment) }
+                                    .padding(vertical = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    SpiraIcons.Eye,
+                                    contentDescription = null,
+                                    tint = ON_WHITE.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(12.dp),
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    attachment.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = ON_WHITE,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 200.dp),
+                                )
+                            }
                             Spacer(Modifier.size(4.dp))
                             Icon(
                                 SpiraIcons.X,
@@ -989,7 +1170,7 @@ private fun Composer(
                                 tint = ON_WHITE.copy(alpha = 0.5f),
                                 modifier = Modifier
                                     .size(16.dp)
-                                    .clickable { attachments = attachments - attachment },
+                                    .clickable { onRemoveAttachment(attachment) },
                             )
                         }
                     }
@@ -1009,7 +1190,7 @@ private fun Composer(
             // tapping away from it must not do anything at all.
             BasicTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = onDraftChange,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = 14.5.sp,
                     lineHeight = 21.sp,
@@ -1070,30 +1251,43 @@ private fun Composer(
                                 icon = SpiraIcons.Paperclip,
                                 onClick = { attachMenu = false; picker.pickFile() },
                             )
+                            // The third source (BUG-030): the goal's own saved resources, inlined
+                            // by the server. Only offered when the goal actually has some.
+                            if (hasResources) {
+                                SpiraMenuItem(
+                                    label = "From resources",
+                                    icon = SpiraIcons.FolderOpen,
+                                    onClick = { attachMenu = false; showResourcePicker = true },
+                                )
+                            }
                         }
                     }
                 }
-                growAction?.let { start ->
-                    // A plain text action, not a badge. A pill reads as a *status* — a thing the
-                    // assistant is telling you — and this is something you press. It is **Kale-500**,
-                    // the working primary: the `intelligence` violet marks what the assistant IS,
-                    // and starting a session is the user acting, not the assistant speaking.
+                // One left slot: starting a session when out of one, ending it early when in one —
+                // ending is now where starting was, rather than a separate link above (owner,
+                // 2026-08-17). Kale-500, the working primary: the user is acting, not the assistant.
+                val left = when {
+                    endAction != null -> Triple(SpiraIcons.X, "End session early", endAction)
+                    growAction != null -> Triple(SpiraIcons.SparklesFilled, "Start GROW session", growAction)
+                    else -> null
+                }
+                left?.let { (icon, label, onClick) ->
                     Row(
                         Modifier
                             .clip(RoundedCornerShape(SpiraRadii.md))
-                            .clickable(onClick = start)
+                            .clickable(onClick = onClick)
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
-                            SpiraIcons.SparklesFilled,
+                            icon,
                             contentDescription = null,
                             tint = Kale500,
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            "Start GROW session",
+                            label,
                             style = addActionTextStyle(),
                             fontWeight = FontWeight.Medium,
                             color = Kale500,
@@ -1112,9 +1306,8 @@ private fun Composer(
                             if (streaming) {
                                 onStop()
                             } else {
+                                // The ViewModel clears the draft and chips once the send starts.
                                 onSend(draft, attachments)
-                                draft = ""
-                                attachments = emptyList()
                             }
                         },
                     contentAlignment = Alignment.Center,
@@ -1133,28 +1326,171 @@ private fun Composer(
             }
         }
     }
+
+    if (showResourcePicker) {
+        ResourcePickerSheet(
+            resources = attachResources,
+            alreadyAttached = attachments.mapNotNull { it.resourceId }.toSet(),
+            onPick = { res ->
+                val id = res.id.toLongOrNull()
+                if (id != null) {
+                    onAddAttachments(
+                        listOf(
+                            AiApi.ChatAttachment(
+                                name = resourceDisplayName(res),
+                                mime = res.mime ?: "",
+                                resourceId = id,
+                            ),
+                        ),
+                    )
+                }
+                showResourcePicker = false
+            },
+            onDismiss = { showResourcePicker = false },
+        )
+    }
+}
+
+/** A resource's user-facing name: the title, or the contact's name for an email card. */
+private fun resourceDisplayName(res: ResourceItem): String =
+    (if (res.type == "email") res.name else res.title)?.takeIf { it.isNotBlank() } ?: "Resource"
+
+/**
+ * Picks one of the goal's saved resources to attach (BUG-030). No bytes leave the phone — the chip
+ * carries the resource id and the server inlines what it already holds. A search narrows a long
+ * list; an already-attached resource is shown disabled so it can't be added twice.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResourcePickerSheet(
+    resources: List<ResourceItem>,
+    alreadyAttached: Set<Long>,
+    onPick: (ResourceItem) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+    val filtered = resources.filter {
+        resourceDisplayName(it).contains(query.trim(), ignoreCase = true)
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.spiraExtras.surfaceRaised,
+    ) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Attach a resource",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    SpiraIcons.X,
+                    contentDescription = "Close",
+                    tint = MaterialTheme.spiraExtras.mutedForeground,
+                    modifier = Modifier.size(22.dp).clickable { onDismiss() },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            SpiraTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = "Search resources",
+            )
+            Spacer(Modifier.height(8.dp))
+            if (filtered.isEmpty()) {
+                Text(
+                    "No matching resources.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.spiraExtras.mutedForeground,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            } else {
+                Column(
+                    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    filtered.forEach { res ->
+                        val id = res.id.toLongOrNull()
+                        val taken = id != null && id in alreadyAttached
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !taken) { onPick(res) }
+                                .padding(horizontal = 4.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                resourceTypeIcon(res.type),
+                                contentDescription = null,
+                                tint = if (taken) MaterialTheme.spiraExtras.mutedForeground
+                                else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.size(12.dp))
+                            Text(
+                                resourceDisplayName(res),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (taken) MaterialTheme.spiraExtras.mutedForeground
+                                else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                if (taken) "Added" else resourceTypeLabel(res.type),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.spiraExtras.mutedForeground,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The kit glyph for a resource type, matching the inline-resource chips. */
+private fun resourceTypeIcon(type: String) = when (type) {
+    "note" -> SpiraIcons.FileText
+    "link" -> SpiraIcons.Link
+    "file" -> SpiraIcons.Paperclip
+    else -> SpiraIcons.Mail
+}
+
+private fun resourceTypeLabel(type: String) = when (type) {
+    "note" -> "Note"
+    "link" -> "Link"
+    "file" -> "File"
+    else -> "Email"
 }
 
 /** Choosing a session length, as the desktop's start overlay does. */
 @Composable
 private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
     Column(
+        // A real white card on the light chat area — not a translucent panel on a dark block.
         Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(12.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(WHITE_10)
-            .border(1.dp, WHITE_20, RoundedCornerShape(14.dp))
+            .background(Color.White)
+            .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(14.dp))
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(SpiraIcons.CheckShape, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Image(
+                imageVector = SpiraArt.sprout(),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
             Spacer(Modifier.size(8.dp))
             Text(
                 "Start a GROW session",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
+                color = ON_WHITE,
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -1162,35 +1498,45 @@ private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
             "A timed conversation through Goal, Reality, Options and Will.",
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 13.sp,
-            color = WHITE_74,
+            color = ON_WHITE.copy(alpha = 0.6f),
         )
         Spacer(Modifier.height(14.dp))
+        // The web's four lengths (15 / 30 / 45 / 60), tap-to-start, as bordered tiles.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(10, 20, 30, 45).forEach { minutes ->
-                Box(
+            listOf(15, 30, 45, 60).forEach { minutes ->
+                Column(
                     Modifier
                         .weight(1f)
-                        .height(40.dp)
+                        .height(52.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White)
+                        .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(10.dp))
                         .clickable { onStart(minutes) },
-                    contentAlignment = Alignment.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        "$minutes min",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
+                        "$minutes",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = ON_WHITE,
+                    )
+                    Text(
+                        "min",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ON_WHITE.copy(alpha = 0.6f),
                     )
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             "Cancel",
             style = MaterialTheme.typography.labelMedium,
-            color = WHITE_60,
-            modifier = Modifier.clickable(onClick = onCancel).padding(vertical = 4.dp),
+            color = ON_WHITE.copy(alpha = 0.5f),
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clickable(onClick = onCancel)
+                .padding(vertical = 4.dp),
         )
     }
 }
@@ -1263,4 +1609,244 @@ internal fun providerLabel(provider: String): String = when (provider.uppercase(
     "MISTRAL" -> "Mistral"
     "GEMINI" -> "Gemini"
     else -> provider
+}
+
+/**
+ * Opens the tapped chat attachment full-screen. Provided by [AiChatScreen]; consumed by a sent
+ * message's chips and the composer's chips, so both can preview without threading a callback
+ * through every message row.
+ */
+val LocalOpenAttachment = androidx.compose.runtime.staticCompositionLocalOf<(AiApi.ChatAttachment) -> Unit> { {} }
+
+/**
+ * A full-screen viewer for an attachment (BUG-030). It reads what to show from the attachment
+ * itself for a device photo, or from the goal's own [resources] for a resource attachment — the
+ * chip only carries a name and an id, never the bytes.
+ *
+ * Images (a device photo, or an image file resource) show on black like the web's preview. A note
+ * shows its text; a link opens in the browser; a PDF/other file opens in whatever app handles it.
+ * Anything that can't be shown says so rather than doing nothing.
+ */
+@Composable
+private fun ChatAttachmentViewer(
+    attachment: AiApi.ChatAttachment,
+    resources: List<com.spiramindscape.android.data.goals.ResourceItem>,
+    onClose: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val res = attachment.resourceId?.let { id ->
+        resources.firstOrNull { it.id.toLongOrNull() == id }
+    }
+
+    val imageDataUrl: String? = when {
+        attachment.resourceId == null && attachment.mime.startsWith("image/") -> attachment.dataUrl
+        res != null && res.type == "file" && (res.mime ?: "").startsWith("image/") -> res.dataUrl
+        else -> null
+    }
+    // An image is a lightbox (black ground); everything else — a note above all — is a light page,
+    // so a note reads like the note editor's own preview rather than white text on black (owner,
+    // 2026-08-17).
+    val isImage = imageDataUrl != null
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    if (isImage) Color.Black.copy(alpha = 0.94f)
+                    else MaterialTheme.colorScheme.background,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                imageDataUrl != null -> {
+                    val bitmap = remember(imageDataUrl) {
+                        decodeDataUrl(imageDataUrl)?.let { bytes ->
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                ?.asImageBitmap()
+                        }
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = attachment.name,
+                            modifier = Modifier.fillMaxSize().padding(12.dp),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        )
+                    } else {
+                        ViewerMessage("This image could not be shown.")
+                    }
+                }
+
+                res != null && res.type == "note" -> {
+                    val html = res.body ?: ""
+                    Column(Modifier.fillMaxSize()) {
+                        // A Kale header with the note's title, like the note editor's top bar.
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.primary)
+                                .statusBarsPadding()
+                                .padding(start = 20.dp, end = 60.dp, top = 16.dp, bottom = 16.dp),
+                        ) {
+                            Text(
+                                "NOTE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White.copy(alpha = 0.7f),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                res.title?.takeIf { it.isNotBlank() } ?: "Note",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White,
+                            )
+                        }
+                        // The note's full content on white, in dark ink — the editor's own look.
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .background(MaterialTheme.colorScheme.surface)
+                                .verticalScroll(rememberScrollState())
+                                .padding(24.dp),
+                        ) {
+                            Text(
+                                if (looksLikeHtml(html)) rememberHtmlText(html)
+                                else androidx.compose.ui.text.AnnotatedString(html.ifBlank { "(empty note)" }),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+
+                res != null && res.type == "link" -> {
+                    ViewerMessage(res.url ?: "(no URL)", actionLabel = "Open link", onDark = false) {
+                        openAttachmentUri(context, res.url)
+                    }
+                }
+
+                res != null && res.type == "email" -> {
+                    ViewerMessage(
+                        listOfNotNull(res.name, res.role, res.email, res.phone)
+                            .joinToString("\n").ifBlank { "(no contact details)" },
+                        onDark = false,
+                    )
+                }
+
+                res != null && res.type == "file" -> {
+                    ViewerMessage(res.title ?: "File", actionLabel = "Open", onDark = false) {
+                        openDataUrlExternally(context, res.title ?: "file", res.mime, res.dataUrl)
+                    }
+                }
+
+                attachment.resourceId == null -> {
+                    ViewerMessage(attachment.name, actionLabel = "Open", onDark = false) {
+                        openDataUrlExternally(context, attachment.name, attachment.mime, attachment.dataUrl)
+                    }
+                }
+
+                else -> ViewerMessage("This attachment is no longer available.", onDark = false)
+            }
+
+            // On a dark ground (image) or the note's teal header the X is white on a faint scrim;
+            // on a light text preview it needs a solid Kale disc to stay visible.
+            val onDarkHeader = isImage || res?.type == "note"
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(12.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (onDarkHeader) Color.White.copy(alpha = 0.15f)
+                        else MaterialTheme.colorScheme.primary,
+                    )
+                    .clickable { onClose() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(SpiraIcons.X, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+/**
+ * A centered message with an optional single action. [onDark] is for the image lightbox's black
+ * ground (white text); the light text previews (link / email / file) pass `false` so the message is
+ * dark ink on the light page.
+ */
+@Composable
+private fun ViewerMessage(
+    text: String,
+    actionLabel: String? = null,
+    onDark: Boolean = true,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (onDark) Color.White else MaterialTheme.colorScheme.onSurface,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                actionLabel,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (onDark) Kale300 else MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onAction() }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** Open a URL (a link resource) in the browser. */
+private fun openAttachmentUri(context: android.content.Context, uri: String?) {
+    if (uri.isNullOrBlank()) return
+    runCatching {
+        context.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)),
+        )
+    }
+}
+
+/**
+ * Write a data: URL to a cache file and open it with whatever app handles the type (a PDF viewer).
+ * Silent on failure — the viewer already showed the name, and there is nothing lost.
+ */
+private fun openDataUrlExternally(
+    context: android.content.Context,
+    name: String,
+    mime: String?,
+    dataUrl: String?,
+) {
+    val bytes = decodeDataUrl(dataUrl) ?: return
+    runCatching {
+        val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "file" }
+        val file = java.io.File(dir, safe)
+        file.writeBytes(bytes)
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file,
+        )
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime ?: "application/octet-stream")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(intent)
+    }
 }

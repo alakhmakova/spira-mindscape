@@ -126,9 +126,13 @@ class VisualCheckOptionsTabTest : VisualCheckTestBase() {
         compose.waitForIdle()
         saveWindow("options-tab-reordering")
 
-        // In reorder mode the card is a drag handle: no ⋯ menu, no creation field, and the long
-        // strategy is forced back to its collapsed height so one slot is one small finger move.
-        compose.onNodeWithText("Drag cards to reorder.").assertIsDisplayed()
+        // In reorder mode each card grows a grip and the per-card controls go inert: no ⋯ menu, no
+        // creation field, and the long option is forced back to its collapsed height so one slot is
+        // one small finger move.
+        compose.onNodeWithText(
+            "Drag a card by the handle at its top. Swiping still scrolls the page.",
+        ).assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Drag to reorder").assertCountEquals(2)
         compose.onNodeWithText("Save").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("Option actions").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("Add option").assertCountEquals(1)
