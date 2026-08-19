@@ -1,8 +1,8 @@
 # CI: the Playwright job hangs installing the browser and burns its whole budget
 
 - **ID:** BUG-043
-- **Status:** ✅ Fixed (2026-08-19) — see Resolution. Watch the next few runs; the trigger is a
-  third-party mirror, so the fix is about *failing fast*, not about making the mirror work.
+- **Status:** ✅ Fixed (2026-08-19, second attempt) — see Resolution. The first attempt capped apt
+  and did **not** work; the trigger is a third-party mirror, so the fix is to stop depending on it.
 - **Reported by:** User (2026-08-19) — "playwright застревает на браузере, я попробовала
   перезапустить - та же проблема"
 - **Area:** CI — `.github/workflows/ci.yml`, the `web-e2e` job
@@ -65,19 +65,52 @@ The mirror is not ours to fix. Make a bad mirror cheap instead:
 ## How to verify fixed
 
 - A healthy run still finishes in ~2.5 minutes, with the browser step reporting a cache hit.
-- When a mirror stalls, **Install Playwright system libraries** fails after ~6 minutes and names
-  itself, instead of the job being cancelled with no cause shown.
+- **`Run Playwright E2E` executes** — the step that has been skipped in every run since this began.
+- When the mirror stalls, the libraries step goes amber after ≤4 minutes and the job **carries on**.
 - The E2E tests themselves are unaffected — nothing about the suite changed.
+
+## First attempt — capping apt. It did not work.
+
+The first fix (commit `7405003`) split the step in two, cached the browser, and gave apt explicit
+timeouts in `/etc/apt/apt.conf.d/99-spira-timeouts`:
+
+```
+Acquire::Retries "3";
+Acquire::http::Timeout "20";
+Acquire::https::Timeout "20";
+```
+
+The next run stalled in **exactly the same place** — after `Get:5 …noble-security InRelease`, silent
+until the step's own 6-minute budget killed it:
+
+```
+09:14:14 Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+09:19:57 ##[error]The action 'Install Playwright system libraries' has timed out after 6 minutes.
+```
+
+So `Acquire::*::Timeout` does not cover whatever apt is waiting on here. The split and the step
+budget did their job — the failure was named and cost 6 minutes instead of 20 — but the run still
+failed on a commit whose tests were fine.
 
 ## Resolution
 
-**2026-08-19 — fixed** in `.github/workflows/ci.yml`:
+**2026-08-19 — apt is no longer a gate.**
 
-- a new step writes `Acquire::Retries "3"` and 20-second `http`/`https` timeouts into
-  `/etc/apt/apt.conf.d/99-spira-timeouts`;
+`.github/workflows/ci.yml`, the `web-e2e` job:
+
 - `actions/cache@v4` keeps `~/.cache/ms-playwright`, keyed on `package-lock.json`;
-- the install is now **Install Playwright system libraries** (`playwright install-deps chromium`)
-  and **Install Playwright browser** (`playwright install chromium`), each `timeout-minutes: 6`.
+- **Install Playwright system libraries (best-effort)** — `continue-on-error: true`,
+  `timeout-minutes: 4`;
+- **Install Playwright browser** — `playwright install chromium`, `timeout-minutes: 6`. This is the
+  half that comes from Playwright's own CDN and the half that actually has to work.
 
-The job keeps its 20-minute budget: that is the backstop that surfaced this, and with the steps
-capped it should never be what stops a run again.
+The reasoning for demoting the libraries: the **`ubuntu-24.04` runner image ships Google Chrome and
+Chromium**, so the shared libraries Playwright's bundled Chromium needs are already on the machine.
+`install-deps` is insurance for the day that stops being true, not a prerequisite — and insurance
+must not be able to fail the policy. If a library really is missing, the browser fails to launch in
+`Run Playwright E2E` with a message naming it, which is a better failure than a silent apt stall.
+
+The apt timeout config was dropped with the same change: it did not help, and a config file that
+does nothing is worse than no config file.
+
+The job keeps its 20-minute budget as the backstop.

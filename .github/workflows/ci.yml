@@ -377,26 +377,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # **apt must fail rather than hang.** `playwright install --with-deps` shells out to apt, and
-      # apt has no timeout of its own: on 2026-08-19 the runner's `azure.archive.ubuntu.com` mirror
-      # stopped answering, apt fell back to `archive.ubuntu.com`, fetched three InRelease files and
-      # then sat in silence for **nineteen minutes** until the job hit its 20-minute budget and was
-      # cancelled — twice in a row, on a commit whose tests were fine. (The same shape as the
-      # 15-minute stall noted above on 2026-08-06.)
-      #
-      # The file is written to `apt.conf.d` rather than passed with `-o`, because the apt call that
-      # hangs is Playwright's own and takes no options from us.
-      - name: Make apt fail fast instead of hanging
-        run: |
-          sudo tee /etc/apt/apt.conf.d/99-spira-timeouts >/dev/null <<'EOF'
-          Acquire::Retries "3";
-          Acquire::http::Timeout "20";
-          Acquire::https::Timeout "20";
-          EOF
-
       # The browser binary comes from Playwright's own CDN and changes only when the package does,
-      # so cache it: a hit turns the download below into a no-op and leaves apt as the only thing
-      # this job asks of the network.
+      # so cache it: a hit turns the download below into a no-op.
       - name: Cache Playwright browser
         uses: actions/cache@v4
         with:
@@ -404,16 +386,28 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: playwright-${{ runner.os }}-
 
-      # Only Chromium — the suite is a functional check, not a cross-browser matrix.
+      # **apt is best-effort here, and must never decide this job** (BUG-043).
       #
-      # Split in two, each with its own budget, because the two halves fail for different reasons:
-      # the libraries come from an Ubuntu mirror (the flaky half) and the browser from Playwright's
-      # CDN. A stall in either now costs minutes, not the whole job — and the step that failed is
-      # named in the log rather than hidden inside one combined command.
-      - name: Install Playwright system libraries
-        timeout-minutes: 6
+      # `playwright install --with-deps` shells out to apt, and the runner's Ubuntu mirror stalls
+      # regularly: on 2026-08-19 it fetched three InRelease files and then went silent — nineteen
+      # minutes on the first run and again on a re-run, with no test executed. Giving apt explicit
+      # `Acquire::*::Timeout` settings did **not** help; the second attempt stalled in exactly the
+      # same place and only the step budget stopped it. (Same shape as the 15-minute stall on
+      # 2026-08-06.)
+      #
+      # So the libraries are no longer a gate. The `ubuntu-24.04` runner image ships Google Chrome
+      # and Chromium, which means the shared libraries Playwright's own Chromium needs are already
+      # installed — this step is belt-and-braces for the day that stops being true, not a
+      # prerequisite. `continue-on-error` keeps a dead mirror from failing a run whose tests are
+      # fine, and if a library really is missing the browser fails to launch in the E2E step with
+      # a message that names it.
+      - name: Install Playwright system libraries (best-effort)
+        continue-on-error: true
+        timeout-minutes: 4
         run: npx playwright install-deps chromium
 
+      # Only Chromium — the suite is a functional check, not a cross-browser matrix. This half
+      # comes from Playwright's CDN, is cached above, and is the one that actually has to work.
       - name: Install Playwright browser
         timeout-minutes: 6
         run: npx playwright install chromium
