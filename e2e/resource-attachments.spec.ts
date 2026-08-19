@@ -26,12 +26,12 @@ test("attach, auto-create from a long URL, and detach on delete", async ({
   await page.getByRole("button", { name: "Add resource" }).last().click();
   await page.waitForLoadState("networkidle");
 
-  // Attach it to a strategy from the card's ⋯ menu — the link shows the title, not a URL.
+  // Attach it to an option from the card's ⋯ menu — the link shows the title, not a URL.
   await addOptions(page, ["Tailor the CV for this role and apply"]);
   const optionCard = page.locator("li", { hasText: "Tailor the CV" }).first();
   // Element menus stay hidden until their row is hovered or focused.
   await optionCard.hover();
-  await optionCard.getByRole("button", { name: "Strategy actions" }).click();
+  await optionCard.getByRole("button", { name: "Option actions" }).click();
   await page.getByRole("menuitem", { name: "Attach resource" }).click();
   await page
     .getByRole("dialog")
@@ -64,7 +64,7 @@ test("attach, auto-create from a long URL, and detach on delete", async ({
   // A URL that pushes the field over its limit is offered as a link resource instead of
   // failing to save (the old "sync failed" banner).
   const longUrl = `https://example.com/apply?ref=${"x".repeat(520)}`;
-  const editor = page.getByRole("textbox", { name: "Edit strategy" });
+  const editor = page.getByRole("textbox", { name: "Edit option" });
   await editor.click();
   await editor.fill(`Apply here ${longUrl}`);
   await editor.blur();

@@ -2,6 +2,7 @@ package com.spiramindscape.android.ui
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import com.spiramindscape.android.ui.components.GROW_TABS_TAG
 import androidx.compose.ui.test.filterToOne
@@ -14,6 +15,7 @@ import com.spiramindscape.android.data.goals.OptionItem
 import com.spiramindscape.android.ui.goals.GoalUiState
 import com.spiramindscape.android.ui.goals.GoalWorkspaceActions
 import com.spiramindscape.android.ui.goals.GoalWorkspaceScreen
+import com.spiramindscape.android.ui.goals.optionCardTag
 import com.spiramindscape.android.ui.theme.SpiraTheme
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -25,6 +27,19 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OptionsDragReorderTest : VisualCheckTestBase() {
+
+    /**
+     * The **grip** inside one particular card — the drag target since 2026-08-18, when the card
+     * itself stopped taking a drag on the first pixel of movement so that an ordinary swipe could
+     * scroll the page again (BUG-038). The grip stands where the radio button is.
+     *
+     * Found through the card's own tag rather than by position: the list reorders *under* the
+     * finger, so "the first grip on screen" is a different card after the first swap, and a gesture
+     * aimed that way would jump between cards mid-drag.
+     */
+    private fun grip(optionId: String) = compose.onNode(
+        hasContentDescription("Drag to reorder") and hasAnyAncestor(hasTestTag(optionCardTag(optionId))),
+    )
 
     @Test
     @Config(qualifiers = "w411dp-h891dp")
@@ -59,9 +74,9 @@ class OptionsDragReorderTest : VisualCheckTestBase() {
         compose.onNodeWithText("Reorder").performClick()
         compose.waitForIdle()
 
-        // One continuous gesture: press the THIRD card and drag far up — past two cards — then
-        // release. Real drag-and-drop must land it at the very top (index 0), not just one slot.
-        compose.onNodeWithText("Third strategy here").performTouchInput {
+        // One continuous gesture: press the THIRD card's grip and drag far up — past two cards —
+        // then release. Real drag-and-drop must land it at the very top (index 0), not one slot.
+        grip("o3").performTouchInput {
             down(center)
             repeat(12) {
                 moveBy(Offset(0f, -60f))
@@ -116,7 +131,7 @@ class OptionsDragReorderTest : VisualCheckTestBase() {
         // inside a single injection block. Drive the frame clock by hand instead, and keep the
         // gesture open across the calls (down / moveBy / up are one gesture per test).
         compose.mainClock.autoAdvance = false
-        val card = compose.onNodeWithText("Strategy number 0")
+        val card = grip("o0")
         card.performTouchInput { down(center) }
         repeat(6) {
             card.performTouchInput { moveBy(Offset(0f, 60f)) }

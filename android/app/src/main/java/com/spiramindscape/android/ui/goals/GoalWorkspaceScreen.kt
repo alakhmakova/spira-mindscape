@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -1609,6 +1610,9 @@ private fun OptionsTabContent(
     }
 }
 
+/** The test tag on an option card, so a drag test can reach the grip inside a known card. */
+fun optionCardTag(optionId: String) = "option-card-$optionId"
+
 /** Vertical gap between option cards — the web's `space-y-3` (12px). */
 private val OPTION_LIST_GAP = 12.dp
 
@@ -1686,6 +1690,9 @@ private fun OptionCard(
     Box(
         Modifier
             .fillMaxWidth()
+            // Tagged so a drag test can find THIS card's grip while the list reorders under it —
+            // an index into "every grip on screen" points at a different card after the first swap.
+            .testTag(optionCardTag(option.id))
             .onSizeChanged { onHeightMeasured(it.height.toFloat()) }
             .zIndex(if (isDragging) 1f else 0f)
             .offset { IntOffset(0, dragTranslationY.roundToInt()) }
