@@ -23,7 +23,7 @@ sealed interface GoalsUiState {
 }
 
 enum class SortKey(val label: String) {
-    Recent("Most recent"), Deadline("Deadline soonest"),
+    Recent("Created"), Deadline("Deadline"),
     Progress("Progress"), Confidence("Confidence"), Title("Title A–Z"),
 }
 
@@ -62,6 +62,51 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
     val sortAscending = MutableStateFlow(false)
     val statusFilter = MutableStateFlow(StatusFilter.All)
     val deadlineFilter = MutableStateFlow(DeadlineFilter.Any)
+
+    /**
+     * The deadline range's two ends, as ISO instants ("" = an open end), and the confidence the
+     * user is looking for (0 = any). All three are the web's own dashboard filters
+     * (`AppShell.tsx`), which the phone had no way to reach.
+     *
+     * Like the search box, and unlike the sort and the status pills, none of them is remembered
+     * across sessions: a range or a single confidence is a question about now, and one restored
+     * from a fortnight ago would open the app on an empty-looking list for no visible reason.
+     */
+    val deadlineFrom = MutableStateFlow("")
+    val deadlineTo = MutableStateFlow("")
+    val confidence = MutableStateFlow(0)
+
+    /**
+     * Set the deadline question, keeping it consistent with the range below it.
+     *
+     * **"No deadline" and a date range cannot both be on** (owner, 2026-08-18): a range asks which
+     * deadlines to keep, and "no deadline" asks for the goals that haven't got one — together they
+     * can only ever match nothing, so the list empties and neither control says why. Choosing one
+     * clears the other rather than leaving the user to work out which of two answers to undo.
+     */
+    fun setDeadlineFilter(value: DeadlineFilter) {
+        deadlineFilter.value = value
+        if (value == DeadlineFilter.None) {
+            deadlineFrom.value = ""
+            deadlineTo.value = ""
+        }
+    }
+
+    /** Set one end of the range, clearing "No deadline" if that is what was on. See [setDeadlineFilter]. */
+    fun setDeadlineFrom(value: String) {
+        deadlineFrom.value = value
+        if (value.isNotBlank() && deadlineFilter.value == DeadlineFilter.None) {
+            deadlineFilter.value = DeadlineFilter.Any
+        }
+    }
+
+    /** The other end. See [setDeadlineFrom]. */
+    fun setDeadlineTo(value: String) {
+        deadlineTo.value = value
+        if (value.isNotBlank() && deadlineFilter.value == DeadlineFilter.None) {
+            deadlineFilter.value = DeadlineFilter.Any
+        }
+    }
 
     init {
         load()
@@ -154,6 +199,12 @@ fun applyGoalView(
     ascending: Boolean,
     status: StatusFilter,
     deadline: DeadlineFilter = DeadlineFilter.Any,
+    /** The **from** end of the deadline range, an ISO date/instant; blank means "no lower bound". */
+    deadlineFrom: String = "",
+    /** The **to** end, inclusive. */
+    deadlineTo: String = "",
+    /** One confidence value 1..10, or 0 for "any" — the web's dashboard filter. */
+    confidence: Int = 0,
 ): List<GoalSummary> {
     var list = goals
     if (query.isNotBlank()) {
@@ -168,6 +219,19 @@ fun applyGoalView(
         DeadlineFilter.Any -> list
         DeadlineFilter.Has -> list.filter { it.deadline != null }
         DeadlineFilter.None -> list.filter { it.deadline == null }
+    }
+    // The range, the web's rule exactly (`index.tsx`): compare the **date part** only, both ends
+    // inclusive, and a goal with no deadline is outside every range rather than inside all of them.
+    if (deadlineFrom.isNotBlank() || deadlineTo.isNotBlank()) {
+        list = list.filter { goal ->
+            val day = goal.deadline?.take(10) ?: return@filter false
+            if (deadlineFrom.isNotBlank() && day < deadlineFrom.take(10)) return@filter false
+            if (deadlineTo.isNotBlank() && day > deadlineTo.take(10)) return@filter false
+            true
+        }
+    }
+    if (confidence in 1..10) {
+        list = list.filter { it.confidence == confidence }
     }
     val comparator: Comparator<GoalSummary> = when (sort) {
         SortKey.Recent -> compareBy { it.createdAt }

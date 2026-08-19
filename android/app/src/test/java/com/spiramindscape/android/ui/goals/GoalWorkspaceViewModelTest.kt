@@ -454,4 +454,42 @@ class GoalWorkspaceViewModelTest {
 
         assertEquals(afterLoad + 1, repo.goalFetches)
     }
+
+    @Test
+    fun `applyTargetView keeps only targets whose deadline falls inside the range`() {
+        val january = TargetItem.Binary("t1", "January", 0f, "2026-01-15T00:00:00Z", false, done = false)
+        val june = TargetItem.Binary("t2", "June", 0f, "2026-06-15T00:00:00Z", false, done = false)
+        val undated = TargetItem.Binary("t3", "Someday", 0f, null, false, done = false)
+
+        val result = applyTargetView(
+            targets = listOf(january, june, undated),
+            sort = TargetSort.Name,
+            ascending = true,
+            filter = TargetFilter.All,
+            deadlineFrom = "2026-02-01T00:00:00Z",
+            deadlineTo = "2026-12-31T00:00:00Z",
+        )
+
+        // A target with no deadline is outside every range, and both ends are inclusive.
+        assertEquals(listOf(june), result)
+    }
+
+    @Test
+    fun `applyTargetView orders by created, oldest first when ascending`() {
+        val older = TargetItem.Binary(
+            "t1", "Written first", 0f, null, false, done = false, createdAt = "2026-01-01T00:00:00Z",
+        )
+        val newer = TargetItem.Binary(
+            "t2", "Written second", 0f, null, false, done = false, createdAt = "2026-05-01T00:00:00Z",
+        )
+
+        val result = applyTargetView(
+            targets = listOf(newer, older),
+            sort = TargetSort.Created,
+            ascending = true,
+            filter = TargetFilter.All,
+        )
+
+        assertEquals(listOf(older, newer), result)
+    }
 }

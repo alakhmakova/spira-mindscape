@@ -9,8 +9,9 @@ import androidx.navigation.navArgument
 import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.ui.goals.GoalWorkspaceRoute
 import com.spiramindscape.android.ui.goals.GoalsRoute
+import com.spiramindscape.android.ui.settings.UserSettingsScreen
 
-/** Navigation for the signed-in app: goals dashboard → goal workspace. */
+/** Navigation for the signed-in app: goals dashboard → goal workspace, plus the account page. */
 @Composable
 fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
     val nav = rememberNavController()
@@ -19,6 +20,14 @@ fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
             GoalsRoute(
                 user = user,
                 onGoalClick = { goalId -> nav.navigate("goal/$goalId") },
+                onOpenSettings = { nav.navigate("settings") },
+                onLogout = onLogout,
+            )
+        }
+        composable("settings") {
+            UserSettingsScreen(
+                user = user,
+                onBack = { nav.popBackStack() },
                 onLogout = onLogout,
             )
         }

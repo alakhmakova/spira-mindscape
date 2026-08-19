@@ -10,18 +10,18 @@ test.describe("Options — active radio + drag reorder", () => {
     const beta = page.locator("li", { hasText: "Beta strategy" });
 
     // Select Alpha → its radio flips to the "deselect" state.
-    await alpha.getByRole("button", { name: "Select strategy" }).click();
+    await alpha.getByRole("button", { name: "Select option" }).click();
     await expect(
-      alpha.getByRole("button", { name: "Deselect strategy" }),
+      alpha.getByRole("button", { name: "Deselect option" }),
     ).toBeVisible();
 
     // Selecting Beta deselects Alpha (only one active per goal).
-    await beta.getByRole("button", { name: "Select strategy" }).click();
+    await beta.getByRole("button", { name: "Select option" }).click();
     await expect(
-      beta.getByRole("button", { name: "Deselect strategy" }),
+      beta.getByRole("button", { name: "Deselect option" }),
     ).toBeVisible();
     await expect(
-      alpha.getByRole("button", { name: "Select strategy" }),
+      alpha.getByRole("button", { name: "Select option" }),
     ).toBeVisible();
   });
 
@@ -32,7 +32,7 @@ test.describe("Options — active radio + drag reorder", () => {
     // The ⋮ menu only appears once the card is hovered or focused, so hover it first.
     const card = page.locator("li", { hasText: "Remove me" });
     await card.hover();
-    await card.getByRole("button", { name: "Strategy actions" }).click();
+    await card.getByRole("button", { name: "Option actions" }).click();
     await page.getByRole("menuitem", { name: "Delete option" }).click();
 
     await expect(page.locator("li", { hasText: "Remove me" })).toHaveCount(0);

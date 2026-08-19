@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Trash2,
-  ExternalLink,
   Download,
   Copy,
   Check,
@@ -14,7 +13,24 @@ import {
   ChevronRight,
   Loader2,
   Info,
-} from "lucide-react";
+  Search,
+  Filter,
+  SortDescending,
+} from "@/components/spira/icons";
+import {
+  ToolbarMenu,
+  MenuGroup,
+  MenuChoice,
+  FilterIconTrigger,
+  RoundAddButton,
+  SectionSearchButton,
+  SectionSearchField,
+  SheetChoiceCards,
+  SheetGroup,
+  SheetPills,
+  ToolbarSheet,
+} from "@/components/spira/ListToolbar";
+import { Section } from "@/components/spira/Section";
 import type { Goal, Resource, ResourceInput, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import {
@@ -36,6 +52,7 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
+import { OpenNewWindow } from "@/components/spira/icons";
 import { AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { PdfViewer } from "@/components/spira/PdfViewer";
@@ -236,7 +253,202 @@ function useCopied() {
   return { copied, run } as const;
 }
 
-export function ResourcesList({ goal }: { goal: Goal }) {
+/** Sort keys for the resources list — "Created" is the server's own (as-added) order. */
+const RES_SORT = [
+  { value: "recent", label: "Created" },
+  { value: "name", label: "Name" },
+  { value: "type", label: "Type" },
+] as const;
+type ResSort = (typeof RES_SORT)[number]["value"];
+
+/** The type filter — mirrors Android's `ResourceFilter`. */
+const RES_TYPES = [
+  { value: "all", label: "All" },
+  { value: "note", label: "Notes" },
+  { value: "link", label: "Links" },
+  { value: "file", label: "Files" },
+  { value: "email", label: "Emails" },
+] as const;
+type ResType = (typeof RES_TYPES)[number]["value"];
+
+/**
+ * The Resources section: its title, **its search / sort / filter on that same line**, the create
+ * action, and the list below.
+ *
+ * The shape mirrors `TargetsSection` deliberately. Resources used to draw its own toolbar row
+ * inside the section body while every other list put its chrome in the header, which is exactly
+ * the "everywhere different" the owner asked to end (2026-08-17).
+ */
+export function ResourcesSection({
+  goal,
+  onCreate,
+}: {
+  goal: Goal;
+  onCreate: () => void;
+}) {
+  const isMobile = useIsMobile();
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sort, setSort] = useState<ResSort>("recent");
+  const [typeFilter, setTypeFilter] = useState<ResType>("all");
+  // The phone asks both questions in one drawer; the desktop keeps its two menus.
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const sortLabel = RES_SORT.find((c) => c.value === sort)?.label ?? "Sort";
+
+  return (
+    <Section
+      title="Resources"
+      count={goal.resources.length}
+      // The open search takes the whole header row on a phone — the Android All-goals pattern.
+      // `isMobile` as well as `searchOpen`: the glyph that opens this only exists on a phone, so a
+      // window widened while it is open would otherwise leave the header with a field and no title.
+      headerOverride={
+        searchOpen && isMobile ? (
+          <SectionSearchField
+            value={query}
+            onChange={setQuery}
+            onClose={() => setSearchOpen(false)}
+            placeholder="Search resources"
+          />
+        ) : undefined
+      }
+      action={
+        <div className="flex items-center gap-0.5 sm:gap-1.5">
+          {/* Desktop keeps the field itself; a phone gets the glyph that opens it. */}
+          <div className="relative hidden w-[200px] sm:block">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search resources"
+              className="h-9 pl-8"
+            />
+          </div>
+          <span className="sm:hidden">
+            <SectionSearchButton
+              onOpen={() => setSearchOpen(true)}
+              active={!!query}
+              ariaLabel="Search resources"
+            />
+          </span>
+
+          {/* **One drawer on a phone**, holding both questions — the All-goals pattern, so every
+              list in the app asks for a filter the same way (owner, 2026-08-17). Two separate
+              icon-menus were two taps to answer two halves of one thought. */}
+          <span className="sm:hidden">
+            <FilterIconTrigger
+              active={typeFilter !== "all" || sort !== "recent"}
+              onClick={() => setSheetOpen(true)}
+              ariaLabel="Filter and sort resources"
+            />
+            <ToolbarSheet
+              open={sheetOpen}
+              onOpenChange={setSheetOpen}
+              title="Filter & Sort"
+              onReset={() => {
+                setTypeFilter("all");
+                setSort("recent");
+              }}
+              resetDisabled={typeFilter === "all" && sort === "recent"}
+            >
+              <SheetGroup title="Type">
+                <SheetPills
+                  options={RES_TYPES}
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  tone="info"
+                />
+              </SheetGroup>
+              <SheetGroup title="Sort by">
+                <SheetChoiceCards
+                  options={RES_SORT}
+                  value={sort}
+                  onChange={setSort}
+                />
+              </SheetGroup>
+            </ToolbarSheet>
+          </span>
+
+          <span className="hidden sm:inline-flex sm:items-center sm:gap-1.5">
+            <ToolbarMenu
+              label={sortLabel}
+              ariaLabel="Sort resources"
+              closeOnSelect
+              leadingIcon={<SortDescending className="h-4 w-4 shrink-0" />}
+            >
+              <MenuGroup title="Sort by">
+                {RES_SORT.map((c) => (
+                  <MenuChoice
+                    key={c.value}
+                    label={c.label}
+                    selected={sort === c.value}
+                    onSelect={() => setSort(c.value)}
+                  />
+                ))}
+              </MenuGroup>
+            </ToolbarMenu>
+
+            <ToolbarMenu
+              label="Filter"
+              count={typeFilter === "all" ? 0 : 1}
+              ariaLabel="Filter resources"
+              closeOnSelect
+              leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
+            >
+              <MenuGroup title="Type">
+                {RES_TYPES.map((c) => (
+                  <MenuChoice
+                    key={c.value}
+                    label={c.label}
+                    selected={typeFilter === c.value}
+                    onSelect={() => setTypeFilter(c.value)}
+                  />
+                ))}
+              </MenuGroup>
+            </ToolbarMenu>
+          </span>
+
+          {/* A round + on a phone; the worded button on desktop. */}
+          <span className="sm:hidden">
+            <RoundAddButton onClick={onCreate} ariaLabel="Add resource" />
+          </span>
+          <button
+            onClick={onCreate}
+            className="hidden h-9 items-center rounded-md border-2 border-primary px-3 text-sm font-medium text-primary hover:bg-primary-soft sm:inline-flex"
+          >
+            Add resource
+          </button>
+        </div>
+      }
+    >
+      <ResourcesList
+        goal={goal}
+        query={query}
+        sort={sort}
+        typeFilter={typeFilter}
+      />
+    </Section>
+  );
+}
+
+export function ResourcesList({
+  goal,
+  query = "",
+  sort = "recent",
+  typeFilter = "all",
+}: {
+  goal: Goal;
+  /**
+   * The search, sort and filter now live in the **section header**, beside the word "Resources"
+   * (owner, 2026-08-17) — so the list is told what to show rather than owning the controls. They
+   * used to sit in a row inside the body, which is why the page had a third answer to a question
+   * every other list on the site already answered in the header.
+   */
+  query?: string;
+  sort?: ResSort;
+  typeFilter?: ResType;
+}) {
   const removeResource = useSpira((s) => s.removeResource);
   const loadResourceFile = useSpira((s) => s.loadResourceFile);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -245,35 +457,67 @@ export function ResourcesList({ goal }: { goal: Goal }) {
   const [pendingDelete, setPendingDelete] = useState<Resource | null>(null);
   const detach = useDetachResource(goal);
 
-  if (goal.resources.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground italic">
-        Capture notes, links, files, and emails that support this goal.
-      </p>
-    );
-  }
+  const shown = useMemo(() => {
+    let list = goal.resources.slice();
+    if (typeFilter !== "all") list = list.filter((r) => r.type === typeFilter);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) => {
+        const parts: (string | undefined)[] = [resourceDisplayName(r)];
+        if (r.type === "link") parts.push(r.url);
+        if (r.type === "email") parts.push(r.name, r.email, r.role);
+        if (r.type === "note") parts.push(r.body.replace(/<[^>]+>/g, " "));
+        return parts.filter(Boolean).join(" ").toLowerCase().includes(q);
+      });
+    }
+    if (sort === "name") {
+      list.sort((a, b) =>
+        resourceDisplayName(a).localeCompare(resourceDisplayName(b)),
+      );
+    } else if (sort === "type") {
+      list.sort(
+        (a, b) =>
+          a.type.localeCompare(b.type) ||
+          resourceDisplayName(a).localeCompare(resourceDisplayName(b)),
+      );
+    }
+    // "recent" keeps the server's as-added order (what `goal.resources` already is).
+    return list;
+  }, [goal.resources, typeFilter, query, sort]);
+
+  const hasResources = goal.resources.length > 0;
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {goal.resources.map((r) => (
-          <ResourceCard
-            key={r.id}
-            resource={r}
-            // File contents are not in the goals list (lazy) — fetch them on demand for the
-            // card's copy/download actions.
-            loadFile={() => loadResourceFile(goal.id, r.id)}
-            onOpen={() => {
-              if (r.type === "link" && isSafeHttpUrl(r.url))
-                window.open(r.url, "_blank", "noopener,noreferrer");
-              else setPreviewId(r.id);
-            }}
-            // Always ask. Deleting an UNATTACHED resource used to happen on the spot, with no
-            // confirmation at all — the one case where the loss is silent and irreversible.
-            onRemove={() => setPendingDelete(r)}
-          />
-        ))}
-      </div>
+      {!hasResources ? (
+        <p className="text-sm text-muted-foreground italic">
+          Capture notes, links, files, and emails that support this goal.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No resources match the search or filter.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {shown.map((r) => (
+            <ResourceCard
+              key={r.id}
+              resource={r}
+              // File contents are not in the goals list (lazy) — fetch them on demand for the
+              // card's copy/download actions.
+              loadFile={() => loadResourceFile(goal.id, r.id)}
+              onOpen={() => {
+                if (r.type === "link" && isSafeHttpUrl(r.url))
+                  window.open(r.url, "_blank", "noopener,noreferrer");
+                else setPreviewId(r.id);
+              }}
+              // Always ask. Deleting an UNATTACHED resource used to happen on the spot, with no
+              // confirmation at all — the one case where the loss is silent and irreversible.
+              onRemove={() => setPendingDelete(r)}
+            />
+          ))}
+        </div>
+      )}
 
       <ResourcePreview
         goalId={goal.id}
@@ -482,28 +726,28 @@ function ResourceCard({
     { bg: string; text: string; border: string; icon: string }
   > = {
     note: {
-      bg: "bg-[#f0f9ff]",
-      text: "text-[#0c69a3]",
-      border: "border-[#bae2fd]",
-      icon: "text-[#0c69a3]",
+      bg: "bg-[#F4F7FF]",
+      text: "text-[#005397]",
+      border: "border-[#D4E3FF]",
+      icon: "text-[#005397]",
     },
     link: {
-      bg: "bg-[#f0fdf4]",
-      text: "text-[#15803d]",
-      border: "border-[#b7e4c7]",
-      icon: "text-[#15803d]",
+      bg: "bg-[#F0FCFB]",
+      text: "text-[#007A4B]",
+      border: "border-[#BCEECE]",
+      icon: "text-[#007A4B]",
     },
     file: {
-      bg: "bg-[#fef3c7]",
-      text: "text-[#92400e]",
-      border: "border-[#fde68a]",
-      icon: "text-[#92400e]",
+      bg: "bg-[#FFF2DF]",
+      text: "text-[#9F2013]",
+      border: "border-[#FFDEA1]",
+      icon: "text-[#9F2013]",
     },
     email: {
-      bg: "bg-[#faf5ff]",
-      text: "text-[#7c3aed]",
-      border: "border-[#e9d5ff]",
-      icon: "text-[#7c3aed]",
+      bg: "bg-[#F9F5FE]",
+      text: "text-[#6E56CF]",
+      border: "border-[#E6DFF9]",
+      icon: "text-[#6E56CF]",
     },
   };
 
@@ -938,7 +1182,7 @@ function PreviewBody({
             rel="noreferrer"
             className="inline-flex items-center gap-2 link-action text-sm font-semibold"
           >
-            <ExternalLink className="h-4 w-4" />
+            <OpenNewWindow className="h-4 w-4" />
             {resource.url}
           </a>
         )}
@@ -1252,21 +1496,23 @@ function MobileNoteBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 bg-surface px-5 pt-5 pb-2">
+      {/* A Kale header band, like the Android note editor's teal top bar — so the drawer isn't a
+          single white sheet. Everything on the band is white (brand rule: white copy on teal). */}
+      <div className="shrink-0 bg-primary px-5 pt-5 pb-3 text-white">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
             Note
           </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handleCopy}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
               aria-label="Copy as plain text"
               title={copied ? "Copied!" : "Copy as plain text"}
             >
               {copied ? (
-                <Check className="h-4.5 w-4.5 text-green-600" />
+                <Check className="h-4.5 w-4.5 text-white" />
               ) : (
                 <Copy className="h-4.5 w-4.5" />
               )}
@@ -1275,7 +1521,7 @@ function MobileNoteBody({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
                   aria-label="Download as…"
                   title="Download as…"
                 >
@@ -1342,7 +1588,7 @@ function MobileNoteBody({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
               aria-label="Close note"
               title="Close note"
             >
@@ -1355,7 +1601,7 @@ function MobileNoteBody({
           onChange={onTitleChange}
           maxLength={FIELD_LIMITS.resourceLabel}
           maxLengthLabel="Note title"
-          className="font-display text-2xl w-full"
+          className="font-display text-2xl w-full text-white placeholder:text-white/60 caret-white"
           placeholder="Note title"
         />
       </div>

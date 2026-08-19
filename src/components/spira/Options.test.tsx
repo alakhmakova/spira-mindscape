@@ -94,7 +94,7 @@ describe("OptionsList — selection", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Select strategy" }));
+    await user.click(screen.getByRole("button", { name: "Select option" }));
 
     expect(store.selectOption).toHaveBeenCalledWith("goal-1", "o1");
     expect(store.updateOption).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe("OptionsList — selection", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Deselect strategy" }));
+    await user.click(screen.getByRole("button", { name: "Deselect option" }));
 
     expect(store.updateOption).toHaveBeenCalledWith("goal-1", "o1", {
       selected: false,
@@ -136,13 +136,13 @@ describe("OptionsList — rating cycle", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Rate strategy" }));
+    await user.click(screen.getByRole("button", { name: "Rate option" }));
 
     expect(store.setOptionStatus).toHaveBeenCalledWith("goal-1", "o1", to);
   });
 });
 
-// ── Add strategy ─────────────────────────────────────────────────────────────
+// ── Add option ─────────────────────────────────────────────────────────────
 
 describe("OptionsList — add strategy", () => {
   it("adds a strategy on Enter and clears the input", async () => {
@@ -155,10 +155,10 @@ describe("OptionsList — add strategy", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText("Add a strategy…");
-    await user.type(input, "New strategy{Enter}");
+    const input = screen.getByPlaceholderText("Add an option…");
+    await user.type(input, "New option{Enter}");
 
-    expect(store.addOption).toHaveBeenCalledWith("goal-1", "New strategy");
+    expect(store.addOption).toHaveBeenCalledWith("goal-1", "New option");
     expect(input).toHaveValue("");
   });
 
@@ -173,7 +173,7 @@ describe("OptionsList — add strategy", () => {
     );
 
     await user.type(
-      screen.getByPlaceholderText("Add a strategy…"),
+      screen.getByPlaceholderText("Add an option…"),
       "   {Enter}",
     );
 
@@ -190,7 +190,7 @@ describe("OptionsList — add strategy", () => {
     );
 
     // Set the (long) value in one shot — typing char-by-char would be needlessly slow.
-    const input = screen.getByPlaceholderText("Add a strategy…");
+    const input = screen.getByPlaceholderText("Add an option…");
     const tooLong = "x".repeat(FIELD_LIMITS.optionText + 1);
     fireEvent.change(input, { target: { value: tooLong } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -215,7 +215,7 @@ describe("OptionsList — remove strategy", () => {
 
     const beta = screen.getByText("Beta").closest("li")!;
     await user.click(
-      within(beta).getByRole("button", { name: "Strategy actions" }),
+      within(beta).getByRole("button", { name: "Option actions" }),
     );
     // The menu is portalled out of the card, so query it from the document.
     await user.click(screen.getByRole("menuitem", { name: "Delete option" }));
@@ -237,10 +237,10 @@ describe("OptionsList — reorder mode", () => {
     );
 
     expect(
-      screen.queryByPlaceholderText("Add a strategy…"),
+      screen.queryByPlaceholderText("Add an option…"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Strategy actions" }),
+      screen.queryByRole("button", { name: "Option actions" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Drag cards to reorder.")).toBeInTheDocument();
   });
@@ -306,7 +306,7 @@ describe("OptionsList — Show more toggle", () => {
     const toggle = await screen.findByRole("button", { name: "Show more" });
     // Its own line: the toggle is a SIBLING that follows the text block, never a child of the
     // clamped text (where it would sit inline on the last line).
-    const text = screen.getByLabelText("Edit strategy");
+    const text = screen.getByLabelText("Edit option");
     expect(text.contains(toggle)).toBe(false);
     expect(
       text.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,

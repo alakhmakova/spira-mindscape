@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.spiramindscape.android.data.ai.AiApi
+import com.spiramindscape.android.ui.components.SpiraNoticeCard
+import com.spiramindscape.android.ui.components.SpiraNoticeKind
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraBadge
 import com.spiramindscape.android.ui.components.SpiraBadgeTone
@@ -226,11 +228,9 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
 
         message?.let {
             Spacer(Modifier.height(12.dp))
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            // The app's one notice card. A key that wouldn't save used to say so in a line of small
+            // red type, which read as a field hint rather than as something that had gone wrong.
+            SpiraNoticeCard(message = it, kind = SpiraNoticeKind.Error, onDismiss = { message = null })
         }
 
         Spacer(Modifier.height(16.dp))
@@ -255,7 +255,7 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
 @Composable
 private fun Kicker(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(SpiraIcons.NavKey, contentDescription = null, tint = Kale500, modifier = Modifier.size(14.dp))
+        Icon(SpiraIcons.Key, contentDescription = null, tint = Kale500, modifier = Modifier.size(14.dp))
         Spacer(Modifier.size(6.dp))
         Text(
             text.uppercase(),

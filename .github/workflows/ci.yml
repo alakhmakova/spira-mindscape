@@ -377,10 +377,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Only Chromium — the suite is a functional check, not a cross-browser matrix, and
-      # --with-deps pulls the system libraries the headless browser needs on the runner.
+      # The browser binary comes from Playwright's own CDN and changes only when the package does,
+      # so cache it: a hit turns the download below into a no-op.
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+
+      # **apt is best-effort here, and must never decide this job** (BUG-043).
+      #
+      # `playwright install --with-deps` shells out to apt, and the runner's Ubuntu mirror stalls
+      # regularly: on 2026-08-19 it fetched three InRelease files and then went silent — nineteen
+      # minutes on the first run and again on a re-run, with no test executed. Giving apt explicit
+      # `Acquire::*::Timeout` settings did **not** help; the second attempt stalled in exactly the
+      # same place and only the step budget stopped it. (Same shape as the 15-minute stall on
+      # 2026-08-06.)
+      #
+      # So the libraries are no longer a gate. The `ubuntu-24.04` runner image ships Google Chrome
+      # and Chromium, which means the shared libraries Playwright's own Chromium needs are already
+      # installed — this step is belt-and-braces for the day that stops being true, not a
+      # prerequisite. `continue-on-error` keeps a dead mirror from failing a run whose tests are
+      # fine, and if a library really is missing the browser fails to launch in the E2E step with
+      # a message that names it.
+      - name: Install Playwright system libraries (best-effort)
+        continue-on-error: true
+        timeout-minutes: 4
+        run: npx playwright install-deps chromium
+
+      # Only Chromium — the suite is a functional check, not a cross-browser matrix. This half
+      # comes from Playwright's CDN, is cached above, and is the one that actually has to work.
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: npx playwright install chromium
 
       # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
       - name: Cache Maven distribution (wrapper)

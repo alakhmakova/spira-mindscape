@@ -16,7 +16,7 @@ import {
   Target as TargetIcon,
   Flag,
   CheckSquare,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { Link } from "@tanstack/react-router";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";

@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "@/components/spira/icons";
 
 type ErrorScreenProps = {
   /** Server trace id, when the failure came from a backend call the user can quote. */

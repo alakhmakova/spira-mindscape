@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.spiramindscape.android.data.goals.ChecklistItemModel
 import com.spiramindscape.android.data.goals.ResourceItem
@@ -80,5 +82,93 @@ class VisualCheckTargetCardTest : VisualCheckTestBase() {
         }
         compose.waitForIdle()
         saveWindow("target-cards")
+    }
+
+    /**
+     * The numeric card **opened**, which is where the owner found four faults at once on
+     * 2026-08-14: the ± buttons were heavy grey squares, the inner bar was teal where the web has
+     * always had it warm, the value fields were fixed-width so "65 / 54 kg" read as four things
+     * scattered across the row, and the "(from …)" group was pushed off to the right.
+     *
+     * None of that fails an assertion. Only the picture shows it.
+     */
+    @Test
+    @Config(qualifiers = "w411dp-h900dp")
+    fun `the opened numeric card`() {
+        val target = TargetItem.Numeric(
+            id = "t9", title = "Lose weight", progress = 0.2f,
+            deadline = null, achieved = false,
+            current = 65.0, total = 54.0, start = 67.7, unit = "kg",
+        )
+
+        compose.activityRule.scenario.onActivity { }
+        compose.setContent {
+            SpiraTheme {
+                ProvideInlineResources(InlineResourcesValue(resources = emptyList(), openResource = {})) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(16.dp),
+                    ) { TargetCard(target, GoalWorkspaceActions()) }
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Update progress").performClick()
+        compose.waitForIdle()
+        saveWindow("target-card-open")
+    }
+
+    /**
+     * The **checklist** card opened — the surface the owner corrected on 2026-08-18. Three things
+     * to look at, none of which an assertion can see:
+     *
+     *  - the round check sits on the task's **first line**, not halfway down a task that wraps;
+     *  - a task still to do wears Gravity's **dashed ring**, a done one the Guava filled tick;
+     *  - **Add task**, **Attach resource** and **Delete target** are evenly spaced.
+     */
+    @Test
+    @Config(qualifiers = "w411dp-h900dp")
+    fun `the opened checklist card`() {
+        val target = TargetItem.Checklist(
+            id = "t10", title = "Lonespecifikation", progress = 0.5f,
+            deadline = null, achieved = false, createdAt = "2026-07-12T00:00:00Z",
+            items = listOf(
+                ChecklistItemModel("i1", "Collect the payslips", done = true),
+                // Long enough to wrap onto three lines: this is what puts the check's alignment
+                // on trial.
+                ChecklistItemModel(
+                    "i2",
+                    "Check every month that the tax has been paid correctly and that the " +
+                        "employer's contribution matches the payslip",
+                    done = false,
+                ),
+            ),
+        )
+
+        compose.activityRule.scenario.onActivity { }
+        compose.setContent {
+            SpiraTheme {
+                ProvideInlineResources(InlineResourcesValue(resources = emptyList(), openResource = {})) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(16.dp),
+                    ) { TargetCard(target, GoalWorkspaceActions()) }
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Update progress").performClick()
+        compose.waitForIdle()
+        saveWindow("target-card-checklist-open")
+
+        // And the row the "Add task" link swaps itself for: a dashed ring in front, and a circled
+        // plus to commit once there is something to add.
+        compose.onNodeWithText("Add task").performClick()
+        compose.waitForIdle()
+        saveWindow("target-card-add-task")
     }
 }

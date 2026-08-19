@@ -1182,18 +1182,45 @@ public class AiChatService {
         StringBuilder extras = new StringBuilder();
 
         for (ChatRequest.Attachment a : attachments) {
-            String mime = a.mime() == null ? "" : a.mime().toLowerCase();
-            String name = (a.name() == null || a.name().isBlank()) ? "attachment" : a.name();
+            // A resource attachment (BUG-030) carries an id, not bytes. Resolve it **owner-scoped**
+            // and fold it into the same handling as a device file: a file/image becomes a dataUrl
+            // that flows through the vision/PDF path below; a note/link/contact is appended as text.
+            // A resource that isn't the user's (or can't be read) becomes a neutral note — never a
+            // silent gap the model would fill with invention.
+            String mime;
+            String name;
+            String dataUrl;
+            if (a.isResource()) {
+                var resolved = resourceReadService.resolveOwnedAttachment(a.resourceId());
+                if (resolved.isEmpty()) {
+                    extras.append(attachmentBlock("resource",
+                            "(this resource is not available — it may have been deleted or is not "
+                            + "part of your goals; never invent its contents)"));
+                    continue;
+                }
+                var content = resolved.get();
+                if (!content.isFile()) {
+                    extras.append(attachmentBlock(content.name(), content.text()));
+                    continue;
+                }
+                name = content.name();
+                mime = content.mime() == null ? "" : content.mime().toLowerCase();
+                dataUrl = content.dataUrl();
+            } else {
+                mime = a.mime() == null ? "" : a.mime().toLowerCase();
+                name = (a.name() == null || a.name().isBlank()) ? "attachment" : a.name();
+                dataUrl = a.dataUrl();
+            }
 
             if (VisionSupport.isVisionMime(mime)) {
-                LlmImage img = VisionSupport.fromDataUrl(a.dataUrl());
+                LlmImage img = VisionSupport.fromDataUrl(dataUrl);
                 if (img == null) {
                     extras.append(attachmentBlock(name, "(image could not be read)"));
                     continue;
                 }
                 // Read the text out of it when we can — this is what makes a photo of
                 // handwriting usable at all, and it works whatever chat model is selected.
-                String ocr = vision.readText(a.dataUrl());
+                String ocr = vision.readText(dataUrl);
                 if (vision.modelCanSee()) {
                     images.add(img);
                     extras.append("\n\n[Attached image: ").append(name).append("]");
@@ -1205,16 +1232,16 @@ public class AiChatService {
                             ocr.isBlank() ? imageUnreadableNote(vision) : imageTextNote(ocr)));
                 }
             } else if (mime.contains("pdf")) {
-                String text = ResourceTextExtractor.extractPdfText(a.dataUrl(), ATTACHMENT_TEXT_MAX_CHARS);
+                String text = ResourceTextExtractor.extractPdfText(dataUrl, ATTACHMENT_TEXT_MAX_CHARS);
                 // A scanned PDF has no text layer — OCR is exactly what it needs.
-                if (text.isBlank()) text = vision.readText(a.dataUrl());
+                if (text.isBlank()) text = vision.readText(dataUrl);
                 extras.append(attachmentBlock(name, text.isBlank()
                         ? "(this PDF has no extractable text — it is likely scanned/image-only "
                           + "and could not be read by OCR; ask the user to paste the text, and "
                           + "never invent its contents)"
                         : text));
             } else if (isDocx(mime, name)) {
-                String text = DocxTextExtractor.extractDocxText(a.dataUrl(), ATTACHMENT_TEXT_MAX_CHARS);
+                String text = DocxTextExtractor.extractDocxText(dataUrl, ATTACHMENT_TEXT_MAX_CHARS);
                 extras.append(attachmentBlock(name, text.isBlank()
                         ? "(this DOCX had no readable text)"
                         : text));
@@ -1223,7 +1250,14 @@ public class AiChatService {
             }
         }
 
-        String text = request.message() + extras;
+        // An attachment-only send (a photo or resource with no typed question) is allowed. Give the
+        // model a plain instruction in that case, so it has something to act on rather than a lone
+        // fenced block.
+        String message = request.message();
+        String prompt = (message == null || message.isBlank())
+                ? "Please read the attached file(s) and help me with them."
+                : message;
+        String text = prompt + extras;
         return new LlmMessage("user", text, null, null, images.isEmpty() ? null : images);
     }
 

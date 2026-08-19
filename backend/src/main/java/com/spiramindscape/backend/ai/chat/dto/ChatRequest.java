@@ -1,7 +1,7 @@
 package com.spiramindscape.backend.ai.chat.dto;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -10,7 +10,13 @@ public record ChatRequest(
         /** Goal ID to scope the conversation. Null means global (all-goals) context. */
         Long goalId,
 
-        @NotBlank
+        /**
+         * The user's text. May be **blank when the message carries attachments** — sending a photo
+         * or a resource on its own, with no typed question, is allowed (the server supplies a
+         * default prompt). It is only required when there is nothing else to send; see
+         * {@link #isNotEmpty()}. A blank-message-only request used to 400 with "must not be blank",
+         * which is exactly what an attachment-only send from the phone hit (BUG-030 follow-up).
+         */
         @Size(max = 10_000)
         String message,
 
@@ -57,6 +63,18 @@ public record ChatRequest(
         @Size(max = 6, message = "At most 6 files can be attached to a message")
         java.util.List<Attachment> attachments
 ) {
+    /**
+     * A request must carry **something** — text, or at least one attachment. This replaces the old
+     * {@code @NotBlank} on {@code message}, which rejected an attachment-only send (a photo with no
+     * typed question) as a 400.
+     */
+    @AssertTrue(message = "A message needs text or at least one attachment")
+    public boolean isNotEmpty() {
+        boolean hasText = message != null && !message.isBlank();
+        boolean hasAttachments = attachments != null && !attachments.isEmpty();
+        return hasText || hasAttachments;
+    }
+
     /** Backwards-compatible constructor for callers/tests that predate attachments. */
     public ChatRequest(
             Long goalId,
@@ -73,15 +91,48 @@ public record ChatRequest(
     public record MessageEntry(String role, String content) {}
 
     /**
-     * One directly-attached file. {@code dataUrl} is a
-     * {@code data:<mime>;base64,<payload>} URL (same shape as a stored file
-     * resource); {@code mime} decides how it is used (image → vision, PDF/DOCX →
-     * extracted text). Size is bounded to keep a request within sane limits
-     * (~5 MB of file ≈ 6.8 MB base64; the cap leaves headroom).
+     * One file attached to this message, from one of two sources (BUG-030):
+     *
+     * <ul>
+     *   <li><b>A device file</b> — {@code dataUrl} carries the bytes as a
+     *       {@code data:<mime>;base64,<payload>} URL, and {@code mime} decides how it is used
+     *       (image → vision, PDF/DOCX → extracted text). Bounded to keep a request sane
+     *       (~5 MB of file ≈ 6.8 MB base64; the cap leaves headroom).</li>
+     *   <li><b>A saved resource</b> — {@code resourceId} names one of the goal's existing
+     *       resources and {@code dataUrl} is omitted. The server inlines its bytes/text itself,
+     *       so the client never re-uploads what the backend already holds. The id is
+     *       user-supplied and untrusted: the server re-checks the resource belongs to the
+     *       requesting user before reading it (see {@code ResourceReadService}).</li>
+     * </ul>
+     *
+     * Either {@code dataUrl} or {@code resourceId} must be present. Both are ephemeral — an
+     * attachment informs only this turn and is never persisted.
      */
     public record Attachment(
             @Size(max = 300) String name,
-            @NotBlank @Size(max = 200) String mime,
-            @NotBlank @Size(max = 7_500_000, message = "Attached file is too large") String dataUrl
-    ) {}
+            @Size(max = 200) String mime,
+            @Size(max = 7_500_000, message = "Attached file is too large") String dataUrl,
+            Long resourceId
+    ) {
+        /** Legacy shape (device file only), kept so existing callers/tests compile unchanged. */
+        public Attachment(String name, String mime, String dataUrl) {
+            this(name, mime, dataUrl, null);
+        }
+
+        /** A resource attachment carries an id and no inline bytes. */
+        public boolean isResource() {
+            return resourceId != null;
+        }
+
+        /**
+         * Exactly one source must be given. Validated so a request can neither smuggle both
+         * (ambiguous) nor attach nothing (a blank chip).
+         */
+        @jakarta.validation.constraints.AssertTrue(
+                message = "An attachment needs either a file or a resource id, not both or neither")
+        public boolean isExactlyOneSource() {
+            boolean hasData = dataUrl != null && !dataUrl.isBlank();
+            return hasData ^ (resourceId != null);
+        }
+    }
 }

@@ -162,9 +162,15 @@ fun CircularProgress(
     strokeWidth: androidx.compose.ui.unit.Dp = 5.dp,
 ) {
     val p = progress.coerceIn(0f, 1f)
-    val track = MaterialTheme.spiraExtras.surfaceSunken
-    // Orange while in progress, the app's primary (teal) once complete.
-    val fill = if (p >= 1f) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFFEA580C)
+    // The **Contrast** variant (CLAUDE.md → "Progress bars", owner 2026-08-17): Brand-200 track
+    // `#E5F4F3` with a Reserved-700 `#E4523E` fill — the two brand colours against each other
+    // rather than two steps of one, so a ring reads at a glance down a long list. This ring is
+    // drawn on the All-goals card and nowhere else, which is exactly where that pair belongs; the
+    // target card keeps Guava→Kale, because there the colour still has to carry done-ness.
+    //
+    // Never the old #EA580C orange, never a grey track.
+    val track = androidx.compose.ui.graphics.Color(0xFFE5F4F3)
+    val fill = androidx.compose.ui.graphics.Color(0xFFE4523E)
     Box(Modifier.size(size).then(modifier), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val sw = strokeWidth.toPx()
@@ -191,14 +197,14 @@ fun CircularProgress(
     }
 }
 
-/** Themed linear progress bar (teal fill on a sunken track). */
+/** Themed linear progress bar — the **Kale** progress variant (Kale-500 fill on a Kale-300 track). */
 @Composable
 fun SpiraLinearProgress(progress: Float, modifier: Modifier = Modifier) {
     androidx.compose.material3.LinearProgressIndicator(
         progress = { progress.coerceIn(0f, 1f) },
         modifier = modifier.height(8.dp),
         color = MaterialTheme.colorScheme.primary,
-        trackColor = MaterialTheme.spiraExtras.surfaceSunken,
+        trackColor = com.spiramindscape.android.ui.theme.Kale300,
         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
     )
 }

@@ -71,15 +71,13 @@ fun SpiraTopBar(
                 Icon(SpiraIcons.Search, contentDescription = "Search", modifier = Modifier.size(22.dp))
             }
             IconButton(onClick = onAssistant) {
-                Icon(SpiraIcons.NavAi, contentDescription = "AI assistant", modifier = Modifier.size(21.dp))
+                Icon(SpiraIcons.Sparkles, contentDescription = "AI assistant", modifier = Modifier.size(21.dp))
             }
+            // A bare figure, not a disc: the translucent circle behind it was the only chip in a
+            // bar of plain marks, and on the teal band it read as a half-loaded avatar. Tapping it
+            // opens the account's own page (Settings), not the navigation drawer.
             IconButton(onClick = onProfile) {
-                Box(
-                    Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(SpiraIcons.UserRound, contentDescription = "Profile", modifier = Modifier.size(18.dp))
-                }
+                Icon(SpiraIcons.User, contentDescription = "Account", modifier = Modifier.size(22.dp))
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(

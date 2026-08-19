@@ -138,6 +138,9 @@ fun AiChatHost(
                     .zIndex(3f)
                     .offset { IntOffset(0, (heightPx - offset.value).roundToInt()) }
                     .clip(RoundedCornerShape(topStart = DRAWER_CORNER, topEnd = DRAWER_CORNER))
+                    // Painted here as well as by the panel: the corners are clipped from THIS box,
+                    // so anything the panel doesn't cover would show the page through the curve.
+                    .background(PANEL_CHROME)
                     // The whole drawer is draggable downwards: it holds nothing that scrolls
                     // sideways, and the message list scrolls vertically *inside* it, so the
                     // gesture is only ambiguous at the very top — which is where the handle is.

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, FileWarning, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Loader2,
+  FileWarning,
+  ZoomIn,
+  ZoomOut,
+} from "@/components/spira/icons";
 import * as pdfjsLib from "pdfjs-dist";
 // Vite serves the worker as a same-origin asset (?url → hashed file under /assets),
 // so it satisfies the CSP without any external host.

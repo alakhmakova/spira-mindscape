@@ -4,7 +4,7 @@
 @source "../src";
 @import "tw-animate-css";
 
-/* ── Gusto brand fonts (GCentra body + ITC Clearface headings) ───────────────────────
+/* ── Brand fonts (GCentra body + ITC Clearface headings) ────────────────────────────
  * LICENSED fonts, present in `public/fonts/` (see public/fonts/README.md). GCentra is the SOLE
  * sans (Book 400 + Medium 500); ITC Clearface is the headline serif. `local(...)` is tried first
  * so a machine with the font installed skips the fetch. Playfair Display is kept only as a serif
@@ -91,6 +91,243 @@
   ascent-override: 74%;
   descent-override: 26%;
   line-gap-override: 0%;
+}
+
+/* ── Candidate body faces (GRO-122) ───────────────────────────────────────────
+ *
+ * The owner is choosing Spira's sans and wants to see each one in the real product rather than
+ * on a specimen sheet, so every candidate is bundled and the Settings page's Fonts tab swaps
+ * `--font-sans` / `--font-display` at runtime (see `src/lib/spira/app-font.ts`). GCentra stays
+ * the default and is declared above.
+ *
+ * The list was replaced wholesale on 2026-08-14: the earlier candidates are gone and these are
+ * the owner's own shortlist, all grotesques and all but Archivo carrying Cyrillic.
+ *
+ * These are candidates, not brand faces: **no `ascent-override`**. GCentra's overrides exist to
+ * keep body text from shifting inside its line box against adjacent icons, but forcing every
+ * candidate onto GCentra's metrics would hide exactly the difference the owner is looking at.
+ *
+ * Every file is subset to Latin + Cyrillic — twelve families at two weights is otherwise 5.9 MB
+ * of glyphs the app never draws. Licences stay with each foundry; all are free for commercial
+ * use.
+ */
+@font-face {
+  font-family: "Tilda Sans";
+  src: url("/fonts/TildaSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tilda Sans";
+  src: url("/fonts/TildaSans-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Root UI";
+  src: url("/fonts/PtRootUi-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Root UI";
+  src: url("/fonts/PtRootUi-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fixel";
+  src: url("/fonts/Fixel-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fixel";
+  src: url("/fonts/Fixel-Medium.otf") format("opentype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Garet";
+  src: url("/fonts/Garet-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Garet";
+  src: url("/fonts/Garet-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bartina";
+  src: url("/fonts/Bartina-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bartina";
+  src: url("/fonts/Bartina-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Liberation Sans";
+  src: url("/fonts/LiberationSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Liberation Sans";
+  src: url("/fonts/LiberationSans-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DejaVu Sans";
+  src: url("/fonts/DejavuSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DejaVu Sans";
+  src: url("/fonts/DejavuSans-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+/* Futura Futuris C — a real Futura with Cyrillic, sent by the owner (2026-08-17). The only
+   candidate here shipped as woff2 rather than ttf/otf: the archive carried woff2 and it is both
+   the smallest and universally supported, so there was nothing to gain by converting it.
+
+   **Shifted down a weight** (owner, 2026-08-17: "слишком жирный"). The family's regular is a
+   sturdy face, and at 14–15px it read heavier than every other candidate in the list — so
+   **Light** carries 400 and the family's **regular** plays the Medium/heavy role. The Bold is not
+   used at all. */
+@font-face {
+  font-family: "Futura Futuris";
+  src: url("/fonts/FuturaFuturis-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Futura Futuris";
+  src: url("/fonts/FuturaFuturis-Medium.woff2") format("woff2");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/Archivo-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/Archivo-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Arimo";
+  src: url("/fonts/Arimo-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Arimo";
+  src: url("/fonts/Arimo-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IbmPlexSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IbmPlexSans-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("/fonts/Onest-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("/fonts/Onest-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Golos Text";
+  src: url("/fonts/GolosText-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Golos Text";
+  src: url("/fonts/GolosText-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/Montserrat-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Montserrat";
+  src: url("/fonts/Montserrat-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Jost";
+  src: url("/fonts/Jost-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Jost";
+  src: url("/fonts/Jost-Medium.ttf") format("truetype");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -299,6 +536,25 @@
   }
   .text-balance {
     text-wrap: balance;
+  }
+  /*
+   * The owner's gradient ring — a hairline border painted with a diagonal coral → violet → blue
+   * sweep instead of the flat grey one. Drawn with the two-background trick because a border
+   * cannot take a gradient directly: the paint-box fill covers the padding box, the gradient shows
+   * only in the 1px the transparent border leaves. Used by the target card's ± buttons; Android
+   * mirrors it with a `Brush.linearGradient` of the same three stops.
+   */
+  .gradient-ring {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(#fdfdfb, #fdfdfb) padding-box,
+      linear-gradient(
+          228.47deg,
+          #ff4833 48.94%,
+          #ed7ffe 89.8%,
+          #7f8eff 143.09%
+        )
+        border-box;
   }
   .num {
     font-family: var(--font-sans);

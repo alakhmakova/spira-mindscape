@@ -5,46 +5,38 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.spiramindscape.android.ui.icons.SpiraIcons
-import com.spiramindscape.android.ui.theme.Error200
 
 /**
- * An inline error banner for an action that failed without changing the screen.
+ * A notice sitting **inside a block** — an action that failed without changing the screen, a filter
+ * that hid everything, a fact the page needs to say.
  *
- * It exists because a failed delete or create previously produced nothing at all — no
- * navigation, no message, no log — which is indistinguishable from a dead button. It sits
- * above the content rather than replacing it, so the user keeps what they were looking at.
+ * It is the **same card as the toast** ([SpiraNoticeCard]), because the owner's reference for both
+ * is one picture (2026-08-18): a white card, a hairline, a filled semantic glyph on the left in the
+ * ramp's solid step, near-black type, an X on the right. Only the glyph and its ink change with
+ * [kind]. It used to be a red tint-filled block with red type, which made an error shout twice and
+ * left the app with two different shapes for one idea.
  *
- * Themed from the semantic `error` ramp (Guava is the brand accent and must never double as
- * a danger signal), on a light tint rather than a fill, with the same 1dp hairline and
- * rounding as the rest of the kit.
+ * It sits above the content rather than replacing it, so the user keeps what they were looking at.
+ * The original reason it exists: a failed delete or create produced nothing at all — no navigation,
+ * no message, no log — which is indistinguishable from a dead button.
  *
- * @param message the failure to show, or null to hide the banner
- * @param onDismiss clears the message
+ * @param message the message to show, or null to hide the banner
+ * @param onDismiss clears the message; pass null for a notice the user cannot dismiss (a "nothing
+ *   matches your filter" line stands until the filter changes, so an X on it would be a lie)
  */
 @Composable
 fun SpiraInlineBanner(
     message: String?,
-    onDismiss: () -> Unit,
+    onDismiss: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    kind: SpiraNoticeKind = SpiraNoticeKind.Error,
 ) {
     AnimatedVisibility(
         visible = message != null,
@@ -52,41 +44,15 @@ fun SpiraInlineBanner(
         exit = fadeOut() + shrinkVertically(),
         modifier = modifier,
     ) {
-        Surface(
-            color = Error200,
-            contentColor = MaterialTheme.colorScheme.error,
-            shape = MaterialTheme.shapes.medium,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+        SpiraNoticeCard(
+            message = message.orEmpty(),
+            kind = kind,
+            onDismiss = onDismiss,
             modifier = Modifier
-                .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 // Announced by TalkBack the moment it appears — the whole point is that the
-                // failure is not silent.
+                // message is not silent.
                 .semantics { liveRegion = LiveRegionMode.Polite },
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
-            ) {
-                Icon(
-                    imageVector = SpiraIcons.TriangleAlert,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = message.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = SpiraIcons.X,
-                        contentDescription = "Dismiss",
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-        }
+        )
     }
 }

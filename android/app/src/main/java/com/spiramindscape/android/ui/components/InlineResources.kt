@@ -3,6 +3,7 @@ package com.spiramindscape.android.ui.components
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -301,7 +304,9 @@ private fun buildInlineText(
                     continue
                 }
                 pushStringAnnotation(TAG_RESOURCE, resource.id)
-                appendInlineContent(iconIdFor(resource.type), " ")
+                // A link needs no leading glyph — the trailing open arrow after the name already
+                // says it opens out (owner, 2026-08-17). Other kinds keep their type icon.
+                if (resource.type != "link") appendInlineContent(iconIdFor(resource.type), " ")
                 withStyle(link) { append(resourceDisplayName(resource)) }
                 appendInlineContent(ICON_ARROW, " ")
                 pop()
@@ -340,8 +345,11 @@ private fun rememberInlineIcons(tint: Color): Map<String, InlineTextContent> {
             put(
                 ICON_ARROW,
                 InlineTextContent(slot) {
+                    // The **same mark the Resources page puts on "Open link"** — an arrow leaving a
+                    // square, not a bare arrow. A plain arrow says "up and to the right"; this one
+                    // says "this opens somewhere else", which is what tapping the chip does.
                     Icon(
-                        SpiraIcons.ArrowUpRight,
+                        SpiraIcons.ExternalLink,
                         contentDescription = null,
                         tint = tint,
                         modifier = Modifier.fillMaxSize(),
@@ -386,7 +394,7 @@ fun ElementActionsMenu(
 
     Box(modifier) {
         Icon(
-            if (vertical) SpiraIcons.KebabVertical else SpiraIcons.Kebab,
+            if (vertical) SpiraIcons.EllipsisVertical else SpiraIcons.Ellipsis,
             contentDescription = contentDescription,
             tint = tint ?: MaterialTheme.spiraExtras.mutedForeground,
             modifier = Modifier
@@ -450,7 +458,9 @@ fun AttachResourceButton(
         )
         Text(
             "Attach resource",
-            style = MaterialTheme.typography.bodyMedium,
+            // Trimmed leading, so the word sits on the plus's centre instead of riding above it —
+            // the line box reserves descender room this label never uses. See addActionTextStyle.
+            style = addActionTextStyle(),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -477,19 +487,72 @@ fun ResourcePickerSheet(
     onPick: (resourceId: String) -> Unit,
     attachedTo: String? = null,
 ) {
-    val ctx = LocalInlineResources.current ?: return
-    val all = ctx.resources
-    val attachable = if (attachedTo == null) all else all.filterNot { referencesResource(attachedTo, it.id) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.spiraExtras.surfaceRaised,
+        // The head is the sheet's own band, so a drag handle would sit on top of teal as a grey
+        // smudge. The X in the head closes it, plus the usual drag and back gesture.
+        dragHandle = null,
     ) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-            Text("Attach a resource", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(10.dp))
+        ResourcePickerSheetContent(onDismiss, onPick, attachedTo)
+    }
+}
+
+/**
+ * The picker's card, without the [ModalBottomSheet] around it.
+ *
+ * Separate for the same reason `SpiraFilterSheetContent` is: a modal sheet renders in its **own
+ * window**, which the `VisualCheck*` screenshot helper (it draws the activity's decor view) cannot
+ * capture — so an open picker is simply absent from the PNG, and the check that should catch a
+ * search field crowding the head silently checks nothing.
+ */
+@Composable
+fun ResourcePickerSheetContent(
+    onDismiss: () -> Unit,
+    onPick: (resourceId: String) -> Unit,
+    attachedTo: String? = null,
+) {
+    val ctx = LocalInlineResources.current ?: return
+    val all = ctx.resources
+    val attachable = if (attachedTo == null) all else all.filterNot { referencesResource(attachedTo, it.id) }
+    // A goal accumulates resources faster than anything else on it, and this list has no sort and
+    // no filter — so on a real goal the one you want is somewhere below the fold (owner,
+    // 2026-08-18). It starts empty on every visit, like every other search in the app.
+    var query by remember { mutableStateOf("") }
+    val shown = attachable.filter { matchesResource(it, query) }
+
+    Column {
+        // **A Kale head** (owner, 2026-08-17) — white type on teal, the same band the app header
+        // carries, so the sheet reads as part of the app rather than a white box over it. The web
+        // picker is the same sheet with the same head now (`inline-resources.tsx`).
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Attach a resource",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                SpiraIcons.X,
+                contentDescription = "Close",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onDismiss)
+                    .padding(6.dp)
+                    .size(18.dp),
+            )
+        }
+        Column(Modifier.padding(horizontal = 20.dp).padding(top = 16.dp, bottom = 28.dp)) {
             Row(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -506,7 +569,19 @@ fun ResourcePickerSheet(
                     color = MaterialTheme.spiraExtras.mutedForeground,
                 )
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
+
+            // Offered from two resources up: below that the field is a control to read past on the
+            // way to a list you can already see whole.
+            if (attachable.size > 1) {
+                SpiraSearchField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = "Search resources",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
 
             if (attachable.isEmpty()) {
                 Box(
@@ -526,12 +601,19 @@ fun ResourcePickerSheet(
                         color = MaterialTheme.spiraExtras.mutedForeground,
                     )
                 }
+            } else if (shown.isEmpty()) {
+                // The list is not empty — the search emptied it, which is a warning rather than an
+                // empty state (CLAUDE.md § "Notices").
+                SpiraNoticeCard(
+                    message = "No resources match that search.",
+                    kind = SpiraNoticeKind.Warning,
+                )
             } else {
                 Column(
                     Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    attachable.forEach { resource ->
+                    shown.forEach { resource ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -566,6 +648,26 @@ fun ResourcePickerSheet(
             }
         }
     }
+}
+
+/**
+ * Does [resource] match [query]?
+ *
+ * The fields a person actually remembers a resource by: the name it is shown under, its title, a
+ * link's address, and a contact's name, address and role. **Not** a note's body — the picker shows
+ * only names, so matching on hidden text would offer rows with nothing in them to explain why.
+ */
+private fun matchesResource(resource: ResourceItem, query: String): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return listOf(
+        resourceDisplayName(resource),
+        resource.title,
+        resource.url,
+        resource.name,
+        resource.email,
+        resource.role,
+    ).any { it != null && it.contains(q, ignoreCase = true) }
 }
 
 /**

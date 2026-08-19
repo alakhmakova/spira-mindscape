@@ -1,6 +1,7 @@
 package com.spiramindscape.android.ui
 
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.ResourceItem
@@ -49,4 +50,29 @@ class VisualCheckResourcesTabTest : VisualCheckTestBase() {
         saveWindow("resources-tab")
     }
 
+    /**
+     * The **copy flash** (owner, 2026-08-18): copying is the one action with nothing to show for
+     * it, so the mark you pressed turns into `copy-check` for a couple of seconds. Rendered rather
+     * than asserted because what matters is that the tick is legible at 18dp inside the bordered
+     * button — an assertion on the icon would pass on a smudge.
+     */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun `a copy button shows the tick just after it is pressed`() {
+        compose.activityRule.scenario.onActivity { }
+        compose.setContent {
+            SpiraTheme { GoalWorkspaceScreen(state = GoalUiState.Content(goal), actions = GoalWorkspaceActions(), user = user) }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Resources").performClick()
+        compose.waitForIdle()
+        // Open the link card, which carries a Copy button beside "Open link".
+        compose.onNodeWithText("SEF appointment portal").performClick()
+        compose.waitForIdle()
+        saveWindow("resource-copy-before")
+
+        compose.onNodeWithContentDescription("Copy link").performClick()
+        compose.waitForIdle()
+        saveWindow("resource-copy-after")
+    }
 }

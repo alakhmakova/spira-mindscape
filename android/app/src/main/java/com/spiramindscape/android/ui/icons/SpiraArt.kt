@@ -22,7 +22,7 @@ object SpiraArt {
      * The target card's calendar: a hand-drawn spiral-bound page with a coloured header band and a
      * blank paper below it, which is where the card prints the month and day.
      *
-     * The artwork is the owner's (2026-08-07). Its own coral is `#F15F48`, a hair off the brand
+     * The artwork is the owner's (2026-08-07). Its own coral is `#F45D48`, a hair off the brand
      * accent; it is drawn in **Guava-500** so the tile stays inside the palette, and [bandColor]
      * lets an overdue tile take the semantic error red instead.
      */
@@ -100,7 +100,7 @@ object SpiraArt {
      *
      * It is art, not a glyph, so it is drawn with [androidx.compose.foundation.Image] rather than
      * `Icon`: an `Icon` would flatten all five paths to one tint and lose the plant. Its own greens
-     * (`#2BAAAC`, `#82D0D0`) sit a hair off the ramp and are drawn as **Kale-400/300**, the same
+     * (`#2BABAD`, `#8DD3D4`) sit a hair off the ramp and are drawn as **Kale-400/300**, the same
      * snap-to-palette the calendar art makes.
      */
     fun sprout(

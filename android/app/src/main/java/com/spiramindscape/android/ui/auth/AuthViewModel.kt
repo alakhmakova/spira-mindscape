@@ -13,6 +13,7 @@ import com.spiramindscape.android.core.SpiraLog
 import com.spiramindscape.android.data.auth.AuthApi
 import com.spiramindscape.android.data.auth.AuthClient
 import com.spiramindscape.android.data.auth.AuthException
+import java.io.InterruptedIOException
 import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.data.auth.GoogleSignInClient
 import com.spiramindscape.android.data.auth.IdTokenProvider
@@ -94,6 +95,14 @@ class AuthViewModel(
                 // email_verified, or signature). This is a server-side rejection.
                 SpiraLog.w(TAG, "signin_rejected_by_backend status=${e.code}", e)
                 _error.value = "Sign-in failed (server ${e.code})."
+            } catch (e: InterruptedIOException) {
+                // The server was reached but did not answer in time — a Cloud Run cold start, or a
+                // slow network. Said apart from the case below because it is NOT Google's half
+                // that failed, and calling it a Google failure sent a whole diagnosis down the
+                // wrong path once already (BUG-040). `SocketTimeoutException` (read) and OkHttp's
+                // own call-timeout exception are both this type.
+                SpiraLog.w(TAG, "signin_timed_out", e)
+                _error.value = "The server took too long to answer. Please try again."
             } catch (e: Exception) {
                 // Failed before/without reaching the backend — Credential Manager on the
                 // device (no Google account, SHA-1 / OAuth-client mismatch, Play Services).

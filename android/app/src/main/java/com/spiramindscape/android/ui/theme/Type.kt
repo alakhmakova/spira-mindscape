@@ -37,11 +37,11 @@ private val HeadingSerif = FontFamily(
 // Medium is registered for BOTH FontWeight.Medium (500) and FontWeight.Bold (700), so bold/semibold
 // text resolves to GCentra Medium with no faux-bold synthesis (Compose trusts the declared weight of
 // the Font entry) and never falls back to Roboto. There is no Roboto in the app.
-private val BodySans = FontFamily(
-    Font(R.font.gcentra_book, weight = FontWeight.Normal),
-    Font(R.font.gcentra_medium, weight = FontWeight.Medium),
-    Font(R.font.gcentra_medium, weight = FontWeight.Bold),
-)
+//
+// It lives in [AppFont.GCentra] now rather than here, because the body face is **switchable at
+// runtime** while the owner chooses one (Settings → Fonts, GRO-122). GCentra is still the default
+// and still the brand's face; nothing else about the scale moves when a candidate is tried.
+private val BodySans = AppFont.GCentra.fontFamily
 
 // Vertical-metrics normalisation. GCentra ships asymmetric metrics (OS/2 typo ascent/descent 700/300
 // with a 30%-of-em line-gap; hhea ascent a full em), so a naive swap would shift body/label text up
@@ -64,7 +64,14 @@ private val base = Typography()
 // balanced (tighter, but never touching).
 private val HeadlineTracking = (-0.01).em
 
-val SpiraTypography = base.copy(
+/**
+ * The type scale, given a body face.
+ *
+ * Only the sans slots take [bodySans]; the headline serif and every leading/tracking rule are
+ * font-independent by design (see the note at the top of this file), so trying a candidate changes
+ * exactly one thing — which is what makes the comparison worth anything.
+ */
+fun spiraTypography(bodySans: FontFamily = BodySans) = base.copy(
     // Headlines: serif + 110% leading + tight tracking.
     displayLarge = base.displayLarge.copy(
         fontFamily = HeadingSerif, fontWeight = FontWeight.Bold,
@@ -91,14 +98,17 @@ val SpiraTypography = base.copy(
         lineHeight = 24.sp, letterSpacing = HeadlineTracking,
     ).brandMetrics(),
     // Titles that are UI chrome (not headline serif) use the sans.
-    titleMedium = base.titleMedium.copy(fontFamily = BodySans).brandMetrics(),
-    titleSmall = base.titleSmall.copy(fontFamily = BodySans).brandMetrics(),
+    titleMedium = base.titleMedium.copy(fontFamily = bodySans).brandMetrics(),
+    titleSmall = base.titleSmall.copy(fontFamily = bodySans).brandMetrics(),
     // Body copy: sans, 130% leading for legibility (default tracking).
-    bodyLarge = base.bodyLarge.copy(fontFamily = BodySans, lineHeight = 21.sp).brandMetrics(),
-    bodyMedium = base.bodyMedium.copy(fontFamily = BodySans, lineHeight = 18.sp).brandMetrics(),
-    bodySmall = base.bodySmall.copy(fontFamily = BodySans, lineHeight = 16.sp).brandMetrics(),
+    bodyLarge = base.bodyLarge.copy(fontFamily = bodySans, lineHeight = 21.sp).brandMetrics(),
+    bodyMedium = base.bodyMedium.copy(fontFamily = bodySans, lineHeight = 18.sp).brandMetrics(),
+    bodySmall = base.bodySmall.copy(fontFamily = bodySans, lineHeight = 16.sp).brandMetrics(),
     // Labels (kickers, nav labels, badges): sans.
-    labelLarge = base.labelLarge.copy(fontFamily = BodySans).brandMetrics(),
-    labelMedium = base.labelMedium.copy(fontFamily = BodySans).brandMetrics(),
-    labelSmall = base.labelSmall.copy(fontFamily = BodySans).brandMetrics(),
+    labelLarge = base.labelLarge.copy(fontFamily = bodySans).brandMetrics(),
+    labelMedium = base.labelMedium.copy(fontFamily = bodySans).brandMetrics(),
+    labelSmall = base.labelSmall.copy(fontFamily = bodySans).brandMetrics(),
 )
+
+/** The default scale — GCentra body — for callers with no font choice to hand (previews, tests). */
+val SpiraTypography = spiraTypography()

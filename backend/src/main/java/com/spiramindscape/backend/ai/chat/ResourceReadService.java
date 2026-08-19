@@ -2,6 +2,7 @@ package com.spiramindscape.backend.ai.chat;
 
 import com.spiramindscape.backend.ai.provider.LlmImage;
 import com.spiramindscape.backend.ai.provider.VisionSupport;
+import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.resource.Resource;
 import com.spiramindscape.backend.resource.ResourceRepository;
 import org.springframework.stereotype.Service;
@@ -22,9 +23,78 @@ public class ResourceReadService {
     private static final int PDF_MAX_CHARS = 12000;
 
     private final ResourceRepository resourceRepository;
+    private final CurrentUserProvider currentUserProvider;
 
-    public ResourceReadService(ResourceRepository resourceRepository) {
+    public ResourceReadService(ResourceRepository resourceRepository,
+                               CurrentUserProvider currentUserProvider) {
         this.resourceRepository = resourceRepository;
+        this.currentUserProvider = currentUserProvider;
+    }
+
+    /**
+     * What a resource attached to a chat message (BUG-030) resolves to, once the server has
+     * confirmed it belongs to the requesting user. A **file/image** resource yields its
+     * {@code dataUrl} so it can ride the same vision / PDF / DOCX pipeline as a device file; a
+     * **note / link / contact** yields already-extracted {@code text}. Exactly one of the two is
+     * non-null.
+     */
+    public record AttachmentContent(String name, String mime, String dataUrl, String text) {
+        static AttachmentContent file(String name, String mime, String dataUrl) {
+            return new AttachmentContent(name, mime, dataUrl, null);
+        }
+
+        static AttachmentContent text(String name, String text) {
+            return new AttachmentContent(name, "text/plain", null, text);
+        }
+
+        public boolean isFile() {
+            return dataUrl != null;
+        }
+    }
+
+    /**
+     * Resolves a resource the user attached to a message, **owner-scoped**.
+     *
+     * The resource id is user-supplied and untrusted (BUG-030): a request could name any id,
+     * including another user's. So this loads the resource and returns it **only if its goal
+     * belongs to the current user** — otherwise {@link Optional#empty()}, which the caller turns
+     * into a neutral "unavailable" note. This is the same boundary
+     * {@code CrossUserIsolationIntegrationTest} guards elsewhere, checked here rather than trusted
+     * from the client.
+     *
+     * File/image resources come back as a {@code dataUrl}; notes, links and contacts come back as
+     * text (reusing the same readable forms the {@code read_resource} tool produces).
+     */
+    @Transactional(readOnly = true)
+    public Optional<AttachmentContent> resolveOwnedAttachment(Long resourceId) {
+        if (resourceId == null) return Optional.empty();
+        Optional<Resource> opt = resourceRepository.findById(resourceId);
+        if (opt.isEmpty()) return Optional.empty();
+
+        Resource r = opt.get();
+        Long ownerId = r.getGoal() == null || r.getGoal().getUser() == null
+                ? null : r.getGoal().getUser().getId();
+        Long currentId = currentUserProvider.getCurrentUser().getId();
+        if (ownerId == null || !ownerId.equals(currentId)) {
+            return Optional.empty(); // not this user's resource — never read it
+        }
+
+        String name = r.getName() == null || r.getName().isBlank() ? "resource" : r.getName();
+        String type = r.getType() == null ? "" : r.getType();
+        return switch (type) {
+            case "file" -> {
+                String dataUrl = r.getDataUrl();
+                yield (dataUrl == null || dataUrl.isBlank())
+                        ? Optional.empty()
+                        : Optional.of(AttachmentContent.file(name, r.getMime(), dataUrl));
+            }
+            case "note"  -> Optional.of(AttachmentContent.text(name,
+                    r.getBody() == null || r.getBody().isBlank() ? "(empty note)" : truncate(r.getBody(), NOTE_MAX_CHARS)));
+            case "link"  -> Optional.of(AttachmentContent.text(name,
+                    r.getUrl() == null ? "(no URL)" : "URL: " + r.getUrl()));
+            case "email" -> Optional.of(AttachmentContent.text(name, contactDetails(r)));
+            default -> Optional.empty();
+        };
     }
 
     /**

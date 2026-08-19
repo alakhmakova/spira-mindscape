@@ -72,17 +72,54 @@ class ChatRequestValidationTest {
     }
 
     @Test
-    void rejectsAttachmentWithBlankMimeOrDataUrl() {
+    void rejectsAttachmentWithNeitherFileNorResource() {
+        // Blank dataUrl and no resource id — a chip that carries nothing (BUG-030).
         ChatRequest req = withAttachments(List.of(
                 new ChatRequest.Attachment("x", "", "")));
 
-        Set<String> paths = violatingPaths(req);
-        assertThat(paths).anyMatch(p -> p.contains("mime"));
-        assertThat(paths).anyMatch(p -> p.contains("dataUrl"));
+        assertThat(violatingPaths(req)).anyMatch(p -> p.contains("exactlyOneSource"));
+    }
+
+    @Test
+    void rejectsAttachmentWithBothFileAndResource() {
+        // A dataUrl AND a resource id is ambiguous — exactly one source is allowed.
+        ChatRequest req = withAttachments(List.of(
+                new ChatRequest.Attachment("x", "application/pdf",
+                        "data:application/pdf;base64,AAAA", 42L)));
+
+        assertThat(violatingPaths(req)).anyMatch(p -> p.contains("exactlyOneSource"));
+    }
+
+    @Test
+    void acceptsAResourceAttachmentWithNoBytes() {
+        // A resource attachment carries only an id; the server inlines the bytes it already holds.
+        ChatRequest req = withAttachments(List.of(
+                new ChatRequest.Attachment("My PDF", null, null, 42L)));
+
+        assertThat(validator.validate(req)).isEmpty();
     }
 
     @Test
     void acceptsNoAttachments() {
         assertThat(validator.validate(withAttachments(null))).isEmpty();
+    }
+
+    @Test
+    void acceptsAttachmentOnlyWithBlankMessage() {
+        // A photo/resource with no typed question is a valid send — the server supplies a default
+        // prompt. This used to 400 with "must not be blank" (the attachment-only send from Android).
+        ChatRequest req = new ChatRequest(
+                1L, "", "ANTHROPIC", "chat", List.of(), null, null,
+                List.of(new ChatRequest.Attachment("p.jpg", "image/jpeg", "data:image/jpeg;base64,AAAA")));
+
+        assertThat(validator.validate(req)).isEmpty();
+    }
+
+    @Test
+    void rejectsAnEmptyMessageWithNoAttachments() {
+        // Nothing to send at all — blank text AND no attachments.
+        ChatRequest req = new ChatRequest(1L, "  ", "ANTHROPIC", "chat", List.of(), null, null, null);
+
+        assertThat(violatingPaths(req)).anyMatch(p -> p.contains("notEmpty"));
     }
 }

@@ -10,8 +10,22 @@ export type SortKey =
   | "title";
 export type SortDirection = "asc" | "desc";
 export type GoalStatusFilter = "all" | "achieved" | "not-achieved";
-/** The same three choices for a goal's targets ("done" is the target-side word for achieved). */
-export type TargetStatusFilter = "all" | "done" | "not-done";
+/**
+ * The state question for a goal's targets ("done" is the target-side word for achieved).
+ *
+ * `started` / `not-started` split what "not done" covers: a target with some progress on it is a
+ * very different thing from one nobody has touched, and only one of the two is worth a nudge.
+ */
+export type TargetStatusFilter =
+  | "all"
+  | "done"
+  | "not-done"
+  | "started"
+  | "not-started";
+/** The deadline question. "Overdue" follows the card's rule: past, and not yet achieved. */
+export type TargetDeadlineFilter = "all" | "overdue" | "not-overdue" | "none";
+/** The padlock question — whether progress is pinned (see `isProgressLocked`). */
+export type TargetLockFilter = "all" | "locked" | "unlocked";
 
 type State = {
   query: string;
@@ -22,6 +36,8 @@ type State = {
   confidence: string;
   status: GoalStatusFilter;
   targetStatus: TargetStatusFilter;
+  targetDeadline: TargetDeadlineFilter;
+  targetLock: TargetLockFilter;
   viewMode: "cards" | "table";
   setQuery: (q: string) => void;
   setSort: (s: SortKey) => void;
@@ -32,6 +48,8 @@ type State = {
   setConfidence: (value: string) => void;
   setStatus: (value: GoalStatusFilter) => void;
   setTargetStatus: (value: TargetStatusFilter) => void;
+  setTargetDeadline: (value: TargetDeadlineFilter) => void;
+  setTargetLock: (value: TargetLockFilter) => void;
   resetFilters: () => void;
   setViewMode: (v: "cards" | "table") => void;
 };
@@ -57,6 +75,8 @@ export const useShellFilters = create<State>()(
       // else it sticks (see the persist config below).
       status: "not-achieved",
       targetStatus: "not-done",
+      targetDeadline: "all",
+      targetLock: "all",
       viewMode: "cards",
       setQuery: (query) => set({ query }),
       setSort: (sort) => set({ sort }),
@@ -67,6 +87,8 @@ export const useShellFilters = create<State>()(
       setConfidence: (confidence) => set({ confidence }),
       setStatus: (status) => set({ status }),
       setTargetStatus: (targetStatus) => set({ targetStatus }),
+      setTargetDeadline: (targetDeadline) => set({ targetDeadline }),
+      setTargetLock: (targetLock) => set({ targetLock }),
       resetFilters: () =>
         set({
           deadlineFrom: "",
@@ -83,6 +105,8 @@ export const useShellFilters = create<State>()(
       partialize: (state) => ({
         status: state.status,
         targetStatus: state.targetStatus,
+        targetDeadline: state.targetDeadline,
+        targetLock: state.targetLock,
         viewMode: state.viewMode,
       }),
     },

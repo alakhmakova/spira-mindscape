@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +50,9 @@ import com.spiramindscape.android.ui.theme.Warning900
  * column of proposal cards a dozen of them shout at once. The one exception is `GROW`, which is an
  * acronym and is capitalised wherever it appears.
  */
+/** Every pill is this tall, so a row of them lines up whatever words they carry. */
+private val PILL_HEIGHT = 30.dp
+
 enum class SpiraBadgeTone(val outline: Color, val fill: Color) {
     /** The brand default — an active choice, a current selection. */
     Teal(Kale500, Brand100),
@@ -85,16 +89,18 @@ fun SpiraBadge(
      */
     iconModifier: Modifier = Modifier,
 ) {
+    // **Centred by layout, not by padding.** Two earlier attempts tuned vertical padding by eye —
+    // 7/3 pushed the word low, symmetric pushed it high — because padding cannot centre a glyph
+    // inside a line box whose ascent and descent are not symmetric. A fixed height with centred
+    // content lets the layout do it, and it comes out right for any font the Fonts tab picks
+    // (owner, 2026-08-17).
     Row(
         modifier
+            .height(PILL_HEIGHT)
             .clip(CircleShape)
             .background(tone.fill)
             .border(1.dp, tone.outline, CircleShape)
-            // Deliberately uneven: GCentra's ascent carries the capitals but its descent sits
-            // empty under a word like "Active", so a symmetric pill leaves the label visibly high.
-            // The extra 2dp on top drops the word onto the pill's optical centre; the total is
-            // unchanged, so the pill keeps its height.
-            .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 2.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -103,10 +109,8 @@ fun SpiraBadge(
         }
         Text(
             label,
-            // Trimmed metrics, not the scale's default: the type scale centres glyphs inside the
-            // *line box*, which is the right rule for text sitting beside icons but leaves a short
-            // label riding high in a pill — the line box reserves descender room the word may not
-            // use. Trimming the leading centres the word against the outline instead.
+            // Trimmed metrics **and** centred in the fixed height above: the trim removes the
+            // leading the word does not use, the layout centres what is left.
             style = MaterialTheme.typography.labelMedium.copy(
                 lineHeightStyle = LineHeightStyle(
                     alignment = LineHeightStyle.Alignment.Center,

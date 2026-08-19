@@ -12,6 +12,7 @@ import {
 } from "@tiptap/extension-text-style";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { toast } from "sonner";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -37,12 +38,35 @@ import {
   ChevronRight,
   Baseline,
   Eraser,
-  Copy,
   ClipboardPaste,
   Paintbrush,
   Type,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { cn } from "@/lib/utils";
+
+/**
+ * The words for a set of TipTap mark names, so a toast can say **what** was copied rather than
+ * "formatting copied". "Bold and italic copied" is the difference between a message that confirms
+ * and a message that only reassures.
+ *
+ * Android's editor says the same words for the same marks — keep the two in step.
+ */
+export function describeMarks(names: string[]): string {
+  const WORDS: Record<string, string> = {
+    bold: "Bold",
+    italic: "Italic",
+    underline: "Underline",
+    strike: "Strikethrough",
+    code: "Code",
+    highlight: "Highlight",
+    textStyle: "Colour",
+  };
+  const words = names.map((n) => WORDS[n] ?? n).filter(Boolean);
+  if (words.length === 0) return "Plain formatting";
+  if (words.length === 1) return words[0];
+  const last = words[words.length - 1].toLowerCase();
+  return `${words.slice(0, -1).join(", ")} and ${last}`;
+}
 
 export function RichTextEditor({
   value,
@@ -182,22 +206,50 @@ function Toolbar({
   >(null);
 
   // ── Format painter / clear formatting ──────────────────────────────────────
-  const copyFormatting = () => {
-    // Marks active at the start of the selection. Skip links — copying a href
-    // onto unrelated text is rarely intended.
-    const marks = editor.state.selection.$from
-      .marks()
-      .filter((m) => m.type.name !== "link");
-    setCopiedMarks(
-      marks.map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })),
-    );
-  };
-
-  const applyFormatting = () => {
-    if (!copiedMarks) return;
+  /**
+   * **One button, two steps** — the format painter every editor has (owner, 2026-08-17).
+   *
+   * It used to be two: a "Copy formatting" button drawn with Gravity's `copy` and an "Apply copied
+   * formatting" one. Beside the paste button (Gravity's `clipboard-paste`) the row therefore held
+   * two near-identical stacked-rectangle glyphs, and neither said what it did or whether it had
+   * done anything. Now the first press picks the formatting up and the second puts it down, and
+   * each press says so in a toast — so "did that work?" is never a question.
+   */
+  const formatPainter = () => {
+    if (!copiedMarks) {
+      // The marks of the SELECTED text. Skip links — copying a href onto unrelated
+      // text is rarely intended.
+      //
+      // Not `$from.marks()`: ProseMirror answers that with the marks of the node
+      // *before* the position, and a selection that starts on a mark boundary —
+      // any double-clicked or long-pressed word — therefore picked up the
+      // formatting of the text in front of it. Selecting a bold word in a plain
+      // sentence copied "plain", and the second press then correctly applied
+      // nothing. Found on Android (2026-08-18); the bug is the same here.
+      const sel = editor.state.selection;
+      const source = sel.empty
+        ? (editor.state.storedMarks ?? sel.$from.marks())
+        : (sel.$from.marksAcross(sel.$to) ?? sel.$from.marks());
+      const marks = source.filter((m) => m.type.name !== "link");
+      setCopiedMarks(
+        marks.map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })),
+      );
+      toast.success(
+        marks.length === 0
+          ? "Plain formatting copied — select text to apply it"
+          : `${describeMarks(marks.map((m) => m.type.name))} copied — select text to apply it`,
+      );
+      return;
+    }
     let chain = editor.chain().focus().unsetAllMarks();
     for (const m of copiedMarks) chain = chain.setMark(m.type, m.attrs);
     chain.run();
+    toast.success(
+      copiedMarks.length === 0
+        ? "Formatting cleared from the selection"
+        : `${describeMarks(copiedMarks.map((m) => m.type))} applied`,
+    );
+    setCopiedMarks(null);
   };
 
   const clearFormatting = () => {
@@ -482,7 +534,7 @@ function Toolbar({
           type="color"
           aria-label="Text color"
           value={
-            (editor.getAttributes("textStyle").color as string) || "#111111"
+            (editor.getAttributes("textStyle").color as string) || "#1C1C1C"
           }
           onInput={(e) =>
             editor
@@ -504,7 +556,7 @@ function Toolbar({
           type="color"
           aria-label="Highlight color"
           value={
-            (editor.getAttributes("highlight").color as string) || "#fff2a8"
+            (editor.getAttributes("highlight").color as string) || "#FFDEA1"
           }
           onInput={(e) =>
             editor
@@ -570,13 +622,15 @@ function Toolbar({
       <Btn label="Paste (keep formatting)" onClick={pasteFromClipboard}>
         <ClipboardPaste className="h-4 w-4" />
       </Btn>
-      <Btn label="Copy formatting" onClick={copyFormatting}>
-        <Copy className="h-4 w-4" />
-      </Btn>
+      {/* The painter, lit while it is holding a style — so its two steps are visible, not implied. */}
       <Btn
-        label="Apply copied formatting"
-        disabled={!copiedMarks}
-        onClick={applyFormatting}
+        label={
+          copiedMarks
+            ? "Apply the copied formatting"
+            : "Copy formatting from here"
+        }
+        active={!!copiedMarks}
+        onClick={formatPainter}
       >
         <Paintbrush className="h-4 w-4" />
       </Btn>

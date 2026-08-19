@@ -25,6 +25,8 @@ fun WithAiAssistant(
     onApplyProposal: (Proposal, Set<String>) -> String?,
     /** The open goal, so the empty chat can offer prompts drawn from its actual state. */
     goal: GoalDetail? = null,
+    /** Opens the note the assistant just created — the chat's "Open note" action. */
+    onOpenNote: (() -> Unit)? = null,
     content: @Composable (swipeUpGesture: Modifier) -> Unit,
 ) {
     val viewModel: AiChatViewModel = viewModel(
@@ -54,6 +56,7 @@ fun WithAiAssistant(
                 onClose = onClose,
                 goal = goal,
                 onApplyProposal = onApplyProposal,
+                onOpenNote = onOpenNote,
             )
         },
         content = content,

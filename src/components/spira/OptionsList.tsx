@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Info, CirclePlus } from "lucide-react";
-import { FrownFilled, SmileFilled } from "@/components/spira/brand-icons";
+import { Plus, Info, CirclePlus } from "@/components/spira/icons";
+import { FrownFilled, SmileFilled } from "@/components/spira/icons";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
@@ -20,7 +20,7 @@ import {
 const LIST_GAP_PX = 12;
 
 // While dragging, a card is forced to its collapsed (≤3-line) view (see OptionRow's
-// `forceCollapsed`) so a very long strategy doesn't need a full card-height of finger travel to
+// `forceCollapsed`) so a very long option doesn't need a full card-height of finger travel to
 // move one slot — impossible on mobile when the card was taller than the screen. The reorder step
 // is capped at roughly the collapsed card height + gap so small finger moves reorder one slot.
 const DRAG_STEP_MAX_PX = 116;
@@ -51,16 +51,40 @@ export function reorderTargetIndex(
   return Math.max(0, Math.min(length - 1, fromIndex + slots));
 }
 
+/**
+ * The thumb lean an option carries — the smiley badge's three states, and the words the filter
+ * uses for them. `null` matches everything.
+ *
+ * An option saved before the badge existed has an empty status rather than "none"; both mean the
+ * same thing to the user, so "Didn't try" has to catch either.
+ */
+export type OptionLeanFilter = "all" | "good_idea" | "didnt_work" | "none";
+
+export const OPTION_LEAN_CHOICES = [
+  { value: "all", label: "All" },
+  { value: "good_idea", label: "Good idea" },
+  { value: "didnt_work", label: "Bad idea" },
+  { value: "none", label: "Didn't try" },
+] as const;
+
+export function matchesLean(opt: Option, filter: OptionLeanFilter): boolean {
+  if (filter === "all") return true;
+  return (opt.status || "none") === filter;
+}
+
 export function OptionsList({
   goal,
   reordering,
   onReorderingChange,
+  leanFilter = "all",
 }: {
   goal: Goal;
   /** Reorder mode is controlled by the parent so the Reorder/Save toggle can live in the
    *  Options section header (next to the title). */
   reordering: boolean;
   onReorderingChange: (v: boolean) => void;
+  /** The lean filter, owned by the section header where its trigger sits. */
+  leanFilter?: OptionLeanFilter;
 }) {
   const {
     addOption,
@@ -87,10 +111,15 @@ export function OptionsList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceIds, draggingId]);
 
-  // Only ever in reorder mode with 2+ options.
+  // Only ever in reorder mode with 2+ options, and never while the lean filter narrows the list:
+  // a drop sends the card's index in the RENDERED list to the server as an absolute position, so
+  // on a filtered list a wrong order would be saved with no sign anything went wrong.
   useEffect(() => {
-    if (goal.options.length < 2 && reordering) onReorderingChange(false);
-  }, [goal.options.length, reordering, onReorderingChange]);
+    const narrowed = leanFilter !== "all";
+    if ((goal.options.length < 2 || narrowed) && reordering) {
+      onReorderingChange(false);
+    }
+  }, [goal.options.length, reordering, onReorderingChange, leanFilter]);
 
   const draftOverBy =
     draft.trim().length > FIELD_LIMITS.optionText ? draft.trim().length : 0;
@@ -199,15 +228,23 @@ export function OptionsList({
   };
 
   const optionsById = new Map(goal.options.map((o) => [o.id, o]));
+  // The drag maths always runs over the FULL list; the lean filter only narrows what is drawn,
+  // and reorder mode is off (see the effect above) whenever the two could differ.
   const ordered = order
     .map((id) => optionsById.get(id))
-    .filter((o): o is Option => Boolean(o));
+    .filter((o): o is Option => Boolean(o))
+    .filter((o) => matchesLean(o, leanFilter));
 
   return (
     <div className="space-y-3">
       {goal.options.length === 0 && (
         <p className="text-sm text-muted-foreground italic">
-          What strategies could move you forward? Add a few, then choose one.
+          What options could move you forward? Add a few, then choose one.
+        </p>
+      )}
+      {goal.options.length > 0 && ordered.length === 0 && (
+        <p className="text-sm italic text-muted-foreground">
+          No options match that filter.
         </p>
       )}
       {/* The Reorder/Save toggle lives in the Options section header (see goals.$goalId.tsx). */}
@@ -257,7 +294,7 @@ export function OptionsList({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && add()}
-                placeholder="Add a strategy…"
+                placeholder="Add an option…"
                 className="flex-1 min-w-0 bg-transparent text-base outline-none min-h-[40px] placeholder:text-muted-foreground/75"
               />
               {draft && (
@@ -277,8 +314,8 @@ export function OptionsList({
               className="mt-1 text-[13px] font-medium text-destructive"
               role="alert"
             >
-              Strategy is too long — max {FIELD_LIMITS.optionText} characters
-              (you have {draftOverBy}). Trim it to add.
+              Option is too long — max {FIELD_LIMITS.optionText} characters (you
+              have {draftOverBy}). Trim it to add.
             </p>
           )}
         </div>
@@ -288,8 +325,8 @@ export function OptionsList({
 }
 
 /**
- * A single strategy row. The rating smiley is floated top-right so line 1 sits beside it and
- * lines 2+ wrap underneath (no reserved empty column). A strategy longer than 3 lines collapses
+ * A single option row. The rating smiley is floated top-right so line 1 sits beside it and
+ * lines 2+ wrap underneath (no reserved empty column). A option longer than 3 lines collapses
  * to 3 lines with a "Show more"/"Show less" toggle (InlineText `clampLines`). There is no drag
  * handle: reordering happens only in **reorder mode**, where the whole card is the drag target
  * (grab cursor) and every per-card action (edit, rating, delete, select, Show more) is disabled.
@@ -316,7 +353,7 @@ function OptionRow({
   onStartDrag: (e: React.PointerEvent) => void;
 }) {
   const { ref: textRef, singleLine } = useIsSingleLine<HTMLDivElement>();
-  // True while the strategy text itself holds focus — what reveals the ⋯ menu (see below).
+  // True while the option text itself holds focus — what reveals the ⋯ menu (see below).
   const [editing, setEditing] = useState(false);
   // Rating — one button that cycles on tap: none (grey smile) → good_idea (Guava smile) →
   // didnt_work (Kale frown) → none. It sits on the card's top-right EDGE as a circle badge; the
@@ -328,7 +365,7 @@ function OptionRow({
         e.stopPropagation();
         onCycleStatus();
       }}
-      aria-label="Rate strategy"
+      aria-label="Rate option"
       aria-pressed={opt.status === "good_idea" || opt.status === "didnt_work"}
       className={cn(
         "absolute -right-2 -top-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface shadow-sm transition-colors",
@@ -348,8 +385,8 @@ function OptionRow({
     </button>
   );
 
-  // Actions — a horizontal ⋯ menu floating over the card (no reserved column, so the strategy gets
-  // the full width): centred beside a one-line strategy, up in the corner once it wraps. It sits
+  // Actions — a horizontal ⋯ menu floating over the card (no reserved column, so the option gets
+  // the full width): centred beside a one-line option, up in the corner once it wraps. It sits
   // as far right as it can (`right-5`) without sliding under the rating badge, whose left edge is
   // exactly there — overlapping the text is fine, overlapping the smiley is not.
   //
@@ -358,7 +395,7 @@ function OptionRow({
   // open too. Gone entirely while reordering.
   const actionsMenu = reordering ? null : (
     <ElementActionsMenu
-      ariaLabel="Strategy actions"
+      ariaLabel="Option actions"
       deleteLabel="Delete option"
       attachedTo={opt.text}
       onDelete={onRemove}
@@ -417,7 +454,7 @@ function OptionRow({
               "bg-[oklch(0.95_0.032_180)] border-primary"
             : "bg-surface border-border hover:bg-secondary/50",
         )}
-        aria-label={opt.selected ? "Deselect strategy" : "Select strategy"}
+        aria-label={opt.selected ? "Deselect option" : "Select option"}
       >
         <div
           className={cn(
@@ -431,7 +468,7 @@ function OptionRow({
         </div>
       </button>
 
-      {/* Right section — the strategy text gets the full width; the ⋮ menu floats over its
+      {/* Right section — the option text gets the full width; the ⋮ menu floats over its
           top-right corner only while the card is hovered or focused. */}
       <div className="relative min-h-[48px] min-w-0 flex-1 rounded-r-md bg-surface py-3 pr-3 pl-4">
         {actionsMenu}
@@ -445,12 +482,12 @@ function OptionRow({
             value={opt.text}
             onChange={onEditText}
             maxLength={FIELD_LIMITS.optionText}
-            maxLengthLabel="Strategy"
+            maxLengthLabel="Option"
             clampLines={3}
             forceCollapsed={isDragging || reordering}
             readOnly={reordering}
             className="text-base font-medium leading-relaxed"
-            ariaLabel="Edit strategy"
+            ariaLabel="Edit option"
           />
         </div>
       </div>

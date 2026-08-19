@@ -11,9 +11,10 @@ import {
   Info,
   Paperclip,
   Trash2,
-} from "lucide-react";
+  X,
+} from "@/components/spira/icons";
 import { toast } from "sonner";
-import { Kebab, KebabVertical } from "@/components/spira/brand-icons";
+import { Kebab, KebabVertical } from "@/components/spira/icons";
 import type { Resource } from "@/lib/spira/types";
 import { resourceDisplayName } from "@/lib/spira/resources";
 import {
@@ -30,13 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 
 /**
@@ -187,7 +182,11 @@ export function ResourceLink({ id }: { id: string }) {
       // with `vertical-align` to sit optically centred on lowercase text.
       className="inline-block max-w-full align-baseline font-medium text-primary transition-colors hover:text-primary/80"
     >
-      <Icon className="mr-1 inline h-[1em] w-[1em] align-[-0.15em]" />
+      {/* A link needs no leading glyph — the trailing open arrow after the name already says it
+          opens out (owner, 2026-08-17). Other kinds keep their type icon. */}
+      {resource.type !== "link" && (
+        <Icon className="mr-1 inline h-[1em] w-[1em] align-[-0.15em]" />
+      )}
       <span className="underline decoration-1 underline-offset-2 [overflow-wrap:anywhere]">
         {resourceDisplayName(resource)}
       </span>
@@ -457,59 +456,73 @@ function ResourcePickerDialog({
   onPick: (resourceId: string) => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Same footprint as ConfirmDialog: never edge-to-edge on a phone, roomier on desktop.
-          `onOpenAutoFocus` is suppressed so the close button doesn't open with a focus ring around
-          it — no other dialog in the app opens with one. Tabbing to it still shows the ring. */}
-      <DialogContent
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-[calc(100%-2rem)] max-w-[440px] rounded-lg border-0 bg-surface p-6 shadow-2xl sm:max-w-[600px]"
-      >
-        <DialogHeader className="text-left">
-          <DialogTitle className="font-sans text-[20px] font-semibold tracking-tight">
+    /*
+     * **A drawer, not a centred dialog** (owner, 2026-08-17) — the same bottom sheet Android opens
+     * (`ResourcePickerSheet` in `ui/components/InlineResources.kt`). Picking a resource is a list
+     * you reach for while editing text, and a modal box in the middle of the screen took the eye
+     * away from the sentence it was about to change.
+     *
+     * The head is **Kale**, on both surfaces: white type on teal, the same band the app header
+     * carries, so a sheet reads as part of the app rather than a white box floating over it.
+     */
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mt-0 flex max-h-[85vh] flex-col px-0">
+        <div className="flex shrink-0 items-center justify-between bg-primary px-5 py-3.5">
+          <h2 className="text-base font-bold text-primary-foreground">
             Attach a resource
-          </DialogTitle>
-          <DialogDescription className="flex items-start gap-2 text-[14px] text-foreground/80">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          </h2>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+            className="grid h-8 w-8 place-items-center rounded-md text-primary-foreground/85 transition-colors hover:bg-white/15 hover:text-primary-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-4">
+          <p className="mb-4 flex items-start gap-2 text-[14px] text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Its name is added at the end of the text as a link — tap it to
               open the resource.
             </span>
-          </DialogDescription>
-        </DialogHeader>
-
-        {resources.length === 0 ? (
-          // Nothing to pick: say so inside a bordered notice rather than as loose italic text.
-          <p className="rounded-md border border-border/80 bg-surface-sunken/40 px-4 py-5 text-center text-sm text-foreground/80">
-            {allAlreadyAttached
-              ? "Every resource on this goal is already attached here."
-              : "No resources on this goal yet — add one in the Resources section first."}
           </p>
-        ) : (
-          <ul className="-mx-2 max-h-[50vh] space-y-1 overflow-y-auto px-2">
-            {resources.map((resource) => {
-              const Icon = resourceTypeMeta[resource.type].icon;
-              return (
-                <li key={resource.id}>
-                  <button
-                    type="button"
-                    onClick={() => onPick(resource.id)}
-                    className="flex w-full items-center gap-3 rounded-sm border border-border/70 bg-surface px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary-soft/40"
-                  >
-                    <Icon className="h-4 w-4 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {resourceDisplayName(resource)}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {resourceTypeMeta[resource.type].label}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
+
+          {resources.length === 0 ? (
+            // Nothing to pick: say so inside a bordered notice rather than as loose italic text.
+            <p className="rounded-md border border-border/80 bg-surface-sunken/40 px-4 py-5 text-center text-sm text-foreground/80">
+              {allAlreadyAttached
+                ? "Every resource on this goal is already attached here."
+                : "No resources on this goal yet — add one in the Resources section first."}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {resources.map((resource) => {
+                const Icon = resourceTypeMeta[resource.type].icon;
+                return (
+                  <li key={resource.id}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(resource.id)}
+                      className="flex w-full items-center gap-3 rounded-[10px] border border-border bg-surface px-3.5 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary-soft/40"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {resourceDisplayName(resource)}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {resourceTypeMeta[resource.type].label}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

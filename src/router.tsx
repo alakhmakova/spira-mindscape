@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createRouter } from "@tanstack/react-router";
-import { Loader } from "lucide-react";
+import { Loader } from "./components/spira/icons";
 
 import { ErrorScreen } from "./components/spira/ErrorScreen";
 import { SpiraApiError } from "./lib/spira/api";
@@ -10,7 +10,7 @@ import { routeTree } from "./routeTree.gen";
 function DefaultPendingComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <Loader className="h-8 w-8 text-[#ea580c] animate-spin" />
+      <Loader className="h-8 w-8 text-primary animate-spin" />
     </div>
   );
 }

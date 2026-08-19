@@ -13,7 +13,7 @@ import {
   Sparkles,
   Trash2,
   X,
-} from "lucide-react";
+} from "@/components/spira/icons";
 import { useSpira } from "@/lib/spira/store";
 import {
   formatPercent,
@@ -25,10 +25,24 @@ import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
 import { InlineList, AutoTextarea } from "@/components/spira/Inline";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
-import { OptionsList } from "@/components/spira/OptionsList";
+import {
+  OPTION_LEAN_CHOICES,
+  OptionsList,
+  type OptionLeanFilter,
+} from "@/components/spira/OptionsList";
+import {
+  FilterIconTrigger,
+  MenuChoice,
+  MenuGroup,
+  SheetGroup,
+  SheetPills,
+  ToolbarMenu,
+  ToolbarSheet,
+} from "@/components/spira/ListToolbar";
+import { FrownFilled, SmileFilled, Filter } from "@/components/spira/icons";
 import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import {
-  ResourcesList,
+  ResourcesSection,
   NewResourceSheet,
   InlineResourcesProvider,
 } from "@/components/spira/Resources";
@@ -76,6 +90,11 @@ function GoalWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [optionsReordering, setOptionsReordering] = useState(false);
+  // The phone opens the lean filter as a drawer; the desktop keeps its dropdown.
+  const [optionsFilterOpen, setOptionsFilterOpen] = useState(false);
+  // Which thumb lean the Options list is narrowed to. It lives here, not in OptionsList, because
+  // its trigger sits in the section header beside the Reorder toggle.
+  const [optionsLean, setOptionsLean] = useState<OptionLeanFilter>("all");
 
   useEffect(() => {
     setContext({ goalId });
@@ -193,7 +212,9 @@ function GoalWorkspace() {
           >
             <div className="spira-reality-grid grid gap-0 rounded-lg overflow-hidden border hairline">
               <div className="spira-reality-primary p-5 sm:p-6 bg-[#E0F2F5] hairline">
-                <h3 className="font-medium text-lg mb-3">Actions taken</h3>
+                <h3 className="font-normal sm:font-medium text-lg mb-3">
+                  Actions taken
+                </h3>
                 <InlineList
                   items={goal.reality.actions}
                   emptyHint="Nothing yet — what have you tried?"
@@ -207,7 +228,9 @@ function GoalWorkspace() {
                 />
               </div>
               <div className="p-5 sm:p-6 bg-[#fff2df]">
-                <h3 className="font-medium text-lg mb-3">Obstacles</h3>
+                <h3 className="font-normal sm:font-medium text-lg mb-3">
+                  Obstacles
+                </h3>
                 <InlineList
                   items={goal.reality.obstacles}
                   emptyHint="What's standing in the way?"
@@ -228,43 +251,101 @@ function GoalWorkspace() {
         </div>
 
         <div id="resources-section" className="scroll-mt-32">
-          <Section
-            title="Resources"
-            hint="Notes, links, files, emails"
-            count={goal.resources.length}
-            action={
-              <button
-                onClick={() => setNewResource(true)}
-                className="inline-flex items-center px-3 h-9 rounded-md border-2 border-primary text-primary text-sm font-medium hover:bg-primary-soft"
-              >
-                Add resource
-              </button>
-            }
-          >
-            <ResourcesList goal={goal} />
-          </Section>
+          {/* The section owns its own chrome now — title, search, sort, filter and create all on
+              one line (`ResourcesSection`). The "Notes, links, files, emails" hint is gone: the
+              type filter beside the title says the same thing and can act on it. */}
+          <ResourcesSection goal={goal} onCreate={() => setNewResource(true)} />
         </div>
 
         <div id="options-section" className="scroll-mt-32">
           <Section
             title="Options"
-            hint="Strategies — pick one to commit"
+            hint="Options — pick one to commit"
             count={goal.options.length}
             action={
-              goal.options.length > 1 ? (
-                <button
-                  onClick={() => setOptionsReordering((v) => !v)}
-                  className="inline-flex items-center px-3 h-9 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary/90"
-                >
-                  {optionsReordering ? "Save" : "Reorder"}
-                </button>
-              ) : undefined
+              // **Filter first, then Reorder** (owner, 2026-08-17). Reorder no longer vanishes
+              // while the list is narrowed — it is **disabled** instead, with a title saying why.
+              // Disappearing left the toolbar rearranging itself under the user's hand and gave no
+              // hint that the filter was what took the control away; what must not happen is a
+              // DROP on a narrowed list, and a disabled button prevents that just as well.
+              <div className="flex items-center gap-1">
+                {/* **A drawer on a phone, a dropdown on the desktop** (owner, 2026-08-17): on a
+                    phone every filter and sort in the app now opens the same sheet the All-goals
+                    page uses, so one pattern is learned once. The desktop keeps its menu, which is
+                    where a menu belongs. */}
+                <span className="sm:hidden">
+                  <FilterIconTrigger
+                    active={optionsLean !== "all"}
+                    onClick={() => setOptionsFilterOpen(true)}
+                    ariaLabel="Filter options"
+                  />
+                  <ToolbarSheet
+                    open={optionsFilterOpen}
+                    onOpenChange={setOptionsFilterOpen}
+                    title="Filter"
+                    onReset={() => setOptionsLean("all")}
+                    resetDisabled={optionsLean === "all"}
+                  >
+                    <SheetGroup title="Idea">
+                      <SheetPills
+                        options={OPTION_LEAN_CHOICES}
+                        value={optionsLean}
+                        onChange={setOptionsLean}
+                        tone="teal"
+                      />
+                    </SheetGroup>
+                  </ToolbarSheet>
+                </span>
+                <span className="hidden sm:inline-flex">
+                  <ToolbarMenu
+                    label="Filter"
+                    count={optionsLean === "all" ? 0 : 1}
+                    ariaLabel="Filter options"
+                    // One question, one answer: there is nothing left to do after a pick.
+                    closeOnSelect
+                    leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
+                  >
+                    <MenuGroup title="Idea">
+                      {OPTION_LEAN_CHOICES.map((c) => (
+                        <MenuChoice
+                          key={c.value}
+                          label={c.label}
+                          selected={optionsLean === c.value}
+                          onSelect={() => setOptionsLean(c.value)}
+                          icon={
+                            c.value === "good_idea" ? (
+                              <SmileFilled className="h-4 w-4 shrink-0" />
+                            ) : c.value === "didnt_work" ? (
+                              <FrownFilled className="h-4 w-4 shrink-0" />
+                            ) : undefined
+                          }
+                        />
+                      ))}
+                    </MenuGroup>
+                  </ToolbarMenu>
+                </span>
+                {goal.options.length > 1 && (
+                  <button
+                    onClick={() => setOptionsReordering((v) => !v)}
+                    disabled={optionsLean !== "all"}
+                    title={
+                      optionsLean !== "all"
+                        ? "Clear the filter to reorder — a drop on a narrowed list would save the wrong position"
+                        : undefined
+                    }
+                    className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
+                  >
+                    {optionsReordering ? "Save" : "Reorder"}
+                  </button>
+                )}
+              </div>
             }
           >
             <OptionsList
               goal={goal}
               reordering={optionsReordering}
               onReorderingChange={setOptionsReordering}
+              leanFilter={optionsLean}
             />
           </Section>
         </div>
@@ -327,7 +408,7 @@ function KpiCard({
     <div
       className={cn(
         "p-5 sm:p-6 flex flex-col min-h-[140px] rounded-lg border transition-colors duration-200 cursor-default relative",
-        "bg-white border-border/80 hover:bg-[#f4fbfc] hover:border-[#4fa8a3]/50",
+        "bg-white border-border/80 hover:bg-[#F3FAFB] hover:border-[#4CACAC]/50",
       )}
     >
       <div className="flex justify-between items-start mb-3">
@@ -763,7 +844,7 @@ function GoalNav() {
               className={cn(
                 "text-[13px] font-medium transition-colors",
                 active === item.label
-                  ? "text-[#ea580c]"
+                  ? "text-[#F45D48]"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -772,9 +853,13 @@ function GoalNav() {
           ))}
         </div>
       </div>
-      <div className="h-[5px] w-full bg-[#dcfce7] overflow-hidden">
+      {/* Page-chrome scroll indicator — the Kale progress variant (track #8DD3D4 / fill #0A8080),
+          so it reads as teal chrome, not as goal progress and not as an off-palette pairing.
+          **This one is the original and stays exactly here**: the goal page's light part is this
+          section-nav row, so its divider belongs under the row, not under the app header. */}
+      <div className="h-[5px] w-full bg-[#8DD3D4] overflow-hidden">
         <div
-          className="h-full bg-[#ea580c] transition-all duration-100 ease-out"
+          className="h-full bg-[#0A8080] transition-all duration-100 ease-out"
           style={{ width: `${scroll}%` }}
         />
       </div>

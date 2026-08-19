@@ -21,9 +21,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
+// A phone-sized window: the Targets page now carries a search/sort/filter toolbar above
+// its list, so on the default (small) device the single target renders below the fold.
+@Config(qualifiers = "w411dp-h891dp")
 class GoalWorkspaceScreenTest {
 
     @get:Rule

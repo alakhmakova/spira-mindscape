@@ -1,15 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  Calendar,
-  LayoutGrid,
-  List,
   Loader,
   Trophy,
   Cable,
   GlobeOff,
   RefreshCw,
-} from "lucide-react";
+} from "@/components/spira/icons";
+import { TabBar } from "@/components/spira/TabBar";
 import { GoalCard } from "@/components/spira/GoalCard";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
@@ -117,7 +115,7 @@ function GoalsOverview() {
   );
 
   return (
-    <div className="relative min-h-screen bg-[#f4f5f5]/80">
+    <div className="relative min-h-screen bg-[#F4F4F3]/80">
       <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-12">
         <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -143,31 +141,25 @@ function GoalsOverview() {
               </>
             )}
           </div>
-          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-            <div className="inline-flex w-full rounded-md border bg-secondary p-0.5 hairline sm:w-auto">
-              <ViewBtn
-                active={viewMode === "cards"}
-                onClick={() => setViewMode("cards")}
-                icon={LayoutGrid}
-              >
-                Cards
-              </ViewBtn>
-              <ViewBtn
-                active={viewMode === "table"}
-                onClick={() => setViewMode("table")}
-                icon={List}
-              >
-                Timeline
-              </ViewBtn>
-              <Link
-                to="/calendar"
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex-none"
-              >
-                <Calendar className="h-3.5 w-3.5" />
-                Calendar
-              </Link>
-            </div>
-          </div>
+          {/* **Tabs, not a segmented control** — the same row Android draws on a goal
+              (`GrowTabsRow`): the word alone, with a Guava underline on the current one. The old
+              pill group carried an icon per view, which a tab row does not (CLAUDE.md → TabBar). */}
+          <TabBar
+            className="shrink-0"
+            items={[
+              {
+                label: "Cards",
+                active: viewMode === "cards",
+                onSelect: () => setViewMode("cards"),
+              },
+              {
+                label: "Timeline",
+                active: viewMode === "table",
+                onSelect: () => setViewMode("table"),
+              },
+              { label: "Calendar", to: "/calendar" },
+            ]}
+          />
         </header>
 
         {isLoading && !hasLoaded ? (
@@ -176,7 +168,7 @@ function GoalsOverview() {
             className="surface-card p-12 flex flex-col items-center gap-4"
             role="status"
           >
-            <Loader className="h-8 w-8 text-[#ea580c] animate-spin" />
+            <Loader className="h-8 w-8 text-[#F45D48] animate-spin" />
             <p className="text-sm text-muted-foreground">Loading your goals…</p>
           </div>
         ) : filtered.length === 0 ? (
@@ -276,34 +268,5 @@ function GoalsOverview() {
         <NewGoalSheet open={open} onOpenChange={setOpen} />
       </div>
     </div>
-  );
-}
-
-function ViewBtn({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ElementType;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors sm:flex-none",
-        active
-          ? "border bg-surface text-foreground shadow-sm hairline"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {children}
-    </button>
   );
 }

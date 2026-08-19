@@ -1,5 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, X, Calendar, AlertTriangle } from "lucide-react";
+import {
+  ChevronRight,
+  X,
+  Calendar,
+  AlertTriangle,
+} from "@/components/spira/icons";
 import { useState } from "react";
 import type { Goal } from "@/lib/spira/types";
 import {
@@ -75,7 +80,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
     <div
       className={cn(
         "text-card-foreground rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full cursor-pointer group border",
-        completed ? "bg-card border-[#4fa8a3]/50" : "bg-card border-border/60",
+        completed ? "bg-card border-[#4CACAC]/50" : "bg-card border-border/60",
       )}
     >
       {/* Confidence, Progress & Actions Header */}
@@ -90,7 +95,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
 
           <div className="flex items-center gap-2 flex-1 min-w-0 max-w-32">
             <div className="flex-1">
-              <ProgressBar value={progress} />
+              {/* The **Contrast** pair (owner, 2026-08-17): coral on teal rather than two steps of
+                  one colour, so a bar reads at a glance down a long list of goals. */}
+              <ProgressBar value={progress} tone="contrast" />
             </div>
             <span className="text-xs font-bold text-foreground num shrink-0">
               {formatPercent(progress, goalProgressSteps(goal))}%

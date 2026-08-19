@@ -71,11 +71,19 @@ async function friendlyError(res: Response, fallback: string): Promise<string> {
 export type HistoryEntry = { role: "user" | "assistant"; content: string };
 
 /**
- * A file attached directly to a chat message (BUG-017): an image, PDF, or DOCX.
- * `dataUrl` is a `data:<mime>;base64,…` URL. Ephemeral — sent with this message
- * only, never saved as a resource.
+ * A file attached to a chat message, from one of two sources:
+ *  - a **device file** (BUG-017) — `dataUrl` carries the bytes as `data:<mime>;base64,…`;
+ *  - a **saved resource** (BUG-030) — `resourceId` names one of the goal's resources and the
+ *    server inlines its bytes/text, so we never re-upload what the backend already holds.
+ * Exactly one of `dataUrl` / `resourceId` is set. Ephemeral either way — sent with this message
+ * only, never saved.
  */
-export type ChatAttachment = { name: string; mime: string; dataUrl: string };
+export type ChatAttachment = {
+  name: string;
+  mime: string;
+  dataUrl?: string;
+  resourceId?: number;
+};
 
 export type StreamChatParams = {
   goalId?: string;
