@@ -110,20 +110,8 @@ fun SpiraFilterSheetContent(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().background(Color.White)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.weight(1f),
-            )
+        // The same Kale band every sheet wears - see `SpiraSheetHead`.
+        SpiraSheetHead(title, onDismiss) {
             // The padlock sits beside the X because it is about the panel as a whole, not about
             // any one question inside it.
             if (locked != null && onLockedChange != null) {
@@ -142,16 +130,6 @@ fun SpiraFilterSheetContent(
                         .size(18.dp),
                 )
             }
-            Icon(
-                SpiraIcons.X,
-                contentDescription = "Close",
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onDismiss)
-                    .padding(6.dp)
-                    .size(18.dp),
-            )
         }
 
         Column(

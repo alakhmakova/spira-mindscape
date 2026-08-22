@@ -30,8 +30,9 @@ import {
 } from "@/lib/spira/progress";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
+import { SheetHead } from "./SheetHead";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ResizableSheet } from "@/components/spira/Resources";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -2352,8 +2353,11 @@ export function NewTargetSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        // The head carries its own white X on the teal band; the corner one would sit on it.
+        closeButton={false}
         className="w-full sm:max-w-lg p-0 flex flex-col bg-surface border-l hairline"
       >
+        <SheetTitle className="sr-only">New target</SheetTitle>
         {Body}
       </SheetContent>
     </Sheet>
@@ -2492,19 +2496,9 @@ function NewTargetForm({
 
   return (
     <>
-      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg">New target</h2>
-        <button
-          type="button"
-          onClick={onDone}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      <SheetHead title="New target" onClose={onDone} />
 
-      <div className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
+      <div className="px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
         <div>
           <label className="text-sm font-semibold block mb-2">
             Type <span className="text-destructive">*</span>
@@ -2782,7 +2776,7 @@ function NewTargetForm({
       </div>
 
       <div
-        className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+        className="shrink-0 bg-surface px-5 pt-3 flex gap-3"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
       >
         <button

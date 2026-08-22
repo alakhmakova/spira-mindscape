@@ -18,6 +18,7 @@
 
 import * as React from "react";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { SHEET_HEAD_BUTTON, SheetHead } from "./SheetHead";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { SM_BREAKPOINT, useIsNarrowerThan } from "@/hooks/use-mobile";
@@ -357,52 +358,45 @@ function ToolbarPanelBody({
 }) {
   return (
     <>
-      <div className="flex shrink-0 items-center gap-1 bg-primary px-5 py-3.5">
-        <h2 className="flex-1 text-base font-bold text-primary-foreground">
-          {title}
-        </h2>
-        {/* **The padlock lives on the coloured head, to the right** (owner, 2026-08-21). Closed,
-            this list's filters and sort survive a reload and a restart; open, they go back to their
-            defaults next time — see the padlock note in `shell-store.ts`. It sits beside the X
-            because it is about the panel as a whole, not about any one question inside it. */}
-        {onLockedChange && (
-          <button
-            type="button"
-            onClick={() => onLockedChange(!locked)}
-            aria-pressed={!!locked}
-            aria-label={
-              locked
-                ? "Filters and sort are kept — unlock to let them reset"
-                : "Keep these filters and sort"
-            }
-            title={
-              locked
-                ? "Kept until you unlock — survives a reload"
-                : "Not kept — these reset next time"
-            }
-            className={cn(
-              "grid h-8 w-8 place-items-center rounded-md transition-colors",
-              locked
-                ? "bg-white/20 text-primary-foreground hover:bg-white/30"
-                : "text-primary-foreground/70 hover:bg-white/15 hover:text-primary-foreground",
-            )}
-          >
-            {locked ? (
-              <LockFilled className="h-4 w-4" />
-            ) : (
-              <LockOpenFilled className="h-4 w-4" />
-            )}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="grid h-8 w-8 place-items-center rounded-md text-primary-foreground/85 transition-colors hover:bg-white/15 hover:text-primary-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      {/* The same Kale band every sheet wears — see `SheetHead`. */}
+      <SheetHead
+        title={title}
+        onClose={onClose}
+        actions={
+          /* **The padlock lives on the coloured head, to the right** (owner, 2026-08-21). Closed,
+             this list's filters and sort survive a reload and a restart; open, they go back to
+             their defaults next time — see the padlock note in `shell-store.ts`. It sits beside
+             the X because it is about the panel as a whole, not about any one question inside it. */
+          onLockedChange ? (
+            <button
+              type="button"
+              onClick={() => onLockedChange(!locked)}
+              aria-pressed={!!locked}
+              aria-label={
+                locked
+                  ? "Filters and sort are kept — unlock to let them reset"
+                  : "Keep these filters and sort"
+              }
+              title={
+                locked
+                  ? "Kept until you unlock — survives a reload"
+                  : "Not kept — these reset next time"
+              }
+              className={cn(
+                SHEET_HEAD_BUTTON,
+                locked &&
+                  "bg-white/20 text-primary-foreground hover:bg-white/30",
+              )}
+            >
+              {locked ? (
+                <LockFilled className="h-4 w-4" />
+              ) : (
+                <LockOpenFilled className="h-4 w-4" />
+              )}
+            </button>
+          ) : undefined
+        }
+      />
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-4">
         {children}

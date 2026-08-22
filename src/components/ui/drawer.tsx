@@ -19,7 +19,6 @@ const DrawerTrigger = DrawerPrimitive.Trigger;
 const DrawerPortal = DrawerPrimitive.Portal;
 
 const DrawerClose = DrawerPrimitive.Close;
-const DrawerHandle = DrawerPrimitive.Handle;
 
 const DrawerOverlay = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Overlay>,
@@ -42,12 +41,21 @@ const DrawerContent = React.forwardRef<
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
+        // **No grab handle, and `overflow-hidden`** (owner, 2026-08-22). A sheet on the phone
+        // opens with its own head at the very top, exactly as the Android `ModalBottomSheet`
+        // does; vaul's default handle put a white strip with a pill above the teal head, so the
+        // web sheet read as two stacked bars where Android has one. Dragging the sheet down
+        // still works — the head itself is the drag surface. `overflow-hidden` is what lets the
+        // head take the rounded top corners instead of poking square ones through them. The
+        // corner is `xl` (12px) because Android's sheet is `SpiraRadii.lg` (12dp) - both are the
+        // base radius + 4, so the same sheet is the same shape on the phone and the laptop. The
+        // hairline border went with it: over the dimmed page it drew a pale outline round the
+        // teal head that Android's sheet has not got, and half the drawers already cancelled it.
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col overflow-hidden rounded-t-xl bg-background",
         className,
       )}
       {...props}
     >
-      <DrawerPrimitive.Handle className="mx-auto mt-4 mb-1 h-2 w-[100px] rounded-full bg-muted" />
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
@@ -108,7 +116,6 @@ export {
   DrawerPortal,
   DrawerOverlay,
   DrawerTrigger,
-  DrawerHandle,
   DrawerClose,
   DrawerContent,
   DrawerHeader,
