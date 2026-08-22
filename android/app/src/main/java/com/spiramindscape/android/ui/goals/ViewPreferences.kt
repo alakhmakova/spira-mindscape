@@ -27,10 +27,14 @@ import androidx.compose.ui.platform.LocalContext
  * Before the padlock these stores wrote unconditionally, which meant a filter picked once followed
  * the user around for weeks with nothing on screen admitting it.
  *
- * The search box and the deadline **range** are never pinned: a query belongs to the screen it was
- * typed on, and a range is about a moment ("what is due this month") rather than a standing
- * choice — one remembered from a fortnight ago opens the page on a list that looks empty for no
- * visible reason.
+ * **The deadline range is pinned like everything else** (owner, 2026-08-22). It was exempt for a
+ * day, on the argument that a range is about a moment rather than a standing choice; then the
+ * owner set one, shut the padlock, left the app and came back to find it gone. A padlock that
+ * promises to keep the arrangement and silently drops two of the answers is the worse failure —
+ * and a restored range is no longer invisible, now that a list emptied by its own filter says so
+ * in a warning notice and the trigger carries a dot.
+ *
+ * The **search box** is still never pinned: a query belongs to the screen it was typed on.
  */
 
 /** A stored enum name that no longer maps to an entry (an old build's value) falls back silently. */
@@ -120,6 +124,15 @@ class GoalViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs)
             if (locked) prefs.edit().putInt(KEY_CONFIDENCE, value).apply()
         }
 
+    /** The deadline range's two ends, as ISO instants ("" = an open end). */
+    var deadlineFrom: String
+        get() = readString(KEY_DEADLINE_FROM, "")
+        set(value) = writeString(KEY_DEADLINE_FROM, value)
+
+    var deadlineTo: String
+        get() = readString(KEY_DEADLINE_TO, "")
+        set(value) = writeString(KEY_DEADLINE_TO, value)
+
     companion object {
         private const val PREFS_NAME = "spira_goal_view"
         private const val KEY_SORT = "sort"
@@ -127,6 +140,8 @@ class GoalViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs)
         private const val KEY_STATUS = "status"
         private const val KEY_DEADLINE = "deadline"
         private const val KEY_CONFIDENCE = "confidence"
+        private const val KEY_DEADLINE_FROM = "deadline_from"
+        private const val KEY_DEADLINE_TO = "deadline_to"
 
         fun from(context: Context) = GoalViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
@@ -167,6 +182,15 @@ class TargetViewPreferences(prefs: SharedPreferences) : LockablePreferences(pref
         get() = prefs.readEnum(KEY_TYPE, TargetTypeFilter.entries, TargetTypeFilter.All)
         set(value) = writeEnum(KEY_TYPE, value)
 
+    /** The deadline range's two ends, as ISO instants ("" = an open end). */
+    var deadlineFrom: String
+        get() = readString(KEY_DEADLINE_FROM, "")
+        set(value) = writeString(KEY_DEADLINE_FROM, value)
+
+    var deadlineTo: String
+        get() = readString(KEY_DEADLINE_TO, "")
+        set(value) = writeString(KEY_DEADLINE_TO, value)
+
     companion object {
         private const val PREFS_NAME = "spira_target_view"
         private const val KEY_SORT = "sort"
@@ -175,6 +199,8 @@ class TargetViewPreferences(prefs: SharedPreferences) : LockablePreferences(pref
         private const val KEY_DEADLINE = "deadline_filter"
         private const val KEY_LOCK = "lock_filter"
         private const val KEY_TYPE = "type_filter"
+        private const val KEY_DEADLINE_FROM = "deadline_from"
+        private const val KEY_DEADLINE_TO = "deadline_to"
 
         fun from(context: Context) = TargetViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
@@ -234,8 +260,8 @@ class TargetViewState internal constructor(
             deadlineFilterState.value = value
             preferences.deadlineFilter = value
             if (value == TargetDeadlineFilter.None) {
-                deadlineFromState.value = ""
-                deadlineToState.value = ""
+                deadlineFrom = ""
+                deadlineTo = ""
             }
         }
 
@@ -256,13 +282,14 @@ class TargetViewState internal constructor(
     /**
      * The deadline range's two ends, as ISO instants ("" = open end).
      *
-     * Deliberately **never pinned**, padlock or no padlock: a range is about a moment, not a
-     * standing preference. The same rule the search box follows.
+     * **Pinned like every other question** while the padlock is closed (owner, 2026-08-22) — see
+     * the note at the top of this file for why the earlier exemption came off.
      */
     var deadlineFrom: String
         get() = deadlineFromState.value
         set(value) {
             deadlineFromState.value = value
+            preferences.deadlineFrom = value
             if (value.isNotBlank()) clearNoDeadline()
         }
 
@@ -270,6 +297,7 @@ class TargetViewState internal constructor(
         get() = deadlineToState.value
         set(value) {
             deadlineToState.value = value
+            preferences.deadlineTo = value
             if (value.isNotBlank()) clearNoDeadline()
         }
 
@@ -294,6 +322,8 @@ class TargetViewState internal constructor(
                 preferences.deadlineFilter = deadlineFilterState.value
                 preferences.lockFilter = lockFilterState.value
                 preferences.typeFilter = typeFilterState.value
+                preferences.deadlineFrom = deadlineFromState.value
+                preferences.deadlineTo = deadlineToState.value
             }
         }
 
@@ -310,8 +340,10 @@ class TargetViewState internal constructor(
         deadlineFilter = TargetDeadlineFilter.All
         lockFilter = TargetLockFilter.All
         typeFilter = TargetTypeFilter.All
-        deadlineFromState.value = ""
-        deadlineToState.value = ""
+        // Through the setters, so a reset made while the padlock is closed is written down too —
+        // otherwise the cleared range would come back on the next visit.
+        deadlineFrom = ""
+        deadlineTo = ""
     }
 
     /** Whether anything is away from its default — what lights the trigger's dot. */
@@ -339,8 +371,8 @@ fun rememberTargetViewState(): TargetViewState {
             deadlineFilterState = mutableStateOf(preferences.deadlineFilter),
             lockFilterState = mutableStateOf(preferences.lockFilter),
             typeFilterState = mutableStateOf(preferences.typeFilter),
-            deadlineFromState = mutableStateOf(""),
-            deadlineToState = mutableStateOf(""),
+            deadlineFromState = mutableStateOf(preferences.deadlineFrom),
+            deadlineToState = mutableStateOf(preferences.deadlineTo),
             lockedState = mutableStateOf(preferences.locked),
         )
     }

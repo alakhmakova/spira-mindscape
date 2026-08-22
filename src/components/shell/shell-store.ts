@@ -186,30 +186,24 @@ function defaultsOf(list: ListKey): Partial<Views> {
 }
 
 /**
- * The two date ranges, which a padlock **never** pins.
+ * What a closed padlock writes down: **every question the list asks**, the date ranges included.
  *
- * A range is about a moment — "what is due this month" — not a standing choice. Pinned, a range
- * closed over in August opens the page in October on a list that looks empty for no visible reason,
- * with the panel shut and nothing on screen saying why. Android has always refused to store one
- * (`ViewPreferences.kt`), and the web briefly did store them, which is the bug this names.
+ * The two ranges were exempt for a day (owner, 2026-08-21) on the argument that a range is about a
+ * moment, so one closed over in August would open the page in October on a list that looks empty
+ * for no visible reason. The owner met the other half of that trade on 2026-08-22: she set a
+ * range, shut the padlock, left the app and came back to find it gone. **A control that promises
+ * to keep the arrangement and silently drops two of the seven answers is the worse failure** —
+ * nothing on screen admitted the range was not covered, and the padlock sat there closed.
  *
- * They are still part of [FIELDS], so "Reset all" clears them and the dot counts them — they are
- * questions the list asks, they are simply not questions worth remembering.
+ * The original worry is largely answered by two things that shipped after it was written: a list
+ * emptied by its own filter now says so in a warning notice (`FilteredEmptyNotice`), and the
+ * trigger carries a Guava dot whenever anything is narrowing the list. A restored range is no
+ * longer invisible.
+ *
+ * The **search box** is still never pinned — it is not in [FIELDS] at all, so no padlock reaches
+ * it. A query belongs to the screen it was typed on; see `useResetQueryOnNavigate`.
  */
-const NEVER_PINNED: readonly (keyof Views)[] = [
-  "deadlineFrom",
-  "deadlineTo",
-  "targetDeadlineFrom",
-  "targetDeadlineTo",
-];
-
-/** What a closed padlock actually writes down: each list's fields, less the ranges. */
-const PINNED: Record<ListKey, readonly (keyof Views)[]> = {
-  goals: FIELDS.goals.filter((k) => !NEVER_PINNED.includes(k)),
-  targets: FIELDS.targets.filter((k) => !NEVER_PINNED.includes(k)),
-  options: FIELDS.options.filter((k) => !NEVER_PINNED.includes(k)),
-  resources: FIELDS.resources.filter((k) => !NEVER_PINNED.includes(k)),
-};
+const PINNED: Record<ListKey, readonly (keyof Views)[]> = FIELDS;
 
 const NOTHING_LOCKED: Record<ListKey, boolean> = {
   goals: false,

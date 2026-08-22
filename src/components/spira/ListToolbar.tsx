@@ -89,6 +89,39 @@ export function FilterIconTrigger({
 }
 
 /**
+ * The control that empties a search field: **the word "Clear", never a cross** (owner, 2026-08-22).
+ *
+ * On a phone the row the field sits in already closes with an X — so a cross inside the field put
+ * two identical marks a few pixels apart, and neither of them said which one emptied the query and
+ * which one dismissed the search. A word cannot be mistaken for the button beside it.
+ *
+ * It is a Kale word, the same quiet worded action the app uses elsewhere (Show more, the toolbar
+ * triggers), and every search field on both surfaces draws it — Android's twin is the "Clear" text
+ * inside `SpiraSearchField`.
+ */
+export function ClearSearchWord({
+  onClear,
+  className,
+}: {
+  onClear: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      aria-label="Clear search"
+      className={cn(
+        "absolute right-2 top-1/2 -translate-y-1/2 rounded-sm px-1 text-[13px] font-semibold text-primary transition-colors hover:text-primary/75",
+        className,
+      )}
+    >
+      Clear
+    </button>
+  );
+}
+
+/**
  * A list's search field on a **desktop** section header — the twin of {@link SectionSearchButton},
  * which is what the same search is on a phone.
  *
@@ -115,18 +148,9 @@ export function SectionSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-9 pl-8 pr-8"
+        className="h-9 pl-8 pr-14"
       />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          aria-label="Clear search"
-          className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
+      {value && <ClearSearchWord onClear={() => onChange("")} />}
     </div>
   );
 }
@@ -197,18 +221,9 @@ export function SectionSearchField({
           }}
           placeholder={placeholder}
           aria-label={placeholder}
-          className="h-9 w-full rounded-md border border-border bg-surface pl-9 pr-8 text-sm outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary"
+          className="h-9 w-full rounded-md border border-border bg-surface pl-9 pr-14 text-sm outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary"
         />
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            aria-label="Clear search"
-            className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
+        {value && <ClearSearchWord onClear={() => onChange("")} />}
       </div>
       <button
         type="button"

@@ -68,9 +68,10 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
      * user is looking for (0 = any). All three are the web's own dashboard filters
      * (`AppShell.tsx`), which the phone had no way to reach.
      *
-     * Like the search box, and unlike the sort and the status pills, none of them is remembered
-     * across sessions: a range or a single confidence is a question about now, and one restored
-     * from a fortnight ago would open the app on an empty-looking list for no visible reason.
+     * All three are remembered while the dashboard's padlock is closed, like the sort and the
+     * status pills — the range included (owner, 2026-08-22). Only the search box is never kept.
+     * `GoalsDashboardScreen` is what does the writing; see the note at the top of
+     * `ViewPreferences.kt`.
      */
     val deadlineFrom = MutableStateFlow("")
     val deadlineTo = MutableStateFlow("")

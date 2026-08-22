@@ -26,6 +26,7 @@ import {
 } from "./shell-store";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import {
+  ClearSearchWord,
   SheetChoiceCards,
   SheetConfidence,
   SheetDateRange,
@@ -283,8 +284,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     isWorkspace ? "Search goals" : "Search for goals"
                   }
                   aria-label="Search goals"
-                  className="h-10 w-full rounded-md bg-white pl-9 pr-3 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-white/60"
+                  className="h-10 w-full rounded-md bg-white pl-9 pr-14 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-white/60"
                 />
+                {/* The word empties the query; the white disc beside the field closes the search.
+                    Two crosses said neither. */}
+                {query && <ClearSearchWord onClear={() => setQuery("")} />}
                 {isWorkspace && query.trim() !== "" && (
                   <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border hairline bg-surface shadow-lg">
                     {searchResults.length > 0 ? (
@@ -420,20 +424,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search goals"
                   aria-label="Search goals"
-                  className="w-full h-10 pl-9 pr-8 rounded-md text-sm outline-none transition-colors bg-white border-transparent text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 shadow-sm"
+                  className="w-full h-10 pl-9 pr-14 rounded-md text-sm outline-none transition-colors bg-white border-transparent text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 shadow-sm"
                 />
-                {query && (
-                  <button
-                    onClick={() => setQuery("")}
-                    className={cn(
-                      "absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 grid place-items-center rounded-full transition-colors",
-                      "text-muted-foreground hover:text-foreground hover:bg-secondary",
-                    )}
-                    aria-label="Clear search"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
+                {query && <ClearSearchWord onClear={() => setQuery("")} />}
                 {isWorkspace && query.trim() !== "" && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-surface border hairline rounded-md shadow-lg overflow-hidden z-50">
                     {searchResults.length > 0 ? (

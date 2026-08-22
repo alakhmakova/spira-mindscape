@@ -185,10 +185,24 @@ function GoalsOverview() {
             <Loader className="h-8 w-8 text-[#F45D48] animate-spin" />
             <p className="text-sm text-muted-foreground">Loading your goals…</p>
           </div>
+        ) : filtered.length === 0 && goals.length > 0 ? (
+          /* ── Filtered: the list HAS goals and the user's own search or filter is hiding them.
+             **The notice alone, with nothing around it** (owner, 2026-08-22): it used to sit
+             centred inside the empty state's `surface-card`, so a warning-yellow outline was
+             drawn inside a grey one — two frames for one message, and the grey one said "an
+             empty page" while the yellow one said the opposite. The card belongs to the empty
+             state's invitation, which is a different sentence; see the notice spec in CLAUDE.md
+             (3d). Android already drew it this way.
+
+             **Full width, text left** (owner, 2026-08-22): it stands where the cards would, so it
+             takes the same column they do rather than a narrow box centred in it. */
+          <FilteredEmptyNotice className="w-full text-left">
+            No goals match that search or filter. Clear them to see the rest.
+          </FilteredEmptyNotice>
         ) : filtered.length === 0 ? (
           /* ── Empty / Error ── */
           <div className="surface-card p-12 text-center">
-            {goals.length === 0 && syncError ? (
+            {syncError ? (
               /* Error: backend or network problem — no CTA */
               <>
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
@@ -215,7 +229,7 @@ function GoalsOverview() {
                   Refresh
                 </button>
               </>
-            ) : goals.length === 0 ? (
+            ) : (
               /* Truly empty — DB has no goals, connection is fine */
               <>
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary">
@@ -235,13 +249,6 @@ function GoalsOverview() {
                   Create your first goal
                 </button>
               </>
-            ) : (
-              /* Filtered: no matches. Not the empty state's invitation — the list HAS goals and
-                 the user's own search or filter is what is hiding them. */
-              <FilteredEmptyNotice className="mx-auto max-w-md text-left">
-                No goals match that search or filter. Clear them to see the
-                rest.
-              </FilteredEmptyNotice>
             )}
           </div>
         ) : viewMode === "cards" ? (

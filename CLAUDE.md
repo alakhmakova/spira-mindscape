@@ -262,6 +262,7 @@ both unless it names a surface.
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
 | **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
+| **Search fields** — and the word that empties one | Components and chrome → 3f |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
 | Dropdown / kebab menu anatomy | Components and chrome → 6 |
@@ -514,6 +515,13 @@ Two rules that follow:
 empty state is for a list with nothing in it — an invitation. A list the user has just hidden is a
 different sentence, and a muted line centred in a blank page reads as "there is nothing here".
 
+**And the notice stands on its own — never a coloured frame inside a grey one** (owner,
+2026-08-22). The All-goals dashboard used to render it centred inside the empty state's
+`surface-card`, so the warning outline sat within a hairline card: two frames for one message, and
+the outer one still said "an empty page" while the inner one said the opposite. The card belongs to
+the empty state's invitation; the filtered case replaces it rather than sitting inside it (web:
+`src/routes/index.tsx`; Android already drew it this way).
+
 #### 3e. Sheets — one shape and one head, on both surfaces (hard spec, 2026-08-22)
 
 A **sheet** is how the app asks for something without leaving the page — Filter & Sort, New goal,
@@ -564,6 +572,27 @@ The rules that hold it together:
 - Two web sheets still wear a white head and are to be converted when next touched: the note
   editor's **Add a link** sheet (its head carries a description line that has to move into the body
   first) and the numeric **Update Progress** panel in `Targets.tsx`.
+
+#### 3f. Search fields — the reset is the word "Clear", never a cross (hard spec, 2026-08-22)
+
+Every search field in the app — the All-goals header, the goal-workspace switcher, the Will do /
+Resources / Options toolbars, the resource pickers — empties itself through **the word `Clear`**
+set inside the field on its right, in **Kale**, semibold, sentence case. It appears only while
+something is typed.
+
+The reason is the phone. An open search on a narrow screen is a field **plus a cross that closes
+it**, so a cross *inside* the field put two identical marks a few pixels apart, and neither of them
+said which one dropped the query and which one dismissed the search (owner, 2026-08-22). A word
+cannot be mistaken for the button beside it, and the two jobs stop looking like one control drawn
+twice.
+
+One component per surface draws it: **`ClearSearchWord`** in `src/components/spira/ListToolbar.tsx`
+(web — the section fields and the header's own field all use it) and the `Clear` text inside
+**`SpiraSearchField`** (`ui/components/GoalWorkspaceChrome.kt`, the one search input on Android).
+Never hand-roll a clear control, and never put an X back inside a field.
+
+The X that **closes** a search stays exactly as it is — the white disc beside the field on Android,
+the corner button on the web. It is the one cross in the row.
 
 #### 4. Verify UI changes visually before shipping
 
@@ -687,10 +716,16 @@ inside either. Both surfaces implement it once — Android `ui/components/SpiraF
   (`LockablePreferences`). **Unlocking is not a reset** — what is on screen stays; only the memory
   goes.
 
-- **Never pinned, padlock or no padlock**: the **search box** (a query belongs to the screen it was
-  typed on) and the **deadline range** (a range is about a moment — "what is due this month" — and
-  one remembered from a fortnight ago opens the page on a list that looks empty for no visible
-  reason).
+- **A closed padlock pins EVERY question the panel asks, the deadline range included** (owner,
+  2026-08-22). The range was exempt for a day, on the argument that a range is about a moment; then
+  the owner set one, shut the padlock, left the app and came back to an empty field with the
+  padlock still closed. **A control that promises to keep the arrangement and silently drops two of
+  the answers is the worse failure** — nothing on screen admitted the range was not covered. The
+  original worry is answered by two things that shipped alongside it: a list emptied by its own
+  filter says so in a warning notice, and the trigger carries a Guava dot. A restored range is not
+  invisible.
+- **Never pinned, padlock or no padlock**: the **search box** alone — a query belongs to the screen
+  it was typed on.
 - **A question's shape says what kind of question it is**: filter values are **pills** (see 3c), a
   *modifier* — Ascending / Descending — is a **segmented control**, and a **sort key** is a
   **choice card**. Three shapes, so a glance tells them apart without reading.
