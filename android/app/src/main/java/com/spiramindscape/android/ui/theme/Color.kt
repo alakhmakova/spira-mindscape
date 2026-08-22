@@ -113,7 +113,10 @@ val SpiraAccentSoft = Guava200
 val SpiraAmber = SpiraAccent
 val SpiraAmberSoft = SpiraAccentSoft
 
-val SpiraBackground = Parsnip100           // the near-white page canvas
+// **White, not Parsnip** (owner, 2026-08-21). Parsnip-100 is a warm near-white, and against the
+// white cards sitting on it the page read as grey. White is the brand's primary canvas; the cards
+// are told apart by their hairline border, not by a difference in fill.
+val SpiraBackground = White                // the page canvas
 val SpiraSurfaceRaised = White             // cards / menus (pure white)
 val SpiraSurfaceSunken = Salt300           // sunken wells
 

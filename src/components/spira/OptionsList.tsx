@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, Info, CirclePlus } from "@/components/spira/icons";
-import { FrownFilled, SmileFilled } from "@/components/spira/icons";
+import { Plus, CirclePlus } from "@/components/spira/icons";
+import { Dots9, FrownFilled, SmileFilled } from "@/components/spira/icons";
+import { FilteredEmptyNotice, NoticeCard } from "@/components/spira/Notice";
 import { useSpira } from "@/lib/spira/store";
 import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
@@ -58,12 +59,22 @@ export function reorderTargetIndex(
  * An option saved before the badge existed has an empty status rather than "none"; both mean the
  * same thing to the user, so "Didn't try" has to catch either.
  */
-export type OptionLeanFilter = "all" | "good_idea" | "didnt_work" | "none";
+/** Re-exported from the store, which owns it now — the padlock has to be able to pin it. */
+export type { OptionLeanFilter } from "@/components/shell/shell-store";
+type OptionLeanFilter = "all" | "good_idea" | "didnt_work" | "none";
 
 export const OPTION_LEAN_CHOICES = [
   { value: "all", label: "All" },
-  { value: "good_idea", label: "Good idea" },
-  { value: "didnt_work", label: "Bad idea" },
+  {
+    value: "good_idea",
+    label: "Good idea",
+    icon: <SmileFilled className="h-3.5 w-3.5" />,
+  },
+  {
+    value: "didnt_work",
+    label: "Bad idea",
+    icon: <FrownFilled className="h-3.5 w-3.5" />,
+  },
   { value: "none", label: "Didn't try" },
 ] as const;
 
@@ -243,16 +254,16 @@ export function OptionsList({
         </p>
       )}
       {goal.options.length > 0 && ordered.length === 0 && (
-        <p className="text-sm italic text-muted-foreground">
-          No options match that filter.
-        </p>
+        <FilteredEmptyNotice>No options match that filter.</FilteredEmptyNotice>
       )}
       {/* The Reorder/Save toggle lives in the Options section header (see goals.$goalId.tsx). */}
       {reordering && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Info className="h-3.5 w-3.5 shrink-0" />
-          Drag cards to reorder.
-        </p>
+        // The app's one message card, not a grey line with a glyph beside it (owner, 2026-08-21).
+        // The words are Android's too, and they name the gesture rather than the goal: what people
+        // got wrong was trying to drag the card body, so the sentence has to say where to grab.
+        <NoticeCard kind="info" onDismiss={null}>
+          Drag a card by the grip on its left. Swiping still scrolls the page.
+        </NoticeCard>
       )}
 
       <ul className="space-y-3">
@@ -327,9 +338,10 @@ export function OptionsList({
 /**
  * A single option row. The rating smiley is floated top-right so line 1 sits beside it and
  * lines 2+ wrap underneath (no reserved empty column). A option longer than 3 lines collapses
- * to 3 lines with a "Show more"/"Show less" toggle (InlineText `clampLines`). There is no drag
- * handle: reordering happens only in **reorder mode**, where the whole card is the drag target
- * (grab cursor) and every per-card action (edit, rating, delete, select, Show more) is disabled.
+ * to 3 lines with a "Show more"/"Show less" toggle (InlineText `clampLines`). Reordering happens
+ * only in **reorder mode**, where the left slot's radio is replaced by a drag grip (grab cursor)
+ * — the grip alone starts a drag, so a swipe anywhere else still scrolls the page — and every
+ * per-card action (edit, rating, delete, select, Show more) is disabled.
  */
 function OptionRow({
   opt,
@@ -417,7 +429,6 @@ function OptionRow({
 
   return (
     <li
-      onPointerDown={reordering ? onStartDrag : undefined}
       style={{
         ...(isDragging
           ? {
@@ -426,12 +437,10 @@ function OptionRow({
               position: "relative",
             }
           : {}),
-        ...(reordering ? { touchAction: "none" } : {}),
       }}
       className={cn(
         "group relative flex items-stretch rounded-md border transition-colors",
         reordering && "select-none",
-        reordering && (isDragging ? "cursor-grabbing" : "cursor-grab"),
         isDragging
           ? "border-primary shadow-lg"
           : opt.selected
@@ -442,31 +451,69 @@ function OptionRow({
       {/* Rating badge on the card's top-right edge. */}
       {smiley}
 
-      {/* Left slot — the active radio (single-select); inert while reordering. */}
-      <button
-        onClick={reordering ? undefined : onToggleSelect}
-        className={cn(
-          "w-12 shrink-0 flex items-center justify-center border-r transition-colors rounded-l-md",
-          reordering && "pointer-events-none",
-          opt.selected
-            ? // The option slot keeps its original tint (pre-palette-pass) at the owner's request;
-              // `--primary-soft` is now Kale-200 and is used by targets/tasks instead.
-              "bg-[oklch(0.95_0.032_180)] border-primary"
-            : "bg-surface border-border hover:bg-secondary/50",
-        )}
-        aria-label={opt.selected ? "Deselect option" : "Select option"}
-      >
+      {/*
+        Left slot — the active radio, and **the drag grip in its place while reordering** (owner,
+        2026-08-21; Android has done this since 2026-08-18).
+
+        The card used to be the drag target itself: `onPointerDown` on the whole `<li>` plus
+        `touch-action: none` across it. On a touch screen that made the options list very nearly
+        unscrollable in reorder mode — a swipe meant to move the page picked a card up instead,
+        because the card claimed the gesture on the first pixel and the page never got a look in.
+
+        A scroll is a swipe and a drag is a press on a grip, so they now have separate targets: the
+        grip alone starts a drag and carries `touch-action: none`, and a swipe anywhere else on the
+        card scrolls the page exactly as it does outside reorder mode.
+
+        Same cell, same 48px width, so nothing on the card moves when the mode changes — and the
+        cell keeps its teal wash for the active option, so which one is active stays readable while
+        the list is being rearranged.
+      */}
+      {reordering ? (
         <div
+          onPointerDown={onStartDrag}
+          style={{ touchAction: "none" }}
+          role="button"
+          aria-label="Drag to reorder"
           className={cn(
-            "h-5 w-5 rounded-full border-2 grid place-items-center transition-colors",
-            opt.selected ? "border-primary" : "border-border-strong",
+            "w-12 shrink-0 flex items-center justify-center border-r rounded-l-md transition-colors",
+            isDragging ? "cursor-grabbing" : "cursor-grab",
+            opt.selected
+              ? "bg-[oklch(0.95_0.032_180)] border-primary"
+              : "bg-surface border-border hover:bg-secondary/50",
           )}
         >
-          {opt.selected && (
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          )}
+          <Dots9
+            className={cn(
+              "h-[18px] w-[18px]",
+              opt.selected ? "text-primary" : "text-border-strong",
+            )}
+          />
         </div>
-      </button>
+      ) : (
+        <button
+          onClick={onToggleSelect}
+          className={cn(
+            "w-12 shrink-0 flex items-center justify-center border-r transition-colors rounded-l-md",
+            opt.selected
+              ? // The option slot keeps its original tint (pre-palette-pass) at the owner's request;
+                // `--primary-soft` is now Kale-200 and is used by targets/tasks instead.
+                "bg-[oklch(0.95_0.032_180)] border-primary"
+              : "bg-surface border-border hover:bg-secondary/50",
+          )}
+          aria-label={opt.selected ? "Deselect option" : "Select option"}
+        >
+          <div
+            className={cn(
+              "h-5 w-5 rounded-full border-2 grid place-items-center transition-colors",
+              opt.selected ? "border-primary" : "border-border-strong",
+            )}
+          >
+            {opt.selected && (
+              <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+            )}
+          </div>
+        </button>
+      )}
 
       {/* Right section — the option text gets the full width; the ⋮ menu floats over its
           top-right corner only while the card is hovered or focused. */}

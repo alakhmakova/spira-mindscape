@@ -14,23 +14,27 @@ import {
   Loader2,
   Info,
   Search,
-  Filter,
-  SortDescending,
 } from "@/components/spira/icons";
 import {
-  ToolbarMenu,
-  MenuGroup,
-  MenuChoice,
   FilterIconTrigger,
   RoundAddButton,
   SectionSearchButton,
   SectionSearchField,
+  SectionSearchInput,
   SheetChoiceCards,
   SheetGroup,
   SheetPills,
   ToolbarSheet,
 } from "@/components/spira/ListToolbar";
 import { Section } from "@/components/spira/Section";
+import {
+  useListActive,
+  useListLocked,
+  useShellFilters,
+  type ResourceSortKey,
+  type ResourceTypeFilter,
+} from "@/components/shell/shell-store";
+import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import type { Goal, Resource, ResourceInput, Target } from "@/lib/spira/types";
 import { useSpira } from "@/lib/spira/store";
 import {
@@ -253,13 +257,18 @@ function useCopied() {
   return { copied, run } as const;
 }
 
-/** Sort keys for the resources list — "Created" is the server's own (as-added) order. */
+/**
+ * Sort keys for the resources list — "Created" is the server's own (as-added) order.
+ *
+ * There is deliberately **no sort by type** (owner, 2026-08-18 on Android, 2026-08-20 here): the
+ * type question belongs to the filter, and ordering the list by it only reshuffles cards the
+ * filter can simply hide.
+ */
 const RES_SORT = [
   { value: "recent", label: "Created" },
   { value: "name", label: "Name" },
-  { value: "type", label: "Type" },
 ] as const;
-type ResSort = (typeof RES_SORT)[number]["value"];
+type ResSort = ResourceSortKey;
 
 /** The type filter — mirrors Android's `ResourceFilter`. */
 const RES_TYPES = [
@@ -269,7 +278,7 @@ const RES_TYPES = [
   { value: "file", label: "Files" },
   { value: "email", label: "Emails" },
 ] as const;
-type ResType = (typeof RES_TYPES)[number]["value"];
+type ResType = ResourceTypeFilter;
 
 /**
  * The Resources section: its title, **its search / sort / filter on that same line**, the create
@@ -289,12 +298,19 @@ export function ResourcesSection({
   const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [sort, setSort] = useState<ResSort>("recent");
-  const [typeFilter, setTypeFilter] = useState<ResType>("all");
+  // In the store, so this list's padlock has something to pin.
+  const sort = useShellFilters((s) => s.resourceSort);
+  const typeFilter = useShellFilters((s) => s.resourceType);
+  const setResourcesView = useShellFilters((s) => s.setView);
+  const resetList = useShellFilters((s) => s.resetList);
+  const setLocked = useShellFilters((s) => s.setLocked);
+  const resourcesLocked = useListLocked("resources");
+  const resourcesActive = useListActive("resources");
+  const setSort = (next: ResSort) => setResourcesView({ resourceSort: next });
+  const setTypeFilter = (next: ResType) =>
+    setResourcesView({ resourceType: next });
   // The phone asks both questions in one drawer; the desktop keeps its two menus.
   const [sheetOpen, setSheetOpen] = useState(false);
-
-  const sortLabel = RES_SORT.find((c) => c.value === sort)?.label ?? "Sort";
 
   return (
     <Section
@@ -316,15 +332,11 @@ export function ResourcesSection({
       action={
         <div className="flex items-center gap-0.5 sm:gap-1.5">
           {/* Desktop keeps the field itself; a phone gets the glyph that opens it. */}
-          <div className="relative hidden w-[200px] sm:block">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search resources"
-              className="h-9 pl-8"
-            />
-          </div>
+          <SectionSearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search resources"
+          />
           <span className="sm:hidden">
             <SectionSearchButton
               onOpen={() => setSearchOpen(true)}
@@ -333,12 +345,15 @@ export function ResourcesSection({
             />
           </span>
 
-          {/* **One drawer on a phone**, holding both questions — the All-goals pattern, so every
-              list in the app asks for a filter the same way (owner, 2026-08-17). Two separate
-              icon-menus were two taps to answer two halves of one thought. */}
-          <span className="sm:hidden">
+          {/* **One panel, holding both questions** — the All-goals pattern, so every list in the
+              app asks for a filter the same way (owner, 2026-08-17). Two separate icon-menus were
+              two taps to answer two halves of one thought.
+
+              At **every width** since 2026-08-20: the desktop's pair of dropdowns is gone, and the
+              laptop opens the same panel from the right that the phone opens from the bottom. */}
+          <span>
             <FilterIconTrigger
-              active={typeFilter !== "all" || sort !== "recent"}
+              active={resourcesActive}
               onClick={() => setSheetOpen(true)}
               ariaLabel="Filter and sort resources"
             />
@@ -346,11 +361,10 @@ export function ResourcesSection({
               open={sheetOpen}
               onOpenChange={setSheetOpen}
               title="Filter & Sort"
-              onReset={() => {
-                setTypeFilter("all");
-                setSort("recent");
-              }}
-              resetDisabled={typeFilter === "all" && sort === "recent"}
+              onReset={() => resetList("resources")}
+              resetDisabled={!resourcesActive}
+              locked={resourcesLocked}
+              onLockedChange={(next) => setLocked("resources", next)}
             >
               <SheetGroup title="Type">
                 <SheetPills
@@ -368,45 +382,6 @@ export function ResourcesSection({
                 />
               </SheetGroup>
             </ToolbarSheet>
-          </span>
-
-          <span className="hidden sm:inline-flex sm:items-center sm:gap-1.5">
-            <ToolbarMenu
-              label={sortLabel}
-              ariaLabel="Sort resources"
-              closeOnSelect
-              leadingIcon={<SortDescending className="h-4 w-4 shrink-0" />}
-            >
-              <MenuGroup title="Sort by">
-                {RES_SORT.map((c) => (
-                  <MenuChoice
-                    key={c.value}
-                    label={c.label}
-                    selected={sort === c.value}
-                    onSelect={() => setSort(c.value)}
-                  />
-                ))}
-              </MenuGroup>
-            </ToolbarMenu>
-
-            <ToolbarMenu
-              label="Filter"
-              count={typeFilter === "all" ? 0 : 1}
-              ariaLabel="Filter resources"
-              closeOnSelect
-              leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
-            >
-              <MenuGroup title="Type">
-                {RES_TYPES.map((c) => (
-                  <MenuChoice
-                    key={c.value}
-                    label={c.label}
-                    selected={typeFilter === c.value}
-                    onSelect={() => setTypeFilter(c.value)}
-                  />
-                ))}
-              </MenuGroup>
-            </ToolbarMenu>
           </span>
 
           {/* A round + on a phone; the worded button on desktop. */}
@@ -474,12 +449,6 @@ export function ResourcesList({
       list.sort((a, b) =>
         resourceDisplayName(a).localeCompare(resourceDisplayName(b)),
       );
-    } else if (sort === "type") {
-      list.sort(
-        (a, b) =>
-          a.type.localeCompare(b.type) ||
-          resourceDisplayName(a).localeCompare(resourceDisplayName(b)),
-      );
     }
     // "recent" keeps the server's as-added order (what `goal.resources` already is).
     return list;
@@ -494,9 +463,9 @@ export function ResourcesList({
           Capture notes, links, files, and emails that support this goal.
         </p>
       ) : shown.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">
+        <FilteredEmptyNotice>
           No resources match the search or filter.
-        </p>
+        </FilteredEmptyNotice>
       ) : (
         <div className="flex flex-wrap gap-2">
           {shown.map((r) => (

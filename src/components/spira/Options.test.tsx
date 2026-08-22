@@ -242,7 +242,58 @@ describe("OptionsList — reorder mode", () => {
     expect(
       screen.queryByRole("button", { name: "Option actions" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Drag cards to reorder.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Drag a card by the grip on its left/),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * **The grip stands in the radio's place, and it is the only thing that drags** (owner,
+   * 2026-08-21; Android has done this since 2026-08-18).
+   *
+   * The card itself used to be the drag target — `onPointerDown` on the whole `<li>` plus
+   * `touch-action: none` across it — which made the list very nearly unscrollable on a touch
+   * screen: a swipe meant to move the page picked a card up instead. A scroll is a swipe and a
+   * drag is a press on a grip, so the two need separate targets. This is here so nobody puts the
+   * handler back on the card.
+   */
+  it("swaps the radio for a grip, and only the grip carries the drag", () => {
+    const { container } = render(
+      <OptionsList
+        goal={goalFixture([option("o1", "Alpha"), option("o2", "Beta")])}
+        reordering
+        onReorderingChange={vi.fn()}
+      />,
+    );
+
+    const grips = screen.getAllByRole("button", { name: "Drag to reorder" });
+    expect(grips).toHaveLength(2);
+    // The radio is gone while reordering — the cell is the grip now.
+    expect(
+      screen.queryByRole("button", { name: /Select option/ }),
+    ).not.toBeInTheDocument();
+
+    // Only the grip opts out of touch scrolling; the card must not.
+    expect(grips[0]).toHaveStyle({ touchAction: "none" });
+    const card = container.querySelector("li");
+    expect(card?.style.touchAction).toBe("");
+  });
+
+  it("shows the radio and no grip when not reordering", () => {
+    render(
+      <OptionsList
+        goal={goalFixture([option("o1", "Alpha"), option("o2", "Beta")])}
+        reordering={false}
+        onReorderingChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Drag to reorder" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /Select option/ }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("exits reorder mode when fewer than 2 options remain", () => {

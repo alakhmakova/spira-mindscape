@@ -433,37 +433,57 @@ fun ElementActionsMenu(
 
 /**
  * "Attach resource" as a plain teal link — for places that spell their actions out rather than
- * hiding them behind a ⋯ menu (the target card). Renders nothing outside a goal workspace, where
- * there is no resource list to pick from.
+ * hiding them behind a ⋯ menu (the target card, the create form). Renders nothing outside a goal
+ * workspace, where there is no resource list to pick from.
+ *
+ * [iconOnly] is the same button reduced to its paperclip, for a row that is already a compact
+ * strip carrying its own remove control — a task inside the create form. The web twin takes the
+ * same choice as `variant="icon"` (`inline-resources.tsx`).
  */
 @Composable
 fun AttachResourceButton(
     onAttach: (resourceId: String) -> Unit,
     modifier: Modifier = Modifier,
     attachedTo: String? = null,
+    iconOnly: Boolean = false,
+    /** Names the control when the paperclip stands alone and there is no word to read. */
+    contentDescription: String = "Attach resource",
 ) {
     LocalInlineResources.current ?: return
     var pickerOpen by remember { mutableStateOf(false) }
 
-    Row(
-        modifier.clickable { pickerOpen = true }.padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    if (iconOnly) {
         Icon(
-            SpiraIcons.CirclePlus,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
+            SpiraIcons.Paperclip,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.spiraExtras.mutedForeground,
+            modifier = modifier
+                .size(24.dp)
+                .clickable { pickerOpen = true }
+                .padding(4.dp),
         )
-        Text(
-            "Attach resource",
-            // Trimmed leading, so the word sits on the plus's centre instead of riding above it —
-            // the line box reserves descender room this label never uses. See addActionTextStyle.
-            style = addActionTextStyle(),
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
+    } else {
+        Row(
+            modifier.clickable { pickerOpen = true }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                SpiraIcons.CirclePlus,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                "Attach resource",
+                // Trimmed leading, so the word sits on the plus's centre instead of riding above
+                // it — the line box reserves descender room this label never uses. See
+                // addActionTextStyle.
+                style = addActionTextStyle(),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 
     if (pickerOpen) {

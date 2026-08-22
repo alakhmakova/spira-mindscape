@@ -49,14 +49,19 @@ test.describe("Options — active radio + drag reorder", () => {
     await expect(cards).toHaveCount(3);
     await expect(cards.first()).toContainText("First option");
 
-    // Enter reorder mode — the whole card becomes the drag target (the Reorder
-    // toggle lives in the Options section header and shows for 2+ options).
+    // Enter reorder mode (the Reorder toggle lives in the Options section header and
+    // shows for 2+ options).
     await page.getByRole("button", { name: "Reorder" }).click();
 
+    // The drag target is the GRIP in the card's left slot, not the card itself (2026-08-21:
+    // the card claimed every touch, so the list was unscrollable in reorder mode). Pressing
+    // anywhere else on the card starts no drag at all.
     const firstCard = page.locator("li", { hasText: "First option" });
     await firstCard.scrollIntoViewIfNeeded();
-    const box = await firstCard.boundingBox();
-    if (!box) throw new Error("option card not found");
+    const grip = firstCard.getByRole("button", { name: "Drag to reorder" });
+    await expect(grip).toBeVisible();
+    const box = await grip.boundingBox();
+    if (!box) throw new Error("option drag grip not found");
     const startX = box.x + box.width / 2;
     const startY = box.y + box.height / 2;
 

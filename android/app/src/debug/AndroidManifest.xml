@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **Debug builds only.** This file is merged into `main/AndroidManifest.xml` for the `debug`
+  variant and does not exist in a release APK.
+
+  It exports [NoteEditorActivity] so the note editor can be launched straight from `adb` with
+  seeded content:
+
+      adb shell "am start -n com.spiramindscape.android/.ui.goals.NoteEditorActivity \
+        -e resourceId 1 -e initialTitle t -e initialHtml '<p>START.</p>'"
+
+  Reaching that screen through the app needs a completed Google sign-in, which only the owner can
+  do (CLAUDE.md → "Diagnosing the app"), so without this an agent cannot reproduce a typing defect
+  at all — and BUG-041 is precisely a typing defect that needs a document with text already in it.
+  The backlog's own "what to try next" asks for a debug-only entry point of this kind.
+
+  It is deliberately narrow: one activity, debug only, and it takes nothing but display data (a
+  title and some HTML it puts on screen). It reads no other user's data and grants no permission.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name=".ui.goals.NoteEditorActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+
+        <!-- The bisection harness for BUG-041; see NoteEditorProbeActivity's own doc. -->
+        <activity
+            android:name=".debug.NoteEditorProbeActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize" />
+    </application>
+</manifest>

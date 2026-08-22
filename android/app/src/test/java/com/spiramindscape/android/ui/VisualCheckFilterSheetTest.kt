@@ -49,6 +49,10 @@ class VisualCheckFilterSheetTest : VisualCheckTestBase() {
                     title = "Filter & Sort",
                     onDismiss = {},
                     onReset = {},
+                    // Closed here and open on the target sheet below, so one sweep of the PNGs
+                    // shows both states of the padlock (owner, 2026-08-21).
+                    locked = true,
+                    onLockedChange = {},
                 ) {
                     SpiraSheetGroup("Status") {
                         SpiraSheetPills(
@@ -133,6 +137,8 @@ class VisualCheckFilterSheetTest : VisualCheckTestBase() {
                     title = "Filter",
                     onDismiss = {},
                     onReset = {},
+                    locked = false,
+                    onLockedChange = {},
                 ) {
                     SpiraSheetGroup("Progress") {
                         SpiraSheetPills(

@@ -166,6 +166,16 @@ fun <T> SpiraSortTrigger(
     onAscendingChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     contentDescription: String = "Sort",
+    /** The same padlock the list's filter sheet carries — one lock per list, not one per sheet. */
+    locked: Boolean? = null,
+    onLockedChange: ((Boolean) -> Unit)? = null,
+    /**
+     * What "Reset all" does here. **Pass the list's own reset**: the fallback below cannot know
+     * which direction this list defaults to, and guessing descending left a freshly-reset target
+     * list sorted the wrong way AND counted as one active filter — a reset reporting itself as a
+     * filter. With a padlock closed it wrote that wrong direction down, too.
+     */
+    onReset: (() -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     val current = options.firstOrNull { it.value == selected }?.label ?: "Sort"
@@ -180,7 +190,9 @@ fun <T> SpiraSortTrigger(
             SpiraFilterSheet(
                 title = "Sort",
                 onDismiss = { open = false },
-                onReset = { onSelect(options.first().value); onAscendingChange(false) },
+                onReset = onReset ?: { onSelect(options.first().value); onAscendingChange(false) },
+                locked = locked,
+                onLockedChange = onLockedChange,
             ) {
                 SpiraSheetGroup("Direction") {
                     SpiraSegmented(
@@ -224,6 +236,9 @@ fun SpiraFilterTrigger(
     title: String = "Filter",
     leadingIcon: ImageVector = SpiraIcons.Filter,
     onReset: () -> Unit = {},
+    /** This list's padlock — see the note in `ViewPreferences.kt`. */
+    locked: Boolean? = null,
+    onLockedChange: ((Boolean) -> Unit)? = null,
     sheet: @Composable ColumnScope.() -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -240,6 +255,8 @@ fun SpiraFilterTrigger(
                 onDismiss = { open = false },
                 onReset = onReset,
                 resetEnabled = count > 0,
+                locked = locked,
+                onLockedChange = onLockedChange,
                 content = sheet,
             )
         }

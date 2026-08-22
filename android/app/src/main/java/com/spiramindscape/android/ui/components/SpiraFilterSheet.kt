@@ -57,7 +57,11 @@ import com.spiramindscape.android.ui.theme.spiraExtras
  *  - The questions in between, each under a small uppercase heading.
  *  - **Reset all** beside **Apply** at the foot. The confirm word is "Apply", never "Done": these
  *    are choices being applied to a list, not a task being finished. Reset is always present — a
- *    control that appears only once you have made a mess is a control nobody finds.
+ *    control that appears only once you have made a mess is a control nobody finds, and it resets
+ *    **everything** (owner, 2026-08-21).
+ *  - **A padlock in the head, on the right beside the X** (owner, 2026-08-21). Closed, this list's
+ *    filters and sort survive the app being closed and reopened; open, they go back to their
+ *    defaults next time. See the padlock note in `ViewPreferences.kt`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +70,9 @@ fun SpiraFilterSheet(
     onDismiss: () -> Unit,
     onReset: () -> Unit,
     resetEnabled: Boolean = true,
+    /** Whether this list's padlock is closed, or null where a surface has no padlock. */
+    locked: Boolean? = null,
+    onLockedChange: ((Boolean) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -80,7 +87,7 @@ fun SpiraFilterSheet(
         dragHandle = null,
         shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg),
     ) {
-        SpiraFilterSheetContent(title, onDismiss, onReset, resetEnabled, content)
+        SpiraFilterSheetContent(title, onDismiss, onReset, resetEnabled, locked, onLockedChange, content)
     }
 }
 
@@ -98,6 +105,8 @@ fun SpiraFilterSheetContent(
     onDismiss: () -> Unit,
     onReset: () -> Unit,
     resetEnabled: Boolean = true,
+    locked: Boolean? = null,
+    onLockedChange: ((Boolean) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().background(Color.White)) {
@@ -115,6 +124,24 @@ fun SpiraFilterSheetContent(
                 color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.weight(1f),
             )
+            // The padlock sits beside the X because it is about the panel as a whole, not about
+            // any one question inside it.
+            if (locked != null && onLockedChange != null) {
+                Icon(
+                    if (locked) SpiraIcons.Lock else SpiraIcons.LockOpen,
+                    contentDescription = if (locked) {
+                        "Filters and sort are kept - unlock to let them reset"
+                    } else {
+                        "Keep these filters and sort"
+                    },
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { onLockedChange(!locked) }
+                        .padding(6.dp)
+                        .size(18.dp),
+                )
+            }
             Icon(
                 SpiraIcons.X,
                 contentDescription = "Close",

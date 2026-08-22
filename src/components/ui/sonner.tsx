@@ -1,63 +1,93 @@
 import { Toaster as Sonner } from "sonner";
-import {
-  CircleCheckFill,
-  CircleExclamationFilled,
-  Info,
-  TriangleAlert,
-} from "@/components/spira/icons";
+
+import { NOTICE_KINDS, NoticeGlyph } from "@/components/spira/Notice";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
+/** `--normal-bg` / `--normal-border` / `--normal-text` for one kind, as Tailwind arbitrary props. */
+function kindVars(kind: keyof typeof NOTICE_KINDS) {
+  const { ink, fill } = NOTICE_KINDS[kind];
+  return `[--normal-bg:${fill}] [--normal-border:${ink}] [--normal-text:#222525]`;
+}
+
 /**
- * Spira's toast — the owner's reference (2026-08-17).
+ * Spira's toast — the same card as every other message in the app.
  *
- * One shape for every message; only the mark and its colour change with what happened:
+ * It draws `NoticeCard`'s shape and reads its colour table (`src/components/spira/Notice.tsx`),
+ * because a toast and a notice sitting inside a block are one card and differ only in where they
+ * sit: the toast floats and times itself out, the banner sits in the flow. Android's `SpiraToast`
+ * and `SpiraInlineBanner` are the same pair over one `SpiraNoticeCard`.
  *
- *  - a **white card**, a hairline border, a 10px radius and a soft shadow — never a coloured
- *    block. A tinted card shouts, and the mark already says which kind it is;
- *  - a **filled semantic glyph** on the left, in the ramp's solid step: teal-green
- *    `circle-check-fill` for success, red `circle-exclamation-fill` for an error, amber
- *    `triangle-exclamation` for a warning, blue `circle-info` for a note;
- *  - **near-black text** in every kind (the mark carries the meaning, not the type — the same rule
- *    the pills follow), wrapping to as many lines as it needs;
- *  - an **X on the right** to dismiss, so a long message is never in the way.
+ * The colours, the radius and the shadow all come from `NOTICE_KINDS`, so there is one table for
+ * the whole app rather than a copy per surface. See CLAUDE.md's notice spec for the values.
  *
- * The colours are set as CSS variables per kind and read by the classes below, because sonner
- * renders its own DOM: the icon slot is the only place the kind can be expressed, and it must not
- * leak into the card or the type.
+ * # Why this drives sonner's own variables instead of styling the card
+ *
+ * sonner injects its stylesheet **unlayered** at the end of `<head>`, and Tailwind v4 compiles
+ * every utility into `@layer utilities`. Unlayered rules beat layered ones whatever the
+ * specificity, so a `bg-[#FFFBFB]` on the toast simply loses to sonner's
+ * `[data-sonner-toast][data-styled=true] { background: var(--normal-bg) }` — the first attempt at
+ * this styled nothing at all, while the in-page `NoticeCard` (inline styles) rendered correctly,
+ * which is exactly the "two shapes for one message" split the card exists to end.
+ *
+ * So the per-kind classes declare **`--normal-bg` / `--normal-border` / `--normal-text` on the toast
+ * element itself**. A custom property declared on an element beats one inherited from an ancestor
+ * (sonner sets these on the container) with no layer contest at all, and sonner's own unlayered
+ * rule then reads the value we put there. Everything sonner hard-codes rather than reading from a
+ * variable — the shadow, and every one of the close button's properties — needs `!`.
  */
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       className="toaster group"
       icons={{
-        success: <CircleCheckFill className="h-5 w-5 text-[#007A4B]" />,
-        error: <CircleExclamationFilled className="h-5 w-5 text-[#C53336]" />,
-        warning: <TriangleAlert className="h-5 w-5 text-[#896500]" />,
-        info: <Info className="h-5 w-5 text-[#006CC1]" />,
-        loading: <Info className="h-5 w-5 animate-pulse text-[#0A8080]" />,
+        success: <NoticeGlyph kind="success" />,
+        error: <NoticeGlyph kind="error" />,
+        warning: <NoticeGlyph kind="warning" />,
+        info: <NoticeGlyph kind="info" />,
+        loading: <NoticeGlyph kind="success" className="animate-pulse" />,
       }}
       closeButton
       toastOptions={{
         classNames: {
           toast: [
-            "group toast items-start gap-3 rounded-[10px] border p-4",
-            "group-[.toaster]:border-border group-[.toaster]:bg-surface",
-            "group-[.toaster]:text-foreground group-[.toaster]:shadow-lg",
+            // `items-start!`: sonner centres the row, which floats the glyph and the X halfway
+            // down a message that wraps. Both belong on the first line.
+            "group toast items-start! gap-3",
+            // sonner hard-codes its shadow, so this one has to be important to land.
+            "shadow-[0_4px_12px_rgba(28,28,28,0.08),0_2px_8px_rgba(28,28,28,0.04)]!",
           ].join(" "),
+          success: kindVars("success"),
+          error: kindVars("error"),
+          warning: kindVars("warning"),
+          info: kindVars("info"),
           // The glyph sits on the first line of the text, not centred against a two-line message.
           icon: "mt-px shrink-0",
           title: "text-[14px] font-medium leading-[1.5]",
           description:
             "group-[.toast]:text-[13px] group-[.toast]:text-muted-foreground",
-          // sonner's default close button is a small circle pinned to the corner; this is the
-          // reference's plain X sitting in the row.
+          /*
+           * **The X sits INSIDE the card, on the right** (owner, 2026-08-21) — top-right when the
+           * message wraps, simply right when it is one line.
+           *
+           * One rule gives both: it stops being absolutely positioned and becomes an ordinary flex
+           * item aligned to the message's **first line**, exactly as the glyph on the other side
+           * is. On a one-line toast that first line *is* the card, so the button reads as centred;
+           * on a three-line one it stays up at the top where it cannot sit in the middle of a
+           * sentence.
+           *
+           * sonner's own rule is a floating circle pinned OUTSIDE the corner (`position:absolute`,
+           * `left: var(--toast-close-button-start)`, a translate, a border and a 50% radius), and
+           * every one of those properties is unlayered — so each has to be overridden with `!`,
+           * not merely restated.
+           */
           closeButton: [
-            "group-[.toast]:right-3 group-[.toast]:left-auto group-[.toast]:top-3",
-            "group-[.toast]:h-6 group-[.toast]:w-6 group-[.toast]:rounded-md",
-            "group-[.toast]:border-transparent group-[.toast]:bg-transparent",
-            "group-[.toast]:text-muted-foreground hover:group-[.toast]:bg-secondary",
-            "hover:group-[.toast]:text-foreground",
+            // `transform-none!`, not `translate-none`: sonner moves it with `transform`, and the
+            // two are different properties — the first attempt left the translate in place.
+            "static! order-last ml-auto shrink-0 transform-none! self-start",
+            "h-6! w-6! rounded-md! border-transparent! bg-transparent!",
+            "text-muted-foreground! hover:bg-black/5! hover:border-transparent!",
+            "hover:text-foreground!",
           ].join(" "),
           actionButton:
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
@@ -65,6 +95,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },
       }}
+      // The radius is sonner's own container variable — inline, so no layer can outrank it.
+      style={{ "--border-radius": "8px" } as React.CSSProperties}
       {...props}
     />
   );

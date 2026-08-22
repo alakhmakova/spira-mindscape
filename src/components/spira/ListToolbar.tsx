@@ -2,176 +2,37 @@
  * The sort and filter chrome shared by every list on the web — the twin of Android's
  * `ui/components/SpiraListToolbar.kt`, so the two surfaces read as one design.
  *
- * The shape (owner, 2026-08-15):
+ * The shape (owner, 2026-08-20):
  *
- *  1. **A trigger is `icon · word`.** A leading glyph (the filter mark, or the sort direction) sits
- *     before the word, and it is never bordered or filled — even alone. The word is Kale. No pill,
- *     no chip, and **no caret**: two marks are enough to say the thing opens (owner, 2026-08-17).
- *  2. **A menu is stacked groups, each under its own heading with a hairline beneath it** — not
- *     side-by-side columns divided by a vertical rule.
- *  3. **A row hovers to a pale grey with Kale text.** The chosen *filter value* is a filled-teal
- *     row; the chosen *modifier* (Ascending / Descending) instead keeps the hover look, so it reads
- *     as a modifier rather than as the filter itself.
+ *  1. **A trigger is the filter glyph alone**, in Kale, never bordered or filled, carrying a Guava
+ *     dot when something is narrowing the list — at every width. Android's `SpiraFilterSortTrigger`
+ *     is the same mark.
+ *  2. **A filter is never a dropdown.** One panel holds every question a list asks: a drawer from
+ *     the bottom on a phone, a side panel from the right on a laptop, and the same tree of
+ *     questions inside either. The menus that used to hold them on a wide screen — the trigger
+ *     word, the columns, the rows — are gone, so there is nothing left to build one out of.
+ *  3. **A question's shape says what kind of question it is**: filter values are pills, a modifier
+ *     (Ascending / Descending) is a segmented control, and a sort key is a choice card. Three
+ *     shapes, so a glance tells them apart without reading.
  */
 
 import * as React from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
-import { Check, Filter, Plus, Search, X } from "@/components/spira/icons";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { SM_BREAKPOINT, useIsNarrowerThan } from "@/hooks/use-mobile";
+import {
+  Check,
+  Filter,
+  LockFilled,
+  LockOpenFilled,
+  Plus,
+  Search,
+  X,
+} from "@/components/spira/icons";
 import { PillChoice, type PillTone } from "@/components/spira/Pill";
+import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { cn } from "@/lib/utils";
-
-/** Pale grey + Kale text — the hover look, reused as the "aux selected" look. */
-const HOVER = "hover:bg-[#F6F6F6] hover:text-primary";
-
-/**
- * Closes the menu a {@link MenuChoice} sits in.
- *
- * Provided only by a {@link ToolbarMenu} marked `closeOnSelect` — for a question with exactly one
- * answer (the Options lean filter), where leaving the menu open after a pick means the user has to
- * dismiss a menu that has nothing left to say.
- */
-const MenuCloseContext = React.createContext<(() => void) | null>(null);
-
-/**
- * The word a toolbar menu opens from: a leading glyph, the word, and a caret.
- *
- * `asChild` on the Radix trigger, so this really is the button — wrapping it would put a second
- * focusable element in the tab order.
- */
-export function ToolbarTrigger({
-  label,
-  count,
-  ariaLabel,
-  className,
-  leadingIcon,
-  iconOnlyOnMobile,
-}: {
-  label: string;
-  /** Filters narrowing the list. Shown in brackets — "Filter (2)" — and hidden at zero. */
-  count?: number;
-  ariaLabel?: string;
-  className?: string;
-  /** The mark before the word (the filter glyph, or the current sort direction). Never bordered. */
-  leadingIcon?: React.ReactNode;
-  /**
-   * On a phone, shrink to **the glyph alone with a dot**: the word and the caret are dropped and
-   * `count` becomes a dot rather than a number. A narrow toolbar has no room for a second word
-   * beside the list's own controls, and at 16px "(1)" is unreadable anyway.
-   */
-  iconOnlyOnMobile?: boolean;
-}) {
-  return (
-    <DropdownMenuTrigger asChild>
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        className={cn(
-          "relative inline-flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-sm font-semibold",
-          "text-primary transition-colors hover:text-primary/75",
-          "outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          className,
-        )}
-      >
-        {leadingIcon}
-        {/* **No chevron** (owner, 2026-08-17) — a glyph and its word are enough to say "this
-            opens". The caret was a third mark in a control that already has two. */}
-        <span className={cn(iconOnlyOnMobile && "hidden sm:inline")}>
-          {count ? `${label} (${count})` : label}
-        </span>
-        {iconOnlyOnMobile && !!count && (
-          <span className="absolute right-0.5 top-0.5 h-[7px] w-[7px] rounded-full bg-[#F45D48] sm:hidden" />
-        )}
-      </button>
-    </DropdownMenuTrigger>
-  );
-}
-
-/**
- * The menu body: its groups laid out as **columns side by side**. The owner asked only for the
- * vertical divider between columns to go — not for the columns to be stacked into one tall list —
- * so the horizontal layout stays and each column is separated by its heading's rule, not a rule
- * between columns.
- */
-export function MenuColumns({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-start gap-2">{children}</div>;
-}
-
-/**
- * One column of a menu: its question, a **hairline under the heading**, then that question's
- * answers below. No vertical rule between columns — the heading rules do the separating.
- */
-export function MenuGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-  /** Accepted for compatibility with older call sites; the layout no longer uses a vertical rule. */
-  divided?: boolean;
-}) {
-  return (
-    <div className="px-1">
-      <p className="mx-1 mb-1 whitespace-nowrap border-b hairline px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  );
-}
-
-/**
- * One answer in a {@link MenuGroup}.
- *
- * `variant="primary"` (default) is a real filter value: chosen → a **filled teal row**. `variant="aux"`
- * is a modifier (Ascending / Descending): chosen → the **hover look** (pale grey + Kale text), so it
- * reads as a modifier rather than as the filter itself. Either way, hovering any row gives the same
- * pale-grey-and-Kale look.
- *
- * Deliberately not `DropdownMenuItem`: Radix items reserve an indicator gutter and set their own
- * focus tint.
- */
-export function MenuChoice({
-  label,
-  selected,
-  onSelect,
-  icon,
-  variant = "primary",
-}: {
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-  icon?: React.ReactNode;
-  variant?: "primary" | "aux";
-}) {
-  const close = React.useContext(MenuCloseContext);
-  return (
-    <button
-      type="button"
-      role="menuitemradio"
-      aria-checked={selected}
-      onClick={() => {
-        onSelect();
-        close?.();
-      }}
-      className={cn(
-        "flex w-full items-center gap-2 whitespace-nowrap rounded-sm px-2 py-1.5 text-left text-sm font-medium transition-colors",
-        selected
-          ? variant === "aux"
-            ? "bg-[#F6F6F6] text-primary"
-            : "bg-primary text-primary-foreground"
-          : cn("text-foreground", HOVER),
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────
  * The mobile half of the same chrome: a **drawer**, not a dropdown.
@@ -223,6 +84,49 @@ export function FilterIconTrigger({
         )}
       </span>
     </button>
+  );
+}
+
+/**
+ * A list's search field on a **desktop** section header — the twin of {@link SectionSearchButton},
+ * which is what the same search is on a phone.
+ *
+ * One component because there were two, and they had drifted: the targets header drew a raw
+ * `<input>` at `w-36 h-8` while Resources used the design-system `Input` at `w-[200px] h-9`. Side
+ * by side down the same page that reads as two different controls for one job (owner, 2026-08-21) —
+ * and the raw `<input>` was against the app's first UI rule as well.
+ */
+export function SectionSearchInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative hidden w-[200px] sm:block", className)}>
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-9 pl-8 pr-8"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -368,62 +272,163 @@ export function ToolbarSheet({
   title,
   onReset,
   resetDisabled,
+  locked,
+  onLockedChange,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  /** Clears every question in the sheet. Always shown — a control that appears only once you have
-   *  made a mess is a control nobody finds. */
+  /** Clears every question in the panel — **every** one. Always shown: a control that appears only
+   *  once you have made a mess is a control nobody finds. */
   onReset: () => void;
   resetDisabled?: boolean;
+  /** Whether this list's padlock is closed. See the padlock note in `shell-store.ts`. */
+  locked?: boolean;
+  onLockedChange?: (next: boolean) => void;
+  children: React.ReactNode;
+}) {
+  // **`sm`, not the 768 `useIsMobile` uses.** Every toolbar around this panel switches layout on
+  // Tailwind's `sm:`, so switching the panel 128px later opened a bottom drawer beside a toolbar
+  // that had already gone desktop.
+  const isMobile = useIsNarrowerThan(SM_BREAKPOINT);
+  const body = (
+    <ToolbarPanelBody
+      title={title}
+      onClose={() => onOpenChange(false)}
+      onReset={onReset}
+      resetDisabled={resetDisabled}
+      locked={locked}
+      onLockedChange={onLockedChange}
+    >
+      {children}
+    </ToolbarPanelBody>
+  );
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        {/* **White**, explicitly — `bg-background` is the app's warm grey and made the sheet read
+            as a dimmed panel behind its own teal head (owner, 2026-08-17). */}
+        <DrawerContent className="mt-0 flex max-h-[92vh] flex-col bg-white px-0">
+          {body}
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        // Its own X lives in the teal head; the corner one would sit on top of it.
+        closeButton={false}
+        className="flex w-full flex-col gap-0 border-l-0 bg-white p-0 sm:max-w-[420px]"
+      >
+        {body}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * The panel's card — head, questions, foot — with neither shell around it.
+ *
+ * One tree for both widths on purpose: the drawer and the side panel are only *where* the thing
+ * sits. Two copies of this markup is how the phone and the laptop drifted into asking the same
+ * questions in different shapes, which is what this whole component exists to stop.
+ */
+function ToolbarPanelBody({
+  title,
+  onClose,
+  onReset,
+  resetDisabled,
+  locked,
+  onLockedChange,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  onReset: () => void;
+  resetDisabled?: boolean;
+  locked?: boolean;
+  onLockedChange?: (next: boolean) => void;
   children: React.ReactNode;
 }) {
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      {/* **White**, explicitly — `bg-background` is the app's warm grey and made the sheet read as
-          a dimmed panel behind its own teal head (owner, 2026-08-17). */}
-      <DrawerContent className="mt-0 flex max-h-[92vh] flex-col bg-white px-0">
-        <div className="flex shrink-0 items-center justify-between bg-primary px-5 py-3.5">
-          <h2 className="text-base font-bold text-primary-foreground">
-            {title}
-          </h2>
+    <>
+      <div className="flex shrink-0 items-center gap-1 bg-primary px-5 py-3.5">
+        <h2 className="flex-1 text-base font-bold text-primary-foreground">
+          {title}
+        </h2>
+        {/* **The padlock lives on the coloured head, to the right** (owner, 2026-08-21). Closed,
+            this list's filters and sort survive a reload and a restart; open, they go back to their
+            defaults next time — see the padlock note in `shell-store.ts`. It sits beside the X
+            because it is about the panel as a whole, not about any one question inside it. */}
+        {onLockedChange && (
           <button
             type="button"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close"
-            className="grid h-8 w-8 place-items-center rounded-md text-primary-foreground/85 transition-colors hover:bg-white/15 hover:text-primary-foreground"
+            onClick={() => onLockedChange(!locked)}
+            aria-pressed={!!locked}
+            aria-label={
+              locked
+                ? "Filters and sort are kept — unlock to let them reset"
+                : "Keep these filters and sort"
+            }
+            title={
+              locked
+                ? "Kept until you unlock — survives a reload"
+                : "Not kept — these reset next time"
+            }
+            className={cn(
+              "grid h-8 w-8 place-items-center rounded-md transition-colors",
+              locked
+                ? "bg-white/20 text-primary-foreground hover:bg-white/30"
+                : "text-primary-foreground/70 hover:bg-white/15 hover:text-primary-foreground",
+            )}
           >
-            <X className="h-4 w-4" />
+            {locked ? (
+              <LockFilled className="h-4 w-4" />
+            ) : (
+              <LockOpenFilled className="h-4 w-4" />
+            )}
           </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-4">
-          {children}
-        </div>
-
-        <div
-          className="flex shrink-0 gap-3 bg-white px-5 pt-3"
-          style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="grid h-8 w-8 place-items-center rounded-md text-primary-foreground/85 transition-colors hover:bg-white/15 hover:text-primary-foreground"
         >
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={resetDisabled}
-            className="h-12 flex-1 rounded-md border-2 border-border text-[15px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
-          >
-            Reset all
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="h-12 flex-1 rounded-md bg-primary text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Apply
-          </button>
-        </div>
-      </DrawerContent>
-    </Drawer>
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-4">
+        {children}
+      </div>
+
+      <div
+        className="flex shrink-0 gap-3 bg-white px-5 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+      >
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={resetDisabled}
+          className="h-12 flex-1 rounded-md border-2 border-border text-[15px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+        >
+          Reset all
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-12 flex-1 rounded-md bg-primary text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Apply
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -463,7 +468,7 @@ export function SheetPills<T extends string>({
   onChange,
   tone = "success",
 }: {
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; icon?: React.ReactNode }[];
   value: T;
   onChange: (next: T) => void;
   /** The tone the chosen pill takes. The rest are always neutral. */
@@ -475,6 +480,7 @@ export function SheetPills<T extends string>({
         <PillChoice
           key={opt.value}
           label={opt.label}
+          icon={opt.icon}
           tone={tone}
           selected={value === opt.value}
           onSelect={() => onChange(opt.value)}
@@ -592,51 +598,90 @@ export function SheetChoiceCards<T extends string>({
   );
 }
 
-/** Sugar for the whole shape: a trigger, and the groups it opens. */
-export function ToolbarMenu({
-  label,
-  count,
-  ariaLabel,
-  triggerClassName,
-  leadingIcon,
-  iconOnlyOnMobile,
-  closeOnSelect,
-  children,
+/**
+ * A **date range** question: From and To side by side, each opening the app's one date picker —
+ * the twin of Android's `SpiraSheetDateRange`.
+ *
+ * Both ends are optional and independent, so "everything before March" is one tap rather than a
+ * date the user has to invent for the other end. An end that is set comes off again from the
+ * picker's own Clear, which is why there is no third control here.
+ *
+ * Values are ISO instants, or "" for an open end.
+ */
+export function SheetDateRange({
+  from,
+  to,
+  onFromChange,
+  onToChange,
 }: {
-  label: string;
-  count?: number;
-  ariaLabel?: string;
-  /** Passed to the trigger — e.g. white text when the toolbar sits on the teal header. */
-  triggerClassName?: string;
-  /** The mark before the trigger word (filter glyph, or sort direction). */
-  leadingIcon?: React.ReactNode;
-  /** Shrink the trigger to its glyph and a dot on a phone. */
-  iconOnlyOnMobile?: boolean;
-  /**
-   * Dismiss as soon as an answer is picked. For a menu asking **one** question with one answer
-   * (the Options lean filter) there is nothing left to do once you have chosen, so staying open
-   * only asks the user to close it. Menus asking several questions must stay open.
-   */
-  closeOnSelect?: boolean;
-  children: React.ReactNode;
+  from: string;
+  to: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
-  const close = React.useCallback(() => setOpen(false), []);
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <ToolbarTrigger
-        label={label}
-        count={count}
-        ariaLabel={ariaLabel}
-        className={triggerClassName}
-        leadingIcon={leadingIcon}
-        iconOnlyOnMobile={iconOnlyOnMobile}
+    <div className="grid grid-cols-2 gap-2">
+      <DeadlinePopover
+        iso={from || undefined}
+        onChange={(next) => onFromChange(next ?? "")}
+        variant="button"
+        placeholder="From"
+        hideDaysLeft
+        disableScroll
+        className="h-11 justify-start px-3 text-sm"
       />
-      <DropdownMenuContent align="end" className="w-auto p-1">
-        <MenuCloseContext.Provider value={closeOnSelect ? close : null}>
-          <MenuColumns>{children}</MenuColumns>
-        </MenuCloseContext.Provider>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      <DeadlinePopover
+        iso={to || undefined}
+        onChange={(next) => onToChange(next ?? "")}
+        variant="button"
+        placeholder="To"
+        hideDaysLeft
+        disableScroll
+        className="h-11 justify-start px-3 text-sm"
+      />
+    </div>
+  );
+}
+
+/**
+ * The **confidence** question: 1 to 10 as a two-row grid, one of which can be chosen — the twin of
+ * Android's `SpiraSheetConfidence`.
+ *
+ * Tapping the chosen number again clears it back to "any", which is why there is no "All" cell:
+ * ten answers plus an eleventh escape hatch would not fit across a phone, and the number already
+ * shows whether it is on.
+ *
+ * [value] is "1".."10", or "" for any — the spelling the store uses.
+ */
+export function SheetConfidence({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => {
+        const on = value === String(n);
+        return (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(on ? "" : String(n))}
+            className={cn(
+              "h-10 rounded-sm text-sm transition-colors",
+              on
+                ? "bg-primary font-bold text-primary-foreground"
+                : "border border-border bg-white font-medium text-foreground hover:border-primary/40",
+            )}
+          >
+            {n}
+          </button>
+        );
+      })}
+    </div>
   );
 }

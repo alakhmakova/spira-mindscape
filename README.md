@@ -302,53 +302,80 @@ OAuth is the tricky part: Spring builds the `redirect_uri` (`/login/oauth2/code/
 
 ### Starting everything (daily workflow)
 
-**Step 1 — start ngrok** (reads the static domain from `.env.local` automatically):
+**One script does the whole sequence** — tunnel, allow-list, server, and a check that the URL
+actually answers before it prints:
 
 ```powershell
-.\ngrok-start.ps1
+.\tunnel-start.ps1 -Build            # cloudflared + the built bundle  <-- normally this
+.\tunnel-start.ps1                   # cloudflared + the dev server (hot reload)
+.\tunnel-start.ps1 -Provider ngrok   # ngrok, on the static domain in .env.local
 ```
 
-The script kills any existing ngrok process, starts a new tunnel on port 5173, waits for it to come up, writes `NGROK_URL` back to `.env.local`, and prints the full URL plus a reminder of the next steps.
+**The order is not a preference.** Vite reads its host allow-list **once at startup** from
+`NGROK_URL` in `.env.local`, and a cloudflared quick tunnel gets a fresh random hostname every run.
+Start the server first and every request comes back `Blocked request. This host … is not allowed`.
+The script exists to get this right: tunnel → write `.env.local` → start the server.
 
-**Step 2 — start Vite** (picks up `NGROK_URL` from `.env.local`):
+#### Prefer `-Build`
+
+| Serving | One cold page load |
+|---|---|
+| Dev server | **6.17 MB** over **103 requests** |
+| Built bundle (`-Build`) | **1.37 MB** over **19 requests** |
+
+Vite's dev server sends uncompressed ES modules, one request per file — a single React chunk is
+1,005,279 bytes. That ~6 MB per view is what exhausted a 1 GB ngrok allowance in a couple of days
+(~165 page loads, `ERR_NGROK_725`), and it is why free relays such as localtunnel start returning
+502 partway through a load. You lose hot reload with `-Build`; you gain a tunnel that survives.
+
+#### Google login over a tunnel
+
+Only needed if you are testing the real OAuth flow — the `local` profile signs you in
+automatically and needs none of this.
+
+`FRONTEND_URL` controls where `OAuth2LoginSuccessHandler` sends the browser after a successful
+login, so it has to match the public URL:
 
 ```powershell
-npm run dev
-```
-
-**Step 3 — start Spring Boot with the ngrok URL as `FRONTEND_URL`**
-
-`FRONTEND_URL` controls where `OAuth2LoginSuccessHandler` redirects the browser after a successful Google login. It must match the public URL.
-
-```powershell
-# PowerShell
-$env:FRONTEND_URL = "https://<your-domain>.ngrok-free.app"
+$env:FRONTEND_URL = "<the URL the script printed>"
 cd backend
 .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
-In IntelliJ: **Run → Edit Configurations → Environment variables**, add `FRONTEND_URL=https://<your-domain>.ngrok-free.app` alongside the other variables.
+The same URL's `/login/oauth2/code/google` must also be added to **Google Cloud Console → Credentials
+→ OAuth 2.0 Client → Authorized redirect URIs**. With a rotating quick-tunnel hostname that is a new
+entry every run, which is the one real argument for ngrok's static domain — or for a named
+Cloudflare tunnel on a domain you own.
 
-**Step 4 — open on the phone:**
-```
-https://<your-domain>.ngrok-free.app
-```
+> ⚠️ **Anyone with the link is inside the app.** Under the `local` profile `LocalDevAuthFilter`
+> authenticates *every* request as `dev@local` — there is no login at all. A random hostname is
+> obscurity, not authentication. Fine for an hour of testing; put Cloudflare Access in front of it
+> if the link is going to live.
+>
+> The laptop also has to stay awake with Docker and the backend running: a tunnel is a pipe to your
+> machine, not hosting.
 
 ### What was changed in the codebase
 
 | File | Change |
 |---|---|
-| `vite.config.ts` | Converted from `defineConfig({})` to `defineConfig(({ mode }) => {})` factory. Reads `NGROK_URL` via `loadEnv()`. Injects `X-Forwarded-Host` / `X-Forwarded-Proto` on `/oauth2` and `/login` proxy routes when set. Adds ngrok host to `server.allowedHosts`. |
-| `.env.local` | Created automatically by `ngrok-start.ps1`; stores `NGROK_URL`. Gitignored (`*.local`). |
-| `ngrok-start.ps1` | Script in the project root. Kills old ngrok, starts a new tunnel (static domain if `NGROK_URL` is in `.env.local`, dynamic otherwise), polls the ngrok local API (`localhost:4040`) for the HTTPS URL, updates `.env.local`, and prints step-by-step instructions. |
+| `vite.config.ts` | A `defineConfig(({ mode }) => {})` factory that reads `NGROK_URL` via `loadEnv()`. Adds that host to `server.allowedHosts` / `preview.allowedHosts`; injects `X-Forwarded-Host` / `X-Forwarded-Proto` on `/oauth2` and `/login` so Spring builds the right `redirect_uri`; presents an allow-listed `Origin` to the backend on the API proxy routes (see below); and gives `preview` the same proxy as `server` so `-Build` can reach the API. |
+| `.env.local` | Written by `tunnel-start.ps1`; stores `NGROK_URL` — the current public URL, whichever provider made it. Gitignored (`*.local`). |
+| `tunnel-start.ps1` | Starts cloudflared (or ngrok), waits for the hostname, writes `.env.local`, builds if asked, starts the server, and verifies the URL answers 200 before printing it. |
 
-### Without a static domain (dynamic URL)
+#### Why the proxy rewrites `Origin`
 
-If you skip step 1, `ngrok-start.ps1` still works — it just gets a random URL each run. You then need to:
-- add the new redirect URI to Google Cloud Console each time (tedious), or
-- keep the old one and accept that OAuth won't work until you update it.
+Spring's CORS allow-list (`app.cors.allowed-origins`) knows `localhost:5173` and the LAN. It cannot
+know a hostname a tunnel minted this morning — and a **browser sends its real `Origin` on every
+POST**. So a phone on a tunnel got **403 on every GraphQL call** while the page itself loaded fine:
+the screen read "We couldn't sync with the backend" and nothing said why. `curl` did not reproduce
+it, because curl sends no `Origin`.
 
-The ngrok inspector at <http://localhost:4040> shows all traffic through the tunnel — useful for debugging.
+The dev proxy therefore presents `Origin: http://localhost:5173` to the backend. This is safe
+precisely because the proxy is dev-only: in production the container serves the SPA and the API on
+one origin with no proxy in between, so none of that code runs.
+
+**If you touch the proxy, verify with a browser, not curl.**
 
 ---
 

@@ -583,13 +583,40 @@ fun GoalWorkspaceScreen(
             )
         }
         if (showNewTarget) {
-            NewTargetSheet(
-                onDismiss = { showNewTarget = false },
-                onCreate = { title, type, deadline, start, total, unit, checklist ->
-                    actions.onAddTarget(title, type, deadline, start, total, unit, checklist)
-                    showNewTarget = false
+            // **The sheet needs the goal's resource list too**, because its form offers "Attach
+            // resource" now (owner, 2026-08-20). It is mounted out here, beside the Scaffold rather
+            // than inside its content, so the workspace's own `ProvideInlineResources` does not
+            // reach it — and the attach control renders nothing when `LocalInlineResources` is
+            // null, which would simply have left the form without it.
+            val newTargetResources = (state as? GoalUiState.Content)?.goal?.resources.orEmpty()
+            val sheetContext = androidx.compose.ui.platform.LocalContext.current
+            ProvideInlineResources(
+                remember(newTargetResources) {
+                    InlineResourcesValue(
+                        resources = newTargetResources,
+                        // **The same routing as the workspace's own provider**, not a shortcut to
+                        // the full-screen viewer: a link belongs in the browser and only a note or
+                        // a file opens in the viewer. Nothing in this sheet renders a token today,
+                        // so the difference is invisible — and it would stop being invisible the
+                        // moment one did.
+                        openResource = { id ->
+                            openInlineResource(
+                                context = sheetContext,
+                                resource = newTargetResources.firstOrNull { it.id == id },
+                                onOpenFullScreen = { fullScreenResourceId = it },
+                            )
+                        },
+                    )
                 },
-            )
+            ) {
+                NewTargetSheet(
+                    onDismiss = { showNewTarget = false },
+                    onCreate = { title, type, deadline, start, total, unit, checklist ->
+                        actions.onAddTarget(title, type, deadline, start, total, unit, checklist)
+                        showNewTarget = false
+                    },
+                )
+            }
         }
         if (showNewResourceSheet) {
             NewResourceSheet(
@@ -810,6 +837,11 @@ private fun GoalTabContent(
                                 ascending = targetView.ascending,
                                 onAscendingChange = { targetView.ascending = it },
                                 contentDescription = "Sort targets",
+                                // One padlock per **list**, not per sheet: the sort and the filter
+                                // are two halves of one arrangement.
+                                locked = targetView.locked,
+                                onLockedChange = { targetView.locked = it },
+                                onReset = { targetView.resetAll() },
                             )
                         },
                         filter = {
@@ -818,14 +850,10 @@ private fun GoalTabContent(
                             SpiraFilterTrigger(
                                 count = targetView.activeCount,
                                 contentDescription = "Filter targets",
-                                onReset = {
-                                    targetView.filter = TargetFilter.All
-                                    targetView.deadlineFilter = TargetDeadlineFilter.All
-                                    targetView.lockFilter = TargetLockFilter.All
-                                    targetView.typeFilter = TargetTypeFilter.All
-                                    targetView.deadlineFrom = ""
-                                    targetView.deadlineTo = ""
-                                },
+                                // **Everything**, the sort included (owner, 2026-08-21).
+                                onReset = { targetView.resetAll() },
+                                locked = targetView.locked,
+                                onLockedChange = { targetView.locked = it },
                             ) {
                                 // Five independent questions, each a line of pills - the All-goals
                                 // sheet's shape. As menu columns they could not fit across a phone,
@@ -1409,7 +1437,9 @@ private fun OptionsTabContent(
     onAddOption: () -> Unit = {},
 ) {
     val sortedOptions = goal.options.sortedBy { it.position }
-    var optionFilter by remember { mutableStateOf(OptionFilter.All) }
+    // In its own store, so this list has a padlock like the other three.
+    val optionView = rememberOptionViewState()
+    val optionFilter = optionView.filter
     // "Narrowed" covers both ways the drawn list can differ from the real one — a search and the
     // lean filter. Everything that depends on the two agreeing has to watch both, not just search.
     val narrowed = query.isNotBlank() || optionFilter != OptionFilter.All
@@ -1521,9 +1551,11 @@ private fun OptionsTabContent(
                 // Icons here, not in a column menu: the badge on the card IS a smiley, so the
                 // menu row that picks it carries the same mark rather than only its name.
                 SpiraFilterTrigger(
-                    count = if (optionFilter == OptionFilter.All) 0 else 1,
+                    count = optionView.activeCount,
                     contentDescription = "Filter options",
-                    onReset = { optionFilter = OptionFilter.All },
+                    onReset = { optionView.resetAll() },
+                    locked = optionView.locked,
+                    onLockedChange = { optionView.locked = it },
                 ) {
                     SpiraSheetGroup("Idea") {
                         SpiraSheetPills(
@@ -1532,7 +1564,7 @@ private fun OptionsTabContent(
                             // than two words that happen to agree (owner, 2026-08-18).
                             options = OptionFilter.entries.map { SpiraChoice(it, it.label, it.icon) },
                             value = optionFilter,
-                            onChange = { optionFilter = it },
+                            onChange = { optionView.filter = it },
                             tone = SpiraBadgeTone.Teal,
                         )
                     }

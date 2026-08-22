@@ -106,13 +106,28 @@ fun InlineEditText(
     // focus off: a focused BasicTextField keeps its cursor blink animation running, and leaving
     // it dangling past disposal is what causes a cursor to "blink forever" — the field is gone,
     // but nothing ever told the animation to stop.
-    val pending = rememberUpdatedState(Triple(text, committed, required))
-    val wasFocused = rememberUpdatedState(focused)
+    //
+    // **Read the state LIVE here, never through `rememberUpdatedState`.** That holder only
+    // refreshes while the field is still composing, and the "Add task" row closes itself in the
+    // very same frame as its Done commit: the parent drops the field before it can recompose, so
+    // the snapshot this hook read was the one from *before* `commit()` set `committed`. The guard
+    // above therefore never saw its own write and the task was sent a second time on the way out —
+    // two concurrent `setChecklistItems` calls, each replacing a list it had read before the other
+    // inserted into it, which is how one typed task landed on the card twice (owner, 2026-08-20).
+    // `text`, `committed` and `focused` are snapshot state; reading them from the lambda gives
+    // whatever they hold at disposal. The two that are NOT snapshot state — the `onCommit` lambda
+    // and the `required` flag, both plain parameters frozen at the first composition because the
+    // effect is keyed on `Unit` — are held in `rememberUpdatedState` so they follow the caller
+    // too. `required` matters: a field whose caller flips it would otherwise decide whether an
+    // empty value may be written using a flag from mount time.
+    val latestCommit = rememberUpdatedState(onCommit)
+    val latestRequired = rememberUpdatedState(required)
     DisposableEffect(Unit) {
         onDispose {
-            val (t, last, req) = pending.value
-            if (t != last && !(req && t.isBlank())) onCommit(t)
-            if (wasFocused.value) focusManager.clearFocus(force = true)
+            if (text != committed && !(latestRequired.value && text.isBlank())) {
+                latestCommit.value(text)
+            }
+            if (focused) focusManager.clearFocus(force = true)
         }
     }
 

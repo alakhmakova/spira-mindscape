@@ -639,7 +639,9 @@ enum class ResourceSort(val label: String) { Added("Created"), Title("Name") }
 
 /** The kinds a resource can be filtered to. "All" — the column's heading says what of. */
 enum class ResourceFilter(val label: String) {
-    All("All"), Notes("Notes"), Links("Links"), Files("Files"), Contacts("Contacts")
+    // **"Emails", not "Contacts"** (owner, 2026-08-21): the stored type is `email`, the web has
+    // always said Emails, and one word for one thing is the point.
+    All("All"), Notes("Notes"), Links("Links"), Files("Files"), Emails("Emails")
 }
 
 /**
@@ -705,7 +707,7 @@ fun applyResourceView(
         ResourceFilter.Notes -> resources.filter { kindFor(it) == "note" }
         ResourceFilter.Links -> resources.filter { kindFor(it) == "link" }
         ResourceFilter.Files -> resources.filter { kindFor(it) == "file" }
-        ResourceFilter.Contacts -> resources.filter { kindFor(it) == "email" }
+        ResourceFilter.Emails -> resources.filter { kindFor(it) == "email" }
     }
     // A note is remembered by its words, a link by its domain, a contact by the person — so the
     // query is tried against all of them, and against the note body with its HTML taken off.

@@ -10,7 +10,7 @@ A comparison of the free icon sets Spira could standardise on.
 > The rest of this file is kept as the reasoning behind that choice, not as an open question.
 
 Related: `specs/icons.md` (the owner's reference collection) and
-CLAUDE.md → UI conventions → "Icons & emoji" (which set each surface actually uses today).
+CLAUDE.md → Design → Components and chrome → "Icons & emoji" (which set each surface actually uses today).
 
 ---
 

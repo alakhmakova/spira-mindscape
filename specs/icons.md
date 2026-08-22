@@ -5,7 +5,7 @@ is readable inside the repo, greppable, and reviewable in a diff.
 
 - **Source of truth:** the Linear document **Icons** — https://linear.app/grow-goals/document/icons-ae6f5a0fc7e0
 - **Mirrored:** 2026-08-10 — **66 icons**, in the document's own order.
-- **The rule that governs their use** is in `CLAUDE.md` -> UI conventions -> "Icons & emoji":
+- **The rule that governs their use** is in `CLAUDE.md` -> Design -> Components and chrome -> "Icons & emoji":
   take the icon from this set **first**; if what you need is not here, **stop and ask the owner**.
   Lucide is a fallback that needs the owner's go-ahead each time, not a default.
 

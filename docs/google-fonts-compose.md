@@ -39,12 +39,12 @@ A bundled variable TTF avoids all of that. Roboto needs nothing at all because i
 - Build: `cd android && ./gradlew.bat :app:assembleDebug`
 - Render a `VisualCheck*` PNG (writes to `app/build/reports/visual/`) or screenshot the emulator
   (`adb exec-out screencap`) and **look**: headlines must be the **serif** (Playfair Display), body
-  the **sans** (Roboto). (CLAUDE.md rule #4 — existence assertions lie; verify pixels.)
+  the **sans** (Roboto). (CLAUDE.md → Design → Components and chrome → 4 — existence assertions lie; verify pixels.)
 - Ship it: `./gradlew.bat distributeDebug -PreleaseNotes="…"`.
 
 ## References
 
 - Swap procedure (web + Android): [`changing-fonts.md`](./changing-fonts.md)
-- Brand typography rules: `CLAUDE.md` → Brand design system → Typography
+- Brand typography rules: `CLAUDE.md` → Design → Brand → Typography
 - [Jetpack Compose fonts](https://developer.android.com/jetpack/compose/text/fonts)
 - [Downloadable Google Fonts in Compose](https://developer.android.com/jetpack/compose/text/fonts#downloadable-fonts) (intentionally not used here)

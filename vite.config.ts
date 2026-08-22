@@ -70,6 +70,52 @@ export default defineConfig(({ mode }) => {
       }
     : undefined;
 
+  /**
+   * Everything the SPA calls that Spring Boot answers.
+   *
+   * Shared by `server` and `preview` so the built bundle behaves like the dev server: a phone
+   * testing over a tunnel wants the production build (a handful of asset requests) rather than the
+   * dev server's several hundred module requests, which a free relay simply drops.
+   */
+  /**
+   * The Origin the backend is told the request came from.
+   *
+   * Spring's CORS allow-list (`app.cors.allowed-origins`) knows `localhost:5173` and the LAN — it
+   * cannot know the hostname a tunnel minted this morning. A browser sends its real Origin on every
+   * POST, so a phone on a `*.trycloudflare.com` URL got **403 on every GraphQL call** while the page
+   * itself loaded fine: "We couldn't sync with the backend", with no clue as to why.
+   *
+   * Presenting an allow-listed origin here is safe precisely because this proxy is dev-only — in
+   * production the container serves the SPA and the API on one origin with no proxy in between, so
+   * none of this code runs. `changeOrigin` already does the same thing for `Host`.
+   */
+  const devOrigin = { Origin: "http://localhost:5173" };
+
+  const apiProxy = {
+    "/graphql": {
+      target: "http://localhost:8080",
+      changeOrigin: true,
+      headers: devOrigin,
+    },
+    "/api": {
+      target: "http://localhost:8080",
+      changeOrigin: true,
+      headers: devOrigin,
+    },
+    // OAuth routes need the public host injected so Spring builds the right
+    // redirect_uri (server.forward-headers-strategy=framework is set in backend).
+    "/oauth2": {
+      target: "http://localhost:8080",
+      changeOrigin: true,
+      headers: { ...devOrigin, ...oauthHeaders },
+    },
+    "/login": {
+      target: "http://localhost:8080",
+      changeOrigin: true,
+      headers: { ...devOrigin, ...oauthHeaders },
+    },
+  };
+
   return {
     plugins: [
       TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
@@ -84,22 +130,13 @@ export default defineConfig(({ mode }) => {
         ignored: ["**/backend/**", "**/tests-e2e/**", "**/.wrangler/**"],
       },
       allowedHosts: ngrokUrl ? [new URL(ngrokUrl).host] : [],
-      proxy: {
-        "/graphql": { target: "http://localhost:8080", changeOrigin: true },
-        "/api": { target: "http://localhost:8080", changeOrigin: true },
-        // OAuth routes need the public host injected so Spring builds the right
-        // redirect_uri (server.forward-headers-strategy=framework is set in backend).
-        "/oauth2": {
-          target: "http://localhost:8080",
-          changeOrigin: true,
-          ...(oauthHeaders && { headers: oauthHeaders }),
-        },
-        "/login": {
-          target: "http://localhost:8080",
-          changeOrigin: true,
-          ...(oauthHeaders && { headers: oauthHeaders }),
-        },
-      },
+      proxy: apiProxy,
+    },
+    preview: {
+      port: 4173,
+      host: true,
+      allowedHosts: ngrokUrl ? [new URL(ngrokUrl).host] : [],
+      proxy: apiProxy,
     },
     build: {
       rollupOptions: { output: { manualChunks: vendorChunk } },

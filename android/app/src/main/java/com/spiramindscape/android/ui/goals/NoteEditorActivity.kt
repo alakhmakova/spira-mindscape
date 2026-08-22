@@ -55,6 +55,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import android.view.MotionEvent
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +64,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.apollographql.apollo.api.Optional
+import com.spiramindscape.android.BuildConfig
 import com.spiramindscape.android.data.goals.ApolloGoalsRepository
 import com.spiramindscape.android.data.net.Network
 import com.spiramindscape.android.graphql.type.UpdateResourceInput
@@ -789,8 +792,49 @@ private fun NoteEditorWebView(
 
     AndroidView(
         modifier = modifier,
+        // **The factory returns a FrameLayout, and the WebView is its CHILD. Do not "simplify"
+        // this by returning the WebView itself** (measured on an emulator, 2026-08-21 — BUG-041).
+        //
+        // Compose treats the view an `AndroidView` factory returns as its own: `AndroidViewHolder`
+        // takes it into Compose's focus system and drives its layout directly. A WebView cannot
+        // survive that. Chromium responds by calling `ImeAdapterImpl.cancelComposition()` →
+        // `InputMethodManager.restartInput()` **on every keystroke**, which:
+        //
+        //  - destroys the IME's composing region, so `compositionstart` fires for every character
+        //    and `compositionend` never fires at all;
+        //  - makes the next `setComposingText` INSERT instead of replace — type "world" and the
+        //    note reads "WWo…", the duplicated fragment the owner reported;
+        //  - hands the IME a fresh `EditorInfo` carrying **`initialSelStart=0`**, so GBoard is told
+        //    the caret is at the very start of the note. It therefore turns shift on for every
+        //    letter (the capitalisation), and ProseMirror follows the DOM selection back to
+        //    position 1 on commit (the caret jumping to the start);
+        //  - and leaves `mCursorRect=Rect(0,0-0,0)`, so nothing can scroll the caret into view when
+        //    the keyboard opens — the keyboard then covers what is being typed.
+        //
+        // One `FrameLayout` in between is the whole fix. Compose holds the FrameLayout; the WebView
+        // is an ordinary child and keeps its own focus and IME path.
+        //
+        // The numbers, from `dumpsys input_method` with "START." in the note and the caret at its
+        // end, typing "hello world" on the emulator's real GBoard:
+        //
+        // | Host | initialSelStart | Result |
+        // |---|---|---|
+        // | plain Activity + FrameLayout | 6 | `START.hello world` |
+        // | **WebView returned by the factory** | **0** | **`WWoLDSTART.HELLO `** |
+        // | FrameLayout wrapping the WebView | 6 | `START.hello world` |
+        //
+        // Stock Chrome on the same emulator, same page, same taps, also gives `START.hello world` —
+        // which is why this never reproduced on the web and why the page was never at fault.
         factory = { context ->
-            WebView(context).apply {
+            // **Debug builds only: let Chrome DevTools attach to this WebView.** It is a
+            // process-wide switch, so it is set here rather than in every factory.
+            //
+            // Without it there is no way to see the renderer's real IME state, and BUG-041 spent
+            // ten measured hypotheses without it — the backlog's own "what to try next" opens with
+            // this line. With it, `chrome://inspect` (or CDP over
+            // `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`) reaches the page.
+            WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+            val web = WebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.useWideViewPort = false
@@ -852,10 +896,21 @@ private fun NoteEditorWebView(
                 controller.webView = this
                 loadUrl("file:///android_asset/note-editor/index.html")
             }
+            FrameLayout(context).apply {
+                addView(
+                    web,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
         },
-        onRelease = { web ->
+        onRelease = { host ->
+            val web = host.getChildAt(0) as WebView
             web.evaluateJavascript("window.spiraFlush && window.spiraFlush()", null)
             controller.webView = null
+            host.removeAllViews()
             web.destroy()
         },
     )

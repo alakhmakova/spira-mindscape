@@ -39,6 +39,30 @@ Follow this sequence for any code change, small or large:
    - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm test`
    - Backend (if touched): `cd backend && .\mvnw.cmd test`
    - The `Stop` hooks also run lint/typecheck + fast unit tests and will surface failures.
+   - **A green `curl` is not proof the browser works.** curl sends no `Origin`, runs no JavaScript,
+     keeps no cookies and obeys no CSP. A phone on a tunnel once got **403 on every GraphQL call**
+     while `curl` and the page load both answered `200` — the screen said "We couldn't sync with the
+     backend" and nothing pointed at CORS. Anything touching **proxies, CORS, auth, headers or
+     cookies** has to be checked from a real browser (Playwright will do), and anything visual has
+     to be checked by looking at pixels (Design → Components and chrome → 4).
+   - **Moved a handler or renamed an `aria-label`? `grep` `e2e/` in the same change.** The
+     Playwright specs press *exact* interaction targets — which element receives `pointerdown`,
+     which accessible name a control answers to — so an interaction redesign silently invalidates
+     them. `ff3f519` moved the options drag from the whole card onto the left-slot **grip** (a
+     correct fix: the card had been stealing every swipe from the page scroll) and did not touch
+     `e2e/`; the drag test kept pressing the card's centre, where there is no longer a handler at
+     all, and CI failed on the next PR. `grep -rn "reorder" e2e/` would have found it in one
+     second.
+   - **Three identical retries are not flake.** Playwright retries twice; genuine infrastructure
+     trouble gives *different* tests or *different* errors each time. The same test failing on all
+     three attempts with the same message means the product moved and the spec did not — read the
+     diff, don't re-run.
+   - **E2E doesn't run in the `Stop` hooks** (they cover lint/typecheck + fast unit tests), and
+     `npm run test:e2e` needs the full stack up — Docker Postgres + the backend on the `local`
+     profile + Vite (see Build / run reference, and the `run-spira` skill). That is precisely why
+     a broken spec reaches CI instead of the desk it was broken on: **after a web interaction
+     change, bring the stack up and run at least the affected spec** —
+     `npx playwright test e2e/<file>.spec.ts`.
 5. **Cover** — add the right test levels for new behavior:
    - Web: Vitest (unit) + backend JUnit/GraphQL integration + Python E2E; **Playwright** for
      web E2E.
@@ -165,11 +189,97 @@ introduced.
 
 ---
 
-## UI conventions (hard rules — web *and* Android)
+## Hosting a WebView in Compose (hard rule)
+
+**An `AndroidView` factory must never return a `WebView`. Return a plain `FrameLayout` with the
+WebView as its child.**
+
+Compose treats the view a factory returns as its own: `AndroidViewHolder` takes it into Compose's
+focus system and drives its layout. A WebView does not survive that. Chromium answers by calling
+`ImeAdapterImpl.cancelComposition()` → `InputMethodManager.restartInput()` **on every keystroke**,
+which destroys the IME's composing region. Everything that follows looks like four separate bugs and
+is one (measured on an emulator, 2026-08-21 — BUG-041, after an earlier investigation had spent ten
+hypotheses on the page):
+
+| What the user sees | Why |
+|---|---|
+| The caret jumps to the start of the note | Each fresh `EditorInfo` says `initialSelStart=0`, and ProseMirror follows the DOM selection |
+| Every letter comes out capitalised | The IME asks `getCursorCapsMode` after each restart and, believing the caret is at 0, is told "start of a sentence" |
+| A fragment is duplicated on a new line | With no composing region, GBoard's next `setComposingText` **inserts** instead of replacing — "world" becomes `WWo…` |
+| The keyboard covers what is being typed | The reported cursor rect stays `Rect(0,0-0,0)`, so nothing can scroll the caret into view |
+
+The numbers, typing `hello world` after `START.` on the emulator's real keyboard
+(`adb shell dumpsys input_method | grep initialSelStart`, where 6 is correct):
+
+| Host | `initialSelStart` | Result |
+|---|---|---|
+| Plain Activity + `FrameLayout` | 6 | `START.hello world` |
+| **`AndroidView` returning the WebView** | **0** | **`WWoLDSTART.HELLO `** |
+| `AndroidView` returning a `FrameLayout` | 6 | `START.hello world` |
+
+`NoteEditorWebViewHostTest` guards it, because **both shapes compile and render identically** — the
+difference only appears under a real IME, and `adb shell input text` bypasses IME composition, so it
+cannot reproduce it either. Only tapping the on-screen keyboard can.
+
+**Keeping the caret clear of the keyboard is the page's job, not CSS's.** Chromium scrolls a focused
+editable back into view when the IME opens, but only to *just* inside the bottom edge, so the line
+being typed ends up touching the keyboard. `scroll-padding-bottom` on the scroller is the right tool
+and was **measured as a no-op** in this WebView (Chromium 109 does not consult it on that path:
+`innerHeight - caretRect.bottom` stayed exactly 0 with it applying). `keepCaretClear` in
+`embeds/note-editor/main.ts` does it instead — after the browser's own scroll, only ever downwards,
+scroll container only so it is safe mid-composition.
+
+**Two things that make this class of bug findable at all**, both already in place:
+
+- `WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)`, and CDP reached over
+  `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` — that gives the page's real
+  `beforeinput`/`composition*` trace and lets the Java bridge be switched off (`window.SpiraNote =
+  undefined`) without a rebuild, which is how the bridge was **excluded** as a cause.
+- `app/src/debug/` — a manifest overlay exporting `NoteEditorActivity` so it can be launched from
+  `adb` with content already in it, and `debug/NoteEditorProbeActivity.kt`, which hosts the same page
+  four ways (`bare` / `compose` / `column` / `touch`) and separated "the host" from "our
+  customisations" in three runs. Both are debug-only; note that debug builds are what App
+  Distribution sends to the owner's phone.
+
+---
+
+## 🎨 Design — every visual rule, in one place
+
+**Everything about how Spira looks lives in this section and nowhere else in this file.** It used to
+be three top-level sections with unrelated material between them, so a reader had to know all three
+existed to be sure they had read the rules (owner, 2026-08-21). If you add a visual rule, add it
+here.
+
+Both surfaces — React web and native Compose — mirror **one** design. A rule below is a rule for
+both unless it names a surface.
+
+| Look for | It is under |
+|---|---|
+| Never using a raw platform widget | Components and chrome → 1 |
+| Inline editing on the goal page | Components and chrome → 2 |
+| Icons (Gravity UI), and no emoji | Components and chrome → 3 |
+| The target card's numeric row | Components and chrome → 3b |
+| **Pills** — the one capsule shape | Components and chrome → 3c |
+| **Notices and toasts** — the one message card | Components and chrome → 3d |
+| Checking a UI change by looking at pixels | Components and chrome → 4 |
+| Menus and overlays are pure white | Components and chrome → 5 |
+| Dropdown / kebab menu anatomy | Components and chrome → 6 |
+| **Sort and filter** — the panel, and the padlock | Components and chrome → 7 |
+| Typography and the brand fonts | Brand → Typography, Font loading |
+| **Colour** — the palette and the full ramps | Brand → Colour |
+| Progress bars — exactly four variants | Brand → Progress bars |
+| The goal workspace's own navigation | Brand → Goal-workspace navigation |
+| AI proposal cards | Brand → AI proposal cards |
+| Options cards | Brand → Options cards |
+| Importing a screen from claude.ai/design | Claude Design |
+
+---
+
+### Components and chrome (hard rules — web *and* Android)
 
 These are **non-negotiable** and apply to every surface (React web, native Compose).
 
-### 1. Never ship raw, un-customized default elements
+#### 1. Never ship raw, un-customized default elements
 
 **Every UI element must be a Spira-designed, themed component that you build.** Never use a bare,
 un-styled platform default:
@@ -189,7 +299,7 @@ The two surfaces mirror one design (see `specs/tech-stack.md` "Styling strategy"
 `specs/2026-07-16-mobile-design-and-parity/`): teal primary, the shared tokens, Playfair Display
 headings. A raw default element breaks that coherence and is a review-blocking defect.
 
-### 2. Inline inputs (the goal-page editing pattern)
+#### 2. Inline inputs (the goal-page editing pattern)
 
 `specs/tech-stack.md` → "Goal Page" mandates **inline editing**. Inline text fields (goal
 title/description, target titles, reality items, options, checklist tasks, numeric values) must
@@ -206,7 +316,7 @@ behave like the web `InlineText`/`AutoTextarea` and the Android `InlineEditText`
 Boxed, labelled inputs (`SpiraTextField` on Android, the web `Input`) are only for **create/edit
 forms in sheets/drawers**, not for inline editing on the goal page.
 
-### 3. Icons & emoji
+#### 3. Icons & emoji
 
 Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the icon convention in
 `specs/tech-stack.md`:
@@ -241,9 +351,21 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
     export names on purpose, so the port stayed a mechanical import swap; the glyph each draws is
     Gravity's.)
 - **Never put a solid mark in a column of outline ones.** Gravity's `-fill` twins exist for exactly
-  one purpose: marking the **selected** footer item next to its outline sibling
-  (`FolderOpen` / `FolderOpenFilled`). The drawer's trophy was once a filled cup beside five
-  hollow glyphs and it was the loudest thing on the sheet.
+  one purpose: marking the **ON state of a toggle next to its own outline sibling** — the selected
+  footer item (`FolderOpen` / `FolderOpenFilled`), and the **closed padlock**
+  (`lock-fill` / `lock-open`, owner 2026-08-21) that keeps a list's filters and sort. The drawer's
+  trophy was once a filled cup beside five hollow glyphs and it was the loudest thing on the sheet.
+  - The padlock is the case that shows *why* the twins exist. Drawn as two outlines, locked and
+    unlocked differed only in whether the shackle hung open — a couple of pixels at 16px, which you
+    had to go looking for. Solid-when-closed against outline-when-open reads at a glance. Both
+    surfaces draw the pair: `LockFilled` / `LockOpenFilled` on the web, `SpiraIcons.Lock` /
+    `SpiraIcons.LockOpen` on Android.
+- **A sortable column that is not the sorted one shows `carets-expand-vertical`** — Gravity's
+  double caret (owner, 2026-08-21). It used to be a faint `ChevronUp`, which does not say "you can
+  sort by this"; it says "sorted ascending, quietly", and next to the column that genuinely *was*
+  ascending the only difference was opacity. The double caret has no direction to misread. The
+  **active** column keeps a single chevron in Kale, because there the direction is real
+  information. (Web: `SortIcon` in `Targets.tsx`.)
 - Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc drawn shapes, and
   **no emoji as icons**. **No hollow dots**: an icon whose eyes are drawn as tiny rings reads at
   16dp as a rendering artefact — Gravity's `face-smile` / `face-sad` draw theirs solid, which is
@@ -264,7 +386,7 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
     The Resources page-and-magnifier arrived that way, and using it for both states rendered two
     identical solid blobs while every assertion passed.
 
-### 3b. The target card's numeric row (2026-08-14)
+#### 3b. The target card's numeric row (2026-08-14)
 
 Four faults the owner found in one screenshot, all of which passed every assertion:
 
@@ -286,7 +408,7 @@ Four faults the owner found in one screenshot, all of which passed every asserti
   across a phone; a plain Row squeezes the last ones to nothing, and ungrouped the wrap fell
   between "(from" and its number.
 
-### 3c. Pills — one shape, and it is an OUTLINE (hard spec, 2026-08-17)
+#### 3c. Pills — one shape, and it is an OUTLINE (hard spec, 2026-08-17)
 
 Anywhere a short word is set in a capsule — a status, a kind, a state, **or one answer of a
 one-line filter question** — it is the app's one pill shape, and nothing else:
@@ -310,11 +432,12 @@ Two rules that are the whole point:
   chosen answer takes its tone and **every other answer is `Neutral`**; that difference is what
   makes the choice legible, without a second colour.
 
-### 3d. Notices — one card, and the colour family is what changes (hard spec, 2026-08-18)
+#### 3d. Notices and toasts — one card, and the colour family is what changes (hard spec, 2026-08-21)
 
 Every message the app shows — a transient toast **and** a notice sitting inside a block — is the
-same card on both surfaces: web `src/components/ui/sonner.tsx`, Android
-`ui/components/SpiraNotice.kt` (`SpiraNoticeCard`, drawn by `SpiraToast` and `SpiraInlineBanner`).
+same card on both surfaces: web `src/components/spira/Notice.tsx` (`NoticeCard`, and the toast in
+`src/components/ui/sonner.tsx` reads the same table), Android `ui/components/SpiraNotice.kt`
+(`SpiraNoticeCard`, drawn by `SpiraToast` and `SpiraInlineBanner`).
 
 - a **1px border in the kind's colour** over a **very pale tint from the same family**, an **8px
   radius**, and the shadow `0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)`;
@@ -327,25 +450,45 @@ same card on both surfaces: web `src/components/ui/sonner.tsx`, Android
   | Error | `circle-exclamation-fill` | `error-900 #C53336` | error-100 `#FFFBFB` |
   | Warning | `triangle-exclamation-fill` | **`warning-500 #C99500`** | warning-100 `#FFFBF7` |
   | Info | `circle-info-fill` | `info-900 #006CC1` | info-100 `#FDFCFF` |
+  | AI | `sparkles` | **Intelligence-400 `#BDAEFF`** | Intelligence-100 `#FEFBFF` |
 
-  **All four are Gravity's `-fill` twins** (owner, 2026-08-18). This is the one place a solid mark
-  is right in a set of four: they are one family saying one kind of thing, and an outline among
-  them read as a different sort of message. It does not license a solid mark in a column of outline
-  ones anywhere else.
+  The owner gave the **blue and the green verbatim** (2026-08-21); the yellow and the red follow the
+  identical rule — the ramp's solid step outlining its own `100` tint.
+
+  **All four semantic marks are Gravity's `-fill` twins** (owner, 2026-08-18). This is the one place
+  a solid mark is right in a set of four: they are one family saying one kind of thing, and an
+  outline among them read as a different sort of message. It does not license a solid mark in a
+  column of outline ones anywhere else.
 
   **Warning is a real yellow, never the brown `#896500`.** `warning-900` is brown on screen, and a
   brown triangle on a warning was rejected on sight (owner, 2026-08-18). It is the same `#C99500`
-  the assistant's error turn uses. An `intelligence` pair is available on the same pattern if an AI
-  message ever needs one — border `#BDAEFF`, fill `#FEFBFF`.
+  the assistant's error turn uses.
+
+  **AI is the one kind that breaks the pattern, and deliberately**: its border is Intelligence-**400**
+  rather than a solid `900` step, because the assistant's surfaces are drawn in that violet
+  throughout and a saturated outline would out-shout them. Use it only for a message *about the
+  assistant* — never as a fifth way to say "success".
 
 - **near-black text in every kind** — the border and the mark carry the meaning, not the type (the
   same rule the pills follow);
-- an **X on the right** to dismiss, so a long message is never in the way.
+- an **X INSIDE the card, on the right** (owner, 2026-08-21) — **top-right when the message wraps,
+  simply right when it is one line**. One rule gives both: the X follows the glyph's rule on the
+  other side and aligns to the message's **first line**, which on a one-line card *is* the card. It
+  is never the platform's floating corner circle. (On the web that means overriding sonner, whose
+  own close button is absolutely positioned outside the corner — see the note in `sonner.tsx`.)
 
 **The tint is nearly white and must stay that way.** The card still has to read as a white card on
 the page; the border is what tells the kinds apart. A fill any stronger turns a message into a
 block of colour, which is the thing the earlier "never a coloured block" rule was aimed at — that
 rule is superseded by this table, not by a licence to tint harder.
+
+**Styling the web toast needs `!` or a CSS variable, never a plain utility.** sonner injects its
+stylesheet **unlayered**, and Tailwind v4 compiles utilities into `@layer utilities` — unlayered
+beats layered whatever the specificity, so `bg-[#FFFBFB]` on a toast silently does nothing. The card
+therefore sets sonner's own `--normal-bg` / `--normal-border` / `--normal-text` on the toast element
+(a property declared on the element beats one inherited from sonner's container, with no layer
+contest), and everything sonner hard-codes — the shadow, every close-button property — carries `!`.
+This was shipped once as a no-op; the picture is the only way to catch it.
 
 **Say what happened, not that something happened.** "Bold and italic copied — select text to apply
 it" is a message that confirms; "Formatting copied" only reassures. The two surfaces word the same
@@ -370,7 +513,7 @@ Two rules that follow:
 empty state is for a list with nothing in it — an invitation. A list the user has just hidden is a
 different sentence, and a muted line centred in a blank page reads as "there is nothing here".
 
-### 4. Verify UI changes visually before shipping
+#### 4. Verify UI changes visually before shipping
 
 Existence-only assertions lie: a drawer once rendered with half its content pushed off-screen
 while `assertExists` stayed green. **Any visible UI change must be verified by looking at
@@ -391,7 +534,7 @@ screencap`). Never claim a visual fix without having seen it.
 > what identified the cause above in one shot; `mainClock.autoAdvance = false` and `forkEvery = 1`
 > had both been tried against it and neither could work.
 
-### 5. Menus & overlays are pure white
+#### 5. Menus & overlays are pure white
 
 **All dropdowns, menus, popovers, and overlay surfaces have a plain white background** — no
 tint. On Android this means clearing Material's tonal-elevation overlay (`surfaceTint =
@@ -399,14 +542,17 @@ Color.Transparent` in the theme) so menus don't pick up a teal cast; on the web,
 popover inherit a tinted/elevated background. If a menu looks greenish/grey, it's wrong — fix the
 surface, don't ship it.
 
-### 6. Dropdown / menu anatomy (hard spec — don't reinvent)
+#### 6. Dropdown / menu anatomy (hard spec — don't reinvent)
 
 There is **exactly one** menu surface on Android: `ui/components/SpiraDropdownMenu.kt`
 (`SpiraDropdownMenu` + `SpiraMenuItem` + `SpiraMenuDivider`). **Never** use Material's
 `DropdownMenu` / `DropdownMenuItem` in product UI, and never hand-roll a one-off menu — Material's
-default reads as a flat grey rectangle and was explicitly rejected. Every sort/filter menu, kebab
-(⋮) menu, and action menu uses `SpiraDropdownMenu`. If it can't express what you need, **extend
-that file**, don't fork it.
+default reads as a flat grey rectangle and was explicitly rejected. Every kebab (⋮) menu and action
+menu uses `SpiraDropdownMenu`. If it can't express what you need, **extend that file**, don't fork
+it.
+
+> **Not sort and filter, though** — those left the menus entirely on 2026-08-21 and open a panel
+> instead; see 7. What is left here is the per-element ⋯ menu and the action menus.
 
 **The web menu is the standard** (updated 2026-08-08, superseding the earlier
 "generously rounded card" reference). Android must look like `src/components/ui/dropdown-menu.tsx`,
@@ -453,63 +599,89 @@ Plus the rules that don't change:
 If an Android menu doesn't match the table above, it's wrong — fix `SpiraDropdownMenu`, don't ship
 a different-looking menu.
 
-### 7. Sort and filter chrome (hard spec, 2026-08-13)
+#### 7. Sort and filter chrome (hard spec, 2026-08-21)
 
-A list's sort and filter controls are **not buttons**, and their menus are **not lists**. Both
-surfaces implement the same thing — Android `ui/components/SpiraListToolbar.kt`, web
-`src/components/spira/ListToolbar.tsx` — and neither may grow its own variant.
+**A filter is never a dropdown.** One panel holds every question a list asks — a **drawer from the
+bottom on a phone, a side panel from the right on a laptop**, and the *same tree of questions*
+inside either. Both surfaces implement it once — Android `ui/components/SpiraFilterSheet.kt`, web
+`src/components/spira/ListToolbar.tsx` (`ToolbarSheet`) — and neither may grow its own variant.
 
-- **A trigger is a word, then a small solid chevron** (`SpiraIcons.ChevronDownSolid` /
-  `ChevronDownSolid`), in **Kale**, with no border, no fill and no pill. It is teal in **every**
-  state, *including when nothing is chosen* — never near-black, never a chip that lights up once a
-  filter is on. That old treatment made an untouched toolbar the heaviest row on the page.
-- **The sort trigger's word is the active key** ("Deadline"); the filter trigger's is "Filter",
-  with the number of narrowing filters **in brackets** — "Filter (2)" — and nothing at zero. **On a
-  phone the filter trigger shrinks to its glyph alone with a Guava dot**: no word, no chevron, no
-  number (`iconOnlyOnMobile` on the web).
-- **The dot goes ON the glyph, and only where the glyph stands alone.** A trigger that carries its
-  word shows the count **in brackets** instead — "Filter & Sort (2)" — and never both: the words and
-  the number already say a filter is on, so a dot beside them is the same fact told twice.
-- **A menu asking ONE question with one answer dismisses itself on the pick** (`closeOnSelect`).
-  Menus asking several questions stay open.
-- **On a phone the web opens a drawer, not a dropdown** — `ToolbarSheet` in `ListToolbar.tsx`, with
-  the Android twin `SpiraFilterSheet`. Both have a **Kale head**, the questions under small
-  uppercase headings, one-line questions as **pills** (see 3c), and **Reset all** beside **Apply**
-  at the foot. The confirm word is **Apply**, never "Done", and **Reset all is always present**,
-  not only once something is on.
-- **A menu is columns**: one column per question, under its own small heading, separated by a
-  **vertical hairline** (`SpiraMenuColumns` / `SpiraMenuGroup` / `SpiraMenuColumnDivider`, and the
-  web twins). Sort asks two questions (key, then direction); the target filter asks three.
-- Column rows are `SpiraMenuChoice` / `MenuChoice` — **no icon gutter**, because three columns each
-  reserving 26dp for a mark none of them carries will not fit across a phone. Selection is the same
-  filled teal row the list menus use.
-- **The target filter's three questions** are independent, and a target must pass all three:
-  **Status** (All / Done / Not done / Started / Not started) · **Deadline** (All / Overdue / Not
-  overdue / No deadline) · **Lock** (All / Locked / Unlocked). "Overdue" follows the card's own
-  rule — past *and* not yet achieved — so a target finished late is not listed as overdue.
+> This supersedes the 2026-08-13 spec, which had a dropdown of columns on wide screens and a drawer
+> only on phones. The web's menu parts (`ToolbarTrigger`, `MenuColumns`, `MenuGroup`, `MenuChoice`,
+> `ToolbarMenu`) are **deleted**, so there is nothing left to build a filter menu out of. Don't
+> reintroduce them.
+
+- **The trigger is the filter glyph alone**, in **Kale**, no border, no fill, no pill and no
+  chevron, carrying a **Guava dot** when anything is narrowing the list — at **every** width. It is
+  teal in every state, *including when nothing is chosen*: the old near-black chip made an untouched
+  toolbar the heaviest row on the page. Android's `SpiraFilterSortTrigger` is the same mark.
+- **The dot goes ON the glyph.** A trigger that carries a word shows the count in brackets instead —
+  "Filter (2)" — and never both, because the word and the number already say a filter is on.
+- **The panel** has a **Kale head**, the questions under small uppercase headings, and **Reset all**
+  beside **Apply** at the foot. The confirm word is **Apply**, never "Done", and **Reset all is
+  always present**, not only once something is on.
+- **Reset all resets ALL** (owner, 2026-08-21). There used to be a class of "standing preference" it
+  was not allowed to undo — the status questions — so a button promising everything quietly kept
+  four answers. There is no such class now: one `DEFAULTS` table per list, and reset restores it.
+- **A padlock sits in the head, right of the title, beside the X** (owner, 2026-08-21) — one per
+  list, on both surfaces.
+
+  | Padlock | What it means |
+  |---|---|
+  | **Closed** | This list's filters and sort are written down and come back after a reload, a closed tab and an app restart. Every later change is written too, so the lock holds **what is on screen**, not a snapshot of when it was shut. |
+  | **Open** | Nothing is written and whatever was written is **cleared**, so the list opens on its defaults. Opening the padlock is therefore the whole "forget" gesture — there is no separate clear step. |
+
+  Web: `shell-store.ts` (`locked`, `setLocked`, `partialize`). Android: `ViewPreferences.kt`
+  (`LockablePreferences`). **Unlocking is not a reset** — what is on screen stays; only the memory
+  goes.
+
+- **Never pinned, padlock or no padlock**: the **search box** (a query belongs to the screen it was
+  typed on) and the **deadline range** (a range is about a moment — "what is due this month" — and
+  one remembered from a fortnight ago opens the page on a list that looks empty for no visible
+  reason).
+- **A question's shape says what kind of question it is**: filter values are **pills** (see 3c), a
+  *modifier* — Ascending / Descending — is a **segmented control**, and a **sort key** is a
+  **choice card**. Three shapes, so a glance tells them apart without reading.
+- **"No deadline" and a date range can never both be on**, on any list. A range asks which deadlines
+  to keep and "No deadline" asks for the rows that haven't got one, so together they match nothing
+  and neither control says why. Picking either takes the other off.
+- **The target filter asks five independent questions**, and a target must pass all of them:
+  **Progress** (All / Done / Not done) · **Status** (Started / Not started) · **Deadline** (All /
+  Overdue / Not overdue / No deadline) · **Type** (All / Done-not-done / Numeric / Checklist) ·
+  **Lock** (All / Locked / Unlocked), then the deadline range. Done-ness is **Progress** and
+  started-ness is **Status** (owner, 2026-08-18): finishing is the far end of a progress bar, while
+  having begun is a state the target is in. "Overdue" follows the card's own rule — past *and* not
+  yet achieved — so a target finished late is not listed as overdue. There is **no "achieved
+  between" range**; it was the web's alone and came off both surfaces on 2026-08-20.
+- **Resources are filtered by Type** (All / Notes / Links / Files / **Emails**) and sorted by
+  Created or Name. There is deliberately **no sort by type**: the type question is the filter's, and
+  ordering by it only reshuffles cards the filter can simply hide. The word is **Emails**, never
+  "Contacts" — the stored type is `email`.
 - **Options has no sort** (position is the meaning of that list). Its toolbar is **Reorder on the
   left, then the lean filter**: All / Good idea / Bad idea / Didn't try, the first two carrying the
   smiley glyphs the card's badge uses.
 - **Reorder is unavailable while a list is narrowed** by a search or a filter, on both surfaces. A
   drop sends the card's index in the *rendered* list as an absolute `position`, so on a filtered
   list the wrong order is saved with nothing on screen to say so.
+- **A list emptied by its own search or filter is a `Warning` notice**, not a grey empty state — see
+  3d. Web: `FilteredEmptyNotice` in `src/components/spira/Notice.tsx`.
 
-> Verifying a menu on Android needs care: a `Popup` renders in **its own window**, which the
-> `VisualCheck*` screenshot helper (it draws the activity's decor view) cannot capture — an open
-> menu is simply absent from the PNG. Render `SpiraMenuSurface` directly instead, as
-> `VisualCheckToolbarMenusTest` does, or the one check that would catch a third column hanging off
-> the screen silently checks nothing.
+> Verifying the panel on Android needs care: a `ModalBottomSheet` renders in **its own window**,
+> which the `VisualCheck*` screenshot helper (it draws the activity's decor view) cannot capture —
+> an open sheet is simply absent from the PNG. Render `SpiraFilterSheetContent` directly instead, as
+> `VisualCheckFilterSheetTest` does, or the one check that would catch a question running off the
+> side of the screen silently checks nothing.
 
 ---
 
-## Brand design system (hard rules)
+### Brand
 
 These are the Spira brand rules — typography, colour, and the usage "do / avoid" list. They apply
 to **every** surface (web + Android). The Android tokens live in
 `android/app/src/main/java/.../ui/theme/` (`Color.kt`, `Type.kt`) — change the token, not one-off
 values.
 
-### Typography
+#### Typography
 
 These are the **actual fonts we use** (loaded via Google Fonts on both web and Android):
 
@@ -550,7 +722,7 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
 - Headings use the serif; everything else uses the sans. If a heading font is ever swapped, change
   **only** `HeadingSerif` in `Type.kt` — the leading/tracking/weight rules above stay.
 
-### Font loading strategy
+#### Font loading strategy
 
 **Web** (`src/styles.css`): `@font-face` blocks declare **GCentra** (Book 400 + a Medium face that
 claims `font-weight: 500 900`) and **ITC Clearface**, pointing at `public/fonts/…` (served at
@@ -565,7 +737,7 @@ with Medium also registered at `FontWeight.Bold`) under `res/font/`; `HeadingSer
 
 Full step-by-step swap instructions (both surfaces) live in `docs/changing-fonts.md`.
 
-### Colour
+#### Colour
 
 Two brand colours, exact hexes (full tint ramps are in `Color.kt`):
 
@@ -632,6 +804,19 @@ canvas, tints stay sparse, and `reserved` (Guava) is never a large fill.
 
 - **White is the primary canvas.** Use it more than any colour; let colour bring the white space
   to life. **Tints are used sparingly.**
+  - **The page is `#FFFFFF`, on both surfaces, and so are the cards** (owner, 2026-08-21). This is
+    a measurement, not a mood: the web's `--background` / `--surface` / `--card` are all
+    `oklch(1 0 0)` and Android's `SpiraBackground` is `White`. It had drifted on both — the web
+    painted page *and* cards `oklch(0.982 0 0)` (`#F9F9F9`, a cold grey with no chroma at all),
+    Android painted the page Parsnip-100 (`#FBFAFA`, warm), and the dashboard route then covered
+    the lot with a hardcoded `bg-[#F4F4F3]/80` written straight into the markup. Nothing looked
+    broken; the whole app just read grey.
+  - **A card is told from the page by its hairline border, not by a different fill.** That is why
+    they stay legible on white, and it is the thing to reach for before tinting anything. The one
+    recessed tone left is `--surface-sunken` (table heads, wells).
+  - **A page-level fill does not belong in a route's `className`.** If a surface needs a colour it
+    comes from a token; `bg-[#…]` on a `min-h-screen` wrapper is how the grey survived a palette
+    pass that was supposed to have removed it.
 - **NEVER use Guava as a large background/fill colour** (page/section/card backgrounds) — it's an
   accent. Small accent **marks** in Guava are fine (e.g. the GROW tab-bar underline, or the "good
   idea" smiley on an Options card).
@@ -645,7 +830,7 @@ accent mark, not a fill (an allowed accent use of Guava).
 
 Semantic mapping already wired in `Color.kt` → `Theme.kt`: primary = Kale-500, accent/tertiary =
 Guava-500 (accent marks only, no large fills), foreground = Salt-1000, muted = Salt-800, border =
-Salt-500, background = Parsnip-100, cards/menus = White, destructive =
+Salt-500, background = **White**, cards/menus = White, destructive =
 Guava-600. (`success` is a functional green — new work should take it from the **success** ramp
 above rather than picking a fresh green.)
 
@@ -681,7 +866,7 @@ On Android the same thing is a `Brush.linearGradient` painted into a rounded **b
 (`Modifier.border(width, brush, shape)`) over a `#FDFDFB` background — never a `background(brush)`,
 which would fill the card instead of outlining it.
 
-### Progress bars — exactly four variants (hard rule)
+#### Progress bars — exactly four variants (hard rule)
 
 **Every** progress bar/ring in the app (web + Android) — goal cards, target cards and strips,
 numeric target bars, any linear or circular progress — must be **one of these four pairs**, track
@@ -711,7 +896,7 @@ Web: `ProgressBar.tsx` (`tone`) and the strips in `Targets.tsx`. Android: `Circu
 > on the type scale (`Type.kt`) and per-usage alignment, so they hold no matter which heading font
 > ships. Don't tie them to a specific font.
 
-### Goal-workspace navigation (Android)
+#### Goal-workspace navigation (Android)
 
 Inside a goal the chrome is **not** the All-goals `SpiraTopBar` — that header is unchanged on the
 dashboard. The workspace has its own, in `ui/components/GoalWorkspaceChrome.kt`:
@@ -762,7 +947,7 @@ between phases never shifts the type. There is no coloured kicker above it — t
 directly above the block and already names the phase. The Goal screen leads with the editable goal
 title instead.
 
-### AI proposal cards — the web is the spec, verbatim
+#### AI proposal cards — the web is the spec, verbatim
 
 `src/components/ai/AiPanel.tsx` defines this family (`ProposalCard`, `CreateConfirmCard`,
 `CreateChecklistCard`, `SteppedProposalCard`, `ResultSummary`) and the Android port in
@@ -790,7 +975,7 @@ The web's class values are copied into the Kotlin as the measurements to match �
 `rounded-[14px] p-4`, buttons `rounded-[9px]`, headline 17sp serif, detail 13.5sp at 60% ink. Read
 them from `AiPanel.tsx` before changing anything here.
 
-### Options cards (interaction)
+#### Options cards (interaction)
 
 **The web is the spec.** `src/components/spira/OptionsList.tsx` and the Android `OptionsTabContent`
 / `OptionCard` (in `GoalWorkspaceScreen.kt`) render the same thing; when they disagree, the web
@@ -834,7 +1019,7 @@ For implementation details and testing, see `docs/drag-and-drop-options.md`.
 
 ---
 
-## Claude Design (claude.ai/design)
+### Claude Design (the design tool)
 
 Claude Design (`https://claude.ai/design`) is the visual design tool: designers or PMs create screens
 there, and you import them into this codebase to implement.
@@ -851,7 +1036,7 @@ there, and you import them into this codebase to implement.
 4. **Implement in the codebase**: translate the design specs into React (web) or Compose (Android) code
    - Use Spira's design components (`src/components/spira/`, `ui/components/` on Android)
    - Apply brand tokens (colours, typography, spacing — see `src/styles.css` and `Type.kt`)
-   - Match the reference screenshots for visual fidelity (see CLAUDE.md rule #4: verify UI changes visually)
+   - Match the reference screenshots for visual fidelity (see Design → Components and chrome → 4: verify UI changes visually)
 
 **When to use**:
 - A designer creates a screen mockup and shares a link
@@ -953,19 +1138,41 @@ index document.
 
 ## Build / run reference
 
+**Start the database first** — the backend will not boot without it, and that is the single most
+common way a local run fails before it starts.
+
 | Task | Command | Notes |
 |---|---|---|
-| Frontend dev | `npm run dev` | Vite on `http://localhost:5173` |
+| **1. Database** | `docker compose -f backend/docker-compose.yml up -d postgres` | Needs Docker Desktop **running**, not merely installed. Check with `docker info`. |
+| **2. Backend** | `cd backend && .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"` | The `local` profile auto-logs-in `dev@local` — **no Google sign-in needed**. **`mvn` is NOT installed — always use `.\mvnw.cmd` (Windows) / `./mvnw` (bash)** |
+| **3. Frontend** | `npm run dev` | Vite on `http://localhost:5173`, proxying `/graphql` and `/api` to `:8080` |
+| Backend run (real Google login) | `cd backend && .\mvnw.cmd spring-boot:run` | Needs `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
 | Frontend tests | `npm test` | Vitest |
+| Frontend E2E | `npm run test:e2e` | Playwright, against the **running** stack. Chromium is already installed — no `playwright install` needed. |
 | Frontend build | `npm run build` | |
-| Backend run | `cd backend && .\mvnw.cmd spring-boot:run` | **`mvn` is NOT installed — always use `.\mvnw.cmd` (Windows) / `./mvnw` (bash)** |
-| Backend run (no Google login) | `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"` | Auto-logs-in `dev@local` |
-| Backend tests | `cd backend && .\mvnw.cmd test` | |
+| Backend tests | `cd backend && .\mvnw.cmd test` | ~866 tests |
 | Android build | `cd android && .\gradlew.bat :app:assembleDebug` | Emulator reaches local backend at `http://10.0.2.2:8080` |
+| Android tests | `cd android && .\gradlew.bat :app:testDebugUnitTest` | ~19 min for the full sweep; prefer `--tests "*OneClass"` while iterating |
+| **Note editor** (after editing `embeds/note-editor/`) | `npm run build:note-editor` | **Easy to forget and silent when you do.** The Android note editor is that TypeScript bundled into `android/app/src/main/assets/note-editor/index.html`; without this step the app keeps running the old asset and your change simply is not there. |
 | Android distribute (APK → email link) | `cd android && .\gradlew.bat distributeDebug -PreleaseNotes="what changed"` | Builds the debug APK and uploads it to Firebase App Distribution; testers (incl. the owner) get an email link. Uses your `firebase login`. |
+| Public URL for phone testing | `.\tunnel-start.ps1 -Build` | cloudflared quick tunnel over the **built bundle**. Reachable from any network, mobile data included. |
 
-Full local run (DB + backend + frontend), ngrok mobile testing, and deploy details are in
+Full local run (DB + backend + frontend), mobile testing over a tunnel, and deploy details are in
 `README.md`.
+
+**About that tunnel, two things that are easy to get wrong:**
+
+- **Always `-Build` unless you need hot reload.** The dev server sends uncompressed ES modules, one
+  request per file: one cold page load measured **6.17 MB over 103 requests** against **1.37 MB over
+  19** for the built bundle. That is what exhausted a 1 GB ngrok allowance in days, and why free
+  relays return 502 mid-load. The script also has to start the tunnel **before** the server — Vite
+  reads its host allow-list once at startup — which is the reason it exists rather than a sequence
+  you type by hand.
+- **A tunnel URL has no login on it.** Under the `local` profile `LocalDevAuthFilter` authenticates
+  *every* request as `dev@local`; there is no sign-in screen. Anyone holding the link is inside the
+  app with full access to the local database, real API keys included. A random hostname is
+  obscurity, not authentication — say so plainly when handing a URL over, and do not post one
+  anywhere public.
 
 ### 📦 Always distribute the APK after Android app changes (hard rule)
 

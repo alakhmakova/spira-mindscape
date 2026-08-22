@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,14 +135,17 @@ fun GoalsRoute(
         )
     }
 
-    // Sort and filters are a standing preference, remembered across sessions (web parity: they
-    // live in localStorage there). The search box deliberately starts empty every time.
+    // Sort and filters come back **only when this list's padlock is closed** (see the note in
+    // `ViewPreferences.kt`); an open padlock has cleared the store, so these reads answer with the
+    // defaults. The search box deliberately starts empty every time either way.
     val viewPreferences = rememberGoalViewPreferences()
+    var goalsLocked by rememberSaveable { mutableStateOf(viewPreferences.locked) }
     LaunchedEffect(viewPreferences) {
         viewModel.sortKey.value = viewPreferences.sort
         viewModel.sortAscending.value = viewPreferences.ascending
         viewModel.statusFilter.value = viewPreferences.status
         viewModel.deadlineFilter.value = viewPreferences.deadline
+        viewModel.confidence.value = viewPreferences.confidence
     }
 
     LifecycleResumeEffect(Unit) {
@@ -184,8 +188,9 @@ fun GoalsRoute(
                 viewModel.setDeadlineFilter(it)
                 viewPreferences.deadline = viewModel.deadlineFilter.value
             },
-            // The range and the confidence are not written to [viewPreferences] — see the view
-            // model, where the reason lives with the fields.
+            // The **range** is never pinned — a range is about a moment, not a standing choice, so
+            // one remembered from a fortnight ago would open the page on a list that looks empty
+            // for no visible reason. The confidence is a standing answer, so it is pinned.
             deadlineFrom = deadlineFrom,
             onDeadlineFromChange = {
                 viewModel.setDeadlineFrom(it)
@@ -197,7 +202,19 @@ fun GoalsRoute(
                 viewPreferences.deadline = viewModel.deadlineFilter.value
             },
             confidence = confidence,
-            onConfidenceChange = { viewModel.confidence.value = it },
+            onConfidenceChange = { viewModel.confidence.value = it; viewPreferences.confidence = it },
+            locked = goalsLocked,
+            onLockedChange = { next ->
+                goalsLocked = next
+                viewPreferences.setLocked(next) {
+                    // Pin what is on screen, not what the store last happened to hold.
+                    viewPreferences.sort = viewModel.sortKey.value
+                    viewPreferences.ascending = viewModel.sortAscending.value
+                    viewPreferences.status = viewModel.statusFilter.value
+                    viewPreferences.deadline = viewModel.deadlineFilter.value
+                    viewPreferences.confidence = viewModel.confidence.value
+                }
+            },
             creating = creating,
             onCreateGoal = { title, description, confidence, deadline ->
                 viewModel.createGoal(title, description, confidence, deadline)
@@ -300,6 +317,9 @@ fun GoalsDashboardScreen(
     /** The header's figure: the account's own page, not the navigation drawer. */
     onOpenSettings: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
+    /** This list's padlock — see the note in `ViewPreferences.kt`. */
+    locked: Boolean = false,
+    onLockedChange: (Boolean) -> Unit = {},
     /** An action that failed without changing the screen (e.g. a create that didn't land). */
     actionError: String? = null,
     onDismissActionError: () -> Unit = {},
@@ -440,6 +460,8 @@ fun GoalsDashboardScreen(
                         confidence in 1..10 ||
                         sortKey != SortKey.Recent ||
                         sortAscending,
+                    locked = locked,
+                    onLockedChange = onLockedChange,
                 ) {
                     SpiraSheetGroup("Status") {
                         SpiraSheetPills(

@@ -12,7 +12,7 @@ They are two different jobs and the first one is the common one, so it comes fir
 Roboto is **gone**. Nothing in the app falls back to it.
 
 > **Golden rule:** the **leading / tracking / alignment / line-length** rules in
-> `CLAUDE.md → Brand design system → Typography` are **font-independent** — they live on the type
+> `CLAUDE.md → Design → Brand → Typography` are **font-independent** — they live on the type
 > scale, not on any face. When you change a font, change **only** the family. Never the leading or
 > the tracking.
 
@@ -143,7 +143,7 @@ bolds will simply read heavier than the others', which is worth knowing while ju
 
 - `npm run lint`, `npx tsc --noEmit`, `npm test`
 - `cd android && ./gradlew.bat :app:compileDebugKotlin`
-- **Look at pixels** (CLAUDE.md rule #4): switch to the new face in Settings → Fonts on both
+- **Look at pixels** (CLAUDE.md → Design → Components and chrome → 4): switch to the new face in Settings → Fonts on both
   surfaces and read a goal card, a badge and a 10px label. An existence assertion cannot tell you a
   font failed to load — the text is still there, in the wrong face.
 - If the face claims Cyrillic, **type Russian into a goal title** and check it is not the system
