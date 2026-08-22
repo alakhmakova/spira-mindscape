@@ -146,6 +146,18 @@ fun GoalsRoute(
         viewModel.statusFilter.value = viewPreferences.status
         viewModel.deadlineFilter.value = viewPreferences.deadline
         viewModel.confidence.value = viewPreferences.confidence
+        viewModel.deadlineFrom.value = viewPreferences.deadlineFrom
+        viewModel.deadlineTo.value = viewPreferences.deadlineTo
+    }
+
+    // The deadline question and the range either side of it are one answer: picking "No deadline"
+    // clears the range and setting a range clears "No deadline" (see `GoalsViewModel`). Writing
+    // all three together after any of them moves is what keeps the store from holding a pair the
+    // view model has already ruled out.
+    fun pinDeadline() {
+        viewPreferences.deadline = viewModel.deadlineFilter.value
+        viewPreferences.deadlineFrom = viewModel.deadlineFrom.value
+        viewPreferences.deadlineTo = viewModel.deadlineTo.value
     }
 
     LifecycleResumeEffect(Unit) {
@@ -186,20 +198,19 @@ fun GoalsRoute(
             // rule lives — so the stored preference follows whatever it settled on.
             onDeadlineFilterChange = {
                 viewModel.setDeadlineFilter(it)
-                viewPreferences.deadline = viewModel.deadlineFilter.value
+                pinDeadline()
             },
-            // The **range** is never pinned — a range is about a moment, not a standing choice, so
-            // one remembered from a fortnight ago would open the page on a list that looks empty
-            // for no visible reason. The confidence is a standing answer, so it is pinned.
+            // The **range is pinned like every other question** (owner, 2026-08-22) — see the note
+            // at the top of `ViewPreferences.kt` for why its exemption came off.
             deadlineFrom = deadlineFrom,
             onDeadlineFromChange = {
                 viewModel.setDeadlineFrom(it)
-                viewPreferences.deadline = viewModel.deadlineFilter.value
+                pinDeadline()
             },
             deadlineTo = deadlineTo,
             onDeadlineToChange = {
                 viewModel.setDeadlineTo(it)
-                viewPreferences.deadline = viewModel.deadlineFilter.value
+                pinDeadline()
             },
             confidence = confidence,
             onConfidenceChange = { viewModel.confidence.value = it; viewPreferences.confidence = it },
@@ -211,8 +222,8 @@ fun GoalsRoute(
                     viewPreferences.sort = viewModel.sortKey.value
                     viewPreferences.ascending = viewModel.sortAscending.value
                     viewPreferences.status = viewModel.statusFilter.value
-                    viewPreferences.deadline = viewModel.deadlineFilter.value
                     viewPreferences.confidence = viewModel.confidence.value
+                    pinDeadline()
                 }
             },
             creating = creating,

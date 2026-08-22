@@ -85,6 +85,30 @@ describe("useShellFilters — the padlock", () => {
     expect(useShellFilters.getState().sort).toBe("deadline");
   });
 
+  /**
+   * **The date range is pinned like every other question** (owner, 2026-08-22). It was exempt for
+   * a day, and the owner found the exemption the way users find this class of bug: she set a
+   * range, shut the padlock, left the app and came back to an empty field with the padlock still
+   * closed. Nothing on screen had said the range was not covered.
+   */
+  it("pins the deadline range, so the padlock keeps the whole arrangement", () => {
+    useShellFilters
+      .getState()
+      .setView({ sort: "deadline", deadlineFrom: "2026-08-15" });
+
+    useShellFilters.getState().setLocked("goals", true);
+
+    expect(stored().deadlineFrom).toBe("2026-08-15");
+  });
+
+  it("pins the targets range too", () => {
+    useShellFilters.getState().setView({ targetDeadlineTo: "2026-09-30" });
+
+    useShellFilters.getState().setLocked("targets", true);
+
+    expect(stored().targetDeadlineTo).toBe("2026-09-30");
+  });
+
   it("pins one list without pinning another", () => {
     useShellFilters
       .getState()
@@ -145,6 +169,17 @@ describe("useShellFilters — waking up", () => {
 
     expect(s.sort).toBe("deadline");
     expect(s.targetType).toBe("all");
+  });
+
+  it("restores a pinned range", () => {
+    const s = rehydrate({
+      deadlineFrom: "2026-08-15",
+      deadlineTo: "2026-08-31",
+      locked: { goals: true, targets: false, options: false, resources: false },
+    });
+
+    expect(s.deadlineFrom).toBe("2026-08-15");
+    expect(s.deadlineTo).toBe("2026-08-31");
   });
 
   it("opens on the defaults when nothing is pinned", () => {
@@ -223,6 +258,18 @@ describe("useShellFilters — Reset all", () => {
     useShellFilters.getState().resetList("goals");
 
     expect(stored().status).toBe("not-achieved");
+  });
+
+  // The range is pinned now, so clearing it has to reach storage as well — otherwise "Reset all"
+  // would empty the field on screen and the old range would come back on the next visit.
+  it("clears a pinned range in storage as well as on screen", () => {
+    useShellFilters.getState().setView({ deadlineFrom: "2026-08-15" });
+    useShellFilters.getState().setLocked("goals", true);
+    expect(stored().deadlineFrom).toBe("2026-08-15");
+
+    useShellFilters.getState().resetList("goals");
+
+    expect(stored().deadlineFrom).toBe("");
   });
 });
 

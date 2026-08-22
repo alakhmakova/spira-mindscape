@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Kale600
 import com.spiramindscape.android.ui.theme.Salt400
+import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 
 /**
@@ -247,13 +248,21 @@ fun SpiraSearchField(
                     field()
                 }
                 if (value.isNotEmpty()) {
-                    Icon(
-                        SpiraIcons.X,
-                        contentDescription = "Clear search",
-                        tint = MaterialTheme.spiraExtras.mutedForeground,
+                    // **The word "Clear", never a cross** (owner, 2026-08-22). On a phone the bar
+                    // this field sits in already closes with an X — a second cross inside the field
+                    // put two identical marks a few dp apart, and neither said which one emptied
+                    // the query and which one dismissed the search.
+                    Text(
+                        "Clear",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
                         modifier = Modifier
-                            .size(17.dp)
-                            .clickable { onValueChange("") },
+                            .clip(RoundedCornerShape(SpiraRadii.sm))
+                            .clickable { onValueChange("") }
+                            .semantics { contentDescription = "Clear search" }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                     )
                 }
             }
