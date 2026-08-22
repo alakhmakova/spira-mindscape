@@ -23,7 +23,6 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -52,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.ui.theme.confidenceColor
 import com.spiramindscape.android.ui.theme.Error900
+import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 import java.time.Instant
 import java.time.ZoneOffset
@@ -230,8 +230,12 @@ fun DeadlineLinkField(value: String?, onChange: (String?) -> Unit, modifier: Mod
 }
 
 /**
- * Bottom-sheet form scaffold (the mobile equivalent of the web's create/edit Sheet): sticky
- * header with title + close, scrollable body, pinned footer with Cancel + a confirm action.
+ * Bottom-sheet form scaffold (the mobile equivalent of the web's create/edit Sheet): the app's
+ * Kale head with title + close, scrollable body, pinned footer with Cancel + a confirm action.
+ *
+ * The head is [SpiraSheetHead], the same band `SpiraFilterSheet` and the web's create sheets wear
+ * (owner, 2026-08-22) - so there is **no drag handle**: it would sit on the teal as a grey smudge,
+ * and the X in the head is what closes the sheet, plus the usual drag and back gesture.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -247,29 +251,48 @@ fun SpiraFormSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.spiraExtras.surfaceRaised,
+        containerColor = Color.White,
+        dragHandle = null,
+        shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg),
     ) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(com.spiramindscape.android.ui.icons.SpiraIcons.X, contentDescription = "Close")
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) { content() }
-            Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SpiraButton("Cancel", onDismiss, Modifier.weight(1f), SpiraButtonVariant.Ghost)
-                SpiraButton(confirmLabel, onConfirm, Modifier.weight(1f), enabled = confirmEnabled)
-            }
+        SpiraFormSheetContent(title, onDismiss, confirmLabel, onConfirm, confirmEnabled, content)
+    }
+}
+
+/**
+ * The form sheet's card, without the [ModalBottomSheet] around it.
+ *
+ * Separate for the same reason `SpiraFilterSheetContent` is: a modal sheet renders in its **own
+ * window**, which the `VisualCheck*` screenshot helper (it draws the activity's decor view) cannot
+ * capture - so an open sheet is simply absent from the PNG, and the check that would catch a head
+ * drawn the wrong colour or a field running off the side silently checks nothing.
+ */
+@Composable
+fun SpiraFormSheetContent(
+    title: String,
+    onDismiss: () -> Unit,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    confirmEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().background(Color.White)) {
+        SpiraSheetHead(title, onDismiss)
+        Column(
+            Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) { content() }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SpiraButton("Cancel", onDismiss, Modifier.weight(1f), SpiraButtonVariant.Ghost)
+            SpiraButton(confirmLabel, onConfirm, Modifier.weight(1f), enabled = confirmEnabled)
         }
     }
 }

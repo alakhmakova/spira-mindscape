@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { X } from "@/components/spira/icons";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -16,6 +15,7 @@ import type { Confidence } from "@/lib/spira/types";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { cn } from "@/lib/utils";
 import { DeadlinePopover } from "./DeadlinePopover";
+import { SheetHead } from "./SheetHead";
 
 function FormBody({ onDone }: { onDone: () => void }) {
   const addGoal = useSpira((s) => s.addGoal);
@@ -46,25 +46,12 @@ function FormBody({ onDone }: { onDone: () => void }) {
 
   return (
     <>
-      {/* Header — sticky */}
-      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
-        <h2 className="font-sans font-bold text-lg text-foreground">
-          New goal
-        </h2>
-        <button
-          type="button"
-          onClick={onDone}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      <SheetHead title="New goal" onClose={onDone} />
 
       {/* Body */}
       <div
         id="new-goal-scroll-container"
-        className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0"
+        className="px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0"
       >
         <Field
           label="Title"
@@ -162,7 +149,7 @@ function FormBody({ onDone }: { onDone: () => void }) {
 
       {/* Footer — Cancel + Create, pinned to the bottom. */}
       <div
-        className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+        className="shrink-0 bg-surface px-5 pt-3 flex gap-3"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
       >
         <button
@@ -236,6 +223,8 @@ export function NewGoalSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        // The head carries its own white X on the teal band; the corner one would sit on it.
+        closeButton={false}
         className="w-full sm:max-w-xl p-0 flex flex-col bg-surface border-l hairline"
       >
         <SheetTitle className="sr-only">New goal</SheetTitle>

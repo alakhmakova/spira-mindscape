@@ -261,6 +261,7 @@ both unless it names a surface.
 | The target card's numeric row | Components and chrome → 3b |
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
+| **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
 | Dropdown / kebab menu anatomy | Components and chrome → 6 |
@@ -512,6 +513,57 @@ Two rules that follow:
 **A list emptied by its own search or filter is a `Warning` notice, not a grey empty state.** The
 empty state is for a list with nothing in it — an invitation. A list the user has just hidden is a
 different sentence, and a muted line centred in a blank page reads as "there is nothing here".
+
+#### 3e. Sheets — one shape and one head, on both surfaces (hard spec, 2026-08-22)
+
+A **sheet** is how the app asks for something without leaving the page — Filter & Sort, New goal,
+New target, Add a resource, Attach a resource. It is a **drawer from the bottom on a phone** and a
+**side panel from the right on a laptop**, with the *same card* inside either, and **the web and
+Android draw the same card**. When the two disagree it is a defect, not a platform difference.
+
+The parts, and what each is made of:
+
+| Part | Web | Android |
+|---|---|---|
+| **Bottom drawer** | `DrawerContent` (`src/components/ui/drawer.tsx`): pinned to the bottom edge, full width, top corners **`rounded-t-xl` (12px)**, white, `overflow-hidden`, **no border**, **no grab handle**. Height is the caller's: `92vh` for the create forms, `max-h-[92vh]` for the filter panel, `100svh` + `rounded-none` for the full-screen note editor | `ModalBottomSheet`: `containerColor = Color.White`, **`dragHandle = null`**, `shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg)` (**12dp**), `skipPartiallyExpanded = true` |
+| **Side panel** | `SheetContent side="right"` — `p-0 flex flex-col bg-white`, **`closeButton={false}`**, `sm:max-w-[420px]` for the filter panel, `sm:max-w-lg` / `xl` for the forms | — (phone only) |
+| **Head** | `SheetHead` (`src/components/spira/SheetHead.tsx`) | `SpiraSheetHead` (`ui/components/SpiraSheetHead.kt`) |
+| **Body** | its own scroller — `px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0` | its own `verticalScroll` — `padding(horizontal = 20.dp, vertical = 16.dp)`, `spacedBy(16.dp)` |
+| **Foot** | a pinned row of two: quiet outline left, filled Kale right, each `h-12 rounded-md flex-1`; `px-5 pt-3`, bottom `max(env(safe-area-inset-bottom), 12px)` | a `Row` of two `SpiraButton`s, Ghost then filled, `spacedBy(12.dp)`, 20dp sides, 24dp bottom |
+
+**The head is the same band everywhere**, and one component per surface draws it — neither may grow
+a variant:
+
+| | Value |
+|---|---|
+| Fill | `bg-primary` / `colorScheme.primary` — Kale-500 `#0A8080` |
+| Padding | 20 start, 12 end, 14 top and bottom |
+| Title | white, **bold, 16px** (`titleMedium`), sentence case, left |
+| Close | a white X on the right, 32px hit area, `hover:bg-white/15` |
+| `actions` | anything about the sheet as a whole, **before** the X — today only the filter panel's padlock (see 7) |
+
+The rules that hold it together:
+
+- **Create and edit forms wear the band too.** "New goal", "New target" and "Add a resource" used
+  to have a white head with near-black type — on Android with Material's grey **drag handle** above
+  it — so the same phone showed "Filter & Sort" in one design language and "New goal" in another
+  (owner, 2026-08-22). A form sheet is not a different kind of thing from a filter sheet.
+- **No grab handle, on either surface, ever.** On Android it would sit on the teal as a grey
+  smudge; on the web vaul drew it on a **white strip above the band**, which is exactly what made
+  the phone and the laptop look like two apps. The X closes the sheet and the drag and back
+  gestures still work — the head itself is the drag surface.
+- **No hairline on the drawer either.** Over the dimmed page it drew a pale outline round the teal
+  head that the Android sheet has not got.
+- **A side panel passes `closeButton={false}`.** The corner X would land on top of the head's own.
+- **One gutter, 20.** The head, the fields and the footer buttons all start at the same x — 20px on
+  the web (`px-5`), 20dp on Android. The forms used to indent their body 24px past their own title.
+- **The wording is one string on both surfaces.** Android said "New resource" while the web said
+  "Add a resource"; the web wins, as always.
+- **Checking it by eye needs the card, not the sheet.** A modal sheet renders in its own window, so
+  render `SpiraFormSheetContent` / `SpiraFilterSheetContent` directly — see 4 and the note in 7.
+- Two web sheets still wear a white head and are to be converted when next touched: the note
+  editor's **Add a link** sheet (its head carries a description line that has to move into the body
+  first) and the numeric **Update Progress** panel in `Targets.tsx`.
 
 #### 4. Verify UI changes visually before shipping
 

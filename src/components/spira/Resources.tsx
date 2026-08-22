@@ -51,7 +51,8 @@ import {
 } from "@/components/spira/inline-resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { SheetHead } from "./SheetHead";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { logger } from "@/lib/logger";
@@ -1725,8 +1726,11 @@ export function NewResourceSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        // The head carries its own white X on the teal band; the corner one would sit on it.
+        closeButton={false}
         className="w-full sm:max-w-lg p-0 flex flex-col bg-surface border-l hairline"
       >
+        <SheetTitle className="sr-only">Add a resource</SheetTitle>
         {open && <Form goalId={goalId} onDone={handleDone} />}
       </SheetContent>
     </Sheet>
@@ -1912,19 +1916,11 @@ function Form({
 
   return (
     <>
-      <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 z-10 bg-surface">
-        <h2 className="font-sans font-bold text-lg">
-          {initialResource ? "Edit resource" : "Add a resource"}
-        </h2>
-        <button
-          onClick={onDone}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-secondary"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="px-6 pt-2 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
+      <SheetHead
+        title={initialResource ? "Edit resource" : "Add a resource"}
+        onClose={onDone}
+      />
+      <div className="px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
         {!initialResource && (
           <div>
             <label className="text-sm font-semibold block mb-2">
@@ -2118,7 +2114,7 @@ function Form({
         )}
       </div>
       <div
-        className="shrink-0 bg-surface px-6 pt-3 flex gap-3"
+        className="shrink-0 bg-surface px-5 pt-3 flex gap-3"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
       >
         <button

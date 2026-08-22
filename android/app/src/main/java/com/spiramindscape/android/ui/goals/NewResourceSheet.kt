@@ -90,7 +90,7 @@ fun NewResourceSheet(
     }
 
     SpiraFormSheet(
-        title = if (editing) "Edit resource" else "New resource",
+        title = if (editing) "Edit resource" else "Add a resource",
         onDismiss = onDismiss,
         confirmLabel = if (editing) "Save" else "Add resource",
         onConfirm = {
