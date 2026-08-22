@@ -72,11 +72,18 @@ export function PillChoice({
   selected,
   tone = "success",
   onSelect,
+  icon,
 }: {
   label: string;
   selected: boolean;
   tone?: PillTone;
   onSelect: () => void;
+  /**
+   * The mark this answer wears on the cards it filters — the Options lean pills carry the very
+   * smileys the card's badge does, so the answer and the thing it hides are one mark rather than
+   * two words that happen to agree (owner, 2026-08-18).
+   */
+  icon?: React.ReactNode;
 }) {
   return (
     <button
@@ -92,6 +99,7 @@ export function PillChoice({
           !selected && "text-muted-foreground hover:text-foreground",
         )}
       >
+        {icon && <span className="mr-1.5 inline-flex shrink-0">{icon}</span>}
         {label}
       </Pill>
     </button>

@@ -9,6 +9,7 @@ import {
 } from "@/components/spira/icons";
 import { TabBar } from "@/components/spira/TabBar";
 import { GoalCard } from "@/components/spira/GoalCard";
+import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
 import { useShellFilters } from "@/components/shell/shell-store";
@@ -45,6 +46,7 @@ function GoalsOverview() {
     deadlineTo,
     confidence,
     status,
+    goalDeadline,
     viewMode,
     setViewMode,
   } = useShellFilters();
@@ -53,6 +55,13 @@ function GoalsOverview() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     let arr = goals.filter((goal) => goal.title.toLowerCase().includes(q));
+
+    // Whether there is a deadline at all, before asking which dates to keep.
+    if (goalDeadline !== "all") {
+      arr = arr.filter((goal) =>
+        goalDeadline === "has" ? !!goal.deadline : !goal.deadline,
+      );
+    }
 
     if (deadlineFrom || deadlineTo) {
       arr = arr.filter((goal) => {
@@ -107,6 +116,7 @@ function GoalsOverview() {
     deadlineTo,
     confidence,
     status,
+    goalDeadline,
   ]);
 
   const filteredGoalIds = useMemo(
@@ -115,7 +125,11 @@ function GoalsOverview() {
   );
 
   return (
-    <div className="relative min-h-screen bg-[#F4F4F3]/80">
+    // **No page fill.** This carried a hardcoded `bg-[#F4F4F3]/80` — Salt-300 at 80% — painted
+    // straight into the markup, past every token. It is what actually made the app read grey: the
+    // shell's `bg-background` underneath was already white, and this covered it (owner,
+    // 2026-08-21). White is the canvas; the cards are told apart by their hairline.
+    <div className="relative min-h-screen">
       <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-12">
         <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -222,15 +236,12 @@ function GoalsOverview() {
                 </button>
               </>
             ) : (
-              /* Filtered: no matches */
-              <>
-                <div className="font-display text-2xl text-foreground">
-                  No goals match
-                </div>
-                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                  Try clearing your search or filters above.
-                </p>
-              </>
+              /* Filtered: no matches. Not the empty state's invitation — the list HAS goals and
+                 the user's own search or filter is what is hiding them. */
+              <FilteredEmptyNotice className="mx-auto max-w-md text-left">
+                No goals match that search or filter. Clear them to see the
+                rest.
+              </FilteredEmptyNotice>
             )}
           </div>
         ) : viewMode === "cards" ? (

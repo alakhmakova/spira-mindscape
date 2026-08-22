@@ -17,6 +17,7 @@ import {
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
+import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -201,9 +202,9 @@ export function GoalsTable({
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-xl border hairline bg-secondary/10 px-5 py-12 text-center text-sm text-muted-foreground">
+        <FilteredEmptyNotice>
           No deadlines match this filter.
-        </div>
+        </FilteredEmptyNotice>
       ) : (
         <div className="relative pt-1 space-y-0">
           {items.map((item, idx) => (

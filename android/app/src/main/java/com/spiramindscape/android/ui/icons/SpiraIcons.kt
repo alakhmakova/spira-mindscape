@@ -460,12 +460,22 @@ object SpiraIcons {
             "4.243 4.243 0 0 1 -6 -6 z",
     )
 
-    /** Gravity `lock` */
+    /**
+     * Gravity `lock-fill` — the **closed** padlock, and solid on purpose (owner, 2026-08-21).
+     *
+     * It used to be the outline `lock`, so locked and unlocked differed only in whether the shackle
+     * hung open — a couple of pixels at 16dp, and you had to go looking for them. Solid-when-closed
+     * against [LockOpen]'s outline reads at a glance instead.
+     *
+     * This is the sanctioned exception to "never a solid mark in a column of outline ones": the
+     * filled twin marks the ON state of a toggle beside its own outline sibling, exactly as
+     * `FolderOpenFilled` does. The web draws the same pair (`LockFilled` / `LockOpenFilled`).
+     */
     val Lock = gravity(
-        "M 10.5 6 V 5 a 2.5 2.5 0 0 0 -5 0 v 1 z M 4 5 v 1 a 3 3 0 0 0 -3 3 v 3 a 3 3 0 0 0 3 3 h 8 a 3 3 " +
-            "0 0 0 3 -3 V 9 a 3 3 0 0 0 -3 -3 V 5 a 4 4 0 0 0 -8 0 m 6.5 2.5 H 12 A 1.5 1.5 0 0 1 13.5 9 v 3 " +
-            "a 1.5 1.5 0 0 1 -1.5 1.5 H 4 A 1.5 1.5 0 0 1 2.5 12 V 9 A 1.5 1.5 0 0 1 4 7.5 z m -1.75 2 a .75 " +
-            ".75 0 0 0 -1.5 0 v 2 a .75 .75 0 0 0 1.5 0 z",
+        "M 8 1 a 4 4 0 0 1 4 4 v 1 l .154 .004 A 3 3 0 0 1 15 9 v 3 a 3 3 0 0 1 -3 3 H 4 a 3 3 0 0 1 -3 -3 " +
+            "V 9 a 3 3 0 0 1 2.846 -2.996 L 4 6 V 5 a 4 4 0 0 1 4 -4 m 0 7.75 a .75 .75 0 0 0 -.75 .75 v 2 a " +
+            ".75 .75 0 0 0 1.5 0 v -2 A .75 .75 0 0 0 8 8.75 M 8 2.5 A 2.5 2.5 0 0 0 5.5 5 v 1 h 5 V 5 A 2.5 " +
+            "2.5 0 0 0 8 2.5",
     )
 
     /** Gravity `lock-open` */

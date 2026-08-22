@@ -227,6 +227,17 @@ export const ChevronRightIcon = make(
   </>,
 );
 /* gravity: chevron-right */
+export const CaretsExpandVertical = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M12 6.273a.73.73 0 0 0-.18-.479L8.8 2.342A1 1 0 0 0 8.046 2h-.092a1 1 0 0 0-.753.341L4.18 5.794A.727.727 0 0 0 4.727 7h6.546A.727.727 0 0 0 12 6.273M4 9.727c0 .176.064.346.18.479l3.02 3.453a1 1 0 0 0 .753.341h.092a1 1 0 0 0 .753-.341l3.021-3.453A.727.727 0 0 0 11.273 9H4.727A.727.727 0 0 0 4 9.727"
+    />
+  </>,
+);
+/* gravity: carets-expand-vertical */
 export const ChevronUp = make(
   <>
     <path
@@ -271,6 +282,53 @@ export const CircleCheckFill = make(
   </>,
 );
 /* gravity: circle-check-fill */
+/**
+ * Gravity `triangle-exclamation-fill` — the warning mark on a notice (owner, 2026-08-18).
+ *
+ * The **filled** twin, not the outline `TriangleAlert` above it: CLAUDE.md's notice spec puts all
+ * four kinds on their `-fill` glyph, because they are one family saying one sort of thing and an
+ * outline among them read as a different sort of message.
+ */
+export const TriangleExclamationFill = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.835 2.244c.963-1.665 3.367-1.665 4.33 0l4.916 8.505c.964 1.666-.24 3.751-2.164 3.751H3.083c-1.925 0-3.128-2.085-2.165-3.751zM8 5a.75.75 0 0 1 .75.75v2a.75.75 0 1 1-1.5 0v-2A.75.75 0 0 1 8 5m1 5.75a1 1 0 1 1-2 0a1 1 0 0 1 2 0"
+    />
+  </>,
+);
+
+/** Gravity `circle-info-fill` — the informational mark on a notice. */
+export const CircleInfoFill = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14m1-9.5a1 1 0 1 1-2 0a1 1 0 0 1 2 0M8 7.75a.75.75 0 0 1 .75.75V11a.75.75 0 0 1-1.5 0V8.5A.75.75 0 0 1 8 7.75"
+    />
+  </>,
+);
+
+/**
+ * Gravity `dots-9` — the drag grip, the owner's pick (2026-08-18).
+ *
+ * It is the mark that stands in the radio's place while a list is being reordered, on both
+ * surfaces (`SpiraIcons.Dots9` on Android).
+ */
+export const Dots9 = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M9.5 3a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0M3 9.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3M9.5 8a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0m5 0a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0M13 4.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3M4.5 3a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0M8 14.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3m6.5-1.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0M3 14.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3"
+    />
+  </>,
+);
+
 export const CircleExclamationFilled = make(
   <>
     <path
@@ -961,11 +1019,18 @@ export const LockFilled = make(
       fill="currentColor"
       fillRule="evenodd"
       clipRule="evenodd"
-      d="M10.5 6V5a2.5 2.5 0 0 0-5 0v1zM4 5v1a3 3 0 0 0-3 3v3a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3V5a4 4 0 0 0-8 0m6.5 2.5H12A1.5 1.5 0 0 1 13.5 9v3a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12V9A1.5 1.5 0 0 1 4 7.5zm-1.75 2a.75.75 0 0 0-1.5 0v2a.75.75 0 0 0 1.5 0z"
+      d="M8 1a4 4 0 0 1 4 4v1l.154.004A3 3 0 0 1 15 9v3a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V9a3 3 0 0 1 2.846-2.996L4 6V5a4 4 0 0 1 4-4m0 7.75a.75.75 0 0 0-.75.75v2a.75.75 0 0 0 1.5 0v-2A.75.75 0 0 0 8 8.75M8 2.5A2.5 2.5 0 0 0 5.5 5v1h5V5A2.5 2.5 0 0 0 8 2.5"
     />
   </>,
 );
-/* gravity: lock */
+/* gravity: lock-fill — **solid, and deliberately so** (owner, 2026-08-21). It used to draw the
+   outline `lock`, which meant the two states of the padlock differed only in whether the shackle
+   was hanging open: at 16px that is a couple of pixels and you had to look for it. The pair is now
+   solid-when-closed against outline-when-open, so "locked" reads at a glance.
+
+   This is the sanctioned exception to "never a solid mark in a column of outline ones" — the same
+   one `FolderOpen` / `FolderOpenFilled` uses. The filled twin marks the ON state of a toggle beside
+   its own outline sibling; it is not a solid glyph sitting in a row of unrelated outline ones. */
 export const LockOpenFilled = make(
   <>
     <path

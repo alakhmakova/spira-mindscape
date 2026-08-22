@@ -9,10 +9,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * How a list is sorted and filtered, remembered across sessions — mirrors the web, where the
- * goal/target status filter and view mode persist in `localStorage` (see
- * `src/components/shell/shell-store.ts`). Re-picking the same filter on every visit was the
- * complaint this fixes; the search box and the date ranges deliberately do NOT persist.
+ * How a list is sorted and filtered, kept across sessions **when its padlock is closed**.
+ *
+ * # The padlock
+ *
+ * **A closed padlock pins a list's filters and sort; an open one lets them go** (owner,
+ * 2026-08-21). It sits in each filter sheet's Kale head, on the right beside the X, and the web
+ * carries the identical control (`src/components/shell/shell-store.ts`).
+ *
+ *  - **Closed** — the arrangement is written to this store and comes back on the next visit, after
+ *    the app has been swiped away, and after a reinstall-free restart. Every later change is
+ *    written too, so the lock holds what is on screen rather than a snapshot of when it was shut.
+ *  - **Open** — nothing is written and whatever was written is **cleared**, so the list opens on
+ *    its defaults. That is what makes opening the padlock enough to forget: there is no separate
+ *    "clear" step to find.
+ *
+ * Before the padlock these stores wrote unconditionally, which meant a filter picked once followed
+ * the user around for weeks with nothing on screen admitting it.
+ *
+ * The search box and the deadline **range** are never pinned: a query belongs to the screen it was
+ * typed on, and a range is about a moment ("what is due this month") rather than a standing
+ * choice — one remembered from a fortnight ago opens the page on a list that looks empty for no
+ * visible reason.
  */
 
 /** A stored enum name that no longer maps to an entry (an old build's value) falls back silently. */
@@ -21,27 +39,86 @@ private fun <T : Enum<T>> SharedPreferences.readEnum(key: String, entries: List<
     return entries.firstOrNull { it.name == stored } ?: fallback
 }
 
-private fun SharedPreferences.write(key: String, value: Enum<*>) =
-    edit().putString(key, value.name).apply()
+/** The key every lockable store keeps its own padlock under. */
+private const val KEY_LOCKED = "locked"
 
-/** The goal dashboard's sort + status/deadline filters. */
-class GoalViewPreferences(private val prefs: SharedPreferences) {
+/**
+ * Shared behaviour for a store behind a padlock: reads answer with the default while it is open,
+ * writes are dropped, and closing it writes the whole arrangement at once.
+ */
+abstract class LockablePreferences(protected val prefs: SharedPreferences) {
+
+    init {
+        // **The upgrade sweep.** Before the padlock these stores wrote unconditionally, so an
+        // installed copy has a filter sitting in here with no padlock behind it — and an open
+        // padlock is supposed to mean "nothing is kept". Without this, the first launch after the
+        // update would silently apply an arrangement the user has no way of seeing was still on.
+        // The web does the same thing with a `persist` version bump (`shell-store.ts`).
+        if (!prefs.getBoolean(KEY_LOCKED, false) && prefs.all.isNotEmpty()) {
+            prefs.edit().clear().apply()
+        }
+    }
+
+    /** Whether this list's arrangement is pinned. */
+    val locked: Boolean get() = prefs.getBoolean(KEY_LOCKED, false)
+
+    /**
+     * Close or open the padlock.
+     *
+     * Closing pins **what is on screen right now** — [pinCurrent] is how the caller hands it over,
+     * because the state lives with the screen, not here. Opening wipes the store, which is both
+     * the "stop writing" and the "forget what you had" halves of the same gesture.
+     */
+    fun setLocked(next: Boolean, pinCurrent: () -> Unit) {
+        if (next) {
+            prefs.edit().putBoolean(KEY_LOCKED, true).apply()
+            pinCurrent()
+        } else {
+            prefs.edit().clear().apply()
+        }
+    }
+
+    /** Write one value, or drop it on the floor while the padlock is open. */
+    protected fun writeEnum(key: String, value: Enum<*>) {
+        if (locked) prefs.edit().putString(key, value.name).apply()
+    }
+
+    protected fun writeBoolean(key: String, value: Boolean) {
+        if (locked) prefs.edit().putBoolean(key, value).apply()
+    }
+
+    protected fun writeString(key: String, value: String) {
+        if (locked) prefs.edit().putString(key, value).apply()
+    }
+
+    protected fun readString(key: String, fallback: String) = prefs.getString(key, fallback) ?: fallback
+}
+
+/** The goal dashboard's sort + status/deadline/confidence filters. */
+class GoalViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
 
     var sort: SortKey
         get() = prefs.readEnum(KEY_SORT, SortKey.entries, SortKey.Recent)
-        set(value) = prefs.write(KEY_SORT, value)
+        set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
         get() = prefs.getBoolean(KEY_ASCENDING, false)
-        set(value) = prefs.edit().putBoolean(KEY_ASCENDING, value).apply()
+        set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var status: StatusFilter
         get() = prefs.readEnum(KEY_STATUS, StatusFilter.entries, StatusFilter.All)
-        set(value) = prefs.write(KEY_STATUS, value)
+        set(value) = writeEnum(KEY_STATUS, value)
 
     var deadline: DeadlineFilter
         get() = prefs.readEnum(KEY_DEADLINE, DeadlineFilter.entries, DeadlineFilter.Any)
-        set(value) = prefs.write(KEY_DEADLINE, value)
+        set(value) = writeEnum(KEY_DEADLINE, value)
+
+    /** 1..10, or 0 for "any". */
+    var confidence: Int
+        get() = prefs.getInt(KEY_CONFIDENCE, 0)
+        set(value) {
+            if (locked) prefs.edit().putInt(KEY_CONFIDENCE, value).apply()
+        }
 
     companion object {
         private const val PREFS_NAME = "spira_goal_view"
@@ -49,6 +126,7 @@ class GoalViewPreferences(private val prefs: SharedPreferences) {
         private const val KEY_ASCENDING = "ascending"
         private const val KEY_STATUS = "status"
         private const val KEY_DEADLINE = "deadline"
+        private const val KEY_CONFIDENCE = "confidence"
 
         fun from(context: Context) = GoalViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
@@ -62,32 +140,32 @@ fun rememberGoalViewPreferences(): GoalViewPreferences {
     return remember(context) { GoalViewPreferences.from(context) }
 }
 
-/** The goal workspace's target sort + filter. */
-class TargetViewPreferences(private val prefs: SharedPreferences) {
+/** The goal workspace's target sort + filters. */
+class TargetViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
 
     var sort: TargetSort
         get() = prefs.readEnum(KEY_SORT, TargetSort.entries, TargetSort.Name)
-        set(value) = prefs.write(KEY_SORT, value)
+        set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
         get() = prefs.getBoolean(KEY_ASCENDING, true)
-        set(value) = prefs.edit().putBoolean(KEY_ASCENDING, value).apply()
+        set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var filter: TargetFilter
         get() = prefs.readEnum(KEY_FILTER, TargetFilter.entries, TargetFilter.All)
-        set(value) = prefs.write(KEY_FILTER, value)
+        set(value) = writeEnum(KEY_FILTER, value)
 
     var deadlineFilter: TargetDeadlineFilter
         get() = prefs.readEnum(KEY_DEADLINE, TargetDeadlineFilter.entries, TargetDeadlineFilter.All)
-        set(value) = prefs.write(KEY_DEADLINE, value)
+        set(value) = writeEnum(KEY_DEADLINE, value)
 
     var lockFilter: TargetLockFilter
         get() = prefs.readEnum(KEY_LOCK, TargetLockFilter.entries, TargetLockFilter.All)
-        set(value) = prefs.write(KEY_LOCK, value)
+        set(value) = writeEnum(KEY_LOCK, value)
 
     var typeFilter: TargetTypeFilter
         get() = prefs.readEnum(KEY_TYPE, TargetTypeFilter.entries, TargetTypeFilter.All)
-        set(value) = prefs.write(KEY_TYPE, value)
+        set(value) = writeEnum(KEY_TYPE, value)
 
     companion object {
         private const val PREFS_NAME = "spira_target_view"
@@ -105,8 +183,9 @@ class TargetViewPreferences(private val prefs: SharedPreferences) {
 }
 
 /**
- * A composition-local view state backed by [TargetViewPreferences]: reading it gives the stored
- * choice, and setting it both recomposes and writes the choice back.
+ * A composition-local view state backed by [TargetViewPreferences]: reading it gives the current
+ * choice, and setting it both recomposes and offers the choice to the store — which writes it only
+ * while the padlock is closed.
  */
 class TargetViewState internal constructor(
     private val preferences: TargetViewPreferences,
@@ -118,6 +197,7 @@ class TargetViewState internal constructor(
     private val typeFilterState: MutableState<TargetTypeFilter>,
     private val deadlineFromState: MutableState<String>,
     private val deadlineToState: MutableState<String>,
+    private val lockedState: MutableState<Boolean>,
 ) {
     var sort: TargetSort
         get() = sortState.value
@@ -176,9 +256,8 @@ class TargetViewState internal constructor(
     /**
      * The deadline range's two ends, as ISO instants ("" = open end).
      *
-     * Deliberately **not** stored: a date range is about a moment ("what is due this month"), not a
-     * standing preference, and a range remembered from a fortnight ago would open the page on a
-     * list that looks empty for no visible reason. The same rule the search box follows.
+     * Deliberately **never pinned**, padlock or no padlock: a range is about a moment, not a
+     * standing preference. The same rule the search box follows.
      */
     var deadlineFrom: String
         get() = deadlineFromState.value
@@ -202,12 +281,40 @@ class TargetViewState internal constructor(
         }
     }
 
+    /** Whether this list's padlock is closed — see the note at the top of this file. */
+    var locked: Boolean
+        get() = lockedState.value
+        set(value) {
+            lockedState.value = value
+            preferences.setLocked(value) {
+                // Pin what is on screen, not what the store last happened to hold.
+                preferences.sort = sortState.value
+                preferences.ascending = ascendingState.value
+                preferences.filter = filterState.value
+                preferences.deadlineFilter = deadlineFilterState.value
+                preferences.lockFilter = lockFilterState.value
+                preferences.typeFilter = typeFilterState.value
+            }
+        }
+
     /**
-     * How many of the questions are narrowing the list — what the trigger shows in brackets.
-     * A question left on `All` is not a filter, so an untouched toolbar reads "Filter", not
-     * "Filter (0)". The range counts **once**, whichever of its two ends is set: it is one
-     * question, and "(2)" for picking a From and a To would say two things are hidden.
+     * Put every question back to its default — **every** one (owner, 2026-08-21).
+     *
+     * There used to be a class of "standing preference" that Reset all was not allowed to undo, so
+     * a button promising everything quietly kept four answers.
      */
+    fun resetAll() {
+        sort = TargetSort.Name
+        ascending = true
+        filter = TargetFilter.All
+        deadlineFilter = TargetDeadlineFilter.All
+        lockFilter = TargetLockFilter.All
+        typeFilter = TargetTypeFilter.All
+        deadlineFromState.value = ""
+        deadlineToState.value = ""
+    }
+
+    /** Whether anything is away from its default — what lights the trigger's dot. */
     val activeCount: Int
         get() = listOf(
             filter != TargetFilter.All,
@@ -215,6 +322,7 @@ class TargetViewState internal constructor(
             lockFilter != TargetLockFilter.All,
             typeFilter != TargetTypeFilter.All,
             deadlineFrom.isNotBlank() || deadlineTo.isNotBlank(),
+            sort != TargetSort.Name || !ascending,
         ).count { it }
 }
 
@@ -233,6 +341,7 @@ fun rememberTargetViewState(): TargetViewState {
             typeFilterState = mutableStateOf(preferences.typeFilter),
             deadlineFromState = mutableStateOf(""),
             deadlineToState = mutableStateOf(""),
+            lockedState = mutableStateOf(preferences.locked),
         )
     }
 }
@@ -244,19 +353,19 @@ fun rememberTargetViewState(): TargetViewState {
  * The default is [ResourceSort.Added] ascending, which is the server's own order: the page looked
  * like that before it had a toolbar, so nobody's list rearranges itself on upgrade.
  */
-class ResourceViewPreferences(private val prefs: SharedPreferences) {
+class ResourceViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
 
     var sort: ResourceSort
         get() = prefs.readEnum(KEY_SORT, ResourceSort.entries, ResourceSort.Added)
-        set(value) = prefs.write(KEY_SORT, value)
+        set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
         get() = prefs.getBoolean(KEY_ASCENDING, true)
-        set(value) = prefs.edit().putBoolean(KEY_ASCENDING, value).apply()
+        set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var filter: ResourceFilter
         get() = prefs.readEnum(KEY_FILTER, ResourceFilter.entries, ResourceFilter.All)
-        set(value) = prefs.write(KEY_FILTER, value)
+        set(value) = writeEnum(KEY_FILTER, value)
 
     companion object {
         private const val PREFS_NAME = "spira_resource_view"
@@ -270,12 +379,13 @@ class ResourceViewPreferences(private val prefs: SharedPreferences) {
     }
 }
 
-/** [TargetViewState]'s twin for resources: read the stored choice, set it to recompose and store. */
+/** [TargetViewState]'s twin for resources. */
 class ResourceViewState internal constructor(
     private val preferences: ResourceViewPreferences,
     private val sortState: MutableState<ResourceSort>,
     private val ascendingState: MutableState<Boolean>,
     private val filterState: MutableState<ResourceFilter>,
+    private val lockedState: MutableState<Boolean>,
 ) {
     var sort: ResourceSort
         get() = sortState.value
@@ -297,6 +407,29 @@ class ResourceViewState internal constructor(
             filterState.value = value
             preferences.filter = value
         }
+
+    var locked: Boolean
+        get() = lockedState.value
+        set(value) {
+            lockedState.value = value
+            preferences.setLocked(value) {
+                preferences.sort = sortState.value
+                preferences.ascending = ascendingState.value
+                preferences.filter = filterState.value
+            }
+        }
+
+    fun resetAll() {
+        sort = ResourceSort.Added
+        ascending = true
+        filter = ResourceFilter.All
+    }
+
+    val activeCount: Int
+        get() = listOf(
+            filter != ResourceFilter.All,
+            sort != ResourceSort.Added || !ascending,
+        ).count { it }
 }
 
 @Composable
@@ -309,6 +442,64 @@ fun rememberResourceViewState(): ResourceViewState {
             sortState = mutableStateOf(preferences.sort),
             ascendingState = mutableStateOf(preferences.ascending),
             filterState = mutableStateOf(preferences.filter),
+            lockedState = mutableStateOf(preferences.locked),
+        )
+    }
+}
+
+/** The Options list's one question — the thumb lean — behind its own padlock. */
+class OptionViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
+
+    var filter: OptionFilter
+        get() = prefs.readEnum(KEY_FILTER, OptionFilter.entries, OptionFilter.All)
+        set(value) = writeEnum(KEY_FILTER, value)
+
+    companion object {
+        private const val PREFS_NAME = "spira_option_view"
+        private const val KEY_FILTER = "filter"
+
+        fun from(context: Context) = OptionViewPreferences(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+        )
+    }
+}
+
+/** [TargetViewState]'s twin for options. */
+class OptionViewState internal constructor(
+    private val preferences: OptionViewPreferences,
+    private val filterState: MutableState<OptionFilter>,
+    private val lockedState: MutableState<Boolean>,
+) {
+    var filter: OptionFilter
+        get() = filterState.value
+        set(value) {
+            filterState.value = value
+            preferences.filter = value
+        }
+
+    var locked: Boolean
+        get() = lockedState.value
+        set(value) {
+            lockedState.value = value
+            preferences.setLocked(value) { preferences.filter = filterState.value }
+        }
+
+    fun resetAll() {
+        filter = OptionFilter.All
+    }
+
+    val activeCount: Int get() = if (filter != OptionFilter.All) 1 else 0
+}
+
+@Composable
+fun rememberOptionViewState(): OptionViewState {
+    val context = LocalContext.current
+    return remember(context) {
+        val preferences = OptionViewPreferences.from(context)
+        OptionViewState(
+            preferences = preferences,
+            filterState = mutableStateOf(preferences.filter),
+            lockedState = mutableStateOf(preferences.locked),
         )
     }
 }

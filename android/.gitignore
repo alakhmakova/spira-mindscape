@@ -1,5 +1,7 @@
 *.iml
 .gradle/
+# The Kotlin compiler's session scratch dir — build output, not source.
+.kotlin/
 /local.properties
 /.idea/
 /build/

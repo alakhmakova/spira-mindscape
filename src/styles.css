@@ -410,14 +410,26 @@
 :root {
   --radius: 0.5rem;
 
-  --background: oklch(0.982 0 0);
+  /* **White is the canvas** (owner, 2026-08-21) — the brand's first colour rule, and the app was
+     not obeying it. The page, every card and every panel were all `oklch(0.982 0 0)` = #F9F9F9, a
+     flat cold grey; only menus and popovers were white. Nothing looked broken, it just made the
+     whole app read as grey, which is what the owner finally put a finger on.
+
+     Two things worth knowing before changing these back:
+       • the grey was also **colder than the brand's own neutral** — Parsnip-100 is #FBFAFA and
+         warm, this was chroma 0. So the two surfaces did not even agree: Android's canvas was
+         Parsnip, the web's was a neutral grey;
+       • cards are separated from the page by their **hairline border**, not by a fill. That is the
+         `hairline` utility, and it is why they stay legible on a white page. */
+  --background: oklch(1 0 0);
   --foreground: oklch(0.321 0 0);
 
-  --surface: oklch(0.982 0 0);
+  --surface: oklch(1 0 0);
   --surface-raised: oklch(1 0 0);
+  /* The one recessed tone left — table heads, wells. Unchanged. */
   --surface-sunken: oklch(0.94 0 0);
 
-  --card: oklch(0.982 0 0);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.321 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.321 0 0);
@@ -605,7 +617,12 @@
   .tiptap-content :where(p) { margin: 0.5rem 0; }
   .tiptap-content :where(ul, ol) { padding-left: 1.4rem; margin: 0.5rem 0; }
   .tiptap-content :where(ul) { list-style: disc; }
-  .tiptap-content :where(ol) { list-style: decimal; }
+  /* A numbered list needs room for its widest marker, not for "1.". The marker is drawn OUTSIDE
+     the content box, growing leftwards, so at 1.4rem "10." reached past x=0 — and the phone's note
+     body is a scroll container with no left padding, which clipped the leading digit off every
+     item from ten on (owner, 2026-08-20). 2.25rem carries three digits with the same optical gap
+     a single digit has. */
+  .tiptap-content :where(ol) { list-style: decimal; padding-left: 2.25rem; }
   .tiptap-content :where(li) { margin: 0.2rem 0; }
   .tiptap-content :where(blockquote) {
     border-left: 3px solid var(--color-primary);

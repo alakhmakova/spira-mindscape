@@ -28,18 +28,19 @@ import { FIELD_LIMITS } from "@/lib/spira/limits";
 import {
   OPTION_LEAN_CHOICES,
   OptionsList,
-  type OptionLeanFilter,
 } from "@/components/spira/OptionsList";
 import {
+  useListActive,
+  useListLocked,
+  useShellFilters,
+  type OptionLeanFilter,
+} from "@/components/shell/shell-store";
+import {
   FilterIconTrigger,
-  MenuChoice,
-  MenuGroup,
   SheetGroup,
   SheetPills,
-  ToolbarMenu,
   ToolbarSheet,
 } from "@/components/spira/ListToolbar";
-import { FrownFilled, SmileFilled, Filter } from "@/components/spira/icons";
 import { TargetsSection, NewTargetSheet } from "@/components/spira/Targets";
 import {
   ResourcesSection,
@@ -90,11 +91,19 @@ function GoalWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [optionsReordering, setOptionsReordering] = useState(false);
-  // The phone opens the lean filter as a drawer; the desktop keeps its dropdown.
+  // The lean filter opens the one panel — a drawer on a phone, a side panel on a laptop.
   const [optionsFilterOpen, setOptionsFilterOpen] = useState(false);
-  // Which thumb lean the Options list is narrowed to. It lives here, not in OptionsList, because
-  // its trigger sits in the section header beside the Reorder toggle.
-  const [optionsLean, setOptionsLean] = useState<OptionLeanFilter>("all");
+  // Which thumb lean the Options list is narrowed to. In the store, not in local state, so this
+  // list's padlock has something to pin (see the padlock note in `shell-store.ts`); the trigger
+  // sits in the section header beside the Reorder toggle, not inside OptionsList.
+  const optionsLean = useShellFilters((s) => s.optionLean);
+  const setOptionsView = useShellFilters((s) => s.setView);
+  const resetList = useShellFilters((s) => s.resetList);
+  const setLocked = useShellFilters((s) => s.setLocked);
+  const optionsLocked = useListLocked("options");
+  const optionsActive = useListActive("options");
+  const setOptionsLean = (next: OptionLeanFilter) =>
+    setOptionsView({ optionLean: next });
 
   useEffect(() => {
     setContext({ goalId });
@@ -269,61 +278,33 @@ function GoalWorkspace() {
               // hint that the filter was what took the control away; what must not happen is a
               // DROP on a narrowed list, and a disabled button prevents that just as well.
               <div className="flex items-center gap-1">
-                {/* **A drawer on a phone, a dropdown on the desktop** (owner, 2026-08-17): on a
-                    phone every filter and sort in the app now opens the same sheet the All-goals
-                    page uses, so one pattern is learned once. The desktop keeps its menu, which is
-                    where a menu belongs. */}
-                <span className="sm:hidden">
-                  <FilterIconTrigger
-                    active={optionsLean !== "all"}
-                    onClick={() => setOptionsFilterOpen(true)}
-                    ariaLabel="Filter options"
-                  />
-                  <ToolbarSheet
-                    open={optionsFilterOpen}
-                    onOpenChange={setOptionsFilterOpen}
-                    title="Filter"
-                    onReset={() => setOptionsLean("all")}
-                    resetDisabled={optionsLean === "all"}
-                  >
-                    <SheetGroup title="Idea">
-                      <SheetPills
-                        options={OPTION_LEAN_CHOICES}
-                        value={optionsLean}
-                        onChange={setOptionsLean}
-                        tone="teal"
-                      />
-                    </SheetGroup>
-                  </ToolbarSheet>
-                </span>
-                <span className="hidden sm:inline-flex">
-                  <ToolbarMenu
-                    label="Filter"
-                    count={optionsLean === "all" ? 0 : 1}
-                    ariaLabel="Filter options"
-                    // One question, one answer: there is nothing left to do after a pick.
-                    closeOnSelect
-                    leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
-                  >
-                    <MenuGroup title="Idea">
-                      {OPTION_LEAN_CHOICES.map((c) => (
-                        <MenuChoice
-                          key={c.value}
-                          label={c.label}
-                          selected={optionsLean === c.value}
-                          onSelect={() => setOptionsLean(c.value)}
-                          icon={
-                            c.value === "good_idea" ? (
-                              <SmileFilled className="h-4 w-4 shrink-0" />
-                            ) : c.value === "didnt_work" ? (
-                              <FrownFilled className="h-4 w-4 shrink-0" />
-                            ) : undefined
-                          }
-                        />
-                      ))}
-                    </MenuGroup>
-                  </ToolbarMenu>
-                </span>
+                {/* **One glyph and one panel, at every width** (owner, 2026-08-20). This used to
+                    be a drawer on a phone and a dropdown on a laptop; a filter is never a dropdown
+                    now, so the laptop opens the same panel from the right that the phone opens
+                    from the bottom, asking the one question in the same pills. */}
+                <FilterIconTrigger
+                  active={optionsActive}
+                  onClick={() => setOptionsFilterOpen(true)}
+                  ariaLabel="Filter options"
+                />
+                <ToolbarSheet
+                  open={optionsFilterOpen}
+                  onOpenChange={setOptionsFilterOpen}
+                  title="Filter"
+                  onReset={() => resetList("options")}
+                  resetDisabled={!optionsActive}
+                  locked={optionsLocked}
+                  onLockedChange={(next) => setLocked("options", next)}
+                >
+                  <SheetGroup title="Idea">
+                    <SheetPills
+                      options={OPTION_LEAN_CHOICES}
+                      value={optionsLean}
+                      onChange={setOptionsLean}
+                      tone="teal"
+                    />
+                  </SheetGroup>
+                </ToolbarSheet>
                 {goal.options.length > 1 && (
                   <button
                     onClick={() => setOptionsReordering((v) => !v)}
@@ -853,13 +834,15 @@ function GoalNav() {
           ))}
         </div>
       </div>
-      {/* Page-chrome scroll indicator — the Kale progress variant (track #8DD3D4 / fill #0A8080),
-          so it reads as teal chrome, not as goal progress and not as an off-palette pairing.
+      {/* Page-chrome scroll indicator — the **Contrast** progress variant (track brand-200
+          #E5F4F3 / fill reserved-700 #E4523E), so the read-so-far reads at a glance against the
+          teal chrome instead of being another step of the same teal (owner, 2026-08-20). This is
+          the only bar that changed; every other progress in the app keeps its variant.
           **This one is the original and stays exactly here**: the goal page's light part is this
           section-nav row, so its divider belongs under the row, not under the app header. */}
-      <div className="h-[5px] w-full bg-[#8DD3D4] overflow-hidden">
+      <div className="h-[5px] w-full bg-[#E5F4F3] overflow-hidden">
         <div
-          className="h-full bg-[#0A8080] transition-all duration-100 ease-out"
+          className="h-full bg-[#E4523E] transition-all duration-100 ease-out"
           style={{ width: `${scroll}%` }}
         />
       </div>

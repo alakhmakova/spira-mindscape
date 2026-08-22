@@ -388,19 +388,27 @@ export function ElementActionsMenu({
 }
 
 /**
- * "Attach resource" as a standalone link, for places that show their actions as buttons rather
- * than hiding them behind a ⋯ menu (the mobile target card). Renders nothing outside a goal
- * workspace, where there is no resource list to pick from.
+ * "Attach resource" as a standalone control, for places that show their actions as buttons rather
+ * than hiding them behind a ⋯ menu (the mobile target card, the create form). Renders nothing
+ * outside a goal workspace, where there is no resource list to pick from.
+ *
+ * `variant="icon"` is the same button reduced to its paperclip — for a row that is already a
+ * compact strip with its own remove control, where a worded link would be wider than the row.
  */
 export function AttachResourceButton({
   attachedTo,
   onAttach,
   className,
+  variant = "link",
+  ariaLabel = "Attach resource",
 }: {
   /** The element's current text — resources it already references are filtered out. */
   attachedTo?: string;
   onAttach: (resourceId: string) => void;
   className?: string;
+  variant?: "link" | "icon";
+  /** Names the button when it is the icon alone and has no visible word. */
+  ariaLabel?: string;
 }) {
   const ctx = useInlineResources();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -417,14 +425,24 @@ export function AttachResourceButton({
       <button
         type="button"
         onClick={() => setPickerOpen(true)}
+        aria-label={variant === "icon" ? ariaLabel : undefined}
+        title={variant === "icon" ? ariaLabel : undefined}
         // Same shape as "Add task": a circle-plus and a plain teal label, no underline.
         className={cn(
-          "flex items-center gap-2 py-1 text-left text-sm font-semibold text-primary transition-colors hover:text-primary/80",
+          variant === "icon"
+            ? "shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-primary"
+            : "flex items-center gap-2 py-1 text-left text-sm font-semibold text-primary transition-colors hover:text-primary/80",
           className,
         )}
       >
-        <CirclePlus className="h-[18px] w-[18px] shrink-0" />
-        Attach resource
+        {variant === "icon" ? (
+          <Paperclip className="h-3.5 w-3.5" />
+        ) : (
+          <>
+            <CirclePlus className="h-[18px] w-[18px] shrink-0" />
+            Attach resource
+          </>
+        )}
       </button>
       <ResourcePickerDialog
         open={pickerOpen}

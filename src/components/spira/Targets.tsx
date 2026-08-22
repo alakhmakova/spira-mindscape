@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 import {
   LockFilled,
   LockOpenFilled,
-  Filter,
+  CaretsExpandVertical,
   ChevronUp,
   ChevronDown,
 } from "@/components/spira/icons";
@@ -57,19 +57,16 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Section } from "@/components/spira/Section";
 import {
-  MenuChoice,
-  MenuColumns,
-  MenuGroup,
-  ToolbarTrigger,
   FilterIconTrigger,
   RoundAddButton,
   SectionSearchButton,
   SectionSearchField,
+  SectionSearchInput,
   SheetChoiceCards,
+  SheetDateRange,
   SheetGroup,
   SheetPills,
   SheetSegmented,
@@ -80,19 +77,32 @@ import {
   AttachResourceButton,
   ElementActionsMenu,
   appendResourceToken,
+  namesToTokens,
+  tokensToNames,
+  useInlineResources,
   useIsSingleLine,
   useReadableText,
   useTallText,
 } from "@/components/spira/inline-resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { FilteredEmptyNotice } from "@/components/spira/Notice";
+import { stripResourceTokens } from "@/lib/spira/links";
+import { resourceDisplayName } from "@/lib/spira/resources";
 import { Switch } from "@/components/ui/switch";
 import { celebrate } from "@/lib/spira/celebrate";
 import {
+  useListActive,
+  useListLocked,
   useShellFilters,
+  type TargetDeadlineFilter,
+  type TargetLockFilter,
+  type TargetSortKey,
   type TargetStatusFilter,
+  type TargetTypeFilter,
 } from "@/components/shell/shell-store";
 
-type SortField = "title" | "deadline" | "progress";
+/** The store owns the keys; this alias keeps the two list components reading as they did. */
+type SortField = TargetSortKey;
 type StatusFilter = TargetStatusFilter;
 
 /** error-800 — the palette's semantic red for an overdue state (CLAUDE.md extended ramps).
@@ -275,13 +285,21 @@ function DeadlineTile({
         // muddy it.
         <span
           className="absolute inset-x-0 flex -translate-y-1/2 flex-col items-center
-                     leading-none text-foreground"
+                     text-foreground"
           style={{ top: PAPER_CENTRE }}
         >
-          <span className="text-[9px] font-semibold uppercase tracking-wide">
+          {/* **Both sizes carry their own leading, and both match Android's** (owner, 2026-08-20).
+              The day used to be `text-lg` under a `leading-none` parent — and `text-lg` brings
+              Tailwind's own 1.75rem line-height with it, which wins over the inherited one. The
+              block was therefore 37px tall rather than the ~26px this anchor is calculated for, so
+              its ink sat 0.8px ABOVE the paper: "DEC" printed on the coral band, with a wide empty
+              strip left under the day. Measured against the Android tile
+              (`app/build/reports/visual/target-cards.png`), 8/9 and 16/17 put the date 4.4px below
+              the band and 8.9px above the foot — Android's own 4 and 10. */}
+          <span className="text-[8px] leading-[9px] font-semibold uppercase tracking-wide">
             {info.monthLabel}
           </span>
-          <span className="num text-lg font-bold tabular-nums">
+          <span className="num text-[16px] leading-[17px] font-bold tabular-nums">
             {info.dayLabel}
           </span>
         </span>
@@ -342,15 +360,31 @@ function isTargetOverdue(t: Target): boolean {
 // One mutually-exclusive status filter, shown as two blocks: "Status" (done/not-done) and a
 // separate "Progress" block (started/not-started), because started-ness is a different question
 // from done-ness and reading them in one column ran them together.
-const STATUS_CHOICES = [
+/**
+ * Done-ness and started-ness are **one** mutually-exclusive filter asked as two questions, because
+ * the started answers read as a different question from the done ones.
+ *
+ * **Done-ness is the "Progress" question and started-ness the "Status" one** (owner, 2026-08-18):
+ * finishing is the far end of a progress bar, while having begun is a state the target is in. The
+ * web had the two headings the other way round until 2026-08-20; Android is the reference.
+ */
+const PROGRESS_CHOICES = [
   { value: "all", label: "All" },
   { value: "done", label: "Done" },
   { value: "not-done", label: "Not done" },
 ] as const;
 
-const STARTED_CHOICES = [
+const STATUS_CHOICES = [
   { value: "started", label: "Started" },
   { value: "not-started", label: "Not started" },
+] as const;
+
+/** Which kind of target this is — the twin of Android's `TargetTypeFilter`. */
+const TYPE_CHOICES = [
+  { value: "all", label: "All" },
+  { value: "binary", label: "Done/not done" },
+  { value: "numeric", label: "Numeric" },
+  { value: "checklist", label: "Checklist" },
 ] as const;
 
 const DEADLINE_CHOICES = [
@@ -371,6 +405,7 @@ const TARGET_SORT_CHOICES = [
   { value: "title", label: "Name" },
   { value: "deadline", label: "Deadline" },
   { value: "progress", label: "Progress" },
+  { value: "created", label: "Created" },
 ] as const;
 
 const TARGET_DIRECTION_CHOICES = [
@@ -393,21 +428,60 @@ export function TargetsSection({
   const [search, setSearch] = useState("");
   // The phone's search is a glyph until it is opened; the field then takes the header row.
   const [searchOpen, setSearchOpen] = useState(false);
-  const [deadlineFrom, setDeadlineFrom] = useState("");
-  const [deadlineTo, setDeadlineTo] = useState("");
-  const [achievedFrom, setAchievedFrom] = useState("");
-  const [achievedTo, setAchievedTo] = useState("");
-  // The three filter questions are stored preferences (see shell-store): they survive navigation
-  // and reloads, and only change when the user picks something else.
+  // **Every question this panel asks lives in the store**, so the list's padlock has one thing to
+  // pin: the sort and the date range used to be component state, which a lock could not reach and
+  // which a remount cleared anyway.
+  const setView = useShellFilters((s) => s.setView);
+  const resetList = useShellFilters((s) => s.resetList);
+  const setLocked = useShellFilters((s) => s.setLocked);
   const statusFilter = useShellFilters((s) => s.targetStatus);
-  const setStatusFilter = useShellFilters((s) => s.setTargetStatus);
   const deadlineFilter = useShellFilters((s) => s.targetDeadline);
-  const setDeadlineFilter = useShellFilters((s) => s.setTargetDeadline);
   const lockFilter = useShellFilters((s) => s.targetLock);
-  const setLockFilter = useShellFilters((s) => s.setTargetLock);
-  const [sortField, setSortField] = useState<SortField>("deadline");
-  const [sortDesc, setSortDesc] = useState(false);
+  const typeFilter = useShellFilters((s) => s.targetType);
+  const deadlineFrom = useShellFilters((s) => s.targetDeadlineFrom);
+  const deadlineTo = useShellFilters((s) => s.targetDeadlineTo);
+  const sortField = useShellFilters((s) => s.targetSort);
+  const sortDesc = useShellFilters((s) => s.targetSortDesc);
+  const targetsLocked = useListLocked("targets");
+  const targetsActive = useListActive("targets");
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const setStatusFilter = (next: TargetStatusFilter) =>
+    setView({ targetStatus: next });
+  const setLockFilter = (next: TargetLockFilter) =>
+    setView({ targetLock: next });
+  const setTypeFilter = (next: TargetTypeFilter) =>
+    setView({ targetType: next });
+  const setSortField = (next: TargetSortKey) => setView({ targetSort: next });
+  const setSortDesc = (next: boolean) => setView({ targetSortDesc: next });
+
+  // **"No deadline" and a date range can never both be on** (owner, 2026-08-18, "this goes for the
+  // filters everywhere"). A range asks which deadlines to keep and "No deadline" asks for the
+  // targets that haven't got one, so together they match nothing and neither control says why.
+  const setDeadlineFilter = (next: TargetDeadlineFilter) =>
+    setView(
+      next === "none"
+        ? {
+            targetDeadline: next,
+            targetDeadlineFrom: "",
+            targetDeadlineTo: "",
+          }
+        : { targetDeadline: next },
+    );
+  const setDeadlineFrom = (value: string) =>
+    setView({
+      targetDeadlineFrom: value,
+      ...(value && deadlineFilter === "none"
+        ? { targetDeadline: "all" as const }
+        : {}),
+    });
+  const setDeadlineTo = (value: string) =>
+    setView({
+      targetDeadlineTo: value,
+      ...(value && deadlineFilter === "none"
+        ? { targetDeadline: "all" as const }
+        : {}),
+    });
 
   // Celebrate a target crossing the line. This lives here, not on the card: completing a target
   // filters its row out of the list, so the row unmounts before any effect of its own could run.
@@ -425,29 +499,9 @@ export function TargetsSection({
     previousAchieved.current = achievedCount;
   }, [achievedCount]);
 
-  const isDefaultSort = sortField === "deadline" && !sortDesc;
-  // What the trigger counts, in brackets: every question that is narrowing the list. A question
-  // left on "All" is not a filter, so an untouched toolbar reads "Filter", not "Filter (0)".
-  const activeFilterCount =
-    (statusFilter !== "all" ? 1 : 0) +
-    (deadlineFilter !== "all" ? 1 : 0) +
-    (lockFilter !== "all" ? 1 : 0) +
-    (deadlineFrom || deadlineTo ? 1 : 0) +
-    (achievedFrom || achievedTo ? 1 : 0);
-  // Only the date ranges are cleared by "Reset filters" — the three questions are standing
-  // preferences, and this button is not allowed to undo the user's own choice.
-  const datesActive =
-    !!deadlineFrom || !!deadlineTo || !!achievedFrom || !!achievedTo;
-  const hasAnyActive =
-    !!search.trim() || activeFilterCount > 0 || !isDefaultSort;
-
-  const resetFilters = () => {
-    setDeadlineFrom("");
-    setDeadlineTo("");
-    setAchievedFrom("");
-    setAchievedTo("");
-    // The status/deadline/lock filters are deliberately left alone.
-  };
+  // A dot, not a bracketed number: the trigger is the bare glyph at every width — the rule from
+  // CLAUDE.md, dot on a lone glyph and "(2)" on a worded trigger, never both.
+  const hasAnyActive = !!search.trim() || targetsActive;
 
   const processedTargets = useMemo(() => {
     let ts = [...goal.targets];
@@ -473,17 +527,7 @@ export function TargetsSection({
       });
     }
 
-    if (achievedFrom || achievedTo) {
-      ts = ts.filter((t) => {
-        if (!t.achievedAt) return false;
-        const d = t.achievedAt.slice(0, 10);
-        if (achievedFrom && d < achievedFrom.slice(0, 10)) return false;
-        if (achievedTo && d > achievedTo.slice(0, 10)) return false;
-        return true;
-      });
-    }
-
-    // The three questions are independent — a target has to pass all of them.
+    // The four questions are independent — a target has to pass all of them.
     if (statusFilter === "done") ts = ts.filter((t) => targetProgress(t) >= 1);
     else if (statusFilter === "not-done")
       ts = ts.filter((t) => targetProgress(t) < 1);
@@ -502,14 +546,15 @@ export function TargetsSection({
     else if (lockFilter === "unlocked")
       ts = ts.filter((t) => !isProgressLocked(t));
 
+    if (typeFilter !== "all") ts = ts.filter((t) => t.type === typeFilter);
+
     return ts;
   }, [
     goal.targets,
     search,
     deadlineFrom,
     deadlineTo,
-    achievedFrom,
-    achievedTo,
+    typeFilter,
     statusFilter,
     deadlineFilter,
     lockFilter,
@@ -541,153 +586,30 @@ export function TargetsSection({
       }
       action={
         <div className="flex items-center gap-2">
-          {/* Desktop: search + filters */}
-          <div className="hidden sm:flex items-center gap-1.5">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="h-8 pl-8 pr-7 rounded-md border border-border bg-surface text-sm outline-none focus:border-primary w-36 placeholder:text-muted-foreground/75 transition-colors"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
+          {/* Desktop keeps the field itself; a phone gets the glyph that opens it. */}
+          <SectionSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search targets"
+          />
 
-            {/* Three questions, three columns, a hairline between each — plus the two date
-                ranges under a rule at the foot, because those are a different kind of thing
-                (a span, not a choice) and don't belong in a column of words. */}
-            <DropdownMenu>
-              <ToolbarTrigger
-                label="Filter"
-                count={activeFilterCount}
-                ariaLabel="Filter targets"
-                leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
-              />
-              <DropdownMenuContent align="end" className="w-auto p-1">
-                <MenuColumns>
-                  <MenuGroup title="Status">
-                    {STATUS_CHOICES.map((c) => (
-                      <MenuChoice
-                        key={c.value}
-                        label={c.label}
-                        selected={statusFilter === c.value}
-                        onSelect={() => setStatusFilter(c.value)}
-                      />
-                    ))}
-                  </MenuGroup>
-                  <MenuGroup title="Progress">
-                    {STARTED_CHOICES.map((c) => (
-                      <MenuChoice
-                        key={c.value}
-                        label={c.label}
-                        selected={statusFilter === c.value}
-                        onSelect={() => setStatusFilter(c.value)}
-                      />
-                    ))}
-                  </MenuGroup>
-                  <MenuGroup title="Deadline">
-                    {DEADLINE_CHOICES.map((c) => (
-                      <MenuChoice
-                        key={c.value}
-                        label={c.label}
-                        selected={deadlineFilter === c.value}
-                        onSelect={() => setDeadlineFilter(c.value)}
-                      />
-                    ))}
-                  </MenuGroup>
-                  <MenuGroup title="Lock">
-                    {LOCK_CHOICES.map((c) => (
-                      <MenuChoice
-                        key={c.value}
-                        label={c.label}
-                        selected={lockFilter === c.value}
-                        onSelect={() => setLockFilter(c.value)}
-                      />
-                    ))}
-                  </MenuGroup>
-                </MenuColumns>
-                <DropdownMenuSeparator />
-                <div
-                  className="space-y-2 p-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Deadline between
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 px-2">
-                    <DeadlinePopover
-                      iso={deadlineFrom || undefined}
-                      onChange={(next) => setDeadlineFrom(next ?? "")}
-                      variant="button"
-                      placeholder="From"
-                      hideDaysLeft
-                      disableScroll
-                      className="h-9 justify-start px-2 text-xs"
-                    />
-                    <DeadlinePopover
-                      iso={deadlineTo || undefined}
-                      onChange={(next) => setDeadlineTo(next ?? "")}
-                      variant="button"
-                      placeholder="To"
-                      hideDaysLeft
-                      disableScroll
-                      className="h-9 justify-start px-2 text-xs"
-                    />
-                  </div>
-                  <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Achieved between
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 px-2">
-                    <DeadlinePopover
-                      iso={achievedFrom || undefined}
-                      onChange={(next) => setAchievedFrom(next ?? "")}
-                      variant="button"
-                      placeholder="From"
-                      hideDaysLeft
-                      disableScroll
-                      className="h-9 justify-start px-2 text-xs"
-                    />
-                    <DeadlinePopover
-                      iso={achievedTo || undefined}
-                      onChange={(next) => setAchievedTo(next ?? "")}
-                      variant="button"
-                      placeholder="To"
-                      hideDaysLeft
-                      disableScroll
-                      className="h-9 justify-start px-2 text-xs"
-                    />
-                  </div>
-                  {datesActive && (
-                    <button
-                      onClick={resetFilters}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-xs font-semibold text-primary transition-colors hover:bg-primary/5 hover:text-primary/80"
-                    >
-                      Clear dates
-                    </button>
-                  )}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Mobile: a bare search glyph and a bare filter glyph, both opening the shared chrome —
-              no bordered box around either. The search takes the whole header row when open
-              (`headerOverride`), the way the Android All-goals header does. */}
-          <div className="flex items-center gap-0.5 sm:hidden">
+          {/* A bare search glyph on a phone — the desktop has room for the field itself, which
+              sits above. The search takes the whole header row when open (`headerOverride`), the
+              way the Android All-goals header does. */}
+          <span className="sm:hidden">
             <SectionSearchButton
               onOpen={() => setSearchOpen(true)}
               active={!!search}
               ariaLabel="Search targets"
             />
+          </span>
+
+          {/* **The filter glyph is every width's**, and so is the panel behind it (owner,
+              2026-08-20). The desktop used to ask these questions in a dropdown of columns; there
+              is no dropdown for a filter anywhere now, and the laptop opens the same panel from
+              the right that the phone opens from the bottom. The glyph alone is Android's
+              treatment too (`SpiraFilterSortTrigger`). */}
+          <div className="flex items-center">
             <FilterIconTrigger
               active={hasAnyActive}
               onClick={() => setMobileOpen(true)}
@@ -697,26 +619,27 @@ export function TargetsSection({
               open={mobileOpen}
               onOpenChange={setMobileOpen}
               title="Filter & Sort"
-              onReset={() => {
-                resetFilters();
-                setSortField("deadline");
-                setSortDesc(false);
-              }}
-              resetDisabled={!hasAnyActive}
+              // **Everything**: the four questions used to be exempt as "standing preferences",
+              // so a button promising all of them quietly kept four answers (owner, 2026-08-21).
+              onReset={() => resetList("targets")}
+              resetDisabled={!targetsActive}
+              locked={targetsLocked}
+              onLockedChange={(next) => setLocked("targets", next)}
             >
-              {/* One-line questions are pills; the rest are rows. Sort sits beside its direction,
-                  and the chosen direction takes the quiet "aux" look so it cannot be read as a
-                  second sort key. */}
-              <SheetGroup title="Status">
+              {/* The questions, in the order and under the headings Android asks them
+                  (`GoalWorkspaceScreen.kt`): Progress, Status, Deadline, Type, Lock, then the
+                  range. One-line questions are pills, the direction is a segmented control and the
+                  sort key is a card — three shapes for three kinds of question. */}
+              <SheetGroup title="Progress">
                 <SheetPills
-                  options={STATUS_CHOICES}
+                  options={PROGRESS_CHOICES}
                   value={statusFilter}
                   onChange={setStatusFilter}
                 />
               </SheetGroup>
-              <SheetGroup title="Progress">
+              <SheetGroup title="Status">
                 <SheetPills
-                  options={STARTED_CHOICES}
+                  options={STATUS_CHOICES}
                   value={statusFilter}
                   onChange={setStatusFilter}
                   tone="info"
@@ -730,6 +653,14 @@ export function TargetsSection({
                   tone="warning"
                 />
               </SheetGroup>
+              <SheetGroup title="Type">
+                <SheetPills
+                  options={TYPE_CHOICES}
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  tone="intelligence"
+                />
+              </SheetGroup>
               <SheetGroup title="Lock">
                 <SheetPills
                   options={LOCK_CHOICES}
@@ -739,8 +670,19 @@ export function TargetsSection({
                 />
               </SheetGroup>
 
-              {/* Direction first (one short line), then the keys as cards — the same three shapes
-                  the All-goals sheet uses, so the two sheets are one design. */}
+              {/* The dates themselves, under the "Overdue / Not overdue" question that reads them
+                  relative to today. **There is no "achieved between" pair** — it was the web's
+                  alone, it asked a question nobody had asked for, and the owner took it off both
+                  surfaces on 2026-08-20. */}
+              <SheetGroup title="Deadline range">
+                <SheetDateRange
+                  from={deadlineFrom}
+                  to={deadlineTo}
+                  onFromChange={setDeadlineFrom}
+                  onToChange={setDeadlineTo}
+                />
+              </SheetGroup>
+
               <SheetGroup title="Direction">
                 <SheetSegmented
                   options={TARGET_DIRECTION_CHOICES}
@@ -754,52 +696,6 @@ export function TargetsSection({
                   value={sortField}
                   onChange={setSortField}
                 />
-              </SheetGroup>
-
-              <SheetGroup title="Deadline range">
-                <div className="grid grid-cols-2 gap-2">
-                  <DeadlinePopover
-                    iso={deadlineFrom || undefined}
-                    onChange={(next) => setDeadlineFrom(next ?? "")}
-                    variant="button"
-                    placeholder="From"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                  <DeadlinePopover
-                    iso={deadlineTo || undefined}
-                    onChange={(next) => setDeadlineTo(next ?? "")}
-                    variant="button"
-                    placeholder="To"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                </div>
-              </SheetGroup>
-
-              <SheetGroup title="Achieved date range">
-                <div className="grid grid-cols-2 gap-2">
-                  <DeadlinePopover
-                    iso={achievedFrom || undefined}
-                    onChange={(next) => setAchievedFrom(next ?? "")}
-                    variant="button"
-                    placeholder="From"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                  <DeadlinePopover
-                    iso={achievedTo || undefined}
-                    onChange={(next) => setAchievedTo(next ?? "")}
-                    variant="button"
-                    placeholder="To"
-                    hideDaysLeft
-                    disableScroll
-                    className="h-9 justify-start px-2 text-xs"
-                  />
-                </div>
               </SheetGroup>
             </ToolbarSheet>
           </div>
@@ -824,6 +720,7 @@ export function TargetsSection({
     >
       <TargetsList
         goal={processedGoal}
+        unfilteredCount={goal.targets.length}
         sortField={sortField}
         sortDesc={sortDesc}
       />
@@ -837,10 +734,17 @@ export function TargetsSection({
 
 export function TargetsList({
   goal,
+  unfilteredCount,
   sortField,
   sortDesc,
 }: {
   goal: Goal;
+  /**
+   * How many targets there are before the search and the filter — the list itself only ever sees
+   * what survived them, so without this it cannot tell "no targets yet" from "you have hidden them
+   * all", and it showed the invitation for both.
+   */
+  unfilteredCount?: number;
   sortField?: SortField;
   sortDesc?: boolean;
 }) {
@@ -862,6 +766,10 @@ export function TargetsList({
       }
       let cmp = 0;
       if (sortField === "title") cmp = a.title.localeCompare(b.title);
+      // A target with no recorded creation date sorts as the oldest, which is what it is: the
+      // column was added after those rows were written.
+      else if (sortField === "created")
+        cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
       else cmp = targetProgress(a) - targetProgress(b);
       return (sortDesc ?? false) ? -cmp : cmp;
     });
@@ -894,12 +802,17 @@ export function TargetsList({
 
   return (
     <div className="space-y-3">
-      {goal.targets.length === 0 && (
-        <p className="text-sm text-muted-foreground italic px-1">
-          Targets are how you execute. Add a numeric, binary, or checklist
-          target.
-        </p>
-      )}
+      {goal.targets.length === 0 &&
+        ((unfilteredCount ?? 0) > 0 ? (
+          <FilteredEmptyNotice>
+            No targets match that search or filter.
+          </FilteredEmptyNotice>
+        ) : (
+          <p className="text-sm text-muted-foreground italic px-1">
+            Targets are how you execute. Add a numeric, binary, or checklist
+            target.
+          </p>
+        ))}
       <ul className="spira-target-mobile-list space-y-3">
         {mobileSorted.map((t) => (
           <TargetRow
@@ -986,6 +899,8 @@ export function DesktopTargetsTable({
         }
         let cmp = 0;
         if (sortField === "title") cmp = a.title.localeCompare(b.title);
+        else if (sortField === "created")
+          cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
         else if (sortField === "progress")
           cmp = targetProgress(a) - targetProgress(b);
         return sortDesc ? -cmp : cmp;
@@ -1019,12 +934,22 @@ export function DesktopTargetsTable({
     return () => window.removeEventListener("hashchange", handleHash);
   }, [goal.targets]);
 
-  // The sort indicator is a set glyph, not a hand-drawn double triangle: the active column shows a
-  // ChevronUp (ascending) or ChevronDown (descending) in Kale; an inactive column shows a muted
-  // chevron that lifts on row hover, hinting the column is sortable.
+  // The sort indicator, and the two states say different things.
+  //
+  // An **inactive** column shows Gravity's `carets-expand-vertical` — the double caret (owner,
+  // 2026-08-21). It used to show a faint ChevronUp, which is not "you can sort by this": it is
+  // "sorted ascending, quietly", and next to the one column that really was sorted ascending the
+  // only thing telling them apart was opacity. The double caret has no direction to misread.
+  //
+  // The **active** column keeps the single chevron, because that is where direction is real
+  // information — up for ascending, down for descending, in Kale.
   const SortIcon = ({ field }: { field: string }) => {
     const active = sortField === field;
-    const Icon = active && sortDesc ? ChevronDown : ChevronUp;
+    const Icon = active
+      ? sortDesc
+        ? ChevronDown
+        : ChevronUp
+      : CaretsExpandVertical;
     return (
       <Icon
         className={cn(
@@ -2443,6 +2368,34 @@ function NewTargetForm({
   onDone: () => void;
 }) {
   const addTarget = useSpira((s) => s.addTarget);
+  // **A resource can be attached before the target exists** (owner, 2026-08-20). It used to be
+  // reachable only from a card that had already been created, so adding a target with its reading
+  // attached took three steps in two places.
+  //
+  // The form therefore follows the same two-form rule the inline fields do (`Inline.tsx`): while
+  // it is being typed a tag reads as the resource's NAME — `Read {{res:Job ad}} first` — and
+  // `toStored` maps it back to the id on submit, so a tag naming something that has since gone
+  // degrades to plain text instead of writing a dangling reference.
+  const resourcesCtx = useInlineResources();
+  const resources = resourcesCtx?.resources ?? [];
+  const toStored = (text: string) => namesToTokens(text, resources);
+  /**
+   * Append a resource tag to a draft field, measuring the STORED form against the field's limit —
+   * the ids are what the server sees, and the names on screen are a different length.
+   */
+  const attachTo = (text: string, resourceId: string, limit: number) => {
+    // `appendResourceToken` toasts its own "no room" message and answers null; the caller only has
+    // to not pretend it worked. Swallowing the null silently is what made the Android form close
+    // its picker and change nothing (the BUG-034 class).
+    const next = appendResourceToken(toStored(text), resourceId, limit);
+    return next === null ? null : tokensToNames(next, resources);
+  };
+  /** A draft as plain prose — each tag becomes the resource's name, braces and all removed. */
+  const readable = (text: string) =>
+    stripResourceTokens(toStored(text), (id) => {
+      const resource = resources.find((r) => r.id === id);
+      return resource ? resourceDisplayName(resource) : "";
+    });
   const [type, setType] = useState<"numeric" | "binary" | "checklist">(
     "numeric",
   );
@@ -2474,19 +2427,41 @@ function NewTargetForm({
     return null;
   })();
 
-  const titleMessage = lengthError(title, FIELD_LIMITS.targetTitle, "Title");
+  // **Measured on the STORED form, which is what the server sees.** A tag reads as the resource's
+  // name on screen and travels as its id, and the two are different lengths — an optimistic
+  // `{{res:local-a1b2c3d4}}` is 22 characters where `{{res:CV}}` is 10. Counting the name form let
+  // a title that read 200/200 store at 212 and be rejected by the column, which surfaces as the
+  // opaque top-of-page sync banner `limits.ts` exists to prevent; and a long-named resource
+  // inflated the counter and blocked a title that would have fitted. `Inline.tsx` measures the
+  // stored form for the same reason.
+  const titleMessage = lengthError(
+    toStored(title),
+    FIELD_LIMITS.targetTitle,
+    "Title",
+  );
   const unitMessage = lengthError(unit, FIELD_LIMITS.targetUnit, "Unit");
+  // The tasks are checked too: nothing else looks at them between the attach and the submit, so an
+  // over-long one would have gone out and been refused with no field to point at.
+  const checklistMessage =
+    type === "checklist"
+      ? (checklistItems
+          .map((i) =>
+            lengthError(toStored(i.text), FIELD_LIMITS.checklistText, "Task"),
+          )
+          .find(Boolean) ?? null)
+      : null;
 
   const canSubmit =
     !!title.trim() &&
     !titleMessage &&
     !unitMessage &&
+    !checklistMessage &&
     (type !== "checklist" || checklistItems.length >= 1) &&
     (type !== "numeric" || numericMessage === null);
 
   const submit = () => {
     if (!canSubmit) return;
-    const t = title.trim();
+    const t = toStored(title.trim());
     const dl = deadline ? new Date(deadline).toISOString() : undefined;
     if (type === "numeric") {
       addTarget(goalId, {
@@ -2509,7 +2484,7 @@ function NewTargetForm({
         type: "checklist",
         title: t,
         deadline: dl,
-        items: checklistItems,
+        items: checklistItems.map((i) => ({ ...i, text: toStored(i.text) })),
       });
     }
     onDone();
@@ -2631,6 +2606,19 @@ function NewTargetForm({
               {titleMessage}
             </p>
           )}
+          {/* Renders nothing when there is no goal resource list to pick from, so a form opened
+              outside a workspace is unchanged. */}
+          <AttachResourceButton
+            attachedTo={toStored(title)}
+            onAttach={(resourceId) => {
+              const next = attachTo(
+                title,
+                resourceId,
+                FIELD_LIMITS.targetTitle,
+              );
+              if (next !== null) setTitle(next);
+            }}
+          />
         </div>
         {type === "numeric" && (
           <div className="grid grid-cols-3 gap-3">
@@ -2707,8 +2695,32 @@ function NewTargetForm({
                   </div>
                   <div className="flex-1 flex items-center min-w-0 gap-1 px-3 py-1.5 bg-surface">
                     <span className="flex-1 text-sm text-foreground truncate">
-                      {item.text}
+                      {/* The resource's NAME, with no `{{res:…}}` around it. This row is a
+                          read-only strip, and the tag syntax belongs in a field being edited —
+                          the same rule `useReadableText` follows wherever a value is quoted
+                          rather than rendered. */}
+                      {readable(item.text)}
                     </span>
+                    {/* The paperclip, not the worded link: this row is a compact strip that
+                        already carries its own remove control. */}
+                    <AttachResourceButton
+                      variant="icon"
+                      ariaLabel="Attach a resource to this task"
+                      attachedTo={toStored(item.text)}
+                      onAttach={(resourceId) => {
+                        const next = attachTo(
+                          item.text,
+                          resourceId,
+                          FIELD_LIMITS.checklistText,
+                        );
+                        if (next === null) return;
+                        setChecklistItems((prev) =>
+                          prev.map((i) =>
+                            i.id === item.id ? { ...i, text: next } : i,
+                          ),
+                        );
+                      }}
+                    />
                     <button
                       onClick={() => {
                         if (checklistItems.length <= 1) {
@@ -2732,6 +2744,14 @@ function NewTargetForm({
                 <p className="flex items-center gap-1.5 mt-1 px-1 text-[13px] font-medium text-destructive">
                   <TriangleAlert className="h-3.5 w-3.5 shrink-0" />A checklist
                   must have at least one item
+                </p>
+              )}
+              {checklistMessage && (
+                <p
+                  className="mt-1 px-1 text-[13px] font-medium text-destructive"
+                  role="alert"
+                >
+                  {checklistMessage}
                 </p>
               )}
               <AddTaskControl

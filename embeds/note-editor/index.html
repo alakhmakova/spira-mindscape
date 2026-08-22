@@ -13,6 +13,11 @@
       }
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body { margin: 0; height: 100%; background: #fff; font-family: var(--sans); color: var(--ink); }
+      /* No `scroll-padding-bottom` here — it was tried and **measured as a no-op** (2026-08-21).
+         Chromium 109's "scroll the focused editable into view" path does not honour scroll-padding,
+         so the caret still parked flush against the keyboard: `innerHeight - caretRect.bottom` came
+         back as exactly 0 with `scroll-padding-bottom: 80px` set and applying. `keepCaretClear` in
+         main.ts does the job instead. */
       #app { height: 100%; overflow-y: auto; }
 
       .tiptap { outline: none; padding: 16px 18px 80px; font-size: 16px; line-height: 1.6; min-height: 100%; }

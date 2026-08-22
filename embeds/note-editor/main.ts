@@ -69,7 +69,16 @@ const editor = new Editor({
     LineHeight,
   ],
   content: "",
-  editorProps: { attributes: { class: "tiptap" } },
+  editorProps: {
+    attributes: {
+      class: "tiptap",
+      // Say what the keyboard should do, rather than leaving it to the host's default for a
+      // `contenteditable`. A note is prose: capitalise the start of a sentence, and nothing else.
+      autocapitalize: "sentences",
+      autocorrect: "on",
+      spellcheck: "true",
+    },
+  },
 });
 
 /**
@@ -91,7 +100,17 @@ function reportPainter(payload: { picked?: string[]; applied?: string[] }) {
 }
 
 // ── Report active formats to the native toolbar ─────────────────
-function reportState() {
+/**
+ * The last payload actually sent across the bridge.
+ *
+ * **The toolbar only cares when the answer changes**, and while someone is typing a sentence it
+ * never does — bold stays bold, a paragraph stays a paragraph. Comparing against this is what
+ * turns "a synchronous bridge call on every keystroke" into "a bridge call when a format
+ * changes", which is the whole point (see `scheduleState`).
+ */
+let lastStateJson = "";
+
+function reportState(force = false) {
   const s = {
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
@@ -110,8 +129,11 @@ function reportState() {
     // Lit while the painter is holding a style, so its two steps are visible rather than implied.
     painter: painterMarks !== null,
   };
+  const json = JSON.stringify(s);
+  if (!force && json === lastStateJson) return;
+  lastStateJson = json;
   try {
-    window.SpiraNote?.onState?.(JSON.stringify(s));
+    window.SpiraNote?.onState?.(json);
   } catch {
     /* not hosted */
   }
@@ -120,27 +142,40 @@ function reportState() {
  * Report the toolbar state **after** the current transaction, and never mid-word.
  *
  * `window.SpiraNote.*` is an `addJavascriptInterface` bridge, and a call on it is **synchronous**:
- * it blocks the renderer's JS thread while the Java side runs. Calling it straight from
- * `editor.on("transaction")` therefore blocked Chromium in the middle of its own DOM handling — and
- * when that happened during an **IME composition**, the composition was lost and Chromium reported
- * the DOM selection back at the top of the document. ProseMirror faithfully applied it, so the
- * caret jumped to the very beginning of the note and the next word was typed there (BUG-041).
+ * it blocks the renderer's JS thread while the Java side runs. Making one from inside ProseMirror's
+ * own DOM handling, on every keystroke, was never right, so this defers it, skips it while the IME
+ * is composing, and sends it only when the answer has actually changed. The formats under the caret
+ * do not change while a sentence is being typed, so the comparison drops nearly every call and the
+ * debounce collapses what is left of a burst into one. The toolbar is unaffected: it is redrawn on
+ * a format change, which is the only time it has anything new to draw.
  *
- * Two rules, both needed:
- *  - **off the transaction** (a timeout, so the bridge call runs after ProseMirror has finished);
- *  - **not while `view.composing`** — wait for the IME to commit the word first.
- *
- * The same page in stock Chrome never showed this, because there `window.SpiraNote` is undefined
- * and every one of these calls was a no-op.
+ * > **This is hygiene, and it is NOT the fix for BUG-041** — an earlier version of this comment
+ * > said it was, and that was wrong (measured 2026-08-21). Setting `window.SpiraNote = undefined`
+ * > from DevTools, so that every call here and in `flush` becomes a no-op, and then typing
+ * > "hello world" after "START." on the emulator's real keyboard still produced
+ * > `WORLDSTART.HELO`. The bridge is not involved.
+ * >
+ * > The actual cause was in the **host**: the editor's WebView was the view Compose's `AndroidView`
+ * > factory returned, so Compose drove its focus and layout and Chromium answered by calling
+ * > `ImeAdapterImpl.cancelComposition()` → `InputMethodManager.restartInput()` on every keystroke.
+ * > See `NoteEditorActivity.kt`'s `NoteEditorWebView`, and `backlog/`.
  */
 let stateTimer: number | undefined;
 function scheduleState() {
   clearTimeout(stateTimer);
   stateTimer = window.setTimeout(
     () => (editor.view.composing ? scheduleState() : reportState()),
-    editor.view.composing ? COMPOSING_RETRY_MS : 0,
+    editor.view.composing ? COMPOSING_RETRY_MS : STATE_DEBOUNCE_MS,
   );
 }
+
+/**
+ * How long the toolbar waits after the last edit before it asks what is under the caret.
+ *
+ * Long enough that a run of keystrokes reports once instead of once each, short enough that
+ * tapping into a bold word lights the button before the finger has left the screen.
+ */
+const STATE_DEBOUNCE_MS = 120;
 
 /** How long to wait before looking again while the IME is still building a word. */
 const COMPOSING_RETRY_MS = 150;
@@ -402,13 +437,75 @@ window.spiraSelectedText = () => {
   return editor.state.doc.textBetween(from, to, " ");
 };
 
+// ── Keep the caret clear of the keyboard ────────────────────────
+/**
+ * How much empty page to keep below the line being typed, in CSS pixels (= dp on Android).
+ *
+ * Just under two lines at this type scale (16px x 1.6 leading = 25.6px a line). Enough to see the
+ * line you are on sitting *above* the keyboard rather than jammed against it, without giving away
+ * screen height that a phone has little of.
+ */
+const CARET_CLEARANCE_PX = 48;
+
+/**
+ * Scroll the note so the caret is never flush against the top of the keyboard.
+ *
+ * Chromium already scrolls a focused editable back into view when the IME opens — but "into view"
+ * means *just* inside the bottom edge, so the line being typed ends up touching the keyboard
+ * (owner, 2026-08-21: "the keyboard is right under the line I'm writing, with no space at all").
+ *
+ * The CSS answer, `scroll-padding-bottom` on the scroller, is the right tool and **does nothing
+ * here**: measured on the emulator with it set and computing to `80px`, `innerHeight -
+ * caretRect.bottom` was still exactly **0**. Chromium 109's focused-editable path does not consult
+ * it. So the page does it itself.
+ *
+ * Two properties keep this from fighting the browser:
+ *  - it only ever scrolls **down** (`scrollTop` up), and only when the caret is below the limit.
+ *    Once it has run, Chromium considers the caret visible and has no reason to scroll back;
+ *  - it runs **after** the browser's own handling (a timeout, then a frame), so it corrects the
+ *    final position rather than racing it.
+ *
+ * It moves the scroll container only, never the DOM, so it is safe during an IME composition.
+ */
+function keepCaretClear() {
+  const app = document.getElementById("app");
+  const sel = document.getSelection();
+  if (!app || !sel || sel.rangeCount === 0 || !editor.isFocused) return;
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  // A collapsed range at the very start of a line can report an all-zero rect; `bottom` is then
+  // meaningless and scrolling on it would jump the note to the top.
+  const bottom = rect.bottom || rect.top;
+  if (!bottom) return;
+  const limit = window.innerHeight - CARET_CLEARANCE_PX;
+  if (bottom > limit) app.scrollTop += bottom - limit;
+}
+
+let caretTimer: number | undefined;
+function scheduleCaretClear() {
+  clearTimeout(caretTimer);
+  caretTimer = window.setTimeout(
+    () => requestAnimationFrame(keepCaretClear),
+    CARET_CLEAR_DELAY_MS,
+  );
+}
+
+/** Long enough for Chromium's own scroll-into-view to have settled, short enough to be unseen. */
+const CARET_CLEAR_DELAY_MS = 60;
+
+document.addEventListener("selectionchange", scheduleCaretClear);
+editor.on("update", scheduleCaretClear);
+// The keyboard opening is a resize, and it is the moment that matters most.
+window.addEventListener("resize", scheduleCaretClear);
+window.visualViewport?.addEventListener("resize", scheduleCaretClear);
+
 // ── Content bridge + autosave ───────────────────────────────────
 let timer: number | undefined;
 function flush() {
   clearTimeout(timer);
   // Same rule as `scheduleState`: the bridge call is synchronous, so firing it while the IME is
-  // mid-word blocks the renderer at exactly the wrong moment (BUG-041). The debounce simply waits
-  // for the word to land — an autosave is never so urgent that it may not wait 150ms.
+  // mid-word blocks the renderer at exactly the wrong moment. The debounce simply waits for the
+  // word to land — an autosave is never so urgent that it may not wait 150ms. (Hygiene, not the
+  // BUG-041 fix; see `scheduleState` for what that turned out to be.)
   if (editor.view.composing) {
     timer = window.setTimeout(flush, COMPOSING_RETRY_MS);
     return;
@@ -427,10 +524,12 @@ editor.on("blur", flush);
 
 window.spiraSetContent = (html: string) => {
   editor.commands.setContent(html || "", { emitUpdate: false });
-  reportState();
+  // Forced: seeding is the one moment the native toolbar has nothing to compare against, so it
+  // must be told even if the formats happen to match what was last sent.
+  reportState(true);
 };
 window.spiraGetText = () => editor.getText();
 window.spiraGetHtml = () => editor.getHTML();
 window.spiraFlush = flush;
 
-reportState();
+reportState(true);

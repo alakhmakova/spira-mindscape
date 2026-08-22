@@ -176,13 +176,18 @@ fun ResourcesTabContent(
                     ascending = view.ascending,
                     onAscendingChange = { view.ascending = it },
                     contentDescription = "Sort resources",
+                    locked = view.locked,
+                    onLockedChange = { view.locked = it },
+                    onReset = { view.resetAll() },
                 )
             },
             filter = {
                 SpiraFilterTrigger(
-                    count = if (view.filter == ResourceFilter.All) 0 else 1,
+                    count = view.activeCount,
                     contentDescription = "Filter resources",
-                    onReset = { view.filter = ResourceFilter.All },
+                    onReset = { view.resetAll() },
+                    locked = view.locked,
+                    onLockedChange = { view.locked = it },
                 ) {
                     // "Type", not "Kind" (owner, 2026-08-18) — it is the word the resource cards
                     // and the web's own filter already use, and the sheet was the last place still

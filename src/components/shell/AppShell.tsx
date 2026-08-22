@@ -2,13 +2,10 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Search,
-  ChevronDownSolid,
   Filter,
   SortAscending,
   SortDescending,
   X,
-  GlobeOff,
-  Cable,
   RefreshCw,
 } from "@/components/spira/icons";
 import { useAi } from "@/components/ai/ai-store";
@@ -17,35 +14,27 @@ import { useSpira } from "@/lib/spira/store";
 import { useAuth } from "@/lib/spira/auth";
 import { useApplyAppFont } from "@/lib/spira/app-font";
 import { useActivityGate } from "@/lib/useActivityGate";
-import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import {
+  useListActive,
+  useListLocked,
   useResetQueryOnNavigate,
   useShellFilters,
+  type GoalDeadlineFilter,
   type GoalStatusFilter,
   type SortDirection,
   type SortKey,
 } from "./shell-store";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import {
-  MenuChoice,
-  MenuGroup,
   SheetChoiceCards,
+  SheetConfidence,
+  SheetDateRange,
   SheetGroup,
   SheetPills,
   SheetSegmented,
-  ToolbarMenu,
   ToolbarSheet,
-  ToolbarTrigger,
 } from "@/components/spira/ListToolbar";
+import { NoticeCard } from "@/components/spira/Notice";
 import { cn } from "@/lib/utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,6 +73,17 @@ const GOAL_STATUS_CHOICES = [
   { value: "not-achieved", label: "Not achieved" },
 ] as const satisfies readonly { value: GoalStatusFilter; label: string }[];
 
+/**
+ * Whether a goal has a deadline at all — the twin of Android's `DEADLINE_PILLS`
+ * (`GoalsDashboardScreen.kt`). The words are shortened for one line: the heading above already
+ * says "Deadline", so the pills need only the answer.
+ */
+const GOAL_DEADLINE_CHOICES = [
+  { value: "all", label: "Any" },
+  { value: "has", label: "Deadline" },
+  { value: "none", label: "No deadline" },
+] as const satisfies readonly { value: GoalDeadlineFilter; label: string }[];
+
 /** Two-letter initials for the account avatar's fallback when there is no Google picture. */
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -107,25 +107,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const syncErrorKind = useSpira((s) => s.syncErrorKind);
   const authUser = useAuth((s) => s.user);
   const navigate = useNavigate();
-  const {
-    query,
-    setQuery,
-    sort,
-    setSort,
-    sortDirection,
-    setSortDirection,
-    resetSort,
-    deadlineFrom,
-    setDeadlineFrom,
-    deadlineTo,
-    setDeadlineTo,
-    confidence,
-    setConfidence,
-    status,
-    setStatus,
-    resetFilters,
-    viewMode,
-  } = useShellFilters();
+  const query = useShellFilters((s) => s.query);
+  const setQuery = useShellFilters((s) => s.setQuery);
+  const setView = useShellFilters((s) => s.setView);
+  const resetList = useShellFilters((s) => s.resetList);
+  const setLocked = useShellFilters((s) => s.setLocked);
+  const viewMode = useShellFilters((s) => s.viewMode);
+  const sort = useShellFilters((s) => s.sort);
+  const sortDirection = useShellFilters((s) => s.sortDirection);
+  const deadlineFrom = useShellFilters((s) => s.deadlineFrom);
+  const deadlineTo = useShellFilters((s) => s.deadlineTo);
+  const confidence = useShellFilters((s) => s.confidence);
+  const status = useShellFilters((s) => s.status);
+  const goalDeadline = useShellFilters((s) => s.goalDeadline);
+  const goalsLocked = useListLocked("goals");
+  const goalsActive = useListActive("goals");
+
+  const setSort = (next: SortKey) => setView({ sort: next });
+  const setSortDirection = (next: SortDirection) =>
+    setView({ sortDirection: next });
+  const setConfidence = (next: string) => setView({ confidence: next });
+  const setStatus = (next: GoalStatusFilter) => setView({ status: next });
+  // **"No deadline" and a date range can never both be on.** A range asks which deadlines to keep
+  // and "No deadline" asks for the goals that haven't got one, so together they match nothing and
+  // neither control says why. Picking either takes the other off.
+  const setGoalDeadline = (next: GoalDeadlineFilter) =>
+    setView(
+      next === "none"
+        ? { goalDeadline: next, deadlineFrom: "", deadlineTo: "" }
+        : { goalDeadline: next },
+    );
+  const setDeadlineFrom = (value: string) =>
+    setView({
+      deadlineFrom: value,
+      ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
+    });
+  const setDeadlineTo = (value: string) =>
+    setView({
+      deadlineTo: value,
+      ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
+    });
 
   // A search is scoped to the screen it was typed on — see useResetQueryOnNavigate.
   useResetQueryOnNavigate(path);
@@ -138,24 +159,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // The phone's search is a glyph in the teal header until it is opened; opening swaps the whole
   // header row for a field, the way Android's `SearchTopBar` does (owner, 2026-08-17).
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  // The field closes with the screen it was opened on, for the same reason its text is cleared:
+  // a search belongs to one screen. Without this, arriving at a goal page from the dashboard's
+  // open search left an empty field sitting where the header should be.
+  useEffect(() => setMobileSearchOpen(false), [path]);
 
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
-  // "not-achieved" is the default view, so it isn't counted as an active filter —
-  // only deviating from it (All / Only achieved) or setting a date/confidence lights
-  // the reset button and adds to the trigger's bracketed count.
-  const filtersActive = Boolean(
-    deadlineFrom || deadlineTo || confidence || status !== "not-achieved",
-  );
-  const activeFilterCount =
-    (deadlineFrom || deadlineTo ? 1 : 0) +
-    (confidence ? 1 : 0) +
-    (status !== "not-achieved" ? 1 : 0);
-  const sortActive = sort !== "recent" || sortDirection !== "desc";
-  // Show filters everywhere except workspace/calendar; show sort only on cards view (timeline has its own ordering)
-  const showFilterControls = !isWorkspace && !isCalendar;
-  const showSortControls = !isWorkspace && !isCalendar && viewMode === "cards";
+  // Which screens carry the phone's collapsed search glyph. The dashboard filters its list with
+  // it; the goal page switches goals with it. Settings and Calendar have nothing to search.
+  const showMobileSearch = isDashboard || isWorkspace;
+  // **The filter glyph belongs exactly where the panel is mounted**, which is the dashboard —
+  // Settings and Calendar have no list to narrow.
+  const showFilterControls = isDashboard;
 
   const goals = useSpira((s) => s.goals);
   const searchResults =
@@ -241,9 +258,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             the bar keeps its teal, the wordmark steps aside for a white field, and a white disc
             with a teal X closes it. Anything narrower would have put a field between the wordmark
             and the avatar with no room to type.
+
+            **The goal page uses it too** (owner, 2026-08-20). There the field was permanently open
+            and centred, so on a phone it took the whole row and sat ON the account circle — the
+            avatar was behind the search box. It collapses to a glyph like the dashboard's now, and
+            opening it still lists the goals it matches so the search keeps doing its one job:
+            switching goals.
           */}
-          {mobileSearchOpen && isDashboard && (
-            <div className="flex h-16 items-center gap-2.5 px-4 sm:hidden">
+          {mobileSearchOpen && showMobileSearch && (
+            <div className="relative flex h-16 items-center gap-2.5 px-4 sm:hidden">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
@@ -256,10 +279,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       setMobileSearchOpen(false);
                     }
                   }}
-                  placeholder="Search for goals"
+                  placeholder={
+                    isWorkspace ? "Search goals" : "Search for goals"
+                  }
                   aria-label="Search goals"
                   className="h-10 w-full rounded-md bg-white pl-9 pr-3 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-white/60"
                 />
+                {isWorkspace && query.trim() !== "" && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border hairline bg-surface shadow-lg">
+                    {searchResults.length > 0 ? (
+                      searchResults.map((r) => (
+                        <Link
+                          key={r.id}
+                          to="/goals/$goalId"
+                          params={{ goalId: r.id }}
+                          onClick={() => {
+                            setQuery("");
+                            setMobileSearchOpen(false);
+                          }}
+                          className="block truncate px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                        >
+                          {r.title || "Untitled goal"}
+                        </Link>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm italic text-muted-foreground">
+                        No goals found
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -279,17 +328,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               "spira-shell-header-row w-full px-4 sm:px-6 h-16 items-center",
               isWorkspace
                 ? cn(
-                    "grid gap-3",
+                    // **A phone lays this row out as flex, not as the three-column grid.** The
+                    // middle column is the search, which is a glyph down here — held as a grid
+                    // the row still reserved up to 600px for it and squeezed the wordmark and the
+                    // avatar into the columns either side.
+                    "flex gap-3 sm:grid sm:gap-3",
                     isAiOpen
-                      ? "grid-cols-[1fr_minmax(0,320px)_1fr]"
-                      : "grid-cols-[1fr_minmax(0,600px)_1fr]",
+                      ? "sm:grid-cols-[1fr_minmax(0,320px)_1fr]"
+                      : "sm:grid-cols-[1fr_minmax(0,600px)_1fr]",
                   )
                 : "flex gap-3 sm:gap-5",
               // While the phone's search is open it IS the header row; the normal row steps out.
               // **Last in the list on purpose**: `cn` resolves conflicting display utilities in
               // favour of the later one, so put before the `flex` above this was simply ignored
               // and the field stacked on top of the row instead of replacing it.
-              mobileSearchOpen && isDashboard && "hidden sm:flex",
+              mobileSearchOpen && showMobileSearch && "hidden sm:flex",
             )}
           >
             {/* Brand */}
@@ -347,7 +400,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div
               className={cn(
                 isWorkspace
-                  ? "flex w-full min-w-0"
+                  ? "hidden w-full min-w-0 sm:flex"
                   : "hidden sm:flex w-32 sm:w-64 shrink-0",
               )}
             >
@@ -406,167 +459,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Right side items */}
-            <div className="flex shrink-0 items-center gap-3 sm:gap-4 justify-end">
-              {/* **On a phone the search and the filters live HERE**, in the teal bar, as two bare
-                  glyphs — the Android header's arrangement (owner, 2026-08-17). They used to sit in
-                  a white strip under the header, which is a whole row of chrome for two controls. */}
-              {isDashboard && (
-                <div className="flex items-center gap-1 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setMobileSearchOpen(true)}
-                    aria-label="Search goals"
-                    className="relative grid h-9 w-9 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/15 hover:text-white"
-                  >
-                    <span className="relative inline-flex">
-                      <Search className="h-[18px] w-[18px]" />
-                      {query && (
-                        <span className="absolute -right-1 -top-1 h-[7px] w-[7px] rounded-full bg-[#F45D48]" />
-                      )}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMobileFiltersOpen(true)}
-                    aria-label="Filter and sort goals"
-                    className="relative grid h-9 w-9 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/15 hover:text-white"
-                  >
-                    <span className="relative inline-flex">
-                      <Filter className="h-[18px] w-[18px]" />
-                      {(filtersActive || (showSortControls && sortActive)) && (
-                        <span className="absolute -right-1 -top-1 h-[7px] w-[7px] rounded-full bg-[#F45D48]" />
-                      )}
-                    </span>
-                  </button>
-                </div>
+            <div
+              className={cn(
+                "flex shrink-0 items-center gap-3 sm:gap-4 justify-end",
+                // The goal page's row is flex on a phone (see above), so nothing else pushes the
+                // account across to the right edge.
+                isWorkspace && "ml-auto sm:ml-0",
               )}
-              {/* Filter */}
-              {showFilterControls && (
-                <div className="hidden lg:flex items-center gap-1">
-                  <DropdownMenu>
-                    <ToolbarTrigger
-                      label="Filter"
-                      count={activeFilterCount}
-                      ariaLabel="Filter goals"
-                      className="text-white hover:text-white/80"
-                      leadingIcon={<Filter className="h-4 w-4 shrink-0" />}
-                    />
-                    <DropdownMenuContent
-                      align="end"
-                      className="w-72 space-y-2 p-2"
-                    >
-                      <DropdownMenuLabel>Deadline range</DropdownMenuLabel>
-                      <DeadlineRangeControls
-                        deadlineFrom={deadlineFrom}
-                        deadlineTo={deadlineTo}
-                        setDeadlineFrom={setDeadlineFrom}
-                        setDeadlineTo={setDeadlineTo}
-                      />
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>Confidence</DropdownMenuLabel>
-                      <div className="grid grid-cols-5 gap-1 px-2">
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                          <button
-                            key={n}
-                            onClick={() =>
-                              setConfidence(
-                                confidence === String(n) ? "" : String(n),
-                              )
-                            }
-                            className={cn(
-                              "h-8 rounded-md border hairline text-xs font-semibold",
-                              confidence === String(n)
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-surface text-foreground",
-                            )}
-                          >
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup
-                        value={status}
-                        onValueChange={(v) => setStatus(v as GoalStatusFilter)}
-                      >
-                        <DropdownMenuRadioItem value="all">
-                          All goals
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="achieved">
-                          Only achieved
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="not-achieved">
-                          Only not achieved
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  {filtersActive && (
-                    <button
-                      onPointerDown={resetFilters}
-                      onClick={resetFilters}
-                      className="grid h-8 w-8 place-items-center rounded-md border border-white/40 text-white hover:bg-white/15"
-                      aria-label="Reset filters"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-              )}
+            >
+              {/* **The search and the filters live HERE**, in the teal bar, as bare glyphs — the
+                  Android header's arrangement (owner, 2026-08-17). They used to sit in a white
+                  strip under the header, which is a whole row of chrome for two controls.
 
-              {/* Sort */}
-              {showSortControls && (
-                <div className="hidden lg:flex items-center gap-1">
-                  {/* The two questions side by side: what to order by, then which way. */}
-                  <ToolbarMenu
-                    label={
-                      SORT_CHOICES.find((c) => c.value === sort)?.label ??
-                      "Sort"
-                    }
-                    ariaLabel="Sort goals"
-                    triggerClassName="text-white hover:text-white/80"
-                    leadingIcon={
-                      sortDirection === "asc" ? (
-                        <SortAscending className="h-4 w-4 shrink-0" />
-                      ) : (
-                        <SortDescending className="h-4 w-4 shrink-0" />
-                      )
-                    }
-                  >
-                    <MenuGroup title="Sort by">
-                      {SORT_CHOICES.map((c) => (
-                        <MenuChoice
-                          key={c.value}
-                          label={c.label}
-                          selected={sort === c.value}
-                          onSelect={() => setSort(c.value)}
-                        />
-                      ))}
-                    </MenuGroup>
-                    <MenuGroup title="Direction">
-                      {SORT_DIRECTION_CHOICES.map((c) => (
-                        <MenuChoice
-                          key={c.value}
-                          label={c.label}
-                          variant="aux"
-                          icon={c.icon}
-                          selected={sortDirection === c.value}
-                          onSelect={() => setSortDirection(c.value)}
-                        />
-                      ))}
-                    </MenuGroup>
-                  </ToolbarMenu>
-                  {sortActive && (
-                    <button
-                      onPointerDown={resetSort}
-                      onClick={resetSort}
-                      className="grid h-8 w-8 place-items-center rounded-md border border-white/40 text-white hover:bg-white/15"
-                      aria-label="Reset sort"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
+                  The search glyph is the phone's only (a desktop has room for the field itself);
+                  the **filter glyph is every width's**, because the filters open into one panel
+                  now — a drawer on a phone, a side panel on a laptop — and there is no dropdown
+                  anywhere for a filter or a sort to hide in (owner, 2026-08-20). */}
+              {showMobileSearch && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchOpen(true)}
+                  aria-label="Search goals"
+                  className="relative grid h-9 w-9 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/15 hover:text-white sm:hidden"
+                >
+                  <span className="relative inline-flex">
+                    <Search className="h-[18px] w-[18px]" />
+                    {query && (
+                      <span className="absolute -right-1 -top-1 h-[7px] w-[7px] rounded-full bg-[#F45D48]" />
+                    )}
+                  </span>
+                </button>
+              )}
+              {showFilterControls && (
+                <button
+                  type="button"
+                  onClick={() => setMobileFiltersOpen(true)}
+                  aria-label="Filter and sort goals"
+                  className="relative grid h-9 w-9 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+                >
+                  <span className="relative inline-flex">
+                    <Filter className="h-[18px] w-[18px]" />
+                    {goalsActive && (
+                      <span className="absolute -right-1 -top-1 h-[7px] w-[7px] rounded-full bg-[#F45D48]" />
+                    )}
+                  </span>
+                </button>
               )}
               {/* Account — a bare figure, like the Android header. Tapping it opens the account's
                   own page (Settings: My profile + Fonts, with Sign out inside), not a menu. */}
@@ -594,25 +531,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/*
-            **The phone's filter sheet.** Its opener is the filter glyph up in the teal header now
-            (see "Right side items"), and the search glyph beside it — so the white strip that used
-            to carry both, on every non-workspace page, is gone entirely (owner, 2026-08-17). It was
-            a whole row of chrome for two controls, and on Settings and Calendar it carried a search
-            box that filtered nothing.
+            **The filter panel.** Its opener is the filter glyph up in the teal header (see "Right
+            side items"), and the search glyph beside it — so the white strip that used to carry
+            both, on every non-workspace page, is gone entirely (owner, 2026-08-17). It was a whole
+            row of chrome for two controls, and on Settings and Calendar it carried a search box
+            that filtered nothing.
+
+            **Not phone-only any more** (owner, 2026-08-20): the same questions in the same shapes
+            open as a drawer from the bottom on a phone and as a panel from the right on a laptop.
+            The two dropdowns that used to hold them on a wide screen are gone — a filter is never
+            a dropdown now.
           */}
           {isDashboard && (
-            <div className="sm:hidden">
+            <div>
               <ToolbarSheet
                 open={mobileFiltersOpen}
                 onOpenChange={setMobileFiltersOpen}
                 title="Filter & Sort"
-                onReset={() => {
-                  resetFilters();
-                  resetSort();
-                }}
-                resetDisabled={
-                  !filtersActive && !(showSortControls && sortActive)
-                }
+                // **Everything**, including the status questions that used to be exempt.
+                onReset={() => resetList("goals")}
+                resetDisabled={!goalsActive}
+                locked={goalsLocked}
+                onLockedChange={(next) => setLocked("goals", next)}
               >
                 <SheetGroup title="Status">
                   {/* One line of success-ramp pills. Stacked as full-width rows, three short
@@ -624,106 +564,98 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   />
                 </SheetGroup>
 
+                {/* Whether there IS a date, before the range that asks which dates to keep — the
+                    question Android has asked since 2026-08-18 and the web could not (owner,
+                    2026-08-20). Info-toned, so it does not read as a second status. */}
+                <SheetGroup title="Deadline">
+                  <SheetPills
+                    options={GOAL_DEADLINE_CHOICES}
+                    value={goalDeadline}
+                    onChange={setGoalDeadline}
+                    tone="info"
+                  />
+                </SheetGroup>
+
                 <SheetGroup title="Deadline range">
-                  <DeadlineRangeControls
-                    deadlineFrom={deadlineFrom}
-                    deadlineTo={deadlineTo}
-                    setDeadlineFrom={setDeadlineFrom}
-                    setDeadlineTo={setDeadlineTo}
+                  <SheetDateRange
+                    from={deadlineFrom}
+                    to={deadlineTo}
+                    onFromChange={setDeadlineFrom}
+                    onToChange={setDeadlineTo}
                   />
                 </SheetGroup>
 
                 <SheetGroup title="Confidence">
-                  <div className="grid grid-cols-5 gap-1">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() =>
-                          setConfidence(
-                            confidence === String(n) ? "" : String(n),
-                          )
-                        }
-                        className={cn(
-                          "h-9 rounded-md border hairline text-xs font-semibold",
-                          confidence === String(n)
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-surface text-foreground hover:bg-secondary",
-                        )}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
+                  <SheetConfidence
+                    value={confidence}
+                    onChange={setConfidence}
+                  />
                 </SheetGroup>
 
                 {/* Three questions, three shapes (owner, 2026-08-17): filter values are pills, the
                     direction — a modifier, not a value — is a segmented control, and the sort keys
                     are choice cards. **Direction first**: it is one short line, so asking the small
                     question first keeps the sheet from opening on a wall of cards. */}
-                {showSortControls && (
-                  <>
-                    <SheetGroup title="Direction">
-                      <SheetSegmented
-                        options={SORT_DIRECTION_CHOICES}
-                        value={sortDirection}
-                        onChange={setSortDirection}
-                      />
-                    </SheetGroup>
-                    <SheetGroup title="Sort by">
-                      <SheetChoiceCards
-                        options={SORT_CHOICES}
-                        value={sort}
-                        onChange={setSort}
-                      />
-                    </SheetGroup>
-                  </>
-                )}
+                {/* **Always asked, in every view mode.** They used to be hidden on the table,
+                    which left the trigger's dot lit and "Reset all" enabled over two questions the
+                    panel was no longer showing — and Reset then silently changed a sort the user
+                    could not see. The table reads the same order, so there was nothing to hide. */}
+
+                <SheetGroup title="Direction">
+                  <SheetSegmented
+                    options={SORT_DIRECTION_CHOICES}
+                    value={sortDirection}
+                    onChange={setSortDirection}
+                  />
+                </SheetGroup>
+                <SheetGroup title="Sort by">
+                  <SheetChoiceCards
+                    options={SORT_CHOICES}
+                    value={sort}
+                    onChange={setSort}
+                  />
+                </SheetGroup>
               </ToolbarSheet>
             </div>
           )}
         </header>
 
-        {/* Offline banner — fires instantly from browser events */}
+        {/*
+          **The app's one message card, sitting in the flow** — the web twin of Android's
+          `SpiraInlineBanner` (owner, 2026-08-21). These were two bespoke tinted strips: the offline
+          one drew itself in `amber-50 / amber-300 / amber-800`, Tailwind defaults that are **not in
+          the Spira palette at all**, and the error one was a red-tinted block with red type, which
+          is an error shouting twice. Now they are the same card every other message in the app is,
+          and only the kind changes.
+
+          The mark is the kind's own, not a bespoke one: `GlobeOff` said more than a triangle, but a
+          set of messages that each pick their own glyph stops reading as one family — which is the
+          whole point of the card.
+        */}
         {isOffline && (
-          <div
-            className="border-b border-amber-300/40 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 sm:px-6"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex items-center gap-2">
-              <GlobeOff className="h-4 w-4 shrink-0" />
-              <span>
-                You&apos;re offline. Your goals are still visible — changes will
-                sync when you reconnect.
-              </span>
-            </div>
+          <div className="px-4 pt-3 sm:px-6">
+            <NoticeCard kind="warning" onDismiss={null}>
+              You&apos;re offline. Your goals are still visible — changes will
+              sync when you reconnect.
+            </NoticeCard>
           </div>
         )}
 
-        {/* API error banner — only when not already covered by offline banner */}
         {syncError && !isOffline && (
-          <div
-            className="border-b border-destructive/25 bg-destructive/10 px-4 py-2 text-sm text-destructive sm:px-6"
-            role="alert"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {syncErrorKind === "network" ? (
-                  <GlobeOff className="h-4 w-4 shrink-0" />
-                ) : (
-                  <Cable className="h-4 w-4 shrink-0" />
-                )}
+          <div className="px-4 pt-3 sm:px-6">
+            <NoticeCard kind="error" onDismiss={null} role="alert">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>{syncError}</span>
+                <button
+                  type="button"
+                  onClick={() => void refreshGoals()}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-black/5"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Refresh
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void refreshGoals()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-semibold hover:bg-destructive/10"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Refresh
-              </button>
-            </div>
+            </NoticeCard>
           </div>
         )}
 
@@ -739,44 +671,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-    </div>
-  );
-}
-
-function DeadlineRangeControls({
-  deadlineFrom,
-  deadlineTo,
-  setDeadlineFrom,
-  setDeadlineTo,
-}: {
-  deadlineFrom: string;
-  deadlineTo: string;
-  setDeadlineFrom: (value: string) => void;
-  setDeadlineTo: (value: string) => void;
-}) {
-  return (
-    <div
-      className="grid grid-cols-2 gap-2 px-2"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <DeadlinePopover
-        iso={deadlineFrom || undefined}
-        onChange={(next) => setDeadlineFrom(next ?? "")}
-        variant="button"
-        placeholder="From"
-        hideDaysLeft
-        disableScroll
-        className="h-9 justify-start px-2 text-xs"
-      />
-      <DeadlinePopover
-        iso={deadlineTo || undefined}
-        onChange={(next) => setDeadlineTo(next ?? "")}
-        variant="button"
-        placeholder="To"
-        hideDaysLeft
-        disableScroll
-        className="h-9 justify-start px-2 text-xs"
-      />
     </div>
   );
 }
