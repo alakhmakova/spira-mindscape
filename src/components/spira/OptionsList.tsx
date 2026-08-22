@@ -338,9 +338,10 @@ export function OptionsList({
 /**
  * A single option row. The rating smiley is floated top-right so line 1 sits beside it and
  * lines 2+ wrap underneath (no reserved empty column). A option longer than 3 lines collapses
- * to 3 lines with a "Show more"/"Show less" toggle (InlineText `clampLines`). There is no drag
- * handle: reordering happens only in **reorder mode**, where the whole card is the drag target
- * (grab cursor) and every per-card action (edit, rating, delete, select, Show more) is disabled.
+ * to 3 lines with a "Show more"/"Show less" toggle (InlineText `clampLines`). Reordering happens
+ * only in **reorder mode**, where the left slot's radio is replaced by a drag grip (grab cursor)
+ * — the grip alone starts a drag, so a swipe anywhere else still scrolls the page — and every
+ * per-card action (edit, rating, delete, select, Show more) is disabled.
  */
 function OptionRow({
   opt,

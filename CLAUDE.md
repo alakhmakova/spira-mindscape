@@ -45,6 +45,24 @@ Follow this sequence for any code change, small or large:
      backend" and nothing pointed at CORS. Anything touching **proxies, CORS, auth, headers or
      cookies** has to be checked from a real browser (Playwright will do), and anything visual has
      to be checked by looking at pixels (Design → Components and chrome → 4).
+   - **Moved a handler or renamed an `aria-label`? `grep` `e2e/` in the same change.** The
+     Playwright specs press *exact* interaction targets — which element receives `pointerdown`,
+     which accessible name a control answers to — so an interaction redesign silently invalidates
+     them. `ff3f519` moved the options drag from the whole card onto the left-slot **grip** (a
+     correct fix: the card had been stealing every swipe from the page scroll) and did not touch
+     `e2e/`; the drag test kept pressing the card's centre, where there is no longer a handler at
+     all, and CI failed on the next PR. `grep -rn "reorder" e2e/` would have found it in one
+     second.
+   - **Three identical retries are not flake.** Playwright retries twice; genuine infrastructure
+     trouble gives *different* tests or *different* errors each time. The same test failing on all
+     three attempts with the same message means the product moved and the spec did not — read the
+     diff, don't re-run.
+   - **E2E doesn't run in the `Stop` hooks** (they cover lint/typecheck + fast unit tests), and
+     `npm run test:e2e` needs the full stack up — Docker Postgres + the backend on the `local`
+     profile + Vite (see Build / run reference, and the `run-spira` skill). That is precisely why
+     a broken spec reaches CI instead of the desk it was broken on: **after a web interaction
+     change, bring the stack up and run at least the affected spec** —
+     `npx playwright test e2e/<file>.spec.ts`.
 5. **Cover** — add the right test levels for new behavior:
    - Web: Vitest (unit) + backend JUnit/GraphQL integration + Python E2E; **Playwright** for
      web E2E.
