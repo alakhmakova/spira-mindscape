@@ -18,3 +18,16 @@ tests-e2e
 docs
 specs
 **/*.md
+# …EXCEPT the prompts, which are runtime resources that merely happen to be Markdown.
+#
+# `PromptResources` loads `prompts/grow/coach-method.md` from the classpath at construction and
+# **fails startup** when it is missing — deliberately, because a coach silently running without
+# its method is worse than a boot failure. With the blanket `**/*.md` above and nothing to undo
+# it, `COPY backend/src src` put an EMPTY `prompts/grow/` into the image, the jar shipped without
+# the file, and Cloud Run rejected every revision with "container failed to start and listen on
+# the port" — three deploys in a row, with nothing in the build log pointing at a Markdown rule
+# (2026-08-27).
+#
+# Order matters: in .dockerignore the LAST matching pattern wins, so this negation has to stay
+# below the exclusion.
+!backend/src/main/resources/prompts/**
