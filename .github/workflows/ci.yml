@@ -605,12 +605,41 @@ jobs:
       # references live on the *service* and are preserved across revisions, so this
       # never clobbers FRONTEND_URL / CORS / the secret bindings.
       - name: Deploy to Cloud Run
+        id: deploy
         run: |
           gcloud run deploy spira \
             --source . \
             --region europe-west1 \
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --quiet
+
+      # A failed boot tells you only "the container failed to start and listen on the port",
+      # which is the message Cloud Run gives for ANY failed start — a missing bean, a bad
+      # migration, an exhausted connection pool. The actual exception is in the revision's own
+      # logs, and nobody was fetching them: three deploys in a row were diagnosed by guesswork
+      # before a two-line probe image found the cause (a `.dockerignore` rule stripping a prompt
+      # the app loads at startup — BUG-053, 2026-08-27).
+      #
+      # `if: failure()` so it costs nothing on a good day, and `|| true` so a logging problem
+      # never becomes the reported failure.
+      - name: Why the revision failed to start
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: |
+          revision=$(gcloud run revisions list \
+            --service spira \
+            --region europe-west1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --sort-by="~metadata.creationTimestamp" \
+            --limit 1 \
+            --format="value(metadata.name)" || true)
+          echo "Newest revision: ${revision:-unknown}"
+          [ -n "$revision" ] || exit 0
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.revision_name=${revision}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --limit 60 \
+            --order asc \
+            --format="value(textPayload)" || true
 
       - name: Show deployed URL
         run: |
