@@ -18,10 +18,27 @@ contributors — human or agent — should read this top-to-bottom, then `README
   `gh pr merge`.
 - ✅ Read-only git is fine: `git status`, `git diff`, `git log`, `git show`, `git branch`
   (listing).
-- This rule is also **enforced by a `PreToolUse` hook** in `.claude/settings.json` — the hook
-  blocks committing/pushing commands even if asked. Leave staging and committing to the user.
+- ⚠️ There is **no `.claude/settings.json` in this repository**, so nothing enforces this but
+  the rule itself. (An earlier version of this file claimed a `PreToolUse` hook blocked
+  committing; it does not exist. Corrected 2026-08-23.)
 
 When work is ready, summarize what changed and let the user commit.
+
+### The one carve-out: history surgery (owner, 2026-08-23)
+
+Removing something that should never have been committed — a leaked secret, a copyrighted
+file — is work the agent **may** do, because it is a mechanical, reviewable local operation
+and the remote still holds the original until it is pushed.
+
+- ✅ The agent may run `git filter-repo` (or BFG) and inspect the result: `git log`, `git
+  show`, `git cat-file`, verifying the paths are gone.
+- ❌ **`git push` stays absolutely forbidden, `--force` included.** That is the irreversible,
+  public step, and it is the owner's to take. The agent prints the command; the owner runs it.
+- Before any rewrite: the working tree must be committed or stashed **by the owner**
+  (`filter-repo` refuses to run on a dirty repo), and the agent must state plainly what will
+  change — every SHA from the first affected commit onward, a force-push required, and any
+  other clone of the repo needing a fresh clone rather than a `git pull`, or it will drag the
+  removed files back in.
 
 ---
 

@@ -90,11 +90,10 @@ Each phase should be independently shippable and should produce a clearer, more 
 
 **Goal:** Convert the coaching source material into implementation-ready guidance.
 
-- [ ] Extract text from `grow/Coaching for Performance.docx`
-- [ ] Extract text from `grow/Coach the Person.docx`
-- [ ] Create `specs/coaching/grow-method.md`
-- [ ] Create `specs/coaching/coaching-principles.md`
-- [ ] Create `specs/coaching/session-rules.md`
+- [x] Extract and distil the coaching source material by hand (2026-08-22)
+- [x] Write it as prompt text the coach actually reads —
+      `backend/src/main/resources/prompts/grow/coach-method.md` — rather than as side
+      documents that drift from what the model is told
 - [ ] Distill phase-specific coaching behavior for Goal, Reality, Options, and Will
 - [ ] Define coaching behaviors to avoid
 - [ ] Define safety and professional-boundary language

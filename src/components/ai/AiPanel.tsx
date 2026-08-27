@@ -23,8 +23,17 @@ import { useActivityGate } from "@/lib/useActivityGate";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { SproutArt } from "@/components/spira/SproutArt";
-import type { AiAction, Goal } from "@/lib/spira/types";
-import { toast, type ExternalToast } from "sonner";
+import { ResourceAttachSheet } from "./ResourceAttachSheet";
+import { NoticeCard } from "@/components/spira/Notice";
+import {
+  clearComposerDraft,
+  loadComposerDraft,
+  saveComposerDraft,
+} from "./composer-draft";
+import type { AiAction, Goal, Resource } from "@/lib/spira/types";
+// Only the option type survives: the chat's messages are no longer sonner toasts (they are
+// the panel's own card, above the field), but the call sites still pass sonner-shaped opts.
+import { type ExternalToast } from "sonner";
 import {
   streamChat,
   saveApiKey,
@@ -67,31 +76,45 @@ import {
 // the panel is a left column and the bottom-right corner (sonner's default) reads
 // best. Decided per call from the current viewport (< 768px = mobile, matching
 // `useIsMobile`). Scoped to this panel; toasts elsewhere keep their default.
-const chatToastPosition = (): "top-center" | "bottom-right" =>
-  typeof window !== "undefined" && window.innerWidth < 768
-    ? "top-center"
-    : "bottom-right";
+/**
+ * **A message from the chat belongs to the chat.**
+ *
+ * These used to be sonner toasts, positioned against the *viewport* — top-centre on a phone,
+ * bottom-right on a laptop — so a confirmation of something done inside the panel appeared as far
+ * from the panel as the screen allowed, at whatever width sonner felt like. The owner asked for
+ * one rule on both surfaces (2026-08-24): **directly above the message field, exactly as wide as
+ * it**, so it is next to the thing that caused it and is the same object on a narrow phone and a
+ * wide panel.
+ *
+ * The call sites did not change — there are about sixty of them — so `chatToast` stays, and only
+ * where it delivers to is different: a tiny bus the panel subscribes to and renders as the app's
+ * one `NoticeCard`. Android's twin is `ChatToast` in `AiChatScreen.kt`.
+ */
+type PanelNotice = { id: number; kind: "success" | "error"; message: string };
+
+let panelNoticeSeq = 0;
+const panelNoticeListeners = new Set<(n: PanelNotice) => void>();
+
+const emitPanelNotice = (kind: PanelNotice["kind"], message: string) => {
+  const notice = { id: ++panelNoticeSeq, kind, message };
+  panelNoticeListeners.forEach((fn) => fn(notice));
+};
+
+/** How long a chat toast stays before it takes itself away. */
+const PANEL_NOTICE_MS = 6000;
 
 const chatToast = {
-  success: (message: string, opts?: ExternalToast) =>
-    toast.success(message, {
-      position: chatToastPosition(),
-      className: "spira-chat-toast",
-      ...opts,
-    }),
-  error: (message: string, opts?: ExternalToast) =>
-    toast.error(message, {
-      position: chatToastPosition(),
-      className: "spira-chat-toast",
-      ...opts,
-    }),
+  success: (message: string, _opts?: ExternalToast) =>
+    emitPanelNotice("success", message),
+  error: (message: string, _opts?: ExternalToast) =>
+    emitPanelNotice("error", message),
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type Msg = {
   id: string;
-  role: "user" | "assistant" | "system" | "end";
+  role: "user" | "assistant" | "system" | "end" | "closed";
   content: string;
   streaming?: boolean;
   proposals?: Proposal[];
@@ -106,7 +129,30 @@ type Msg = {
   revisedLabel?: string;
 };
 
-type Mode = "chat" | "grow-start" | "grow-active" | "grow-closing" | "grow-end";
+/**
+ * How far past the planned end the coach may run before the app insists. The
+ * coach owns the ending, but a model that never calls `end_session` would leave
+ * the session open forever — so at this point it is TOLD to wrap up. It still
+ * writes the record and decides the proposals: the backstop triggers the
+ * analysis, it does not replace it.
+ */
+const OVERRUN_GRACE_SECONDS = 10 * 60;
+
+/**
+ * The ending is a sequence, not a single card (owner, 2026-08-22): the coach
+ * calls `end_session`, then the user decides on the session record, then on
+ * anything proposed for the goal, and only then does the coach say goodbye.
+ * `grow-end` is the record card, `grow-review` the proposals, `grow-farewell`
+ * the goodbye.
+ */
+type Mode =
+  | "chat"
+  | "grow-start"
+  | "grow-active"
+  | "grow-closing"
+  | "grow-end"
+  | "grow-review"
+  | "grow-farewell";
 
 type ProviderInfo = {
   id: string;
@@ -468,6 +514,65 @@ function clampPanelWidth(w: number) {
   return Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth(), w));
 }
 
+/**
+ * What clicking an attachment chip does — **one rule, used by the composer's chips and by a
+ * sent message's chips**, so an attachment behaves the same before and after it is sent.
+ *
+ * It exists because the web only ever opened images: `mime.startsWith("image/") && dataUrl`.
+ * A resource chip carries neither (its whole point is that the bytes stay on the server), so
+ * every note, link and contact the user attached was inert — while Android opened all of them
+ * through `LocalOpenAttachment`. Found by the owner, 2026-08-23.
+ *
+ * Per kind:
+ *
+ * | Attachment | Click |
+ * |---|---|
+ * | An image with bytes in hand | the image preview |
+ * | A **link** resource | opens the URL in a new tab (owner's call — a preview of a web page is just a worse browser) |
+ * | A **note** resource | its body, as HTML, in the content modal |
+ * | An **email** resource | the contact's details |
+ * | A **file** resource | nothing, deliberately, for now |
+ *
+ * Returns `null` when there is nothing to open, and the chip then renders as plain text
+ * rather than as a button that does nothing.
+ */
+function attachmentOpener(
+  a: ChatAttachment,
+  resources: Resource[] | undefined,
+  showContent: (c: {
+    title: string;
+    body: string;
+    html?: boolean;
+    image?: string;
+  }) => void,
+): (() => void) | null {
+  if (a.mime?.startsWith("image/") && a.dataUrl) {
+    return () => showContent({ title: a.name, body: "", image: a.dataUrl });
+  }
+  if (a.resourceId == null) return null;
+
+  const r = resources?.find((x) => Number(x.id) === a.resourceId);
+  if (!r) return null;
+
+  switch (r.type) {
+    case "link":
+      return () => window.open(r.url, "_blank", "noopener,noreferrer");
+    case "note":
+      return () => showContent({ title: r.title, body: r.body, html: true });
+    case "email":
+      return () =>
+        showContent({
+          title: r.name,
+          body:
+            [r.role, r.email, r.phone].filter(Boolean).join(", ") ||
+            "No details saved.",
+        });
+    default:
+      // A file: no preview yet (owner, 2026-08-23).
+      return null;
+  }
+}
+
 export function AiPanel() {
   const isOpen = useAi((s) => s.isOpen);
   const close = useAi((s) => s.close);
@@ -523,7 +628,7 @@ export function AiPanel() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="h-[88vh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
+        <DrawerContent className="h-[88dvh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -540,7 +645,9 @@ export function AiPanel() {
   return (
     <aside
       className={cn(
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        // The coach sits on the RIGHT of the page (owner, 2026-08-23) — the left column is
+        // the standing navigation now. Hence the border and the shadow fall the other way.
+        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-l border-white/15 bg-[#0A8080] text-white shadow-[-12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
       style={{ width: `${width}px` }}
@@ -1131,6 +1238,37 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     loadPendingEnd(context.goalId),
   );
   const [memoryRevising, setMemoryRevising] = useState(false);
+  // Proposals arrive in the same turn as `end_session`, but must not be shown
+  // until the user has dealt with the session record — so they wait here.
+  const [heldProposals, setHeldProposals] = useState<Proposal[]>([]);
+  // The chat's own toast — see `chatToast`. One at a time: a second message replaces the first
+  // rather than stacking a column of cards over the field.
+  const [notice, setNotice] = useState<PanelNotice | null>(null);
+
+  useEffect(() => {
+    const listener = (n: PanelNotice) => setNotice(n);
+    panelNoticeListeners.add(listener);
+    return () => {
+      panelNoticeListeners.delete(listener);
+    };
+  }, []);
+
+  // Keyed on the notice's id, so a second message restarts the clock instead of inheriting
+  // whatever was left of the first one's.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), PANEL_NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [notice]);
+  // How the session ended, which decides what the coach is told when asked for
+  // the goodbye and whether the record may claim the session completed.
+  const endKindRef = useRef<"complete" | "early" | "overrun">("complete");
+  // Whether the record was actually saved — the goodbye is told, and the
+  // closing system note reports it.
+  const memorySavedRef = useRef(false);
+  // True while the final goodbye turn is in flight, so its completion exits
+  // the session instead of being treated as an ordinary reply.
+  const goodbyeRef = useRef(false);
   const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS_DEFAULT);
   const [activeProv, setActiveProv] = useState(
     () => readSavedProvider() || "ANTHROPIC",
@@ -1180,8 +1318,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   };
 
   const inGrow =
-    mode === "grow-active" || mode === "grow-closing" || mode === "grow-end";
+    mode === "grow-active" ||
+    mode === "grow-closing" ||
+    mode === "grow-end" ||
+    mode === "grow-review" ||
+    mode === "grow-farewell";
   const list = inGrow ? gmsgs : msgs;
+  // Ending early is only on offer while the session is really running: not
+  // mid-stream (the wrap-up request would be dropped and the button would look
+  // dead), and not once the ending sequence has begun — it is already ending.
+  const canEndEarly =
+    !busy && (mode === "grow-active" || mode === "grow-closing");
 
   // A pending proposal card IS the input — it renders in the footer (where the
   // composer would be) instead of inline, so it sits right above the keyboard.
@@ -1471,9 +1618,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       /* ignore */
     }
     deleteTranscript(context.goalId);
-    chatToast.success(
-      "Started a fresh chat — only the goal's data is in context now",
-    );
+    // No toast (owner, 2026-08-23): the emptied chat is its own confirmation, and a
+    // message about it was one more thing to dismiss. Android does the same.
   };
 
   // ── regular chat ─────────────────────────────────────────────────────────
@@ -1815,6 +1961,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     setGmsgs([]);
     endedRef.current = false;
     wrapUpRef.current = false;
+    goodbyeRef.current = false;
+    endKindRef.current = "complete";
+    memorySavedRef.current = false;
+    setHeldProposals([]);
     setMemoryDraft(null);
     const total = mins * 60;
     setSession({ total, remaining: total, mins });
@@ -1894,8 +2044,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
    * is sent to the model but never shown or kept as a user bubble, and once
    * the coach's goodbye lands the end card follows.
    */
-  const sendGrow = (text: string, opts?: { wrapUp?: boolean }) => {
+  const sendGrow = (
+    text: string,
+    opts?: { wrapUp?: boolean; goodbye?: boolean },
+  ) => {
     const wrapUp = opts?.wrapUp ?? false;
+    const goodbye = opts?.goodbye ?? false;
     if (busy && !wrapUp) return;
     if (!wrapUp) {
       const userMsg = { id: uid(), role: "user" as const, content: text };
@@ -1913,6 +2067,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     ]);
     let accumulated = "";
     const pendingProposals: Proposal[] = [];
+    // Set when the coach calls `end_session` during this turn. Its summary is
+    // the session record — a different text from the goodbye, which comes later.
+    let endRecord: string | null = null;
 
     streamChat({
       goalId: context.goalId,
@@ -1921,7 +2078,21 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       provider: activeProv,
       sessionType: "grow",
       sessionTotalMinutes: session?.mins,
+      // A wrap-up turn reports zero whatever the clock says: the coach is being
+      // asked to close, and "there is room to explore" would argue against it.
       sessionRemainingSeconds: wrapUp ? 0 : Math.round(session?.remaining ?? 0),
+      onSessionEnd: (argsJson) => {
+        try {
+          const parsed = JSON.parse(argsJson) as { summary?: unknown };
+          if (typeof parsed.summary === "string" && parsed.summary.trim())
+            endRecord = parsed.summary.trim();
+          else endRecord = "";
+        } catch {
+          // A malformed payload still means the coach ended the session; the
+          // record is simply empty, and the card says so rather than vanishing.
+          endRecord = "";
+        }
+      },
       onStatus: (status) => {
         if (stopRef.current) return;
         setGmsgs((p) => p.map((m) => (m.id === id ? { ...m, status } : m)));
@@ -1977,6 +2148,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             : // Safety net: the backend already streams a fallback, but never leave
               // an empty assistant bubble ("no response") if a turn returns nothing.
               "I didn't get a response that time — please try again.");
+        const ending = endRecord !== null;
         setGmsgs((p) =>
           p.map((m) =>
             m.id === id
@@ -1985,7 +2157,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   streaming: false,
                   status: undefined,
                   content,
-                  ...(finalProposals.length
+                  // On the ending turn the cards wait: the record is decided first.
+                  ...(finalProposals.length && !ending
                     ? { proposals: finalProposals }
                     : {}),
                 }
@@ -1993,9 +2166,23 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           ),
         );
         setBusy(false);
-        // The coach has said its goodbye — now the end card may follow, with
-        // this very goodbye offered as the session memory draft.
-        if (wrapUp) finishGrow(content);
+        if (goodbye) {
+          // Don't exit yet — leaving now would wipe the goodbye off the screen
+          // the moment it arrived. The user closes when they've read it.
+          goodbyeRef.current = false;
+          setGmsgs((p) => [...p, { id: uid(), role: "closed", content: "" }]);
+          return;
+        }
+        if (ending) {
+          setHeldProposals(finalProposals);
+          finishGrow(endRecord ?? "");
+        } else if (wrapUp) {
+          // The coach was told to wrap up and didn't call `end_session`. Its
+          // reply is all we have, so end on that rather than leaving a session
+          // nothing can close — the overrun backstop has already been spent.
+          setHeldProposals(finalProposals);
+          finishGrow(accumulated.trim());
+        }
       },
       onError: (err) => {
         setBusy(false);
@@ -2016,8 +2203,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           ),
         );
         chatToast.error(msg);
-        // Even if the goodbye failed, the session is over — don't strand the user.
-        if (wrapUp) finishGrow();
+        // Never strand the user inside the ending sequence.
+        if (goodbye) {
+          goodbyeRef.current = false;
+          setGmsgs((p) => [...p, { id: uid(), role: "closed", content: "" }]);
+        } else if (wrapUp) {
+          finishGrow();
+        }
       },
     });
   };
@@ -2100,12 +2292,20 @@ function PanelContent({ onClose }: { onClose: () => void }) {
    * language rule makes the coach answer in the user's language.
    */
   const WRAP_UP_INSTRUCTION =
-    "[The session timer has run out. Close the session now: in the language we have " +
-    "been speaking, briefly reflect the key insights of this conversation and confirm any " +
-    "commitments or next steps I named. For EACH commitment or next step I voiced, call " +
-    "the propose_goal_change tool (e.g. kind='target' or 'action') so I can accept it " +
-    "into my goal — do this in this same reply. Then say a warm goodbye. " +
-    "Do not ask a new question.]";
+    "[We are well past the time set for this session, so wrap it up now. Work only " +
+    "from what actually happened — if we never got to a commitment, say so rather " +
+    "than writing it up as though we did. Call end_session with the record, and in " +
+    "the same reply propose only what this session genuinely supports adding to the " +
+    "goal (which may be nothing). No goodbye yet.]";
+
+  /** The user pressed End and asked for a proper close rather than just quitting. */
+  const EARLY_END_INSTRUCTION =
+    "[I am ending this session now, before it reached its natural end. Close it " +
+    "honestly: base everything only on what we actually covered, name what we did " +
+    "and did not get to, and do not present it as a completed session. Call " +
+    "end_session with that record, and propose something for the goal only if this " +
+    "conversation really supports it — most likely nothing. No goodbye yet.]";
+
   const sendGrowRef = useRef(sendGrow);
   useEffect(() => {
     sendGrowRef.current = sendGrow;
@@ -2119,9 +2319,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     0,
   );
 
+  /**
+   * Step 1 of the ending: the user has decided on the session record. This no
+   * longer leaves the session — the held proposals are released next, and the
+   * goodbye comes after those. `leaveGrow` is what actually exits.
+   */
   const closeSession = (save: boolean) => {
-    // "Save memory" persists exactly what the end card previewed (the coach's
-    // closing reflection, possibly revised by the user via the AI).
     let saved = false;
     if (save && context.goalId && memoryDraft?.trim()) {
       saved = true;
@@ -2131,19 +2334,101 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         ),
       );
     }
+    memorySavedRef.current = saved;
+    setMemoryDraft(null);
+    clearPendingEnd(context.goalId); // the user decided — the card may rest
+    // A card restored after a reload has no session behind it: there is nothing
+    // left to propose and nobody to say goodbye. Decide the record and stop.
+    if (!inGrow) {
+      setMsgs((p) => [
+        ...p,
+        {
+          id: uid(),
+          role: "system",
+          content: saved
+            ? "Session memory saved."
+            : "Session ended without saving memory.",
+        },
+      ]);
+      return;
+    }
+    // Drop the record card, then show whatever the coach proposed.
+    setGmsgs((p) => p.filter((m) => m.role !== "end"));
+    if (heldProposals.length) {
+      setGmsgs((p) => [
+        ...p,
+        {
+          id: uid(),
+          role: "assistant",
+          content: "I've prepared this for your review.",
+          proposals: heldProposals,
+        },
+      ]);
+      setHeldProposals([]);
+      setMode("grow-review");
+    } else {
+      askForGoodbye();
+    }
+  };
+
+  /**
+   * Step 2 → 3: everything has been decided, so ask the coach for the goodbye.
+   * It is told what the user actually kept, because a farewell that thanks
+   * someone for accepting what they rejected is worse than none.
+   */
+  const askForGoodbye = () => {
+    const kept = gmsgs.reduce(
+      (n, m) =>
+        n + (m.proposals?.filter((pr) => pr.status === "approved").length ?? 0),
+      0,
+    );
+    const declined = gmsgs.reduce(
+      (n, m) =>
+        n + (m.proposals?.filter((pr) => pr.status === "rejected").length ?? 0),
+      0,
+    );
+    setMode("grow-farewell");
+    goodbyeRef.current = true;
+    sendGrowRef.current(
+      "[The user has now decided what to keep from this session. " +
+        (memorySavedRef.current
+          ? "They saved the session record. "
+          : "They chose not to save the session record. ") +
+        `They accepted ${kept} and declined ${declined} of the changes you proposed. ` +
+        (endKindRef.current === "early"
+          ? "Remember they ended this session early, so keep it honest. "
+          : "") +
+        "Say your goodbye now, in the language we have been speaking: short, " +
+        "human, and shaped by what they actually kept. Do not repeat the " +
+        "summary, do not propose anything, do not call any tools, and do not " +
+        "ask a question.]",
+      { wrapUp: true, goodbye: true },
+    );
+  };
+
+  /** The session is over: leave GROW mode and note what became of it. */
+  const leaveGrow = (opts?: { silent?: boolean }) => {
     setMode("chat");
     setSession(null);
     setMemoryDraft(null);
-    clearPendingEnd(context.goalId); // the user decided — the card may rest
+    setHeldProposals([]);
+    clearPendingEnd(context.goalId);
     clearGrowSession(context.goalId);
-    const note = save
-      ? (saved
-          ? "Session memory saved."
-          : "Session ended — nothing to save yet.") +
-        (sessionProposals > 0
-          ? ` ${sessionProposals} proposal${sessionProposals === 1 ? "" : "s"} from the session await your review.`
-          : "")
-      : "Session ended without saving memory.";
+    if (opts?.silent) {
+      setMsgs((p) => [
+        ...p,
+        { id: uid(), role: "system", content: "Session ended." },
+      ]);
+      return;
+    }
+    const pending = sessionProposals;
+    const note =
+      (memorySavedRef.current
+        ? "Session memory saved."
+        : "Session ended without saving memory.") +
+      (pending > 0
+        ? ` ${pending} proposal${pending === 1 ? "" : "s"} from the session await your review.`
+        : "");
     setMsgs((p) => [...p, { id: uid(), role: "system", content: note }]);
   };
 
@@ -2171,10 +2456,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (loadPendingEnd(context.goalId)) return; // an undecided end card wins
     const stored = loadGrowSession(context.goalId);
     if (!stored) return;
-    const remaining = Math.max(
-      0,
-      Math.round((stored.endsAt - Date.now()) / 1000),
-    );
+    // Not clamped at zero: overrun is how the backstop measures itself, so a
+    // session resumed long after its time is immediately past the grace period
+    // instead of starting another ten-minute wait.
+    const remaining = Math.round((stored.endsAt - Date.now()) / 1000);
     const hasContent = stored.msgs.some(
       (m) => m.role === "assistant" && m.content.trim() && !m.error,
     );
@@ -2199,8 +2484,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     const iv = setInterval(() => {
       setSession((s) => {
         if (!s) return s;
-        const remaining = Math.max(0, s.remaining - 1);
-        return { ...s, remaining };
+        // Allowed to go negative: the coach owns the ending, so overrun is
+        // normal and is what the hard stop below measures.
+        return { ...s, remaining: s.remaining - 1 };
       });
     }, 1000);
     return () => clearInterval(iv);
@@ -2210,18 +2496,31 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (!session) return;
     const frac = 1 - session.remaining / session.total;
     if (frac >= 0.8 && mode === "grow-active") setMode("grow-closing");
-    // Time's up: request the coach's closing reply (once, and only between
-    // turns — a streaming reply finishes first; busy flipping re-runs this).
+    // The clock no longer ends the session — the coach does, via `end_session`.
+    // This is only the backstop for a coach that never calls it: at
+    // OVERRUN_GRACE past the planned end it is TOLD to wrap up, so the ending
+    // is still analysed rather than fabricated by the UI.
     if (
-      session.remaining <= 0 &&
+      session.remaining <= -OVERRUN_GRACE_SECONDS &&
       !endedRef.current &&
       !wrapUpRef.current &&
-      !busy
+      !busy &&
+      (mode === "grow-active" || mode === "grow-closing")
     ) {
       wrapUpRef.current = true;
+      endKindRef.current = "overrun";
       sendGrowRef.current(WRAP_UP_INSTRUCTION, { wrapUp: true });
     }
   }, [session, mode, busy, WRAP_UP_INSTRUCTION]);
+
+  // The proposals step is over as soon as nothing is pending — then the coach
+  // is asked for its goodbye. Guarded by goodbyeRef so it fires exactly once.
+  useEffect(() => {
+    if (mode !== "grow-review" || busy || goodbyeRef.current) return;
+    if (sessionProposals > 0) return;
+    askForGoodbye();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, busy, sessionProposals]);
 
   // ── Provider sheet callbacks ──────────────────────────────────────────────
 
@@ -2281,12 +2580,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   let timerLabel = "";
   let timerFrac = 0;
   const closing = mode === "grow-closing";
+  const overtime = !!session && session.remaining < 0;
   if (session) {
-    const rem = Math.ceil(session.remaining);
+    const rem = Math.ceil(Math.abs(session.remaining));
     const mm = String(Math.floor(rem / 60)).padStart(2, "0");
     const ss = String(rem % 60).padStart(2, "0");
-    timerLabel = `${mm}:${ss}`;
-    timerFrac = session.remaining / session.total;
+    // Past the planned end the clock counts up, prefixed — the session is not
+    // over until the coach ends it, so a frozen 00:00 would be a lie.
+    timerLabel = `${overtime ? "+" : ""}${mm}:${ss}`;
+    timerFrac = Math.max(0, session.remaining / session.total);
   }
 
   const activeProvider =
@@ -2409,8 +2711,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   label={timerLabel}
                 />
                 <button
-                  onClick={() => mode !== "grow-end" && setConfirmEnd(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 transition-colors"
+                  onClick={() => setConfirmEnd(true)}
+                  disabled={!canEndEarly}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
                 >
                   <Ic path={PATHS.x} size={12} /> End
                 </button>
@@ -2551,24 +2854,23 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                       {m.attachments.map((a, i) => {
                         const chipClass =
                           "inline-flex max-w-[220px] items-center gap-1.5 rounded-lg bg-white/85 px-2 py-1 text-[12px] text-[#003737] shadow-sm";
-                        // Image attachments open a preview on click; the dataUrl survives only
-                        // in-session (it's stripped before the transcript is persisted), so a
-                        // reloaded chat falls back to a plain, non-clickable chip.
-                        const canPreview =
-                          a.mime.startsWith("image/") && !!a.dataUrl;
-                        return canPreview ? (
+                        // What a chip opens is one rule for both chip sites — see
+                        // `attachmentOpener`. An image's dataUrl survives only in-session
+                        // (it is stripped before the transcript is persisted), so a reloaded
+                        // chat falls back to a plain chip; a resource stays openable, because
+                        // it is resolved from the goal rather than from the message.
+                        const open = attachmentOpener(
+                          a,
+                          goal?.resources,
+                          setContentModal,
+                        );
+                        return open ? (
                           <button
                             key={i}
                             type="button"
-                            onClick={() =>
-                              setContentModal({
-                                title: a.name,
-                                body: "",
-                                image: a.dataUrl,
-                              })
-                            }
-                            aria-label={`Preview ${a.name}`}
-                            className={`${chipClass} cursor-zoom-in transition-colors hover:bg-white`}
+                            onClick={open}
+                            aria-label={`Open ${a.name}`}
+                            className={`${chipClass} cursor-pointer transition-colors hover:bg-white`}
                           >
                             <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
                             <span className="truncate">{a.name}</span>
@@ -2596,6 +2898,24 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   className="flex items-center gap-2 self-center text-[12.5px] text-[#003737] bg-white/70 px-3 py-1.5 rounded-full"
                 >
                   <Ic path={PATHS.check} size={12} /> {m.content}
+                </div>
+              );
+            }
+            if (m.role === "closed") {
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]"
+                >
+                  <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
+                    <Ic path={PATHS.check} size={12} /> Session complete
+                  </span>
+                  <button
+                    onClick={() => leaveGrow()}
+                    className="mt-3 w-full h-10 rounded-[9px] bg-[#0A8080] text-white text-[13.5px] font-semibold hover:bg-[#005961] transition-colors"
+                  >
+                    Close
+                  </button>
                 </div>
               );
             }
@@ -2685,8 +3005,37 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        {/* The chat's toast rides directly above whatever the footer is showing — the
+          composer, or the card that has taken its place — at exactly that thing's width.
+          `px-3 sm:px-4` is the composer's own gutter, so the two line up on any screen. */}
+        {notice && (
+          <div className="shrink-0 px-3 pt-1 sm:px-4">
+            <NoticeCard
+              kind={notice.kind}
+              onDismiss={() => setNotice(null)}
+              role={notice.kind === "error" ? "alert" : "status"}
+            >
+              {notice.message}
+            </NoticeCard>
+          </div>
+        )}
+
         {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
           pending card renders here (the card IS the input); otherwise the composer. */}
+        {mode === "grow-review" && !busy && sessionProposals > 0 && (
+          <div className="bg-[#F2FFFF] px-3 pb-3 pt-1 shrink-0">
+            <button
+              onClick={() => !goodbyeRef.current && askForGoodbye()}
+              className="w-full h-11 rounded-[14px] border border-[#005961]/30 bg-white text-[#005961] text-[13.5px] font-semibold hover:bg-[#005961]/5 transition-colors"
+            >
+              Finish session
+            </button>
+            <p className="mt-1.5 text-center text-[11.5px] text-[#003737]/45">
+              Anything you leave undecided stays waiting in the goal.
+            </p>
+          </div>
+        )}
+
         {mode !== "grow-end" && revising && (
           <div className="bg-[#F2FFFF] px-3 pb-3 pt-1 shrink-0">
             <div className="flex items-center gap-2.5 rounded-[14px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
@@ -2720,18 +3069,22 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 inGrow ? sendGrow(text) : sendChat(text, attachments)
               }
               allowAttachments={!inGrow}
+              // A GROW session is ephemeral by design, so nothing typed into one is kept.
+              draftScope={inGrow ? undefined : scopeKey}
               attachResources={
                 !inGrow && goal
                   ? goal.resources.map((r) => ({
                       id: r.id,
                       label: r.type === "email" ? r.name : r.title,
+                      // The raw type, so the picker can draw the same glyph Android's does.
+                      type: r.type,
                       typeLabel: resourceTypeMeta[r.type].label,
                       mime: r.type === "file" ? r.mime : undefined,
                     }))
                   : undefined
               }
-              onPreviewImage={(name, dataUrl) =>
-                setContentModal({ title: name, body: "", image: dataUrl })
+              resolveAttachmentOpen={(a) =>
+                attachmentOpener(a, goal?.resources, setContentModal)
               }
               placeholder={
                 inGrow
@@ -2750,7 +3103,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   // session is where starting one is (owner, 2026-08-17).
                   <button
                     onClick={() => setConfirmEnd(true)}
-                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 transition-colors"
+                    disabled={!canEndEarly}
+                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
                   >
                     <Ic path={PATHS.x} size={14} /> End session early
                   </button>
@@ -2790,10 +3144,22 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       )}
       {confirmEnd && (
         <EndConfirmDialog
-          remainingLabel={timerLabel}
+          remainingLabel={overtime ? "" : timerLabel}
           onConfirm={() => {
             setConfirmEnd(false);
-            finishGrow();
+            if (busy) return;
+            endKindRef.current = "early";
+            wrapUpRef.current = true;
+            sendGrowRef.current(EARLY_END_INSTRUCTION, { wrapUp: true });
+          }}
+          onQuit={() => {
+            setConfirmEnd(false);
+            // Abandon any turn in flight, or it keeps streaming (and possibly
+            // persisting proposals) into a transcript nobody will see again.
+            stopRef.current = true;
+            setBusy(false);
+            endedRef.current = true;
+            leaveGrow({ silent: true });
           }}
           onCancel={() => setConfirmEnd(false)}
         />
@@ -4406,6 +4772,14 @@ function CreateConfirmCard({
  * Once a proposal card is resolved, the full card is gone — only this compact result
  * stays in the chat (a check + what was saved, with an "Open" link to the new item),
  * like a collapsed action summary. Dismissed changes show a muted "Dismissed".
+ *
+ * **Dark ink on a white plate, never white on the gradient** (owner, 2026-08-24). The
+ * conversation fades from teal to `#F2FFFF`, so the `text-white/80` this used to carry was
+ * legible at the top of a long chat and invisible at the bottom — which is exactly where a
+ * just-answered card lands. The Android twin (`ResultSummary` in `AiChatScreen.kt`) already
+ * drew it as chat ink `#003737` on a 72%-white pill with a Kale "Open"; that pair holds at
+ * both ends of the gradient (≈10:1 on the teal, ≈13:1 near white) and is what the web copies
+ * here. Nothing in this row may go back to white.
  */
 function ResultSummary({
   proposals,
@@ -4422,7 +4796,7 @@ function ResultSummary({
   const approved = proposals.filter((p) => p.status === "approved");
   if (approved.length === 0) {
     return (
-      <div className="inline-flex items-center gap-1.5 self-start text-[12.5px] text-white/55 bg-white/8 px-3 py-1.5 rounded-full">
+      <div className="inline-flex items-center gap-1.5 self-start text-[12.5px] text-[#003737]/60 bg-white/70 px-3 py-1.5 rounded-full">
         <Ic path={PATHS.x} size={12} /> Dismissed
       </div>
     );
@@ -4434,14 +4808,18 @@ function ResultSummary({
         return (
           <div
             key={p.id}
-            className="inline-flex items-center gap-2 self-start text-[12.5px] text-white/80 bg-white/10 px-3 py-1.5 rounded-full max-w-full"
+            className="inline-flex items-center gap-2 self-start text-[12.5px] text-[#003737] bg-white/70 px-3 py-1.5 rounded-full max-w-full"
           >
-            <Ic path={PATHS.check} size={12} className="shrink-0" />
+            <Ic
+              path={PATHS.check}
+              size={12}
+              className="shrink-0 text-[#0A8080]"
+            />
             <span className="truncate">{headline}</span>
             {p.createdRef && (
               <button
                 onClick={() => onOpen(p.createdRef!)}
-                className="shrink-0 inline-flex items-center gap-1 font-semibold text-white hover:underline"
+                className="shrink-0 inline-flex items-center gap-1 font-semibold text-[#0A8080] hover:underline"
               >
                 <Ic path={PATHS.switch_} size={12} /> Open
               </button>
@@ -5087,13 +5465,21 @@ function ProviderSheet({
 
 // ── End confirm dialog ─────────────────────────────────────────────────────
 
+/**
+ * Ending early is two different intentions, and conflating them was wrong: a
+ * user who disliked how the session went wants out, not a ceremony over it
+ * (owner, 2026-08-22). So the wrap-up is offered, and quitting outright is a
+ * peer of it rather than something hidden behind a cancel.
+ */
 function EndConfirmDialog({
   remainingLabel,
   onConfirm,
+  onQuit,
   onCancel,
 }: {
   remainingLabel: string;
   onConfirm: () => void;
+  onQuit: () => void;
   onCancel: () => void;
 }) {
   return (
@@ -5110,20 +5496,29 @@ function EndConfirmDialog({
           End the session early?
         </h3>
         <p className="text-[13.5px] text-[#003737]/60 leading-[1.5] mb-4">
-          {remainingLabel && `There's still ${remainingLabel} left. `}I'll do a
-          short close — gather what became clear and ask whether to keep it — so
-          nothing is lost.
+          {remainingLabel && `There's still ${remainingLabel} left. `}How would
+          you like to leave it?
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <button
             onClick={onConfirm}
-            className="flex-1 py-3 rounded-xl bg-[#005961] text-white text-[14px] font-semibold hover:bg-[#003737] transition-colors"
+            className="w-full py-3 rounded-xl bg-[#005961] text-white text-[14px] font-semibold hover:bg-[#003737] transition-colors"
           >
-            End &amp; wrap up
+            Close it properly
+          </button>
+          <p className="text-[12px] text-[#003737]/45 leading-[1.45] -mt-0.5 mb-1">
+            A short, honest close: what we did and didn&apos;t get to, and
+            whether to keep any of it.
+          </p>
+          <button
+            onClick={onQuit}
+            className="w-full py-3 rounded-xl border border-[#E5E5E5] text-[#003737] text-[14px] font-medium hover:border-[#005961]/40 transition-colors"
+          >
+            Just close, save nothing
           </button>
           <button
             onClick={onCancel}
-            className="flex-1 py-3 rounded-xl border border-[#E5E5E5] text-[#003737] text-[14px] font-medium hover:border-[#005961]/40 transition-colors"
+            className="w-full py-2.5 text-[13.5px] text-[#003737]/50 hover:text-[#003737] transition-colors"
           >
             Keep going
           </button>
@@ -5415,8 +5810,9 @@ function Composer({
   onDraftChange,
   leftAction,
   allowAttachments,
+  draftScope,
   attachResources,
-  onPreviewImage,
+  resolveAttachmentOpen,
 }: {
   onSend: (text: string, attachments?: ChatAttachment[]) => void;
   placeholder: string;
@@ -5432,6 +5828,14 @@ function Composer({
   /** Show the paperclip to attach files directly to the message (regular chat). */
   allowAttachments?: boolean;
   /**
+   * Where an unsent draft is kept so it survives a page reload — the chat's scope key, or
+   * undefined not to keep one at all.
+   *
+   * A GROW session passes undefined on purpose: the session is ephemeral by design, and half a
+   * sentence typed into a coaching session has no meaning once the session is over.
+   */
+  draftScope?: string;
+  /**
    * This goal's saved resources, offered as a second attach source (BUG-030). When present and
    * non-empty, the paperclip becomes a small menu — "Choose a file" / "From resources", the same
    * two rows Android's menu carries — instead of
@@ -5440,20 +5844,25 @@ function Composer({
   attachResources?: {
     id: string;
     label: string;
+    type: string;
     typeLabel: string;
     mime?: string;
   }[];
-  /** Preview an attached image before sending (opens in the panel-level modal). */
-  onPreviewImage?: (name: string, dataUrl: string) => void;
+  /**
+   * What a chip opens, decided by the panel (it holds the goal, and a resource chip is only
+   * an id). Returns null when there is nothing to open, and the chip then renders as plain
+   * text rather than as a button that does nothing. See `attachmentOpener`.
+   */
+  resolveAttachmentOpen?: (a: ChatAttachment) => (() => void) | null;
 }) {
   const [v, setV] = useState(initialValue ?? "");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachError, setAttachError] = useState("");
   // Which attach surface is open: the source menu, or the resource picker. Null = closed.
-  const [attachMenu, setAttachMenu] = useState<null | "sources" | "resources">(
-    null,
-  );
-  const [resourceQuery, setResourceQuery] = useState("");
+  const [attachMenu, setAttachMenu] = useState<null | "sources">(null);
+  // The picker is a sheet now, not a second page of the attach dropdown — Android's is,
+  // and the two surfaces draw the same card (CLAUDE.md, Design 3e).
+  const [resourceSheet, setResourceSheet] = useState(false);
   // Reads in flight (FileReader is async). Send waits for these to reach 0 so a
   // file picked just before hitting Enter isn't silently dropped.
   const [reading, setReading] = useState(0);
@@ -5462,6 +5871,12 @@ function Composer({
   const claimedRef = useRef(0);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Which stored blob each byte-carrying chip came from / went to, so re-saving on every
+  // keystroke doesn't rewrite several megabytes. Weak: an entry dies with its chip.
+  const blobKeysRef = useRef(new WeakMap<ChatAttachment, string>());
+  // The scope whose draft has been read back. Writing before the read lands would save an
+  // empty composer over the very draft being restored, so the save waits for this.
+  const restoredRef = useRef<string | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -5470,11 +5885,42 @@ function Composer({
     el.style.height = Math.min(el.scrollHeight, 128) + "px";
   }, [v]);
 
+  // Restore what was half-composed here before the page went away (BUG-049). Anything the
+  // user has already typed or attached in the meantime wins — this only ever fills a gap.
+  useEffect(() => {
+    if (!draftScope) return;
+    let cancelled = false;
+    restoredRef.current = null;
+    loadComposerDraft(draftScope).then(({ text, attachments: kept, keys }) => {
+      if (cancelled) return;
+      keys.forEach(([a, k]) => blobKeysRef.current.set(a, k));
+      if (text) setV((cur) => cur || text);
+      if (kept.length) {
+        setAttachments((cur) => (cur.length ? cur : kept));
+        claimedRef.current = Math.max(claimedRef.current, kept.length);
+      }
+      restoredRef.current = draftScope;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftScope]);
+
+  // Write it down as it is typed. Debounced: a draft is worth keeping, not worth a storage
+  // write per keystroke.
+  useEffect(() => {
+    if (!draftScope || restoredRef.current !== draftScope) return;
+    const t = setTimeout(() => {
+      void saveComposerDraft(draftScope, v, attachments, blobKeysRef.current);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [draftScope, v, attachments]);
+
   const resetAttachments = () => {
     setAttachments([]);
     setAttachError("");
     setAttachMenu(null);
-    setResourceQuery("");
+    setResourceSheet(false);
     setReading(0);
     claimedRef.current = 0;
   };
@@ -5545,13 +5991,10 @@ function Composer({
       { name: r.label, mime: r.mime ?? "", resourceId },
     ]);
     setAttachMenu(null);
-    setResourceQuery("");
+    setResourceSheet(false);
   };
 
   const hasResources = (attachResources?.length ?? 0) > 0;
-  const filteredResources = (attachResources ?? []).filter((r) =>
-    r.label.toLowerCase().includes(resourceQuery.trim().toLowerCase()),
-  );
   const attachDisabled =
     busy || attachments.length + reading >= ATTACH_MAX_COUNT;
 
@@ -5571,6 +6014,9 @@ function Composer({
     setV("");
     resetAttachments();
     onDraftChange?.("");
+    // The message has left; what was kept for a reload would otherwise come back as a
+    // duplicate of something already in the transcript.
+    if (draftScope) void clearComposerDraft(draftScope);
   };
 
   // Layout mirrors the Claude app composer: the textarea spans the full width
@@ -5586,8 +6032,10 @@ function Composer({
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pb-2">
             {attachments.map((a, i) => {
-              // Images preview on click (bytes are in hand before sending); the ✕ removes.
-              const canPreview = a.mime.startsWith("image/") && !!a.dataUrl;
+              // A chip opens whatever it is — a photo, a note, a contact — or nothing at
+              // all if there is nothing to show. Same rule as a sent message's chips, so an
+              // attachment behaves identically either side of Send. The ✕ removes.
+              const open = resolveAttachmentOpen?.(a) ?? null;
               const label = (
                 <>
                   <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
@@ -5599,14 +6047,12 @@ function Composer({
                   key={i}
                   className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#003737]/15 bg-[#003737]/[0.04] pl-2 pr-1 py-1 text-[12px] text-[#003737]"
                 >
-                  {canPreview ? (
+                  {open ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        a.dataUrl && onPreviewImage?.(a.name, a.dataUrl)
-                      }
-                      aria-label={`Preview ${a.name}`}
-                      className="inline-flex min-w-0 items-center gap-1.5 cursor-zoom-in"
+                      onClick={open}
+                      aria-label={`Open ${a.name}`}
+                      className="inline-flex min-w-0 items-center gap-1.5 cursor-pointer"
                     >
                       {label}
                     </button>
@@ -5679,15 +6125,22 @@ function Composer({
                   <Paperclip className="h-4 w-4" />
                 </button>
 
+                <ResourceAttachSheet
+                  open={resourceSheet}
+                  onOpenChange={setResourceSheet}
+                  resources={attachResources ?? []}
+                  attachedIds={attachments
+                    .map((x) => x.resourceId)
+                    .filter((x): x is number => typeof x === "number")}
+                  onPick={addResource}
+                />
+
                 {attachMenu !== null && (
                   <>
                     {/* click-away layer */}
                     <div
                       className="fixed inset-0 z-40"
-                      onClick={() => {
-                        setAttachMenu(null);
-                        setResourceQuery("");
-                      }}
+                      onClick={() => setAttachMenu(null)}
                     />
                     <div className="absolute bottom-10 left-0 z-50 w-64 rounded-md border border-border bg-white p-1 shadow-lg">
                       {attachMenu === "sources" ? (
@@ -5706,7 +6159,10 @@ function Composer({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setAttachMenu("resources")}
+                            onClick={() => {
+                              setAttachMenu(null);
+                              setResourceSheet(true);
+                            }}
                             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-[#0A8080]/10"
                           >
                             {/* **The Android row, word for word and glyph for glyph** (owner,
@@ -5721,48 +6177,7 @@ function Composer({
                             From resources
                           </button>
                         </>
-                      ) : (
-                        <div>
-                          <input
-                            autoFocus
-                            value={resourceQuery}
-                            onChange={(e) => setResourceQuery(e.target.value)}
-                            placeholder="Search resources…"
-                            className="mb-1 w-full rounded-sm border border-border bg-white px-2 py-1.5 text-sm outline-none focus:border-[#0A8080]"
-                          />
-                          <div className="max-h-56 overflow-y-auto">
-                            {filteredResources.length === 0 ? (
-                              <p className="px-2 py-2 text-xs text-muted-foreground">
-                                {hasResources
-                                  ? "No matching resources."
-                                  : "This goal has no resources yet."}
-                              </p>
-                            ) : (
-                              filteredResources.map((r) => {
-                                const already = attachments.some(
-                                  (a) => a.resourceId === Number(r.id),
-                                );
-                                return (
-                                  <button
-                                    key={r.id}
-                                    type="button"
-                                    disabled={already}
-                                    onClick={() => addResource(r)}
-                                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-[#0A8080]/10 disabled:opacity-40"
-                                  >
-                                    <span className="min-w-0 flex-1 truncate">
-                                      {r.label}
-                                    </span>
-                                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                                      {already ? "Added" : r.typeLabel}
-                                    </span>
-                                  </button>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      ) : null}
                     </div>
                   </>
                 )}

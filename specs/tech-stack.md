@@ -436,9 +436,17 @@ Design to the lowest common denominator: 128 000 tokens (OpenAI and Mistral limi
 
 ---
 
-## Coaching Knowledge Retrieval (RAG)
+## Coaching Knowledge Retrieval (RAG) — built, then retired
 
-The coaching source books (`grow/Coaching for Performance.docx` and `grow/Coach the Person.docx`) must be indexed and made retrievable at query time. Including the full text in every AI request would exceed the context window of OpenAI and Mistral and waste context on irrelevant material.
+> **Superseded 2026-08-22.** The coach's method is prompt text now
+> (`backend/src/main/resources/prompts/grow/coach-method.md`); nothing on the session path retrieves
+> anything, and the source books have been removed from the repository. Retrieval matched the *topic
+> of the user's message* rather than the *coaching situation*, and re-rolled the coach's doctrine
+> every turn, so it had no stable persona and no session arc — see the banner in
+> `docs/grow-sessions-rag-guide.md`. The pipeline below still exists, unused and tested, in case a
+> **curated** library (written or licensed for this purpose) is ever wanted.
+
+The original requirement: a coaching library must be indexed and made retrievable at query time. Including the full text in every AI request would exceed the context window of OpenAI and Mistral and waste context on irrelevant material.
 
 ### Storage: pgvector
 
@@ -614,20 +622,19 @@ The backend must control GROW session structure. The AI should not freely improv
 
 ### Source Material
 
-GROW coaching behavior must be derived from the source materials in:
+GROW coaching behavior must be derived from the professional coaching literature, not invented. The two coaching books they were distilled from are **not in this repository** (removed 2026-08-23: copyrighted third-party works). Keep personal copies outside the working tree.
 
-- `grow/Coaching for Performance.docx`
-- `grow/Coach the Person.docx`
+Agents must not rely only on a generic prompt such as "use GROW." The source material must be extracted, reviewed, and distilled **by hand, into original wording**, into coaching guidance the coach actually reads. Never paste passages from a source book into the repository, a prompt, or the product: ideas and methods are free to use, an author's sentences are not.
 
-Agents must not rely only on a generic prompt such as "use GROW." Before implementing production GROW sessions, the project should extract, review, and distill the source material into internal coaching guidance documents.
+The distillation is **prompt text, not a side document**, so it cannot drift away from what the coach is really told:
 
-Recommended derived documents:
+| File | Distilled from | Covers |
+|---|---|---|
+| `backend/src/main/resources/prompts/grow/coach-method.md` | *Coach the Person, Not the Problem* | Who the coach is, how it speaks, the arc of a session, what to do when the client can't name an outcome, the failure modes (annoyed / circling / defensive / silent / "just tell me what to do"), and the Never list |
 
-- `specs/coaching/grow-method.md`
-- `specs/coaching/coaching-principles.md`
-- `specs/coaching/session-rules.md`
+Loaded by `ai/prompt/PromptResources.java`; a missing or empty file fails startup. This replaced an earlier design in which the method was retrieved from the books by embedding similarity on every turn — see the banner in `docs/grow-sessions-rag-guide.md` for why that did not work.
 
-These documents should summarize the coaching method, session rules, question style, boundaries, and behaviors to avoid.
+Still to be distilled the same way (separate prompt sections, not yet written): the **GROW structure itself** from *Coaching for Performance* (Whitmore) — the four stages, what each is for, and the question style within each.
 
 ### Session Model
 

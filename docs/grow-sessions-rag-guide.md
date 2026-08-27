@@ -1,15 +1,55 @@
 # GROW Sessions: Book-Grounded AI Coaching with RAG (pgvector)
 
+> ## ⚠️ Superseded for the coaching method (2026-08-22)
+>
+> **The GROW coach no longer retrieves book excerpts per turn.** Its method is now
+> written out as prose in
+> **`backend/src/main/resources/prompts/grow/coach-method.md`**, distilled by
+> hand from *Coach the Person, Not the Problem*, and loaded by
+> `ai/prompt/PromptResources.java`.
+>
+> **Why it was retired.** Embedding search matches the **topic of the user's
+> message**, but the thing the coach needs help with is the **coaching
+> situation** — "the user is stuck", "the session is closing", "the user is
+> angry" — which is not a topic in that message. So the model was handed six
+> passages about, say, coaching ROI in organisations and told they were its only
+> method. Worse, the doctrine was re-rolled every turn, so the coach had no
+> stable persona and no session arc, and the prompt actively forbade it from
+> using stable competence ("never substitute … from outside the excerpts").
+> Sessions read as pleasant conversations that went nowhere.
+>
+> **It is not a saving on tokens.** The hand-written method is ~24 KB (~6.0k
+> tokens) against the ~2.2k tokens of excerpts it replaces, so the GROW system
+> prompt grew from roughly 3.0k to 6.8k tokens before goal context. What it buys
+> is that those tokens are *always the right ones*: the same method every turn,
+> covering the situations that actually break a session, instead of a fresh
+> lucky dip. Retrieval only earns its keep when the corpus is too big to inline;
+> once curated, this one is not.
+>
+> **What changed in the code:** no Mistral key is needed to start a session, the
+> SSE timeout is the ordinary 3 minutes, and there are no
+> "Preparing the coaching library…" `status` events. Sections 6, 10 and 11 below
+> have been rewritten; §7 (timing), §8 (memory) and §9 (proposals) are unchanged
+> and still accurate.
+>
+> **What is still true and still in the codebase:** everything in sections 1–5.
+> `BookIngestionRunner`, `BookChunker`, `MistralEmbeddingClient`,
+> `GrowLibraryService` and the pgvector `book_chunk` table are all still there,
+> still ingest both books at startup, and are still covered by their own tests.
+> Nothing in the chat path calls them any more. Keep them: if a
+> *situation-keyed* second tier is ever wanted, the machinery is ready.
+
 This document explains everything that was built for GROW coaching sessions in
 Spira: how the AI coach is grounded in real coaching books instead of a generic
 prompt, how session timing and session memory work, and which tests cover it.
 It is written for a beginner — if you read it top to bottom, you should be able
 to repeat the same setup in your own project.
 
-> **The one-sentence summary:** before every reply, the backend *searches two
-> coaching books for the passages most relevant to what the user just said*,
-> pastes those passages into the AI's instructions, and tells the model:
-> "coach strictly by this method." That technique is called **RAG**.
+> **The one-sentence summary of RAG:** search your documents for the passages
+> most relevant to what the user just said, paste those passages into the AI's
+> instructions, and tell the model to answer from them. Spira still builds the
+> whole pipeline (sections 1–5); it just no longer uses it to decide *how the
+> coach coaches* — see the banner above.
 
 ---
 
@@ -17,10 +57,10 @@ to repeat the same setup in your own project.
 
 1. [What is RAG and why we need it](#1-what-is-rag-and-why-we-need-it)
 2. [What is an embedding](#2-what-is-an-embedding)
-3. [Why a Mistral key is required (and why Claude can't do this part)](#3-why-a-mistral-key-is-required)
+3. [Why the retrieval pipeline is pinned to Mistral](#3-why-a-mistral-key-is-required)
 4. [pgvector: turning a regular Postgres into an "AI database"](#4-pgvector-turning-a-regular-postgres-into-an-ai-database)
 5. [The pipeline, step by step](#5-the-pipeline-step-by-step)
-6. [How the AI actually uses the books](#6-how-the-ai-actually-uses-the-books)
+6. [How the AI actually gets its coaching method](#6-how-the-ai-actually-gets-its-coaching-method)
 7. [Session timing: the coach knows the clock](#7-session-timing-the-coach-knows-the-clock)
 8. [Session memory: continuing where you left off](#8-session-memory-continuing-where-you-left-off)
 9. [Proposals during sessions (and surviving page reloads)](#9-proposals-during-sessions)
@@ -104,12 +144,13 @@ multilingual embedding model:
 | Mistral | ✅ | ✅ `mistral-embed`, 1024 dimensions, multilingual |
 | Google Gemini | ✅ | ✅ (not used for GROW — the library is pinned to Mistral) |
 
-So the rule is:
+So the rule was:
 
-- **A Mistral API key is mandatory for GROW sessions.** It powers the book
-  search (embedding the books once + embedding each user message at query
-  time). Without it, a GROW session refuses to start with a clear error —
-  there is deliberately no fallback to the generic prompt.
+- ~~**A Mistral API key is mandatory for GROW sessions.**~~ **No longer true** —
+  see the banner at the top. A key is needed only if you actually run a
+  retrieval query; nothing in the chat path does any more, so a GROW session
+  starts on the user's chat key alone. The rest of this section still explains
+  why *the retrieval pipeline* is pinned to Mistral.
 - **The chat provider stays the user's choice.** Claude can be the coach while
   Mistral only does the searching. The two keys never interact; the embedding
   client receives the decrypted Mistral key per call, exactly like the
@@ -243,6 +284,13 @@ available** to compute them. Which brings us to…
 
 ### 5.4 Lazy embedding on first use (`GrowLibraryService.ensureEmbedded`)
 
+> **Nothing triggers this today.** `ensureEmbedded` was called by the GROW chat
+> path, which no longer retrieves (see the banner). The method still works and
+> is still tested; it just has no caller, so the 10-minute timeout and the
+> `status` progress events described below are not reachable from the app. The
+> design is documented because it is the part worth copying if you build RAG
+> yourself.
+
 The first time any user starts a GROW session, the backend notices unembedded
 chunks and embeds them all using **that user's Mistral key**, in batches of 16
 (`MistralEmbeddingClient` → `POST https://api.mistral.ai/v1/embeddings` with
@@ -274,34 +322,120 @@ For each GROW message:
 5. Format them as a block headed `COACHING LIBRARY — the ONLY source for your
    coaching method…`, each excerpt labelled with its book title.
 
-## 6. How the AI actually uses the books
+## 6. How the AI actually gets its coaching method
 
-The final system prompt for a GROW turn is assembled from four parts:
+*(Rewritten 2026-08-22 — this section used to describe per-turn retrieval.)*
+
+The system prompt for a GROW turn is assembled in `AiChatService`, in this order:
 
 ```
-GROW_PROMPT            ← coaching rules (rewritten — see below)
+GROW_ROLE              ← who is speaking, and where instruction ends and data
+                         begins (a Java text block)
++ coach-method.md      ← the whole coaching method, loaded by PromptResources
++ GROW_PLUMBING        ← propose_goal_change, no execution work, untrusted
+                         tool content, language, professional boundaries
+─────────────────────── everything below here is DATA, not instruction ───────
++ goal context         ← the goal's data: targets, options, obstacles…
 + SESSION TIMING block ← how much time remains (section 7)
 + PREVIOUS GROW SESSIONS block ← saved memory, if any (section 8)
-+ goal context         ← the goal's data: targets, options, obstacles…
-+ COACHING LIBRARY     ← the 6 retrieved excerpts for THIS turn
 ```
 
-The rewritten `GROW_PROMPT` mandates, in essence:
+The method comes **before** the plumbing on purpose: it is the longest and most
+important part, and what the coach *is* must not be prefaced by what it may do
+to a database row.
 
-- every coaching move (which question to ask, how to frame it, when to
-  reflect or summarise) must be **grounded in and consistent with the supplied
-  excerpts**;
-- never substitute generic coaching advice from outside the excerpts; if they
-  don't cover the moment, stay with their questioning *style*;
-- don't quote or mention the books to the user — *embody* the method;
-- capturing the user's own commitments via the `propose_goal_change` tool is
-  **part of the method** (GROW's "Will" stage — commitments get written
-  down), not outside advice. This last clause exists because the strict
-  "library only" rule initially made the model too shy to call the tool.
+`GROW_ROLE` also draws the **instruction/data boundary**, and that is a security
+control, not tidiness. The goal context carries resource *titles*, and an `email`
+resource's title is a subject line — text that arrived from outside the user. It
+sits in the same system prompt as the coach's instructions, so the prompt has to
+say out loud where its own orders stop. The `<<UNTRUSTED_CONTENT>>` fencing in
+`GROW_PLUMBING` covers only text returned by *tools*; this covers the goal block.
+`AiChatServiceGrowTest.growPromptTreatsGoalContextAsData` is the guard.
 
-So the model isn't "trained on" the books and doesn't read them whole — every
-turn it receives a fresh, message-relevant slice of them and is instructed to
-coach by that slice.
+`prompts/grow/coach-method.md` is hand-distilled from *Coach the Person, Not the
+Problem* and covers, in order: **who you are** (curiosity and care; warm and
+challenging; keep yourself out of it) · **how you speak** (a turn is a
+reflection plus at most one question; the recap / paraphrase / label /
+bottom-line / distinction toolkit; noticing emotional shifts without
+interpreting them) · **what you aim at** (the person, not the problem; story →
+context → frame) · **what the session may be about** · **the arc of the session** (contract an outcome, hold the
+thread, keep it moving, convert an insight into a commitment, close) · **a
+five-rung ladder for a client who cannot name an outcome** (the rule being:
+never repeat a question they did not answer) · **a table of failure modes**
+(annoyed, circling, defensive, silent, "just tell me what to do") · **a Never
+list**.
+
+Three rules in the arc are about the clock, and they exist because a timed
+session fails in two opposite ways:
+
+- **The length is named once, in the opening turn, and never again.** That is
+  Whitmore's contracting question verbatim ("We have half an hour — where would
+  you like to have got to by then?"). It puts the pacing in the client's hands,
+  which works far better than a coach hurrying them along. Mid-session the coach
+  changes *what it asks*, never *what it says about time* — which is the rule
+  `docs/ai-configuration.md` already asked for.
+- **Reaching a commitment is the coach's job, not the clock's.** A session that
+  drifts pleasantly until the timer kills it is the most common way coaching
+  comes to nothing. Ending without a commitment stays legitimate — but only when
+  the client genuinely is not ready, never as the residue of drifting. The two
+  look identical from outside and are opposites.
+- **A finished session gets closed, even with time left.** Once outcome, block
+  and commitment all exist, the coach closes rather than padding the remaining
+  minutes or fishing for another topic. The only end-of-session question is
+  Reynolds' closing one, "Are we complete?", never "what else shall we discuss?"
+
+Two more rules govern what happens at the end, and both are owner decisions
+(2026-08-22) that **contradict the older spec** in `docs/ai-configuration.md`
+("during the session, the AI periodically and contextually notices when
+something discussed should update the goal"). That is superseded:
+
+- **Nothing is proposed while the session runs.** Not one card. An offer to
+  record something pulls the client out of their own thinking, and it lands at
+  exactly the moments that matter most — because those are the moments worth
+  recording. The gate is the client's own "yes" to *"Are we complete?"*.
+- **After the close, two steps in order.** First the record of the session — the
+  client summarises in their own words *first*, then the coach writes it as one
+  sentence held to Whitmore's full quality bar (SMART + PURE + CLEAR: specific,
+  measurable, time-framed, realistic *and* challenging, **positively stated**,
+  agreed, understood, relevant, appropriate, ethical), plus the blocks named and
+  classified — belief, assumption, bias, fear, values conflict, unmet need,
+  inherited "should" — for the coach's own use, never in words shown to the user.
+  Then, and only then, what belongs in the goal, subject to a relevance test:
+  *would someone reading this goal, who was not in the session, understand why
+  this line is here?* Breathing exercises are a real conclusion of a job-search
+  session and still not a job-search strategy. If nothing fits, propose a note;
+  proposing nothing is also a valid answer.
+
+> **Known gaps — both need app work, not prompt work:**
+>
+> 1. **The coach cannot end the session.** It can *say* the closing, but
+>    `AiPanel.tsx` reaches `grow-end` only on the timer or the **End** button, so
+>    after an early close the UI sits open.
+> 2. **The proposal timing is advisory only.** The frontend renders a `proposal`
+>    event whenever it arrives, so "propose nothing until the end" is a request to
+>    the model, not a guarantee, and the ordering (confirm → record → memory
+>    saved or discarded → *then* cards) does not exist yet: the memory card comes
+>    from the timer wrap-up and proposals are independent of it. Enforcing this
+>    means gating proposal events on session state.
+
+One rule in there is a product decision rather than a distillation, and is easy
+to undo by accident: **a session sits inside a goal but does not have to be about
+it.** The coach may ask what prompted an apparently unrelated topic *once*, after
+the story and never as a precondition, and then coaches it either way. There is
+no relevance gate and no "this belongs in a different goal" nudge — the user
+already decides what is kept, on the memory card at the end of the session
+(§8), so an off-goal session costs nothing. Over-policing costs a lot: the
+moment a client feels steered, they resist or check out.
+
+Two clauses in `GROW_PLUMBING` are load-bearing and must survive any rewrite:
+
+- capturing the user's own commitments via `propose_goal_change` is **part of
+  the coaching**, not a departure from it. The clause exists because the old
+  "library only" rule made the model too shy to call the tool; the same shyness
+  risk exists under a method that says "coach, don't do things for them".
+- "Respond in the language the user writes in" — the frontend's timed wrap-up
+  instruction (`AiPanel.tsx`) is written in English and relies on this to close
+  a Russian session in Russian.
 
 ## 7. Session timing: the coach knows the clock
 
@@ -369,21 +503,22 @@ were part of this work:
 
 ## 10. Hard guarantees
 
-The product requirement was *"the coach must never speak from the simplified
-generic prompt."* The code enforces it structurally — there is no code path
-that reaches the LLM in GROW mode without book excerpts:
+The product requirement is *"the coach must never speak from a simplified
+generic prompt."* That is still enforced structurally, just at a different
+point: the method is a file, and **a missing or empty file fails startup**
+rather than degrading into a coachless coach.
 
 | Situation | Behaviour |
 |---|---|
-| No Mistral key saved | Immediate SSE `error`: "GROW sessions need a Mistral API key…" — checked **before** any LLM/library work |
-| Library table empty (no book files ingested) | Error: session refuses |
-| Search returns zero passages | Error: session refuses |
-| Embedding API fails (bad key, 4xx/5xx) | Error propagates; the LLM is never called |
-| Regular chat (`sessionType: "chat"`) | Completely untouched — no Mistral requirement, no retrieval |
+| `prompts/grow/coach-method.md` missing | `PromptResources` throws in its constructor → the application does not start |
+| The file is present but blank | Same: `IllegalStateException`, no boot |
+| No Mistral key saved | A GROW session runs normally — the method does not depend on embeddings any more |
+| Library table empty / embeddings missing | Irrelevant to a session; `GrowLibraryService` still throws if anything ever calls it |
+| Regular chat (`sessionType: "chat"`) | Untouched — never sees the coaching method or the session memory |
 
-(The "no Mistral key" case is sent as an SSE error rather than HTTP 422 on
-purpose: the frontend maps any 422 to "no key for the chat provider" and would
-open the wrong key dialog.)
+Failing to boot is the right trade here: a silently method-less coach would
+look like it was working and would waste the user's session, whereas a boot
+failure is caught by whoever deployed it.
 
 ## 11. Tests that were written
 
@@ -395,7 +530,8 @@ network):
 | `BookChunkerTest` (6 tests) | Empty input → no chunks; short paragraphs (TOC noise) dropped; paragraphs packed up to the target size; the overlap really repeats a chunk's tail at the next chunk's start; over-long paragraphs split on sentence boundaries; no paragraph text is lost |
 | `GrowLibraryServiceTest` (10 tests) | `ensureEmbedded` is a no-op when everything is embedded; loops batch-by-batch with progress callbacks; an embedding failure propagates (session must refuse); retrieval **throws** on an empty library and on zero hits; adjacent chunks merge; the opening message's query is enriched with goal title/description; mid-session queries use the message as-is |
 | `GoalMemoryServiceTest` (8 tests) | First save creates a dated entry; later saves append after earlier ones; the 6k cap trims the **oldest** content, never the newest; an oversized single entry is truncated; blank summaries rejected; writing to a foreign goal → 404, no write; `memoryBlock` wraps stored memory in the continuation instruction; empty for no goal / no memory / foreign goal |
-| `AiChatServiceGrowTest` (6 tests) | GROW without a Mistral key refuses **before** any LLM or library call; a retrieval failure means the LLM is never called; a successful turn's system prompt actually contains the retrieved excerpts; session timing reaches the prompt (and expired time demands a closing reply); saved memory reaches the prompt; regular chat never touches the library, the Mistral key, or the 10-minute timeout |
+| `AiChatServiceGrowTest` (5 tests) | A GROW session runs on the chat key alone and the Mistral key is **never** requested; the coaching method reaches the prompt and precedes the plumbing; session timing reaches the prompt (and expired time demands a closing reply); saved memory reaches the prompt; regular chat picks up neither the method nor the memory. Uses the **real** `PromptResources`, not a mock — otherwise it would only prove that a mock returns what it was told to |
+| `PromptResourcesTest` (3 tests) | The method file loads from the classpath and is not a truncated stub; it still covers persona, session arc, the can't-name-an-outcome ladder, the failure table and the Never list; the two rules the owner asked for by name ("never repeat a question they did not answer", "warm and challenging") are actually in the shipped file |
 
 The async-streaming tests use Mockito's `verify(…, timeout(2000))` (wait for
 the background thread) and `after(300).never()` (prove a call *never* happens).

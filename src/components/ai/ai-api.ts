@@ -102,6 +102,9 @@ export type StreamChatParams = {
   /** Progress lines (e.g. one-time coaching-library indexing in GROW).
    *  Ephemeral UI only — never part of the transcript or history. */
   onStatus?: (msg: string) => void;
+  /** The coach has ended a GROW session, passing its record for the memory
+   *  card. The clock never ends a session — only this does (or the user). */
+  onSessionEnd?: (argsJson: string) => void;
   onDone: () => void;
   onError: (msg: string) => void;
 };
@@ -119,6 +122,7 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
     onToken,
     onProposal,
     onStatus,
+    onSessionEnd,
     onDone,
     onError,
   } = params;
@@ -189,6 +193,9 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         return false;
       case "status":
         onStatus?.(data.trim());
+        return false;
+      case "session_end":
+        onSessionEnd?.(data.trim());
         return false;
       case "done":
         onDone();

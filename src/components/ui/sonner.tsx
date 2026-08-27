@@ -4,12 +4,6 @@ import { NOTICE_KINDS, NoticeGlyph } from "@/components/spira/Notice";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
-/** `--normal-bg` / `--normal-border` / `--normal-text` for one kind, as Tailwind arbitrary props. */
-function kindVars(kind: keyof typeof NOTICE_KINDS) {
-  const { ink, fill } = NOTICE_KINDS[kind];
-  return `[--normal-bg:${fill}] [--normal-border:${ink}] [--normal-text:#222525]`;
-}
-
 /**
  * Spira's toast — the same card as every other message in the app.
  *
@@ -31,10 +25,15 @@ function kindVars(kind: keyof typeof NOTICE_KINDS) {
  * which is exactly the "two shapes for one message" split the card exists to end.
  *
  * So the per-kind classes declare **`--normal-bg` / `--normal-border` / `--normal-text` on the toast
- * element itself**. A custom property declared on an element beats one inherited from an ancestor
- * (sonner sets these on the container) with no layer contest at all, and sonner's own unlayered
- * rule then reads the value we put there. Everything sonner hard-codes rather than reading from a
- * variable — the shadow, and every one of the close button's properties — needs `!`.
+ * element itself**, and each one carries `!`. Declaring them on the element is not enough on its
+ * own: sonner declares the same properties on that same element, so it is a same-element contest
+ * and the unlayered rule wins — which is what happened, silently, until it was measured. Only
+ * `!important` beats it. Everything else sonner hard-codes rather than reading from a variable —
+ * the shadow, and every one of the close button's properties — needs `!` for the same reason.
+ *
+ * **Check this with `getComputedStyle`, never with a screenshot.** A white-on-nearly-white tint is
+ * indistinguishable by eye from the plain white default, and the hairline is one pixel; the way
+ * this was finally caught was reading `--normal-bg` off the live element.
  */
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
@@ -57,10 +56,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
             // sonner hard-codes its shadow, so this one has to be important to land.
             "shadow-[0_4px_12px_rgba(28,28,28,0.08),0_2px_8px_rgba(28,28,28,0.04)]!",
           ].join(" "),
-          success: kindVars("success"),
-          error: kindVars("error"),
-          warning: kindVars("warning"),
-          info: kindVars("info"),
           // The glyph sits on the first line of the text, not centred against a two-line message.
           icon: "mt-px shrink-0",
           title: "text-[14px] font-medium leading-[1.5]",

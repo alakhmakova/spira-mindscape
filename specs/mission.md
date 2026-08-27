@@ -69,10 +69,9 @@ It is a goal-support system with two clearly separated modes.
 
 There is no mode toggle inside the AI chat panel. The two modes are separated by UI surface, not by a setting.
 
-The coaching behavior in GROW sessions is grounded in the source books:
-
-- `grow/Coaching for Performance.docx`
-- `grow/Coach the Person.docx`
+The coaching behavior in GROW sessions is grounded in
+`backend/src/main/resources/prompts/grow/coach-method.md`, hand-distilled from the
+professional coaching literature. The two coaching books they were distilled from are **not in this repository** (removed 2026-08-23: copyrighted third-party works). Keep personal copies outside the working tree.
 
 In a GROW session, the AI behaves like a real coach — asking one good question at a time, following the user's thinking rather than a predetermined agenda. The GROW framework may naturally emerge from the conversation, but the AI never announces phases or leads the user through a checklist.
 

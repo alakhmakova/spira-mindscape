@@ -29,14 +29,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Backend base URL. Defaults to production (Cloud Run) so the app works on a real
-        // device on any network. To test against a LOCAL backend, override here:
+        // device on any network, and is overridable from the command line so testing against a
+        // local backend needs no edit to a committed file:
+        //
+        //   ./gradlew.bat :app:installDebug -PspiraApiBaseUrl=http://10.0.2.2:8080
+        //
         //   • Emulator:   http://10.0.2.2:8080  (10.0.2.2 = the host machine from the emulator)
         //   • Real phone: http://<your-PC-LAN-IP>:8080  (same Wi-Fi) or an ngrok HTTPS URL
-        buildConfigField(
-            "String",
-            "API_BASE_URL",
-            "\"https://spira-952567559986.europe-west1.run.app\"",
-        )
+        //
+        // It used to be a hardcoded literal, so reproducing anything against a local backend
+        // meant editing this file and remembering to put it back — and an agent that forgot
+        // would ship a debug APK pointing at localhost (2026-08-24).
+        val apiBaseUrl = (project.findProperty("spiraApiBaseUrl") as String?)
+            ?: "https://spira-952567559986.europe-west1.run.app"
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
         // The project's WEB OAuth client ID (from google-services.json). The app requests a
         // Google ID token whose audience is this ID, and the backend verifies against it (see
@@ -194,6 +200,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
+    // createSavedStateHandle(): the composer's pending attachments have to survive the process
+    // being killed, which the camera routinely causes (BUG-042).
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.navigation:navigation-compose:2.8.0")

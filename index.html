@@ -2,7 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!--
+      `interactive-widget=resizes-content` is the web's `imePadding()`: without it the on-screen
+      keyboard is drawn OVER the page and the layout viewport does not change, so a sheet pinned
+      to the bottom — the AI panel on a phone, every form drawer — keeps its full height and the
+      field you just tapped ends up behind the keys (owner, 2026-08-24, on the proposal card's
+      Edit box). With it the viewport shrinks, `dvh` follows, and a bottom-anchored sheet sits
+      above the keyboard the way it does on Android.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#fbf9f4" />
     <title>Spira - Structured thinking, planning, execution</title>
     <meta

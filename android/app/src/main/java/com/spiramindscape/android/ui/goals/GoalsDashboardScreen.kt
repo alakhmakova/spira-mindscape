@@ -109,6 +109,7 @@ fun GoalsRoute(
     user: AuthUser,
     onGoalClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val viewModel: GoalsViewModel = viewModel(factory = GoalsViewModel.Factory)
@@ -166,7 +167,11 @@ fun GoalsRoute(
     }
 
     // The all-goals assistant: it can see every goal and start a new one.
-    var assistantOpen by remember { mutableStateOf(false) }
+    // rememberSaveable, NOT remember: MainActivity declares no configChanges, and a camera app
+    // — which routinely opens in landscape — gets this activity recreated the moment it starts.
+    // With a plain remember the assistant panel closed itself in that instant, which reads as
+    // the app having restarted on its own (owner, 2026-08-23).
+    var assistantOpen by rememberSaveable { mutableStateOf(false) }
 
     WithAiAssistant(
         goalId = null,
@@ -234,6 +239,7 @@ fun GoalsRoute(
             onRetry = viewModel::load,
             onLogout = onLogout,
             onOpenSettings = onOpenSettings,
+            onOpenAbout = onOpenAbout,
             onOpenAssistant = { assistantOpen = true },
             actionError = actionError,
             onDismissActionError = viewModel::clearActionError,
@@ -327,6 +333,7 @@ fun GoalsDashboardScreen(
     onLogout: () -> Unit = {},
     /** The header's figure: the account's own page, not the navigation drawer. */
     onOpenSettings: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
     /** This list's padlock — see the note in `ViewPreferences.kt`. */
     locked: Boolean = false,
@@ -347,6 +354,7 @@ fun GoalsDashboardScreen(
                 SpiraDrawer(
                     user = user,
                     onLogout = onLogout,
+                    onAbout = { scope.launch { drawerState.close() }; onOpenAbout() },
                     onClose = { scope.launch { drawerState.close() } },
                 )
             },
@@ -563,6 +571,9 @@ fun SpiraDrawer(
     currentPlace: Int = -1,
     onHome: () -> Unit = {},
     onGoalPlace: (Int) -> Unit = {},
+    /** Opens About Spira. Both of its rows lead to the same page — see the note at the
+     *  call site below. */
+    onAbout: () -> Unit = {},
     onClose: () -> Unit = {},
 ) {
     ModalDrawerSheet(
@@ -629,7 +640,15 @@ fun SpiraDrawer(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            DrawerSection("About Spira", listOf("How to use", "What is GROW"), SpiraIcons.CircleQuestion)
+            // Both rows open the same page: "How to use" and "What is GROW" are two of its
+            // sections, not two destinations. They were dead rows until 2026-08-23 — the call
+            // passed no `onItem`, so tapping either did nothing at all.
+            DrawerSection(
+                title = "About Spira",
+                items = listOf("How to use", "What is GROW"),
+                icon = SpiraIcons.CircleQuestion,
+                onItem = { onAbout() },
+            )
             // "Knowledge", not "Resources": these are links and reading worth coming back to,
             // while the footer's Resources are the material attached to one goal. Two places with
             // the same name and the same mark had the user expecting one to be the other.

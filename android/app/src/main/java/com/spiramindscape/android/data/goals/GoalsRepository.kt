@@ -48,7 +48,17 @@ data class GoalSummary(
 )
 
 /** Raised when a goal query/mutation fails (network or GraphQL error). */
-class GoalsException(message: String) : Exception(message)
+/**
+ * Something went wrong talking to the backend.
+ *
+ * [fromServer] tells the two kinds apart, and the distinction decides what the user is shown.
+ * A **transport** failure (no network, a timeout) carries a message written for a developer, and
+ * the UI replaces it with its own line. A **server** failure carries a sentence the backend wrote
+ * *for the user* — "You have 50 goals in motion… Achieve or delete one to make room" — and
+ * replacing that with "please try again" is worse than useless: retrying can never work, so the
+ * button reads as broken (owner, 2026-08-25).
+ */
+class GoalsException(message: String, val fromServer: Boolean = false) : Exception(message)
 
 /** Loads goals and applies target updates. An interface so view models can use fakes in tests. */
 interface GoalsRepository {
@@ -388,9 +398,14 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
 /** Execute an Apollo call, turning network/GraphQL errors into a [GoalsException]. */
 private suspend fun <D : Operation.Data> ApolloCall<D>.executeOrThrow(): ApolloResponse<D> {
     val response = execute()
+    // Transport: the message is Apollo's, written for a developer.
     response.exception?.let { throw GoalsException(it.message ?: "Network error") }
     if (response.hasErrors()) {
-        throw GoalsException(response.errors?.firstOrNull()?.message ?: "GraphQL error")
+        // The server's own sentence, meant for the user — see [GoalsException.fromServer].
+        throw GoalsException(
+            response.errors?.firstOrNull()?.message ?: "GraphQL error",
+            fromServer = true,
+        )
     }
     return response
 }

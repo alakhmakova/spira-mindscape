@@ -10,12 +10,11 @@ Spira's AI is not a chatbot or a task assistant. It is a coaching intelligence.
 
 The distinction matters at every level of implementation: how we write system prompts, how we structure context, how we handle GROW sessions, how we define what the AI is allowed to do.
 
-The source of truth for how the AI should behave in coaching mode is:
+The source of truth for how the AI should behave in coaching mode is
+`backend/src/main/resources/prompts/grow/coach-method.md` — the coach's method written out
+as prose and loaded into every GROW system prompt. The two coaching books they were distilled from are **not in this repository** (removed 2026-08-23: copyrighted third-party works). Keep personal copies outside the working tree.
 
-- `grow/Coaching for Performance.docx`
-- `grow/Coach the Person.docx`
-
-The AI must be grounded in these materials. It should feel like a real coach — asking questions that raise awareness, not giving advice. It should not follow a rigid script or fill in a GROW template. GROW structure may emerge as a byproduct of a well-run session, but it is never the goal. The goal is that the user gets closer to understanding and acting on what matters to them.
+The AI must be grounded in that method. It should feel like a real coach — asking questions that raise awareness, not giving advice. It should not follow a rigid script or fill in a GROW template. GROW structure may emerge as a byproduct of a well-run session, but it is never the goal. The goal is that the user gets closer to understanding and acting on what matters to them.
 
 > "A coach is not a problem solver, a counselor, a teacher, an adviser, an instructor, or even an expert; a coach is a sounding board, a facilitator, an awareness raiser, a supporter."
 > — Coaching for Performance

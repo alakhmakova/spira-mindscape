@@ -61,6 +61,18 @@ object AiApi {
         val mime: String,
         val dataUrl: String = "",
         val resourceId: Long? = null,
+        /**
+         * Absolute path of the app-private cache file holding [dataUrl]'s bytes, for a chip that
+         * carries its own file (a photo, a picked document). Null for a resource chip, which has
+         * no bytes here at all.
+         *
+         * It exists so an unsent attachment can survive the **process being killed**, which a
+         * camera app routinely causes. The bytes themselves are far too big for the Bundle that
+         * saved state travels in; a path is nothing, and the file is ours to read back
+         * (BUG-050 follow-up, 2026-08-24). `ChatAttachments.readAttachment` writes it,
+         * `AiChatViewModel` persists and re-reads it, and whoever drops the chip deletes it.
+         */
+        val cachePath: String? = null,
     )
 
     /** What the stream emits. The flow completes after [Done] or [Error]. */
@@ -73,6 +85,17 @@ object AiApi {
 
         /** Progress the user should see but which never joins the transcript. */
         data class Status(val message: String) : ChatEvent
+
+        /**
+         * The coach has ended a GROW session, passing the session record as this event's
+         * `summary`. **The clock never ends a session — only this does, or the user.**
+         *
+         * Android used to drop this on the floor: there was no such event, so the whole
+         * coach-owned ending (record → proposals → goodbye → exit) was invisible here and the
+         * session was instead cut off by the timer (owner, 2026-08-24). The web has handled it
+         * since the ending was designed.
+         */
+        data class SessionEnd(val argsJson: String) : ChatEvent
 
         data object Done : ChatEvent
 
@@ -192,6 +215,7 @@ object AiApi {
                         "token" -> { trySend(ChatEvent.Token(decodeToken(data))); false }
                         "proposal" -> { trySend(ChatEvent.Proposal(data.trim())); false }
                         "status" -> { trySend(ChatEvent.Status(data.trim())); false }
+                        "session_end" -> { trySend(ChatEvent.SessionEnd(data.trim())); false }
                         "done" -> { trySend(ChatEvent.Done); true }
                         "error" -> {
                             trySend(ChatEvent.Error(data.trim().ifEmpty { "AI service error" }))

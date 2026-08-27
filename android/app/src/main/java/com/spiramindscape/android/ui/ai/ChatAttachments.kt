@@ -10,6 +10,7 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,6 +132,10 @@ fun rememberChatAttachmentPicker(
         }
     }
 
+    // Collect anything a killed process left parked. Cheap, and this is the only place with
+    // both a Context and a reason to care.
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { pruneComposerCache(context) } }
+
     return ChatAttachActions(
         pickFile = { fileLauncher.launch(ATTACHABLE_MIMES) },
         takePhoto = {
@@ -141,6 +146,12 @@ fun rememberChatAttachmentPicker(
         },
     )
 }
+
+/** Where a picked chip's bytes are parked so they can outlive the process. */
+private const val COMPOSER_CACHE_DIR = "composer"
+
+/** How long a parked chip is kept before the sweep collects it. */
+private const val COMPOSER_CACHE_TTL_MS = 24L * 60 * 60 * 1000
 
 /** A fresh file in the cache for the camera to fill, exposed through the app's FileProvider. */
 private fun cameraDestination(context: Context): Uri? = runCatching {
@@ -159,13 +170,59 @@ internal fun readAttachment(context: Context, uri: Uri): AiApi.ChatAttachment? =
         val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
         if (bytes.size > IMAGE_MAX_INPUT_BYTES) return null
         val jpeg = downscaleToJpeg(bytes) ?: return null
-        AiApi.ChatAttachment(name, "image/jpeg", "data:image/jpeg;base64,${base64(jpeg)}")
+        chipFor(context, name, "image/jpeg", jpeg)
     } else {
         val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
         if (bytes.size > ATTACH_MAX_BYTES) return null
-        AiApi.ChatAttachment(name, mime, "data:$mime;base64,${base64(bytes)}")
+        chipFor(context, name, mime, bytes)
     }
 }.getOrNull()
+
+/**
+ * A chip carrying [bytes] as a data URL **and** a path to a private copy of them.
+ *
+ * The copy is what lets an unsent photo survive the process being killed. Saved state travels to
+ * the system in a Bundle, so a multi-megabyte data URL cannot go in it — a path can, and the file
+ * is read back on restore. Whoever drops the chip deletes the file ([AiChatViewModel]); anything
+ * missed is swept by [pruneComposerCache].
+ *
+ * If the copy can't be written the chip is still returned, just unsaveable — losing an attachment
+ * on a process kill is the old behaviour, and it beats losing the pick outright.
+ */
+private fun chipFor(
+    context: Context,
+    name: String,
+    mime: String,
+    bytes: ByteArray,
+): AiApi.ChatAttachment {
+    val parked = runCatching {
+        val dir = File(context.cacheDir, COMPOSER_CACHE_DIR).apply { mkdirs() }
+        File(dir, "chip-${System.nanoTime()}.bin").also { it.writeBytes(bytes) }
+    }.onFailure { SpiraLog.w(TAG, "composer_chip_spill_failed", it) }.getOrNull()
+
+    return AiApi.ChatAttachment(
+        name = name,
+        mime = mime,
+        dataUrl = "data:$mime;base64,${base64(bytes)}",
+        cachePath = parked?.absolutePath,
+    )
+}
+
+/**
+ * Delete parked chip files older than [COMPOSER_CACHE_TTL_MS].
+ *
+ * Chips are normally deleted when they are removed or sent, but a process killed between the two
+ * leaves its file behind, and nothing else would ever collect it. A day is well past any composing
+ * session and comfortably past the restore this exists for.
+ */
+internal fun pruneComposerCache(context: Context) {
+    val dir = File(context.cacheDir, COMPOSER_CACHE_DIR)
+    if (!dir.isDirectory) return
+    val cutoff = System.currentTimeMillis() - COMPOSER_CACHE_TTL_MS
+    runCatching {
+        dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
+    }.onFailure { SpiraLog.w(TAG, "composer_cache_prune_failed", it) }
+}
 
 private fun base64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
 

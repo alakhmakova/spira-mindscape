@@ -102,7 +102,9 @@ class AiChatGrowSeparationTest {
         )
 
         // Ending the session drops its messages; the chat is exactly what it was.
-        vm.finishGrow()
+        // (`finishGrow` was renamed `leaveGrow` when the coach-owned ending landed: it is step 4
+        // of a sequence now, not the whole of ending a session.)
+        vm.leaveGrow()
         runCurrent()
         assertFalse(
             "GROW messages must not survive into the chat",

@@ -58,3 +58,9 @@ google-services.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Coaching source books — copyrighted third-party works.
+# They were removed from the repo (and must be purged from history); keep local
+# copies OUTSIDE the working tree. Nothing in the app reads them any more.
+/grow/
+/backend/src/main/resources/books/*.txt

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap");
 
 @import "tailwindcss" source(none);
 @source "../src";
@@ -21,7 +21,8 @@
 @font-face {
   font-family: "GCentra";
   src:
-    local("G Centra"), local("GCentra-Book"),
+    local("G Centra"),
+    local("GCentra-Book"),
     url("/fonts/GCentra-Regular.woff2") format("woff2"),
     url("/fonts/GCentra-Regular.otf") format("opentype"),
     url("/fonts/GCentra-Regular.ttf") format("truetype");
@@ -35,7 +36,8 @@
 @font-face {
   font-family: "GCentra";
   src:
-    local("G Centra Medium"), local("GCentra-Medium"),
+    local("G Centra Medium"),
+    local("GCentra-Medium"),
     url("/fonts/GCentra-Medium.woff2") format("woff2"),
     url("/fonts/GCentra-Medium.otf") format("opentype"),
     url("/fonts/GCentra-Medium.ttf") format("truetype");
@@ -55,7 +57,8 @@
 @font-face {
   font-family: "ITC Clearface";
   src:
-    local("ITC Clearface Std"), local("ClearfaceStd-Bold"),
+    local("ITC Clearface Std"),
+    local("ClearfaceStd-Bold"),
     url("/fonts/ITCClearface-Regular.woff2") format("woff2"),
     url("/fonts/ITCClearface-Regular.otf") format("opentype"),
     url("/fonts/ITCClearface-Bold.otf") format("opentype");
@@ -69,7 +72,8 @@
 @font-face {
   font-family: "ITC Clearface";
   src:
-    local("ITC Clearface Std Bold"), local("ClearfaceStd-Bold"),
+    local("ITC Clearface Std Bold"),
+    local("ClearfaceStd-Bold"),
     url("/fonts/ITCClearface-Bold.woff2") format("woff2"),
     url("/fonts/ITCClearface-Bold.otf") format("opentype");
   font-weight: 700;
@@ -82,7 +86,8 @@
 @font-face {
   font-family: "ITC Clearface";
   src:
-    local("ITC Clearface Std Bold Italic"), local("ClearfaceStd-BoldItalic"),
+    local("ITC Clearface Std Bold Italic"),
+    local("ClearfaceStd-BoldItalic"),
     url("/fonts/ITCClearface-BoldItalic.woff2") format("woff2"),
     url("/fonts/ITCClearface-BoldItalic.otf") format("opentype");
   font-weight: 700;
@@ -393,17 +398,17 @@
   /* GCentra is the only sans; system sans is the ultimate fallback (no Roboto). Playfair Display
      stays as the serif fallback for --font-heading below. */
   --font-sans:
-    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
   --font-display:
-    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-heading:
-    "ITC Clearface", "Playfair Display", Georgia, serif;
+    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --font-heading: "ITC Clearface", "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --shadow-soft: 0 1px 2px 0 oklch(0.2 0 0 / 0.04);
   --shadow-raised:
-    0 1px 2px 0 oklch(0.2 0 0 / 0.04),
-    0 8px 28px -12px oklch(0.2 0 0 / 0.12);
+    0 1px 2px 0 oklch(0.2 0 0 / 0.04), 0 8px 28px -12px oklch(0.2 0 0 / 0.12);
 }
 
 /* Spira light palette. */
@@ -438,7 +443,7 @@
   --primary-foreground: oklch(0.99 0 0);
   /* Kale-200 — the brand tint behind a selected option, a done task's checkbox cell
      and the target card's "Update progress" footer. Keep them identical. */
-  --primary-soft: #E0F2F5;
+  --primary-soft: #e0f2f5;
   --brand-orange: oklch(0.735 0.123 76);
   --brand-orange-soft: oklch(0.94 0.045 80);
 
@@ -474,8 +479,6 @@
   --sidebar-border: oklch(0.899 0 0);
   --sidebar-ring: oklch(0.51 0.092 194 / 0.4);
 }
-
-
 
 @layer base {
   * {
@@ -560,12 +563,7 @@
     border: 1px solid transparent;
     background:
       linear-gradient(#fdfdfb, #fdfdfb) padding-box,
-      linear-gradient(
-          228.47deg,
-          #ff4833 48.94%,
-          #ed7ffe 89.8%,
-          #7f8eff 143.09%
-        )
+      linear-gradient(228.47deg, #ff4833 48.94%, #ed7ffe 89.8%, #7f8eff 143.09%)
         border-box;
   }
   .num {
@@ -614,16 +612,28 @@
     font-weight: 600;
     margin: 0.85rem 0 0.35rem;
   }
-  .tiptap-content :where(p) { margin: 0.5rem 0; }
-  .tiptap-content :where(ul, ol) { padding-left: 1.4rem; margin: 0.5rem 0; }
-  .tiptap-content :where(ul) { list-style: disc; }
+  .tiptap-content :where(p) {
+    margin: 0.5rem 0;
+  }
+  .tiptap-content :where(ul, ol) {
+    padding-left: 1.4rem;
+    margin: 0.5rem 0;
+  }
+  .tiptap-content :where(ul) {
+    list-style: disc;
+  }
   /* A numbered list needs room for its widest marker, not for "1.". The marker is drawn OUTSIDE
      the content box, growing leftwards, so at 1.4rem "10." reached past x=0 — and the phone's note
      body is a scroll container with no left padding, which clipped the leading digit off every
      item from ten on (owner, 2026-08-20). 2.25rem carries three digits with the same optical gap
      a single digit has. */
-  .tiptap-content :where(ol) { list-style: decimal; padding-left: 2.25rem; }
-  .tiptap-content :where(li) { margin: 0.2rem 0; }
+  .tiptap-content :where(ol) {
+    list-style: decimal;
+    padding-left: 2.25rem;
+  }
+  .tiptap-content :where(li) {
+    margin: 0.2rem 0;
+  }
   .tiptap-content :where(blockquote) {
     border-left: 3px solid var(--color-primary);
     padding-left: 0.85rem;
@@ -643,7 +653,10 @@
     overflow-x: auto;
     margin: 0.75rem 0;
   }
-  .tiptap-content :where(pre code) { background: transparent; padding: 0; }
+  .tiptap-content :where(pre code) {
+    background: transparent;
+    padding: 0;
+  }
   .tiptap-content :where(hr) {
     border: none;
     border-top: 1px solid var(--color-border);
@@ -678,8 +691,12 @@
     display: inline-flex;
     align-items: center;
   }
-  .tiptap-content :where(ul[data-type="taskList"] li > div) { flex: 1; }
-  .tiptap-content :where(ul[data-type="taskList"] li > div > p) { margin: 0; }
+  .tiptap-content :where(ul[data-type="taskList"] li > div) {
+    flex: 1;
+  }
+  .tiptap-content :where(ul[data-type="taskList"] li > div > p) {
+    margin: 0;
+  }
   .tiptap-content :where(ul[data-type="taskList"] input[type="checkbox"]) {
     width: 1rem;
     height: 1rem;
@@ -715,7 +732,9 @@
     height: 56px;
     border-radius: 9999px;
     background: var(--color-border);
-    transition: background 0.15s, height 0.15s;
+    transition:
+      background 0.15s,
+      height 0.15s;
   }
   .resize-handle:hover::after,
   .resize-handle[data-dragging="true"]::after {
@@ -870,4 +889,39 @@
   .spira-chat-toast {
     --width: 460px;
   }
+}
+
+/* ── Toast colours (CLAUDE.md, Design 3d) ─────────────────────────────────────
+   The per-kind tint, ink and text of a toast. These MUST match `NOTICE_KINDS` in
+   `src/components/spira/Notice.tsx`, which is the one table for the whole app;
+   `sonner-kinds.test.ts` fails if they drift apart.
+
+   Why plain CSS and not Tailwind utilities: the wrapper used to build the class
+   names by interpolation — `[--normal-bg:${fill}]` — and Tailwind's scanner only
+   ever sees literal strings, so it generated **nothing**. The classes sat on the
+   element with no rule behind them, and every toast quietly fell back to sonner's
+   own `--normal-bg: #fff` / grey border, inherited from its container. It looked
+   deliberate, and only `getComputedStyle` gave it away (2026-08-23).
+
+   Declaring the variables here, on the toast itself, beats that inherited value
+   outright — no layer contest, no `!important` needed. */
+[data-sonner-toast][data-type="success"] {
+  --normal-bg: #f9fdfc;
+  --normal-border: #0a8080;
+  --normal-text: #222525;
+}
+[data-sonner-toast][data-type="error"] {
+  --normal-bg: #fffbfb;
+  --normal-border: #c53336;
+  --normal-text: #222525;
+}
+[data-sonner-toast][data-type="warning"] {
+  --normal-bg: #fffbf7;
+  --normal-border: #c99500;
+  --normal-text: #222525;
+}
+[data-sonner-toast][data-type="info"] {
+  --normal-bg: #fdfcff;
+  --normal-border: #006cc1;
+  --normal-text: #222525;
 }

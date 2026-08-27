@@ -9,9 +9,20 @@ import {
   type AppFontChoice,
   type AppFontId,
 } from "@/lib/spira/app-font";
+import {
+  ABOUT_FURTHER_READING,
+  ABOUT_SECTIONS,
+} from "@/lib/spira/about-content";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
+  // `?tab=about` — how the side navigation links straight to About Spira, which is a tab
+  // here rather than a page of its own (the Android twin does the same with its `about`
+  // route). Anything unrecognised falls back to My profile.
+  validateSearch: (search: Record<string, unknown>): { tab?: TabId } => {
+    const tab = search.tab;
+    return tab === "fonts" || tab === "about" ? { tab } : {};
+  },
   head: () => ({
     meta: [
       { title: "Settings — Spira" },
@@ -24,11 +35,12 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-type TabId = "profile" | "fonts";
+type TabId = "profile" | "fonts" | "about";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "profile", label: "My profile" },
   { id: "fonts", label: "Fonts" },
+  { id: "about", label: "About Spira" },
 ];
 
 /**
@@ -42,7 +54,8 @@ const TABS: { id: TabId; label: string }[] = [
  */
 function SettingsPage() {
   const user = useAuth((s) => s.user);
-  const [tab, setTab] = useState<TabId>("profile");
+  const { tab: requested } = Route.useSearch();
+  const [tab, setTab] = useState<TabId>(requested ?? "profile");
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -81,11 +94,11 @@ function SettingsPage() {
         })}
       </div>
 
-      {tab === "profile" ? (
+      {tab === "profile" && (
         <ProfileTab email={user?.email ?? ""} name={user?.name ?? ""} />
-      ) : (
-        <FontsTab />
       )}
+      {tab === "fonts" && <FontsTab />}
+      {tab === "about" && <AboutTab />}
     </div>
   );
 }
@@ -260,6 +273,76 @@ function FontRow({
         <span className="mt-1 block text-xs text-muted-foreground">{note}</span>
       </span>
     </button>
+  );
+}
+
+/**
+ * **About Spira** — what coaching is, what GROW is, how a session runs, and how the app
+ * fits together. The copy lives in `lib/spira/about-content.ts`; the Android twin
+ * (`ui/settings/AboutTab.kt`) renders the identical text.
+ *
+ * It carries more weight than a normal help page. The coach is deliberately barred from
+ * explaining its own method during a session — naming the technique is what stops it
+ * working — so this is the only place the user can find out what is being done to them
+ * and why. It is also where the coach points anyone who asks how it works.
+ */
+function AboutTab() {
+  return (
+    <div className="pt-8 space-y-10" role="tabpanel">
+      {ABOUT_SECTIONS.map((section) => (
+        <SettingRow key={section.id} label={section.heading}>
+          <div className="space-y-4">
+            {section.blocks.map((block, i) =>
+              block.kind === "p" ? (
+                <p
+                  key={i}
+                  className="max-w-prose text-[15px] leading-[1.62] text-foreground"
+                >
+                  {block.text}
+                </p>
+              ) : (
+                <dl key={i} className="max-w-prose space-y-3">
+                  {block.items.map((item) => (
+                    <div key={item.term}>
+                      <dt className="text-[15px] font-semibold text-foreground">
+                        {item.term}
+                      </dt>
+                      <dd className="mt-0.5 text-[15px] leading-[1.62] text-muted-foreground">
+                        {item.text}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ),
+            )}
+          </div>
+        </SettingRow>
+      ))}
+
+      <SettingRow label="Further reading">
+        <div className="max-w-prose space-y-4">
+          <p className="text-[15px] leading-[1.62] text-muted-foreground">
+            Two standard texts on coaching, if you want to read further. Neither
+            is required to use Spira.
+          </p>
+          {ABOUT_FURTHER_READING.map((book) => (
+            <div key={book.title}>
+              <a
+                href={book.href}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-[15px] font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+              >
+                {book.title}
+              </a>
+              <p className="mt-0.5 text-[15px] leading-[1.62] text-muted-foreground">
+                {book.author} — {book.note}
+              </p>
+            </div>
+          ))}
+        </div>
+      </SettingRow>
+    </div>
   );
 }
 

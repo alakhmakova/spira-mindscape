@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { createGoal, addOptions, optionCards } from "./helpers";
+import {
+  createGoal,
+  addOptions,
+  optionCards,
+  chooseElementMenuItem,
+} from "./helpers";
 
 test.describe("Options — active radio + drag reorder", () => {
   test("the radio selects a single active option", async ({ page }) => {
@@ -29,11 +34,10 @@ test.describe("Options — active radio + drag reorder", () => {
     await createGoal(page, `E2E delete ${Date.now()}`);
     await addOptions(page, ["Keep me", "Remove me"]);
 
-    // The ⋮ menu only appears once the card is hovered or focused, so hover it first.
+    // The ⋯ menu only appears once the card is hovered, and a row that re-renders takes its
+    // menu with it — `chooseElementMenuItem` handles both.
     const card = page.locator("li", { hasText: "Remove me" });
-    await card.hover();
-    await card.getByRole("button", { name: "Option actions" }).click();
-    await page.getByRole("menuitem", { name: "Delete option" }).click();
+    await chooseElementMenuItem(page, card, "Option actions", "Delete option");
 
     await expect(page.locator("li", { hasText: "Remove me" })).toHaveCount(0);
     await expect(page.locator("li", { hasText: "Keep me" })).toBeVisible();

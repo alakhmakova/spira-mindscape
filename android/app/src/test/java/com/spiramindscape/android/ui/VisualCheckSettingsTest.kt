@@ -56,4 +56,40 @@ class VisualCheckSettingsTest : VisualCheckTestBase() {
         saveWindow("settings-fonts-latin")
         compose.onNodeWithText("Latin only").assertExists()
     }
+
+    /**
+     * **About Spira** — the page the coach points at when someone asks how it works, and the
+     * only place the coaching contract is spelled out. Worth a picture rather than assertions:
+     * it is the longest prose in the app, and the failure mode is not a missing string but text
+     * that runs off the side or collapses into an unreadable wall.
+     */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun `about spira explains coaching, GROW, the session and the app`() {
+        compose.activityRule.scenario.onActivity { }
+        compose.setContent {
+            SpiraTheme {
+                UserSettingsScreen(user = user, onBack = {}, onLogout = {}, startOnAbout = true)
+            }
+        }
+        compose.waitForIdle()
+        saveWindow("settings-about")
+
+        // The drawer links straight here, so the page must open already on this tab.
+        compose.onNodeWithText("What coaching is — and what it isn't").assertIsDisplayed()
+
+        compose.onNodeWithText("What GROW is").performScrollTo().assertIsDisplayed()
+        compose.waitForIdle()
+        saveWindow("settings-about-grow")
+
+        compose.onNodeWithText("How to use Spira").performScrollTo().assertIsDisplayed()
+        compose.waitForIdle()
+        saveWindow("settings-about-using")
+
+        // The books are offered as further reading, never as the coach's sources.
+        compose.onNodeWithText("Further reading").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Coaching for Performance").assertExists()
+        compose.waitForIdle()
+        saveWindow("settings-about-reading")
+    }
 }

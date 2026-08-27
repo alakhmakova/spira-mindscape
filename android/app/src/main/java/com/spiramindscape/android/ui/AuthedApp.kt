@@ -21,6 +21,7 @@ fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
                 user = user,
                 onGoalClick = { goalId -> nav.navigate("goal/$goalId") },
                 onOpenSettings = { nav.navigate("settings") },
+                onOpenAbout = { nav.navigate("about") },
                 onLogout = onLogout,
             )
         }
@@ -29,6 +30,17 @@ fun AuthedApp(user: AuthUser, onLogout: () -> Unit) {
                 user = user,
                 onBack = { nav.popBackStack() },
                 onLogout = onLogout,
+            )
+        }
+        // About Spira is a tab of the account page rather than a screen of its own, exactly
+        // as on the web — but the drawer links to it directly, so it gets its own route that
+        // opens the page already on that tab.
+        composable("about") {
+            UserSettingsScreen(
+                user = user,
+                onBack = { nav.popBackStack() },
+                onLogout = onLogout,
+                startOnAbout = true,
             )
         }
         composable(
