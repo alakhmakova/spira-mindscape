@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createGoal, addOptions } from "./helpers";
+import { createGoal, addOptions, chooseElementMenuItem } from "./helpers";
 
 /**
  * Inline resource attachments end to end
@@ -29,10 +29,12 @@ test("attach, auto-create from a long URL, and detach on delete", async ({
   // Attach it to an option from the card's ⋯ menu — the link shows the title, not a URL.
   await addOptions(page, ["Tailor the CV for this role and apply"]);
   const optionCard = page.locator("li", { hasText: "Tailor the CV" }).first();
-  // Element menus stay hidden until their row is hovered or focused.
-  await optionCard.hover();
-  await optionCard.getByRole("button", { name: "Option actions" }).click();
-  await page.getByRole("menuitem", { name: "Attach resource" }).click();
+  await chooseElementMenuItem(
+    page,
+    optionCard,
+    "Option actions",
+    "Attach resource",
+  );
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /Job ad/ })
@@ -49,9 +51,12 @@ test("attach, auto-create from a long URL, and detach on delete", async ({
   const realityItem = page
     .locator("li", { hasText: "Sent the application" })
     .first();
-  await realityItem.hover();
-  await realityItem.getByRole("button", { name: "Item actions" }).click();
-  await page.getByRole("menuitem", { name: "Attach resource" }).click();
+  await chooseElementMenuItem(
+    page,
+    realityItem,
+    "Item actions",
+    "Attach resource",
+  );
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /Job ad/ })

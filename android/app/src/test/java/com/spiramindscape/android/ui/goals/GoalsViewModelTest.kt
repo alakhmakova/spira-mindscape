@@ -216,4 +216,60 @@ class GoalsViewModelTest {
 
         assertEquals(null, vm.actionError.value)
     }
+
+    // ─── the cap on goals in motion (owner, 2026-08-25) ──────────────────────
+
+    /** A repository whose `createGoal` fails the way the chosen transport would. */
+    private class FailingCreateRepo(private val failure: Exception) : FakeGoalsRepository() {
+        override suspend fun getGoals(): List<GoalSummary> = emptyList()
+        override suspend fun createGoal(
+            title: String,
+            description: String?,
+            confidence: Int,
+            deadline: String?,
+        ): String = throw failure
+    }
+
+    /** The sentence the backend sends once a user has filled their allowance. */
+    private val capMessage =
+        "You have 50 goals in motion, which is the most Spira keeps at once. " +
+            "Achieve or delete one to make room."
+
+    @Test
+    fun `the cap's own sentence is shown, not a generic retry line`() = runTest(dispatcher) {
+        // "Couldn't create this goal. Please try again." is not merely vague here — it is wrong.
+        // Trying again can never work, and the one thing that helps (achieve or delete a goal) is
+        // exactly what the server already said. Swallowing that leaves a button that reads broken.
+        val vm = GoalsViewModel(FailingCreateRepo(GoalsException(capMessage, fromServer = true)))
+        advanceUntilIdle()
+
+        vm.createGoal("One too many", null, 5, null)
+        advanceUntilIdle()
+
+        assertEquals(capMessage, vm.actionError.value)
+    }
+
+    @Test
+    fun `a transport failure keeps the app's own wording`() = runTest(dispatcher) {
+        // The other half of the rule: Apollo's message is written for a developer
+        // ("Failed to connect to /10.0.2.2:8080"), and must not be put in front of the user.
+        val vm = GoalsViewModel(FailingCreateRepo(GoalsException("Failed to connect to /10.0.2.2")))
+        advanceUntilIdle()
+
+        vm.createGoal("Offline", null, 5, null)
+        advanceUntilIdle()
+
+        assertEquals("Couldn't create this goal. Please try again.", vm.actionError.value)
+    }
+
+    @Test
+    fun `an unexpected failure keeps the app's own wording too`() = runTest(dispatcher) {
+        val vm = GoalsViewModel(FailingCreateRepo(IllegalStateException("boom")))
+        advanceUntilIdle()
+
+        vm.createGoal("Broken", null, 5, null)
+        advanceUntilIdle()
+
+        assertEquals("Couldn't create this goal. Please try again.", vm.actionError.value)
+    }
 }

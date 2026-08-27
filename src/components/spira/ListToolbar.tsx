@@ -326,7 +326,7 @@ export function ToolbarSheet({
       <Drawer open={open} onOpenChange={onOpenChange}>
         {/* **White**, explicitly — `bg-background` is the app's warm grey and made the sheet read
             as a dimmed panel behind its own teal head (owner, 2026-08-17). */}
-        <DrawerContent className="mt-0 flex max-h-[92vh] flex-col bg-white px-0">
+        <DrawerContent className="mt-0 flex max-h-[92dvh] flex-col bg-white px-0">
           {body}
         </DrawerContent>
       </Drawer>

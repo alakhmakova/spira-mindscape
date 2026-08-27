@@ -20,7 +20,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <application>
+    <!--
+      Cleartext, debug only: a local backend is plain http on 10.0.2.2 (or a LAN IP), which
+      Android 9+ blocks by default. It cannot reach a release APK — this whole file is the
+      debug overlay.
+    -->
+    <application android:usesCleartextTraffic="true">
         <activity
             android:name=".ui.goals.NoteEditorActivity"
             android:exported="true"

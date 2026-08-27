@@ -98,9 +98,34 @@ public class GoalService {
                 .orElseThrow(() -> new IllegalArgumentException("Goal not found: " + id));
     }
 
+    /**
+     * The most goals one user may have **in motion** at a time. Achieved goals are not counted.
+     *
+     * <p><b>Why there is a cap at all.</b> Nothing stopped a user — or a looping assistant, or a
+     * script — from creating goals without end, and the dashboard loads every one of them. On this
+     * machine 598 goals made that query 162 KB and up to two seconds cold; the Playwright suite
+     * started failing on animations that no longer had time to settle. The cap bounds the payload,
+     * and with it the blast radius of anything that creates goals in a loop.
+     *
+     * <p><b>Why fifty.</b> Coaching practice is about focus — a person can genuinely move three to
+     * five goals at once, and Spira is built around GROW. Fifty is an order of magnitude above
+     * that, so honest use never meets it, while the dashboard stays instant (≈13 KB). The owner
+     * chose it over a looser hundred on 2026-08-25.
+     *
+     * <p>If this ever needs raising, raise it here and nowhere else: the message the user sees is
+     * built from this number, and so is {@code GoalServiceTest}.
+     */
+    public static final int MAX_ACTIVE_GOALS = 50;
+
     @Transactional
     public Goal create(CreateGoalInput input) {
         AppUser currentUser = currentUserProvider.getCurrentUser();
+        long inMotion = goalRepository.countByUserIdAndAchievedAtIsNull(currentUser.getId());
+        if (inMotion >= MAX_ACTIVE_GOALS) {
+            throw new IllegalArgumentException(
+                    "You have " + MAX_ACTIVE_GOALS + " goals in motion, which is the most Spira "
+                            + "keeps at once. Achieve or delete one to make room.");
+        }
         Goal goal = new Goal();
         goal.setUser(currentUser);
         goal.setTitle(normalizeRequiredText(input.title(), "Goal title is required"));

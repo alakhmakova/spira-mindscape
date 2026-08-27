@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.spiramindscape.android.core.SpiraLog
+import com.spiramindscape.android.data.goals.GoalsException
 import com.spiramindscape.android.data.goals.ApolloGoalsRepository
 import com.spiramindscape.android.data.goals.GoalSummary
 import com.spiramindscape.android.data.goals.GoalsRepository
@@ -158,6 +159,17 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
             GoalsUiState.Error("Couldn't load your goals.")
         }
 
+    /**
+     * The backend's own sentence when it wrote one for the user, otherwise [fallback].
+     *
+     * Kept to one place so every write that shows an error can use it: a server that took the
+     * trouble to say what is wrong should not have that thrown away by the screen.
+     */
+    private fun serverMessageOr(e: Exception, fallback: String): String {
+        val fromServer = e is GoalsException && e.fromServer && !e.message.isNullOrBlank()
+        return if (fromServer) e.message!! else fallback
+    }
+
     fun createGoal(
         title: String,
         description: String?,
@@ -175,8 +187,14 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
             } catch (e: Exception) {
                 // Keep the sheet open; the list is unchanged — but say why, or pressing
                 // Create simply appears to do nothing.
+                //
+                // **When the server explained itself, pass that on.** The goal cap is the case
+                // that made this matter: "Couldn't create this goal. Please try again." is not
+                // merely vague there, it is wrong — trying again can never work, and the only
+                // thing that helps (achieve or delete a goal) is exactly what the server's own
+                // sentence says (owner, 2026-08-25).
                 SpiraLog.w(TAG, "goal_create_failed", e)
-                _actionError.value = "Couldn't create this goal. Please try again."
+                _actionError.value = serverMessageOr(e, "Couldn't create this goal. Please try again.")
             } finally {
                 _creating.value = false
             }

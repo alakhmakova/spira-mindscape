@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -27,9 +29,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.spiramindscape.android.data.goals.ResourceItem
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.HorizontalDivider
+import com.spiramindscape.android.ui.components.SpiraButton
+import com.spiramindscape.android.ui.components.SpiraSheetHead
 import com.spiramindscape.android.ui.components.SpiraTextField
 import com.spiramindscape.android.ui.theme.spiraExtras
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -62,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -132,6 +140,8 @@ fun AiChatScreen(
     val totalMinutes by viewModel.sessionMinutes.collectAsStateWithLifecycle()
     val composerDraft by viewModel.composerDraft.collectAsStateWithLifecycle()
     val composerAttachments by viewModel.composerAttachments.collectAsStateWithLifecycle()
+    val memoryDraft by viewModel.memoryDraft.collectAsStateWithLifecycle()
+    val revisingMemory by viewModel.revisingMemory.collectAsStateWithLifecycle()
 
     // A pending proposal card **is** the input: the web renders it in the footer, where the
     // composer would be, so it sits right above the keyboard instead of scrolling away up the
@@ -180,8 +190,14 @@ fun AiChatScreen(
                 remainingSeconds = remaining,
                 totalMinutes = totalMinutes,
                 onClose = onClose,
+                // No confirmation here, deliberately (owner, 2026-08-23): the empty chat is
+                // itself the feedback, and a toast for it was one more thing to dismiss.
                 onNewChat = viewModel::clearChat,
                 onEndSession = viewModel::closeGrow,
+                // Ending early is only on offer while the session is really running: not
+                // mid-stream, and not once the ending sequence has begun — it is already ending.
+                canEndEarly = !streaming &&
+                    (mode == ChatMode.GROW_ACTIVE || mode == ChatMode.GROW_CLOSING),
             )
 
             if (!inGrow) {
@@ -201,7 +217,6 @@ fun AiChatScreen(
         if (mode == ChatMode.GROW_CLOSING) {
             Banner("The session is gently moving toward a close")
         }
-        notice?.let { NoticeBanner(it) { notice = null } }
 
         LazyColumn(
             state = listState,
@@ -231,8 +246,6 @@ fun AiChatScreen(
             items(messages, key = { it.id }) { message ->
                 MessageRow(
                     message = message,
-                    // Its card is in the footer; the row keeps only the settled result line.
-                    cardInFooter = message.id == pendingMessage?.id,
                     onOpenNote = onOpenNote,
                     onAcceptProposal = { proposal, excluded ->
                         val error = onApplyProposal(proposal, excluded)
@@ -242,24 +255,48 @@ fun AiChatScreen(
                     onDismissProposal = { proposal ->
                         viewModel.settleProposal(message.id, proposal.id, approved = false)
                     },
-                    onReviseProposal = viewModel::reviseProposal,
+                    onReviseProposal = { proposal, instruction ->
+                        viewModel.reviseProposal(message.id, proposal, instruction)
+                    },
                 )
             }
         }
 
         // The GROW cards sit on the light chat bottom (not a dark block), padded clear of the nav
         // bar and scrollable, so a tall card is never clipped behind the system bar (owner, 2026-08-18).
+        //
+        // **`imePadding()` comes BEFORE the height cap and the scroll, and the order is the whole
+        // fix** (owner, 2026-08-24: the Edit field was half under the keyboard). Modifiers apply
+        // outside-in: put `imePadding()` last and the keyboard's height becomes padding on the
+        // *scrollable content*, so the box stays exactly where it was — under the keyboard — and
+        // the padding it gained is only reachable by scrolling. Put it first and the box itself is
+        // lifted clear, which is what the composer has always done (see [Composer]) and why typing
+        // a message worked while typing into a card did not.
         val cardHost: @Composable (@Composable () -> Unit) -> Unit = { card ->
             Box(
                 Modifier
                     .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
                     .background(CHAT_GRADIENT_BOTTOM)
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState())
-                    .imePadding()
-                    .navigationBarsPadding(),
+                    .verticalScroll(rememberScrollState()),
             ) { card() }
         }
+        notice?.let { shown ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(CHAT_GRADIENT_BOTTOM)
+                    // The same 12dp gutter the composer card and the footer card use, so the
+                    // toast is the width of the field it sits over — on any screen.
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 4.dp),
+            ) {
+                ChatToast(shown) { notice = null }
+            }
+        }
+
         when {
             mode == ChatMode.GROW_START -> cardHost {
                 GrowStartOverlay(
@@ -267,36 +304,57 @@ fun AiChatScreen(
                     onCancel = viewModel::cancelGrow,
                 )
             }
+            // Step 1 of the ending: the session record, shown so the user can read what would
+            // be saved before deciding — and change it if it is not right.
             mode == ChatMode.GROW_END -> cardHost {
                 GrowEndCard(
-                    summary = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty(),
-                    onSave = { summary ->
-                        viewModel.saveSessionMemory(summary) { error ->
+                    record = memoryDraft.orEmpty(),
+                    revising = revisingMemory,
+                    onRevise = viewModel::reviseSessionMemory,
+                    onSave = {
+                        viewModel.closeSession(save = true) { error ->
                             notice = if (error != null) {
                                 ChatNotice(error, SpiraNoticeKind.Error)
                             } else {
                                 ChatNotice("Saved to this goal.", SpiraNoticeKind.Success)
                             }
                         }
-                        viewModel.finishGrow()
                     },
-                    onDiscard = viewModel::finishGrow,
+                    onDiscard = { viewModel.closeSession(save = false) },
                 )
+            }
+            // Step 3: the goodbye is on screen. Leaving on its own would wipe it off the moment
+            // it arrived, so the user closes when they have read it.
+            mode == ChatMode.GROW_FAREWELL -> cardHost {
+                if (streaming) {
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    SessionStepFooter(
+                        label = "Close session",
+                        hint = null,
+                        onClick = viewModel::leaveGrow,
+                    )
+                }
             }
             // The card takes the composer's place while it is waiting to be answered. Capped and
             // scrollable: a stepped card with a long note can outgrow the panel, and without this
             // its Save button ends up below the bottom edge.
-            pendingMessage != null && !inGrow -> Box(
+            //
+            // In a session this is step 2 — what the coach proposed for the goal, released once
+            // the record has been decided. Everywhere else it is the ordinary chat card.
+            pendingMessage != null && (!inGrow || mode == ChatMode.GROW_REVIEW) -> Box(
                 Modifier
                     .fillMaxWidth()
+                    // Lifted clear of the keyboard FIRST — see the note on `cardHost` above for
+                    // why the order of these two matters more than it looks.
+                    .imePadding()
+                    .navigationBarsPadding()
                     // The composer's spot is light now (the gradient's bottom), not a dark band.
                     .background(CHAT_GRADIENT_BOTTOM)
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp)
-                    .padding(top = 4.dp, bottom = 12.dp)
-                    .imePadding()
-                    .navigationBarsPadding(),
+                    .padding(top = 4.dp, bottom = 12.dp),
             ) {
                 ProposalGroup(
                     proposals = pendingMessage.proposals,
@@ -310,9 +368,23 @@ fun AiChatScreen(
                     onDismiss = { proposal ->
                         viewModel.settleProposal(pendingMessage.id, proposal.id, approved = false)
                     },
-                    onRevise = viewModel::reviseProposal,
+                    onRevise = { proposal, instruction ->
+                        viewModel.reviseProposal(pendingMessage.id, proposal, instruction)
+                    },
                     onOpenNote = onOpenNote,
                 )
+            }
+            // Step 2 with nothing left to answer, or with the user choosing to stop here.
+            mode == ChatMode.GROW_REVIEW -> cardHost {
+                if (streaming) {
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    SessionStepFooter(
+                        label = "Finish session",
+                        hint = "Anything you leave undecided stays waiting in the goal.",
+                        onClick = viewModel::askForGoodbye,
+                    )
+                }
             }
             // The composer sits on the gradient's light bottom, not a dark band (owner, 2026-08-17).
             else -> Column(Modifier.fillMaxWidth().background(CHAT_GRADIENT_BOTTOM)) {
@@ -408,6 +480,17 @@ internal val CHAT_INK_MUTED = ON_WHITE.copy(alpha = 0.62f)
 internal val CHAT_PILL_BG = Color.White.copy(alpha = 0.72f)
 
 /**
+ * How tall the composer's field may grow before it scrolls instead.
+ *
+ * 120dp is the web's 128px cap in the units this surface uses. Without it a long message pushed
+ * the row of actions below the field off the bottom of the panel (owner, 2026-08-24).
+ */
+private val COMPOSER_MAX_HEIGHT = 120.dp
+
+/** How long a chat toast stays before it takes itself away. */
+private const val TOAST_VISIBLE_MS = 6000L
+
+/**
  * The wordmark and the panel's actions. In a GROW session the right-hand side becomes the timer
  * and an End button; otherwise "New chat" (only once there is something to clear) and Close.
  */
@@ -421,6 +504,7 @@ private fun PanelHeader(
     onClose: () -> Unit,
     onNewChat: () -> Unit,
     onEndSession: () -> Unit,
+    canEndEarly: Boolean = true,
 ) {
     Row(
         Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 20.dp),
@@ -453,21 +537,22 @@ private fun PanelHeader(
         if (inGrow) {
             TimerPill(remainingSeconds, totalMinutes)
             Spacer(Modifier.size(8.dp))
+            val endInk = if (canEndEarly) Color.White else WHITE_35
             Row(
                 Modifier
                     .clip(CircleShape)
-                    .border(1.dp, WHITE_35, CircleShape)
-                    .clickable(onClick = onEndSession)
+                    .border(1.dp, if (canEndEarly) WHITE_35 else WHITE_35.copy(alpha = 0.4f), CircleShape)
+                    .clickable(enabled = canEndEarly, onClick = onEndSession)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(SpiraIcons.X, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                Icon(SpiraIcons.X, contentDescription = null, tint = endInk, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.size(4.dp))
                 Text(
                     "End",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = endInk,
                 )
             }
         } else {
@@ -571,9 +656,14 @@ private fun ProviderStrip(label: String, connected: Boolean, onOpen: () -> Unit)
 /** How much of the session is left, as the web's pill. */
 @Composable
 private fun TimerPill(seconds: Int, totalMinutes: Int) {
-    val minutes = seconds / 60
-    val rest = seconds % 60
-    val low = totalMinutes > 0 && seconds <= totalMinutes * 60 / 5
+    // **Past the planned end the clock counts UP, prefixed.** The session is not over until the
+    // coach ends it, so a frozen 0:00 would be a lie — and a raw negative would print "-1:-30".
+    // The web's pill has read this way since the ending was designed (`timerLabel`).
+    val overtime = seconds < 0
+    val magnitude = kotlin.math.abs(seconds)
+    val minutes = magnitude / 60
+    val rest = magnitude % 60
+    val low = overtime || (totalMinutes > 0 && seconds <= totalMinutes * 60 / 5)
     Box(
         Modifier
             .clip(CircleShape)
@@ -582,7 +672,7 @@ private fun TimerPill(seconds: Int, totalMinutes: Int) {
             .padding(horizontal = 12.dp, vertical = 5.dp),
     ) {
         Text(
-            "%d:%02d".format(minutes, rest),
+            "%s%d:%02d".format(if (overtime) "+" else "", minutes, rest),
             style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
@@ -615,17 +705,72 @@ private fun Banner(text: String) {
  * session memory that did. It is the app's one notice card ([SpiraNoticeCard]), the same shape a
  * toast takes, so a message here and a message anywhere else read as the same thing.
  *
- * It used to be a translucent white-on-teal strip with no mark at all, which said something had
- * happened without saying whether it had gone well.
+ * **It sits directly above the message field, and is exactly as wide as it** (owner, 2026-08-24).
+ * It used to hang at the top of the conversation, full-bleed under the header, which put it as far
+ * as it could get from whatever the user had just done and made it a second, wider band competing
+ * with the chrome. Above the field it is next to the thing that caused it, and it inherits the
+ * field's width, so on a narrow phone and a wide panel it is always the same object.
+ *
+ * It **times itself out** — that is what makes it a toast rather than a banner — but keeps its X,
+ * because a message the user has not finished reading should not be on a stopwatch alone.
+ *
+ * Before that it was a translucent white-on-teal strip with no mark at all, which said something
+ * had happened without saying whether it had gone well.
  */
 @Composable
-private fun NoticeBanner(notice: ChatNotice, onDismiss: () -> Unit) {
+private fun ChatToast(notice: ChatNotice, onDismiss: () -> Unit) {
+    // Keyed on the notice, so a second message restarts the clock instead of inheriting the
+    // remainder of the first one's.
+    LaunchedEffect(notice) {
+        kotlinx.coroutines.delay(TOAST_VISIBLE_MS)
+        onDismiss()
+    }
     SpiraNoticeCard(
         message = notice.text,
         kind = notice.kind,
         onDismiss = onDismiss,
-        modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp),
+        modifier = Modifier.padding(bottom = 8.dp),
     )
+}
+
+/**
+ * One step of the ending, waiting on the user: a full-width button where the composer would be,
+ * with an optional line under it.
+ *
+ * It is the same slot the proposal card and the record card use — the ending is a sequence of
+ * things to answer, and every one of them is answered in the same place.
+ */
+@Composable
+private fun SessionStepFooter(label: String, hint: String?, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 4.dp, bottom = 12.dp)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White)
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (hint != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                hint,
+                style = MaterialTheme.typography.labelMedium,
+                color = CHAT_INK_MUTED,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
 }
 
 /** A message the panel is showing, and which of the four kinds it is. */
@@ -748,8 +893,6 @@ private fun MessageRow(
     onAcceptProposal: (Proposal, Set<String>) -> Unit,
     onDismissProposal: (Proposal) -> Unit,
     onReviseProposal: (Proposal, String) -> Unit,
-    /** True while this message's card is pinned in the footer — see [AiChatScreen]. */
-    cardInFooter: Boolean = false,
     /** Opens the note an applied NOTE proposal created — see [AiChatScreen]. */
     onOpenNote: (() -> Unit)? = null,
 ) {
@@ -758,7 +901,7 @@ private fun MessageRow(
         message.role == ChatRole.SYSTEM -> SystemPill(message.content)
         message.isError -> ErrorTurn(message.content)
         else -> AssistantTurn(
-            message, onAcceptProposal, onDismissProposal, onReviseProposal, onOpenNote, cardInFooter,
+            message, onAcceptProposal, onDismissProposal, onReviseProposal, onOpenNote,
         )
     }
 }
@@ -859,7 +1002,6 @@ private fun AssistantTurn(
     onReviseProposal: (Proposal, String) -> Unit,
     /** Opens the note an applied NOTE proposal created — see [AiChatScreen]. */
     onOpenNote: (() -> Unit)? = null,
-    cardInFooter: Boolean = false,
 ) {
     Column(Modifier.fillMaxWidth()) {
         if (message.streaming && message.content.isBlank()) {
@@ -886,7 +1028,16 @@ private fun AssistantTurn(
 
         // A pending card lives in the footer (the card IS the input). Once it is answered only a
         // compact result line stays here — the web's `ResultSummary`, not the whole card again.
-        if (message.proposals.isNotEmpty() && !cardInFooter && !message.streaming) {
+        //
+        // The gate is **"nothing is still pending"**, not "this one's card is in the footer"
+        // (owner, 2026-08-24). Only the FIRST pending message gets the footer, so a second one —
+        // which is what an Edit used to produce — fell through to `ResultSummary` and, having
+        // nothing approved in it, was drawn as a muted "Dismissed" pill. The card the user had
+        // just asked for was on screen, labelled as refused, with no way to answer it. The web
+        // gates on the same condition (`!m.proposals.some(pr => pr.status === "pending")`).
+        if (message.proposals.isNotEmpty() && !message.streaming &&
+            message.proposals.none { it.status == ProposalStatus.PENDING }
+        ) {
             Spacer(Modifier.height(10.dp))
             ResultSummary(message.proposals, onOpenNote)
         }
@@ -1197,7 +1348,26 @@ private fun Composer(
                     color = ON_WHITE,
                 ),
                 cursorBrush = SolidColor(ON_WHITE),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                // **Capped, and it scrolls itself — following the caret.**
+                //
+                // Without a ceiling the field grows with the text and pushes the row below it —
+                // paperclip, "End session early", Send — off the bottom of the panel, so a long
+                // message leaves nothing to press (owner, 2026-08-24). The web has capped this at
+                // 128px from the start (`Math.min(el.scrollHeight, 128)` in `AiPanel.tsx`).
+                //
+                // The cap was first written as `heightIn(...).verticalScroll(...)`, and that
+                // **broke typing**: an outer scroll container measures the field unbounded, so
+                // `BasicTextField` hands its own scrolling over to the parent — and the parent has
+                // no idea where the caret is. Past four lines you were typing into text you could
+                // not see, and had to drag the field to find your own cursor (owner, 2026-08-25).
+                //
+                // Constraining the height on the field **itself**, with no scroll wrapper, is what
+                // turns its internal scroller back on, and that one keeps the cursor in view as
+                // you type. Do not put a `verticalScroll` back around this.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = COMPOSER_MAX_HEIGHT)
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 decorationBox = { field ->
                     Box {
                         if (draft.isEmpty()) {
@@ -1369,30 +1539,43 @@ private fun ResourcePickerSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // The standard sheet shell, same as every form and filter sheet (CLAUDE.md, Design 3e):
+    // white card, 12dp top corners, NO drag handle, and the Kale band as its head. This one
+    // was the last sheet still wearing a white head with a dark title and Material's grey
+    // handle above it, so opening it looked like leaving the app (owner, 2026-08-23).
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White,
+        dragHandle = null,
+        shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg),
+    ) {
+        ResourcePickerSheetContent(resources, alreadyAttached, onPick, onDismiss)
+    }
+}
+
+/**
+ * The picker's card, without the [ModalBottomSheet] around it.
+ *
+ * Split out for the reason `SpiraFormSheetContent` is: a modal sheet renders in its **own
+ * window**, which the `VisualCheck*` helper (it draws the activity's decor view) cannot
+ * capture - so an open sheet is simply absent from the PNG, and the check that would have
+ * caught this sheet's white head silently checked nothing.
+ */
+@Composable
+fun ResourcePickerSheetContent(
+    resources: List<ResourceItem>,
+    alreadyAttached: Set<Long>,
+    onPick: (ResourceItem) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     val filtered = resources.filter {
         resourceDisplayName(it).contains(query.trim(), ignoreCase = true)
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.spiraExtras.surfaceRaised,
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Attach a resource",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    SpiraIcons.X,
-                    contentDescription = "Close",
-                    tint = MaterialTheme.spiraExtras.mutedForeground,
-                    modifier = Modifier.size(22.dp).clickable { onDismiss() },
-                )
-            }
-            Spacer(Modifier.height(12.dp))
+    Column(Modifier.fillMaxWidth().background(Color.White)) {
+        SpiraSheetHead("Attach a resource", onDismiss)
+        Column(Modifier.padding(horizontal = 20.dp).padding(top = 16.dp, bottom = 24.dp)) {
             SpiraTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -1543,7 +1726,14 @@ private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
 
 /** The closing card: keep what the session worked out on the goal, or let it go. */
 @Composable
-private fun GrowEndCard(summary: String, onSave: (String) -> Unit, onDiscard: () -> Unit) {
+private fun GrowEndCard(
+    record: String,
+    revising: Boolean,
+    onRevise: (String) -> Unit,
+    onSave: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    var instruction by remember { mutableStateOf("") }
     Column(
         Modifier
             .fillMaxWidth()
@@ -1565,6 +1755,90 @@ private fun GrowEndCard(summary: String, onSave: (String) -> Unit, onDiscard: ()
             fontSize = 13.sp,
             color = ON_WHITE.copy(alpha = 0.7f),
         )
+        Spacer(Modifier.height(12.dp))
+
+        // **The record itself.** The card used to show two buttons and no text, and what it saved
+        // was the coach's last chat message — which by then was the goodbye. So the memory kept a
+        // farewell instead of a record, and the user could not see either (owner, 2026-08-24).
+        //
+        // It **gives up height while the keyboard is open**. The card is taller than what is left
+        // of the panel then, and although it scrolls, Save memory and Discard ended up half under
+        // the keys — reachable only by scrolling past the thing you were reading. Shrinking the
+        // preview is the right thing to yield: it is the one part of this card that is already
+        // scrollable in its own right.
+        val keyboardUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = if (keyboardUp) 96.dp else 200.dp)
+                .verticalScroll(rememberScrollState())
+                .clip(RoundedCornerShape(10.dp))
+                .background(CHAT_PILL_BG)
+                .padding(12.dp),
+        ) {
+            AiMarkdown(
+                text = record.ifBlank { "The coach ended the session without a record." },
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 20.sp),
+                color = CHAT_INK,
+                mutedColor = CHAT_INK_MUTED,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (revising) {
+            Text(
+                "Rewriting…",
+                style = MaterialTheme.typography.labelMedium,
+                color = ON_WHITE.copy(alpha = 0.6f),
+            )
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = instruction,
+                    onValueChange = { instruction = it },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        color = ON_WHITE,
+                    ),
+                    cursorBrush = SolidColor(ON_WHITE),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.spiraExtras.border, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    decorationBox = { field ->
+                        Box {
+                            if (instruction.isEmpty()) {
+                                Text(
+                                    "Change the record…",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                    color = ON_WHITE.copy(alpha = 0.45f),
+                                )
+                            }
+                            field()
+                        }
+                    },
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    "Send",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (instruction.isBlank()) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(enabled = instruction.isNotBlank()) {
+                            onRevise(instruction)
+                            instruction = ""
+                        }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
@@ -1573,7 +1847,7 @@ private fun GrowEndCard(summary: String, onSave: (String) -> Unit, onDiscard: ()
                     .height(40.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(ON_WHITE)
-                    .clickable { onSave(summary) },
+                    .clickable(enabled = !revising) { onSave() },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -1652,128 +1926,192 @@ private fun ChatAttachmentViewer(
         onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    if (isImage) Color.Black.copy(alpha = 0.94f)
-                    else MaterialTheme.colorScheme.background,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                imageDataUrl != null -> {
-                    val bitmap = remember(imageDataUrl) {
-                        decodeDataUrl(imageDataUrl)?.let { bytes ->
-                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                ?.asImageBitmap()
-                        }
-                    }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = attachment.name,
-                            modifier = Modifier.fillMaxSize().padding(12.dp),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                        )
-                    } else {
-                        ViewerMessage("This image could not be shown.")
-                    }
-                }
+        ChatAttachmentViewerContent(attachment, resources, onClose)
+    }
+}
 
-                res != null && res.type == "note" -> {
-                    val html = res.body ?: ""
-                    Column(Modifier.fillMaxSize()) {
-                        // A Kale header with the note's title, like the note editor's top bar.
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.primary)
-                                .statusBarsPadding()
-                                .padding(start = 20.dp, end = 60.dp, top = 16.dp, bottom = 16.dp),
-                        ) {
-                            Text(
-                                "NOTE",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White.copy(alpha = 0.7f),
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                res.title?.takeIf { it.isNotBlank() } ?: "Note",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = Color.White,
-                            )
+/**
+ * The viewer's page, without the [androidx.compose.ui.window.Dialog] around it.
+ *
+ * Split out for the reason `SpiraFormSheetContent` and `ResourcePickerSheetContent` are: a
+ * Dialog renders in its **own window**, which the `VisualCheck*` helper (it draws the
+ * activity's decor view) cannot capture — so a test of the wrapper would quietly assert
+ * against an empty screenshot.
+ */
+@Composable
+fun ChatAttachmentViewerContent(
+    attachment: AiApi.ChatAttachment,
+    resources: List<com.spiramindscape.android.data.goals.ResourceItem>,
+    onClose: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val res = attachment.resourceId?.let { id ->
+        resources.firstOrNull { it.id.toLongOrNull() == id }
+    }
+    val imageDataUrl: String? = when {
+        attachment.resourceId == null && attachment.mime.startsWith("image/") -> attachment.dataUrl
+        res != null && res.type == "file" && (res.mime ?: "").startsWith("image/") -> res.dataUrl
+        else -> null
+    }
+
+    val title = when {
+        res != null && res.type == "email" -> res.name?.takeIf { it.isNotBlank() } ?: "Contact"
+        res != null -> res.title?.takeIf { it.isNotBlank() } ?: attachment.name
+        else -> attachment.name
+    }
+
+    // A CARD on a dimmed ground, not a full-screen page (owner, 2026-08-23). It used to open
+    // as a bare `fillMaxSize` with a plain background and the text floating in the middle of
+    // it, which read as leaving the app rather than looking at something inside it. The shape
+    // here is the web's `ContentModal` and the same one a proposal uses to show a note's full
+    // body before you approve it: dimmed backdrop, rounded card, a title row, and the content
+    // in its own scrollable block.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x73003737))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClose,
+            )
+            .padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White)
+                // Swallow taps on the card itself, or every click would dismiss it.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    SpiraIcons.X,
+                    contentDescription = "Close",
+                    tint = MaterialTheme.spiraExtras.mutedForeground,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onClose)
+                        .padding(6.dp)
+                        .size(18.dp),
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.spiraExtras.border)
+
+            Box(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                when {
+                    imageDataUrl != null -> {
+                        val bitmap = remember(imageDataUrl) {
+                            decodeDataUrl(imageDataUrl)?.let { bytes ->
+                                android.graphics.BitmapFactory
+                                    .decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                            }
                         }
-                        // The note's full content on white, in dark ink — the editor's own look.
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .background(MaterialTheme.colorScheme.surface)
-                                .verticalScroll(rememberScrollState())
-                                .padding(24.dp),
-                        ) {
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = attachment.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 360.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            )
+                        } else {
+                            ViewerBlock { Text("This image could not be shown.") }
+                        }
+                    }
+
+                    res != null && res.type == "note" -> {
+                        val html = res.body ?: ""
+                        ViewerBlock {
                             Text(
                                 if (looksLikeHtml(html)) rememberHtmlText(html)
-                                else androidx.compose.ui.text.AnnotatedString(html.ifBlank { "(empty note)" }),
-                                style = MaterialTheme.typography.bodyLarge,
+                                else androidx.compose.ui.text.AnnotatedString(
+                                    html.ifBlank { "(empty note)" },
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
-                }
 
-                res != null && res.type == "link" -> {
-                    ViewerMessage(res.url ?: "(no URL)", actionLabel = "Open link", onDark = false) {
-                        openAttachmentUri(context, res.url)
+                    res != null && res.type == "link" -> {
+                        Column {
+                            ViewerBlock {
+                                Text(
+                                    res.url ?: "(no URL)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            SpiraButton("Open link", { openAttachmentUri(context, res.url) })
+                        }
+                    }
+
+                    res != null && res.type == "email" -> {
+                        ViewerBlock {
+                            Text(
+                                listOfNotNull(res.role, res.email, res.phone)
+                                    .joinToString("\n").ifBlank { "(no contact details)" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+
+                    else -> ViewerBlock {
+                        Text(
+                            "This attachment can't be previewed.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.spiraExtras.mutedForeground,
+                        )
                     }
                 }
-
-                res != null && res.type == "email" -> {
-                    ViewerMessage(
-                        listOfNotNull(res.name, res.role, res.email, res.phone)
-                            .joinToString("\n").ifBlank { "(no contact details)" },
-                        onDark = false,
-                    )
-                }
-
-                res != null && res.type == "file" -> {
-                    ViewerMessage(res.title ?: "File", actionLabel = "Open", onDark = false) {
-                        openDataUrlExternally(context, res.title ?: "file", res.mime, res.dataUrl)
-                    }
-                }
-
-                attachment.resourceId == null -> {
-                    ViewerMessage(attachment.name, actionLabel = "Open", onDark = false) {
-                        openDataUrlExternally(context, attachment.name, attachment.mime, attachment.dataUrl)
-                    }
-                }
-
-                else -> ViewerMessage("This attachment is no longer available.", onDark = false)
-            }
-
-            // On a dark ground (image) or the note's teal header the X is white on a faint scrim;
-            // on a light text preview it needs a solid Kale disc to stay visible.
-            val onDarkHeader = isImage || res?.type == "note"
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(12.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (onDarkHeader) Color.White.copy(alpha = 0.15f)
-                        else MaterialTheme.colorScheme.primary,
-                    )
-                    .clickable { onClose() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(SpiraIcons.X, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
             }
         }
     }
+}
+
+/**
+ * The content's own block inside the viewer card — the shape a proposal uses to show a note's
+ * full body before it is approved (`BodySheet` in `ProposalCard.kt`): a sunken, rounded,
+ * scrollable panel with a ceiling on its height, so a long note cannot push the card past the
+ * screen.
+ */
+@Composable
+private fun ViewerBlock(content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(max = 360.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.spiraExtras.surfaceSunken)
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+    ) { content() }
 }
 
 /**

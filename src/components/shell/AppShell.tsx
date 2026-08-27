@@ -10,6 +10,7 @@ import {
 } from "@/components/spira/icons";
 import { useAi } from "@/components/ai/ai-store";
 import { AiPanel } from "@/components/ai/AiPanel";
+import { SideNav } from "./SideNav";
 import { useSpira } from "@/lib/spira/store";
 import { useAuth } from "@/lib/spira/auth";
 import { useApplyAppFont } from "@/lib/spira/app-font";
@@ -168,6 +169,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDashboard = path === "/";
   const isCalendar = path.startsWith("/calendar");
   const isWorkspace = path.startsWith("/goals/");
+  // The open goal, so the side navigation can offer its sections. Read from the path
+  // rather than from a route hook: the shell wraps every route, including the ones that
+  // have no goalId at all.
+  const openGoalId = isWorkspace ? path.split("/")[2] : undefined;
   // Which screens carry the phone's collapsed search glyph. The dashboard filters its list with
   // it; the goal page switches goals with it. Settings and Calendar have nothing to search.
   const showMobileSearch = isDashboard || isWorkspace;
@@ -176,6 +181,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showFilterControls = isDashboard;
 
   const goals = useSpira((s) => s.goals);
+  const openGoalTitle = openGoalId
+    ? goals.find((g) => g.id === openGoalId)?.title
+    : undefined;
   const searchResults =
     query.trim() === ""
       ? []
@@ -248,8 +256,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [refreshGoals]);
 
   return (
+    // nav | content | AI. The navigation is the leftmost column and the coach moved to the
+    // right (owner, 2026-08-23): the AI panel used to be the left column, which left nowhere
+    // for standing navigation to sit without the two shoving each other.
     <div className="flex min-h-screen bg-background">
-      <AiPanel />
+      <SideNav path={path} goalId={openGoalId} goalTitle={openGoalTitle} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar — teal on every page (the goal-page colours), so the header reads the same
             across the app. */}
@@ -664,6 +675,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <AiPanel />
     </div>
   );
 }

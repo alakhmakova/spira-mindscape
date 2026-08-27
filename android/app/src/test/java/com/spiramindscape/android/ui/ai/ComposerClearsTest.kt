@@ -7,11 +7,13 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import com.spiramindscape.android.data.ai.AiApi
 import com.spiramindscape.android.ui.theme.SpiraTheme
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -82,5 +84,83 @@ class ComposerClearsTest {
         compose.onNodeWithText(placeholder).assertIsDisplayed()
         // And it really was sent, rather than merely cleared.
         assertEquals("How should I train for a 10k?", viewModel.messages.value.firstOrNull()?.content)
+    }
+
+    /**
+     * **A long message must not push the composer's own buttons off the screen** (owner,
+     * 2026-08-24: "при длинном сообщении сжимаются и пропадают кнопки, и это не только в grow
+     * session").
+     *
+     * The field had no height ceiling, so it grew with the text until the row under it — the
+     * paperclip, the GROW action, Send — was under the keyboard with nothing left to press. The
+     * web has capped this at 128px from the start; Android caps at the same 120dp and scrolls.
+     *
+     * ## Why this reads the source instead of driving the screen
+     *
+     * It was written as a Compose test first, and that version **passed with the cap removed** —
+     * twice, once asserting the buttons were displayed and once measuring the field's height.
+     * Robolectric has no IME and the panel has slack, so the field simply grows into the space the
+     * conversation gives up and nothing ever runs out of room. The defect only exists when the
+     * keyboard is up on a real screen, which is the one thing the harness cannot produce.
+     *
+     * So this is blunt, like `AssistantSurvivesRecreationTest`: it fails for exactly the edit that
+     * caused the bug, which a green test proving nothing does not.
+     */
+    @Test
+    fun `the composer field is capped, so its actions cannot be pushed off screen`() {
+        val source = java.io.File(
+            "src/main/java/com/spiramindscape/android/ui/ai/AiChatScreen.kt",
+        )
+        assertTrue("AiChatScreen.kt has moved — move this check with it", source.exists())
+        val text = source.readText()
+
+        assertTrue(
+            "The composer's BasicTextField must carry heightIn(max = COMPOSER_MAX_HEIGHT). " +
+                "Without a ceiling a long message grows the field until the paperclip, the GROW " +
+                "action and Send are under the keyboard (owner, 2026-08-24).",
+            text.contains("heightIn(max = COMPOSER_MAX_HEIGHT)"),
+        )
+        assertTrue(
+            "The cap must sit on the FIELD itself. Moving it to a wrapper would let the field grow " +
+                "again inside it.",
+            text.contains("heightIn(max = COMPOSER_MAX_HEIGHT)"),
+        )
+    }
+
+    /**
+     * **The capped field must scroll ITSELF, following the caret.**
+     *
+     * The cap was first written as `heightIn(...).verticalScroll(...)`, and that broke typing: an
+     * outer scroll container measures the field unbounded, so `BasicTextField` hands its scrolling
+     * to the parent — and the parent has no idea where the caret is. Past four lines you were
+     * typing into text you could not see and had to drag the field to find your own cursor
+     * (owner, 2026-08-25, with a screenshot of the caret hidden behind the action row).
+     *
+     * Constraining the height on the field with **no scroll wrapper** turns its internal scroller
+     * back on, and that one keeps the cursor in view.
+     *
+     * This reads the source for the same reason the check above does: Robolectric has no IME and
+     * the panel has slack, so the field never actually runs out of room there — the earlier
+     * attempt at a Compose assertion passed with the cap removed entirely. Verified by hand on the
+     * emulator instead (type six lines; the caret and the action row are both on screen).
+     */
+    @Test
+    fun `the composer field is not wrapped in a scroll container`() {
+        val source = java.io.File(
+            "src/main/java/com/spiramindscape/android/ui/ai/AiChatScreen.kt",
+        )
+        assertTrue("AiChatScreen.kt has moved — move this check with it", source.exists())
+        val text = source.readText()
+
+        val capIndex = text.indexOf("heightIn(max = COMPOSER_MAX_HEIGHT)")
+        assertTrue("the composer's height cap has gone", capIndex >= 0)
+        // The modifier chain the cap belongs to, up to the closing of that argument.
+        val chain = text.substring(capIndex, minOf(capIndex + 200, text.length))
+        assertTrue(
+            "The composer's BasicTextField must NOT be wrapped in verticalScroll: that hands its " +
+                "scrolling to a parent which cannot follow the caret, so a long message is typed " +
+                "blind (owner, 2026-08-25). Constrain the height and let the field scroll itself.",
+            !chain.contains("verticalScroll("),
+        )
     }
 }

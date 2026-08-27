@@ -18,4 +18,13 @@ public interface GoalRepository extends JpaRepository<Goal, Long> {
      * so cross-user access and missing goals are indistinguishable (NOT_FOUND).
      */
     Optional<Goal> findByIdAndUserId(Long id, Long userId);
+
+    /**
+     * How many of this user's goals are still **in motion** — achieved ones do not count.
+     *
+     * That distinction is the whole point of the cap (owner, 2026-08-25). Counting every goal a
+     * person had ever created would mean the app got harder to use the more they achieved, and
+     * the only way out would be deleting their own history. See {@code GoalService.MAX_ACTIVE_GOALS}.
+     */
+    long countByUserIdAndAchievedAtIsNull(Long userId);
 }

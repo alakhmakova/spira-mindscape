@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -230,7 +231,11 @@ fun GoalWorkspaceRoute(
     }
 
     // The assistant, scoped to this goal, swiped in from the right edge.
-    var assistantOpen by remember { mutableStateOf(false) }
+    // rememberSaveable, NOT remember: MainActivity declares no configChanges, and a camera app
+    // — which routinely opens in landscape — gets this activity recreated the moment it starts.
+    // With a plain remember the assistant panel closed itself in that instant, which reads as
+    // the app having restarted on its own (owner, 2026-08-23).
+    var assistantOpen by rememberSaveable { mutableStateOf(false) }
     val workspaceActions = GoalWorkspaceActions(
         onBack = onBack,
         onRetry = viewModel::load,

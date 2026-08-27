@@ -875,7 +875,7 @@ function LinkDialog({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="px-0 pb-6 max-h-[92vh] flex flex-col">
+        <DrawerContent className="px-0 pb-6 max-h-[92dvh] flex flex-col">
           {body}
         </DrawerContent>
       </Drawer>

@@ -398,6 +398,54 @@ class GoalServiceTest {
         assertThat(result.get(2L)).containsExactly(h3);
     }
 
+    // ─── create: the cap on goals in motion ──────────────────────────────────
+
+    @Test
+    @DisplayName("create: refused once the user already has the maximum in motion")
+    void refusesToCreateBeyondTheCap() {
+        // Nothing stopped a user — or a looping assistant, or a script — from creating goals
+        // without end, and the dashboard loads every one of them: 598 goals measured 162 KB and
+        // up to two seconds cold on the owner's machine (2026-08-25).
+        when(goalRepository.countByUserIdAndAchievedAtIsNull(TEST_USER_ID))
+                .thenReturn((long) GoalService.MAX_ACTIVE_GOALS);
+
+        assertThatThrownBy(() -> goalService.create(new CreateGoalInput("One too many", null, 5, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                // IllegalArgumentException is what GraphQlExceptionHandler passes through verbatim
+                // as a ValidationError, so this sentence is what the user actually reads.
+                .hasMessageContaining("50 goals in motion")
+                .hasMessageContaining("Achieve or delete one");
+        verify(goalRepository, never()).save(any(Goal.class));
+    }
+
+    @Test
+    @DisplayName("create: one below the cap still goes through")
+    void allowsTheLastGoalUpToTheCap() {
+        when(goalRepository.countByUserIdAndAchievedAtIsNull(TEST_USER_ID))
+                .thenReturn((long) GoalService.MAX_ACTIVE_GOALS - 1);
+        when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Goal goal = goalService.create(new CreateGoalInput("The fiftieth", null, 5, null));
+
+        assertThat(goal.getTitle()).isEqualTo("The fiftieth");
+    }
+
+    @Test
+    @DisplayName("create: the cap counts goals IN MOTION, so achieving one makes room")
+    void countsOnlyGoalsInMotion() {
+        // The whole reason the count is `achievedAt IS NULL`: counting a lifetime of goals would
+        // mean the app got harder to use the more you achieved, and the only way out would be
+        // deleting your own history (owner, 2026-08-25).
+        when(goalRepository.countByUserIdAndAchievedAtIsNull(TEST_USER_ID)).thenReturn(3L);
+        when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        goalService.create(new CreateGoalInput("Room to spare", null, 5, null));
+
+        // It is the achieved-excluding count that is consulted — never `count()` over everything.
+        verify(goalRepository).countByUserIdAndAchievedAtIsNull(TEST_USER_ID);
+        verify(goalRepository, never()).count();
+    }
+
     // ─── create ───────────────────────────────────────────────────────────────
 
     @Test

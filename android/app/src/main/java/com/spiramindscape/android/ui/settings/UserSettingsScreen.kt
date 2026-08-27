@@ -35,10 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.spiramindscape.android.data.auth.AuthUser
 import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.HeaderCircleAction
@@ -67,8 +69,16 @@ import com.spiramindscape.android.ui.theme.spiraExtras
  * Fonts tab needs room to show a specimen per candidate.
  */
 @Composable
-fun UserSettingsScreen(user: AuthUser, onBack: () -> Unit, onLogout: () -> Unit) {
-    var tab by remember { mutableStateOf(SettingsTab.Profile) }
+fun UserSettingsScreen(
+    user: AuthUser,
+    onBack: () -> Unit,
+    onLogout: () -> Unit,
+    /** Open straight onto About Spira — how the drawer's "About Spira" rows arrive here. */
+    startOnAbout: Boolean = false,
+) {
+    var tab by remember {
+        mutableStateOf(if (startOnAbout) SettingsTab.About else SettingsTab.Profile)
+    }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SettingsTopBar(onBack = onBack)
@@ -86,6 +96,7 @@ fun UserSettingsScreen(user: AuthUser, onBack: () -> Unit, onLogout: () -> Unit)
             when (tab) {
                 SettingsTab.Profile -> ProfileTab(user = user, onLogout = onLogout)
                 SettingsTab.Fonts -> FontsTab()
+                SettingsTab.About -> AboutTab()
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -95,6 +106,7 @@ fun UserSettingsScreen(user: AuthUser, onBack: () -> Unit, onLogout: () -> Unit)
 private enum class SettingsTab(val label: String) {
     Profile("My profile"),
     Fonts("Fonts"),
+    About("About Spira"),
 }
 
 /**
@@ -402,6 +414,86 @@ private fun SettingsTopBar(onBack: () -> Unit) {
 }
 
 /** A titled block of settings rows — the rubric outside the card, the rows inside it. */
+@Composable
+private fun AboutTab() {
+    val uriHandler = LocalUriHandler.current
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        ABOUT_SECTIONS.forEach { section ->
+            SettingsGroup(section.heading) {
+                Column(
+                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    section.blocks.forEach { block ->
+                        when (block) {
+                            is AboutBlock.Prose -> Text(
+                                block.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 22.sp,
+                            )
+                            is AboutBlock.Points -> Column(
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                block.items.forEach { point ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            point.term,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            point.text,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            lineHeight = 22.sp,
+                                            color = MaterialTheme.spiraExtras.mutedForeground,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SettingsGroup("Further reading") {
+            Column(
+                Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Two standard texts on coaching, if you want to read further. Neither is " +
+                        "required to use Spira.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.spiraExtras.mutedForeground,
+                )
+                ABOUT_FURTHER_READING.forEach { book ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(book.href) },
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            book.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "${'$'}{book.author} — ${'$'}{book.note}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.spiraExtras.mutedForeground,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

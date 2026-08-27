@@ -130,6 +130,55 @@ class ResourceReadServiceTest {
     }
 
     @Test
+    void ownedLinkResolvesToItsUrl() {
+        Resource r = ownedResource(CURRENT_USER, "link");
+        r.setUrl("https://example.com/jobs/1");
+        when(repo.findById(12L)).thenReturn(Optional.of(r));
+
+        Optional<ResourceReadService.AttachmentContent> c = service.resolveOwnedAttachment(12L);
+
+        assertThat(c).isPresent();
+        assertThat(c.get().isFile()).isFalse();
+        assertThat(c.get().text()).contains("https://example.com/jobs/1");
+    }
+
+    @Test
+    void aLinkWithNoUrlSaysSoRatherThanResolvingToNothing() {
+        // An empty string here would reach the model as a blank attachment it would then
+        // answer about. The words are what stop it inventing a page.
+        Resource r = ownedResource(CURRENT_USER, "link");
+        r.setUrl(null);
+        when(repo.findById(12L)).thenReturn(Optional.of(r));
+
+        assertThat(service.resolveOwnedAttachment(12L))
+                .get().extracting(ResourceReadService.AttachmentContent::text)
+                .isEqualTo("(no URL)");
+    }
+
+    @Test
+    void ownedContactResolvesToItsDetails() {
+        Resource r = ownedResource(CURRENT_USER, "email");
+        r.setName("Ann Lee");
+        r.setEmail("ann@example.com");
+        when(repo.findById(13L)).thenReturn(Optional.of(r));
+
+        Optional<ResourceReadService.AttachmentContent> c = service.resolveOwnedAttachment(13L);
+
+        assertThat(c).isPresent();
+        assertThat(c.get().isFile()).isFalse();
+        assertThat(c.get().text()).contains("ann@example.com");
+    }
+
+    @Test
+    void anUnknownResourceTypeResolvesToNothing() {
+        // Better an explicit "not available" note to the model than a half-read resource.
+        Resource r = ownedResource(CURRENT_USER, "sculpture");
+        when(repo.findById(14L)).thenReturn(Optional.of(r));
+
+        assertThat(service.resolveOwnedAttachment(14L)).isEmpty();
+    }
+
+    @Test
     void anotherUsersResourceIsNeverResolved() {
         // The resource is real and readable, but it belongs to user 999 — not the caller (user 7).
         Resource r = ownedResource(999L, "file");

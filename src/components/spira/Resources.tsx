@@ -1376,7 +1376,7 @@ function ResourcePreview({
     if (resource?.type === "note") {
       return (
         <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-          <DrawerContent className="mt-0 h-[100svh] max-h-[100svh] rounded-none border-0 px-0 flex flex-col bg-surface">
+          <DrawerContent className="mt-0 h-[100dvh] max-h-[100dvh] rounded-none border-0 px-0 flex flex-col bg-surface">
             <MobileNoteBody
               title={resource.title}
               body={resource.body || ""}
@@ -1408,7 +1408,7 @@ function ResourcePreview({
         <DrawerContent
           className={cn(
             "px-0 pb-6 flex flex-col",
-            isPdf ? "h-[92vh]" : "max-h-[92vh]",
+            isPdf ? "h-[92dvh]" : "max-h-[92dvh]",
           )}
         >
           {Body}
@@ -1717,7 +1717,7 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="mt-0 px-0 h-[92vh] max-h-[92vh] flex flex-col bg-surface">
+        <DrawerContent className="mt-0 px-0 h-[92dvh] max-h-[92dvh] flex flex-col bg-surface">
           {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>
