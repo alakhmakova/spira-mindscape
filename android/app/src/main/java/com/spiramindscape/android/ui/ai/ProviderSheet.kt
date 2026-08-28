@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.spiramindscape.android.data.ai.AiApi
+import com.spiramindscape.android.ui.components.SpiraSheetHead
 import com.spiramindscape.android.ui.components.SpiraNoticeCard
 import com.spiramindscape.android.ui.components.SpiraNoticeKind
 import com.spiramindscape.android.ui.components.InlineEditText
@@ -55,6 +56,7 @@ import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Kale100
 import com.spiramindscape.android.ui.theme.Kale500
 import com.spiramindscape.android.ui.theme.Salt1000
+import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 
 /**
@@ -76,6 +78,11 @@ fun ProviderSheet(viewModel: AiChatViewModel, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.spiraExtras.surfaceRaised,
+        // No grab handle, on either surface, ever (BUG-061). Material's default drew a grey
+        // smudge above a sheet whose head is a teal band, which is the exact mismatch the sheet
+        // spec exists to stop. The X closes it; drag and back still work.
+        dragHandle = null,
+        shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg),
     ) {
         ProviderSheetContent(viewModel, onDismiss)
     }
@@ -107,146 +114,126 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
         }
     }
 
-    Column(
-        Modifier
-            .background(MaterialTheme.spiraExtras.surfaceRaised)
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 20.dp)
-            .imePadding()
-            .heightIn(max = 620.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        // ── head ────────────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                Kicker("Bring your own key")
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "AI providers",
-                    // The serif, as on the web (`font-['Playfair_Display']`).
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontSize = 22.sp,
-                    lineHeight = 26.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Salt1000,
-                )
-            }
-            Box(
-                Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .clickable(onClick = onDismiss),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    SpiraIcons.X,
-                    contentDescription = "Close",
-                    tint = Salt1000.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Keys are stored encrypted on your account. Keep several connected and switch anytime.",
-            style = MaterialTheme.typography.bodyMedium,
-            fontSize = 13.5.sp,
-            lineHeight = 20.sp,
-            color = Salt1000.copy(alpha = 0.6f),
-        )
-        Spacer(Modifier.height(16.dp))
+    Column(Modifier.background(MaterialTheme.spiraExtras.surfaceRaised).imePadding()) {
+        // ── head: the app's one sheet band, OUTSIDE the scroller (BUG-061) ──────
+        //
+        // It used to be a kicker and a serif heading inside the scrolling column, so the title,
+        // the close button and — the part with consequence — the sentence saying what happens to
+        // a pasted API key all scrolled away as soon as the user reached the provider they
+        // wanted. The head is the one thing on a sheet that must not move.
+        SpiraSheetHead("AI providers", onDismiss)
 
-        // ── one card per chat provider ──────────────────────────────────
-        CHAT_PROVIDERS.forEach { info ->
-            val saved = keys.firstOrNull { it.provider.equals(info.id, ignoreCase = true) }
-            ProviderCard(
-                info = info,
-                saved = saved,
-                isActive = info.id.equals(activeId, ignoreCase = true) && saved != null,
-                editing = editing == info.id,
-                dropdownOpen = openDropdown == info.id,
-                loadingModels = loadingModels == info.id,
-                models = modelLists[info.id] ?: info.models,
-                onActivate = { viewModel.chooseProvider(info.id) },
-                onToggleDropdown = {
-                    if (openDropdown == info.id) {
+        // ── body: the only thing that scrolls ───────────────────────────
+        //
+        // No heightIn cap either. A fixed 620.dp made this the one short sheet in the app on a
+        // tall phone; the sheet takes its height from its content like every other.
+        Column(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp, bottom = 20.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                "Keys are stored encrypted on your account. Keep several connected and switch anytime.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 13.5.sp,
+                lineHeight = 20.sp,
+                color = Salt1000.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // ── one card per chat provider ──────────────────────────────────
+            CHAT_PROVIDERS.forEach { info ->
+                val saved = keys.firstOrNull { it.provider.equals(info.id, ignoreCase = true) }
+                ProviderCard(
+                    info = info,
+                    saved = saved,
+                    isActive = info.id.equals(activeId, ignoreCase = true) && saved != null,
+                    editing = editing == info.id,
+                    dropdownOpen = openDropdown == info.id,
+                    loadingModels = loadingModels == info.id,
+                    models = modelLists[info.id] ?: info.models,
+                    onActivate = { viewModel.chooseProvider(info.id) },
+                    onToggleDropdown = {
+                        if (openDropdown == info.id) {
+                            openDropdown = null
+                        } else {
+                            openDropdown = info.id
+                            loadModels(info.id)
+                        }
+                    },
+                    onPickModel = { model ->
                         openDropdown = null
-                    } else {
-                        openDropdown = info.id
-                        loadModels(info.id)
-                    }
-                },
-                onPickModel = { model ->
-                    openDropdown = null
-                    viewModel.chooseModel(info.id, model)
-                },
-                onStartEditing = { editing = info.id; openDropdown = null; message = null },
+                        viewModel.chooseModel(info.id, model)
+                    },
+                    onStartEditing = { editing = info.id; openDropdown = null; message = null },
+                    onCancelEditing = { editing = null },
+                    onSaveKey = { key ->
+                        editing = null
+                        viewModel.saveKey(info.id, key, null) { error -> message = error }
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // ── web search ──────────────────────────────────────────────────
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.spiraExtras.border)
+            Spacer(Modifier.height(16.dp))
+            Kicker("Web search")
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Add a Tavily key (tavily.com) to let the assistant search the web. Optional.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 12.5.sp,
+                lineHeight = 19.sp,
+                color = Salt1000.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(10.dp))
+            ProviderCard(
+                info = TAVILY,
+                saved = keys.firstOrNull { it.provider.equals(TAVILY.id, ignoreCase = true) },
+                // Tavily is a key slot, not something the chat can be switched to, so it never
+                // shows Active / Use this — only Connected.
+                isActive = false,
+                connectedOnly = true,
+                editing = editing == TAVILY.id,
+                dropdownOpen = false,
+                loadingModels = false,
+                models = emptyList(),
+                onActivate = {},
+                onToggleDropdown = {},
+                onPickModel = {},
+                onStartEditing = { editing = TAVILY.id; message = null },
                 onCancelEditing = { editing = null },
                 onSaveKey = { key ->
                     editing = null
-                    viewModel.saveKey(info.id, key, null) { error -> message = error }
+                    viewModel.saveKey(TAVILY.id, key, null) { error -> message = error }
                 },
             )
-            Spacer(Modifier.height(12.dp))
-        }
 
-        // ── web search ──────────────────────────────────────────────────
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = MaterialTheme.spiraExtras.border)
-        Spacer(Modifier.height(16.dp))
-        Kicker("Web search")
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Add a Tavily key (tavily.com) to let the assistant search the web. Optional.",
-            style = MaterialTheme.typography.bodyMedium,
-            fontSize = 12.5.sp,
-            lineHeight = 19.sp,
-            color = Salt1000.copy(alpha = 0.6f),
-        )
-        Spacer(Modifier.height(10.dp))
-        ProviderCard(
-            info = TAVILY,
-            saved = keys.firstOrNull { it.provider.equals(TAVILY.id, ignoreCase = true) },
-            // Tavily is a key slot, not something the chat can be switched to, so it never
-            // shows Active / Use this — only Connected.
-            isActive = false,
-            connectedOnly = true,
-            editing = editing == TAVILY.id,
-            dropdownOpen = false,
-            loadingModels = false,
-            models = emptyList(),
-            onActivate = {},
-            onToggleDropdown = {},
-            onPickModel = {},
-            onStartEditing = { editing = TAVILY.id; message = null },
-            onCancelEditing = { editing = null },
-            onSaveKey = { key ->
-                editing = null
-                viewModel.saveKey(TAVILY.id, key, null) { error -> message = error }
-            },
-        )
+            message?.let {
+                Spacer(Modifier.height(12.dp))
+                // The app's one notice card. A key that wouldn't save used to say so in a line of small
+                // red type, which read as a field hint rather than as something that had gone wrong.
+                SpiraNoticeCard(message = it, kind = SpiraNoticeKind.Error, onDismiss = { message = null })
+            }
 
-        message?.let {
-            Spacer(Modifier.height(12.dp))
-            // The app's one notice card. A key that wouldn't save used to say so in a line of small
-            // red type, which read as a field hint rather than as something that had gone wrong.
-            SpiraNoticeCard(message = it, kind = SpiraNoticeKind.Error, onDismiss = { message = null })
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                SpiraIcons.Shield,
-                contentDescription = null,
-                tint = Salt1000.copy(alpha = 0.4f),
-                modifier = Modifier.size(12.dp),
-            )
-            Spacer(Modifier.size(6.dp))
-            Text(
-                "Keys never leave your account and are encrypted at rest.",
-                style = MaterialTheme.typography.labelMedium,
-                color = Salt1000.copy(alpha = 0.4f),
-            )
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    SpiraIcons.Shield,
+                    contentDescription = null,
+                    tint = Salt1000.copy(alpha = 0.4f),
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    "Keys never leave your account and are encrypted at rest.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Salt1000.copy(alpha = 0.4f),
+                )
+            }
         }
     }
 }
@@ -618,12 +605,30 @@ internal val CHAT_PROVIDERS = listOf(
         ),
     ),
     ProviderInfo(
+        id = "COHERE",
+        vendor = "Cohere",
+        context = "256 000 tokens",
+        // Cohere keys carry no distinguishing prefix, so there is nothing to check for.
+        keyPrefix = "",
+        // Pinned ids, because Cohere publishes no "-latest" alias to hide behind. The live list
+        // replaces these as soon as it loads. Mirrors AiPanel.tsx.
+        defaultModel = "command-a-03-2025",
+        models = listOf(
+            "command-a-03-2025",
+            "command-a-vision-07-2025",
+            "command-r-plus-08-2024",
+        ),
+    ),
+    ProviderInfo(
         id = "GEMINI",
         vendor = "Google Gemini",
         context = "1 000 000 tokens",
         keyPrefix = "AIza",
-        defaultModel = "gemini-2.5-flash",
-        models = listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"),
+        // Aliases, not pinned versions (BUG-059) — this fallback list had gone stale, and
+        // Google retired gemini-2.5-flash for new keys along with 2.0 and 1.5, so three of
+        // the four offered here could not send a message. Mirrors AiPanel.tsx.
+        defaultModel = "gemini-flash-lite-latest",
+        models = listOf("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"),
     ),
 )
 

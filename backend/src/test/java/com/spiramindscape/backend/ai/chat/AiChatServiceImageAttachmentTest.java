@@ -8,9 +8,11 @@ import com.spiramindscape.backend.ai.prompt.PromptResources;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
 import com.spiramindscape.backend.ai.provider.ProviderType;
+import com.spiramindscape.backend.ai.provider.cohere.CohereVisionReader;
 import com.spiramindscape.backend.ai.provider.mistral.MistralOcrService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.ai.safety.SafetyService;
 import com.spiramindscape.backend.ai.safety.SafetyVerdict;
 import com.spiramindscape.backend.ai.search.TavilySearchService;
@@ -61,6 +63,8 @@ class AiChatServiceImageAttachmentTest {
     @Mock private UrlReadService urlReadService;
     @Mock private GoalMemoryService goalMemory;
     @Mock private MistralOcrService mistralOcr;
+    @Mock private CohereVisionReader cohereVision;
+    @Mock private GoalService goalService;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -69,9 +73,12 @@ class AiChatServiceImageAttachmentTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
+        // The chat resolves the request's goalId to an OWNED id before using it
+        // (BUG-054); these fixtures speak for a goal the signed-in user owns.
+        lenient().when(goalService.isOwnedByCurrentUser(any())).thenReturn(true);
         lenient().when(goalContextBuilder.build(any())).thenReturn("");
         lenient().when(providerFactory.create(any(), anyString(), any())).thenReturn(provider);
         // The model answers straight away — no tool loop in these tests.
@@ -79,6 +86,17 @@ class AiChatServiceImageAttachmentTest {
             ((Runnable) inv.getArguments()[5]).run();
             return null;
         }).when(provider).streamChat(anyList(), anyString(), anyList(), any(), any(), any(), any());
+    }
+
+    /**
+     * The wording that tells the model what kind of reading it is holding now belongs to the
+     * reader, so a mocked reader has to supply it — see {@code ImageTextReader.describeReading}.
+     */
+    private void readersDescribeThemselves() {
+        lenient().when(mistralOcr.describeReading()).thenReturn(
+                "text read out of the image by OCR — it may contain mistakes");
+        lenient().when(cohereVision.describeReading()).thenReturn(
+                "text read out of the image by a vision model — it may contain mistakes");
     }
 
     private void useMistral(String model) {
@@ -103,6 +121,7 @@ class AiChatServiceImageAttachmentTest {
     @Test
     @DisplayName("a text-only Mistral model gets the OCR text and never the picture")
     void blindModelGetsOcrText() {
+        readersDescribeThemselves();
         useMistral("mistral-large-latest");
         when(mistralOcr.extractText(eq("mistral-key"), eq(PHOTO), anyInt()))
                 .thenReturn(Optional.of("Rågen Roast'n toast 263 kkal/100"));
@@ -130,6 +149,88 @@ class AiChatServiceImageAttachmentTest {
                 .contains("NOT shown to you")
                 .contains("mistral-large-latest")
                 .contains("NEVER guess");
+    }
+
+    // ── A blind model on a provider that is NOT Mistral ──────────────────────
+    //
+    // The owner's question, in code (2026-08-28): "on Mistral I also use a blind model — how did
+    // you solve that? do the same for Cohere." The answer is that nothing is per-provider —
+    // `visionContextFor` keys off `modelCanSeeImages(provider, model)`, so Cohere on a text-only
+    // Command model already takes the same road Mistral Large does. Nothing asserted it for a
+    // provider other than Mistral, though, which is the gap these two close.
+
+    private void useCohere(String model) {
+        lenient().when(keyService.getKey(ProviderType.COHERE))
+                .thenReturn(Optional.of(new AiKeyService.StoredKey("cohere-key", model)));
+    }
+
+    @Test
+    @DisplayName("a blind Cohere model reads the photo on its OWN key — no second key needed")
+    void blindCohereModelReadsWithItsOwnKey() {
+        // The owner's ask (2026-08-28): choosing Cohere must not oblige anyone to fetch a second
+        // API key from a second company just to attach a photo. Cohere's vision model does the
+        // reading, on the Cohere key — the same shape as a Mistral user, whose OCR has always
+        // run on their own key.
+        readersDescribeThemselves();
+        useCohere("command-a-03-2025");
+        lenient().when(keyService.getKey(ProviderType.MISTRAL)).thenReturn(Optional.empty());
+        when(cohereVision.extractText(eq("cohere-key"), eq(PHOTO), anyInt()))
+                .thenReturn(Optional.of("Rågen Roast'n toast 263 kkal/100"));
+
+        service.chat(withPhoto("COHERE"));
+
+        LlmMessage sent = lastUserMessage();
+        assertThat(sent.hasImages()).isFalse();
+        assertThat(sent.content()).contains("Rågen Roast'n toast 263 kkal/100");
+        // Reported as a transcription, never as sight.
+        assertThat(sent.content()).contains("vision model");
+        // And no Mistral key was wanted at any point.
+        verify(mistralOcr, never()).extractText(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("a Cohere reading that finds nothing still leaves the model unable to invent")
+    void blindCohereModelWithNothingReadableIsToldTheTruth() {
+        readersDescribeThemselves();
+        useCohere("command-a-03-2025");
+        when(cohereVision.extractText(anyString(), anyString(), anyInt()))
+                .thenReturn(Optional.empty());
+
+        service.chat(withPhoto("COHERE"));
+
+        LlmMessage sent = lastUserMessage();
+        assertThat(sent.hasImages()).isFalse();
+        assertThat(sent.content())
+                .contains("NOT shown to you")
+                .contains("command-a-03-2025")
+                .contains("NEVER guess");
+    }
+
+    @Test
+    @DisplayName("a provider with no reader of its own still borrows a saved Mistral key")
+    void anthropicBorrowsTheMistralKey() {
+        // Anthropic, OpenAI and Gemini have no OCR of their own, so the fallback still applies —
+        // which is why the rule is "own provider first", not "own provider only".
+        readersDescribeThemselves();
+        lenient().when(keyService.getKey(ProviderType.ANTHROPIC))
+                .thenReturn(Optional.of(new AiKeyService.StoredKey("anthropic-key", "gpt-3.5")));
+        useMistral(null);
+        when(mistralOcr.extractText(eq("mistral-key"), eq(PHOTO), anyInt()))
+                .thenReturn(Optional.of("borrowed reading"));
+
+        service.chat(withPhoto("ANTHROPIC"));
+
+        assertThat(lastUserMessage().content()).contains("borrowed reading");
+    }
+
+    @Test
+    @DisplayName("a Cohere VISION model gets the picture itself")
+    void cohereVisionModelGetsThePicture() {
+        useCohere("command-a-vision-07-2025");
+
+        service.chat(withPhoto("COHERE"));
+
+        assertThat(lastUserMessage().hasImages()).isTrue();
     }
 
     @Test

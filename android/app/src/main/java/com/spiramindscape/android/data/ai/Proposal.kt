@@ -176,15 +176,35 @@ fun proposalContext(p: Proposal): String {
 }
 
 /**
+ * The most turns replayed to the model, and the most characters across them.
+ *
+ * Mirrors `ChatHistory.MAX_ENTRIES` / `MAX_CHARS` on the server and `HISTORY_MAX_*` in the web's
+ * `proposal-logic.ts`. The three have to agree: the server is the backstop that bounds whatever a
+ * client sends, but a phone that sent more than the server keeps would have paid for it on the
+ * wire already — which on mobile data is the cost that matters most.
+ */
+const val HISTORY_MAX_ENTRIES = 60
+const val HISTORY_MAX_CHARS = 30_000
+
+/**
  * The transcript as the model should see it: real user/assistant turns only (no error bubbles, no
- * in-flight placeholder, no empties), with **consecutive same-role turns merged**.
+ * in-flight placeholder, no empties), with **consecutive same-role turns merged**, and **bounded**
+ * to the most recent turns that fit the limits above.
  *
  * The merge matters because revising a card writes the user's instruction into the transcript: if
  * that turn fails or is cancelled, the transcript holds two user messages in a row, and nothing
  * downstream normalises roles.
+ *
+ * The bound matters because nothing used to apply one (BUG-056). Every send replayed the whole
+ * stored transcript, so a chat cost more the longer it lived — a conversation seen in production
+ * was re-posting 270 KB per turn. Trimming happens **after** the merge, so the budget is spent on
+ * whole turns rather than fragments, and any assistant turn left stranded at the front is dropped:
+ * Anthropic rejects a conversation that does not start with the user, and a reply with no question
+ * above it reads as though the model spoke first. If that strip would empty the window, the newest
+ * user turn is kept on its own instead of sending nothing.
  */
 fun buildHistory(messages: List<ChatMessage>): List<AiApi.HistoryEntry> {
-    val out = mutableListOf<AiApi.HistoryEntry>()
+    val merged = mutableListOf<AiApi.HistoryEntry>()
     messages
         .filter {
             (it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT) &&
@@ -194,14 +214,50 @@ fun buildHistory(messages: List<ChatMessage>): List<AiApi.HistoryEntry> {
         }
         .forEach { m ->
             val role = if (m.role == ChatRole.USER) "user" else "assistant"
-            val last = out.lastOrNull()
+            val last = merged.lastOrNull()
             if (last != null && last.role == role) {
-                out[out.size - 1] = last.copy(content = last.content + "\n\n" + m.content)
+                merged[merged.size - 1] = last.copy(content = last.content + "\n\n" + m.content)
             } else {
-                out += AiApi.HistoryEntry(role, m.content)
+                merged += AiApi.HistoryEntry(role, m.content)
             }
         }
-    return out
+    return trimHistory(merged)
+}
+
+/** Keeps the newest turns that fit both limits; see [buildHistory]. */
+private fun trimHistory(merged: List<AiApi.HistoryEntry>): List<AiApi.HistoryEntry> {
+    val kept = mutableListOf<AiApi.HistoryEntry>()
+    var chars = 0
+    for (i in merged.indices.reversed()) {
+        if (kept.size >= HISTORY_MAX_ENTRIES) break
+        val entry = merged[i]
+        val cost = entry.content.length
+        // The newest turn is kept even when it alone busts the budget — truncated to its tail
+        // rather than dropped, since dropping it answers a question the model never saw.
+        if (kept.isEmpty() && cost > HISTORY_MAX_CHARS) {
+            kept += entry.copy(content = entry.content.takeLast(HISTORY_MAX_CHARS))
+            chars = HISTORY_MAX_CHARS
+            continue
+        }
+        if (chars + cost > HISTORY_MAX_CHARS) break
+        chars += cost
+        kept += entry
+    }
+    kept.reverse()
+    var start = 0
+    while (start < kept.size && kept[start].role != "user") start++
+    if (start < kept.size) return if (start == 0) kept else kept.subList(start, kept.size).toList()
+    // The window held only assistant turns, so stripping emptied it. Not a rare case: the
+    // newest entry is normally the assistant's last reply, and one long reply near the budget
+    // leaves no room for the user turn before it. Fall back to the newest thing the user
+    // actually said — it can lead, and it beats sending no history at all.
+    return newestUserTurn(merged)
+}
+
+/** The most recent user turn, truncated to the budget; see [trimHistory]. */
+private fun newestUserTurn(merged: List<AiApi.HistoryEntry>): List<AiApi.HistoryEntry> {
+    val newest = merged.lastOrNull { it.role == "user" } ?: return emptyList()
+    return listOf(newest.copy(content = newest.content.takeLast(HISTORY_MAX_CHARS)))
 }
 
 /** One optional, individually-toggleable field of a create proposal. */

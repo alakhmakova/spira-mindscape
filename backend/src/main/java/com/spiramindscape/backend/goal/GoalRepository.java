@@ -27,4 +27,10 @@ public interface GoalRepository extends JpaRepository<Goal, Long> {
      * the only way out would be deleting their own history. See {@code GoalService.MAX_ACTIVE_GOALS}.
      */
     long countByUserIdAndAchievedAtIsNull(Long userId);
+
+    /**
+     * Whether this goal exists <b>and</b> belongs to this user — the cheap form of
+     * {@link #findByIdAndUserId} for callers that only need the boundary, not the row.
+     */
+    boolean existsByIdAndUserId(Long id, Long userId);
 }

@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.ai.chat;
 
+import com.spiramindscape.backend.auth.CurrentUserProvider;
 import com.spiramindscape.backend.goal.Goal;
 import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.goal.Option;
@@ -32,10 +33,15 @@ public class GoalContextBuilder {
 
     private final GoalRepository goalRepository;
     private final GoalService goalService;
+    private final CurrentUserProvider currentUserProvider;
 
-    public GoalContextBuilder(GoalRepository goalRepository, GoalService goalService) {
+    public GoalContextBuilder(
+            GoalRepository goalRepository,
+            GoalService goalService,
+            CurrentUserProvider currentUserProvider) {
         this.goalRepository = goalRepository;
         this.goalService = goalService;
+        this.currentUserProvider = currentUserProvider;
     }
 
     /** Header used for the All-Goals overview (no goal open). */
@@ -46,11 +52,26 @@ public class GoalContextBuilder {
      * (the All-Goals overview) → a list of the user's goals plus the actions
      * available there (edit a goal's card fields, open a goal, start deletion,
      * create a new goal).
+     *
+     * <p><b>The goal id is user-supplied and untrusted, so the lookup is
+     * owner-scoped</b> (BUG-054). This used to call {@code findById}, which meant a
+     * signed-in user could post any {@code goalId} on {@code /api/ai/chat} and have
+     * another person's goal — title, description, reality items, options, targets and
+     * resource titles — pasted into the system prompt and read back to them by the
+     * model. A goal that is missing and a goal that belongs to someone else are
+     * deliberately indistinguishable here: both fall back to the user's own overview,
+     * exactly as an unknown id always did.
      */
     @Transactional(readOnly = true)
     public String build(Long goalId) {
         if (goalId == null) return buildGlobalContext();
-        return goalRepository.findById(goalId).map(this::buildContext).orElse(buildGlobalContext());
+        return goalRepository.findByIdAndUserId(goalId, currentUserId())
+                .map(this::buildContext)
+                .orElseGet(this::buildGlobalContext);
+    }
+
+    private Long currentUserId() {
+        return currentUserProvider.getCurrentUser().getId();
     }
 
     /** Overview context for the All-Goals page: the user's goals + allowed actions. */

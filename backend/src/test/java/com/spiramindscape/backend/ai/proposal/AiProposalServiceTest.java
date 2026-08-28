@@ -73,6 +73,30 @@ class AiProposalServiceTest {
     }
 
     @Test
+    @DisplayName("listPendingForGoal is scoped to the user as well as the goal (BUG-054)")
+    void listPendingForGoalScopedToUser() {
+        when(repo.findByAppUserIdAndGoalIdAndStatusOrderByCreatedAtDesc(
+                USER_ID, 99L, AiProposal.Status.PENDING)).thenReturn(List.of());
+
+        service.listPendingForGoal(99L);
+
+        verify(repo).findByAppUserIdAndGoalIdAndStatusOrderByCreatedAtDesc(
+                USER_ID, 99L, AiProposal.Status.PENDING);
+    }
+
+    @Test
+    @DisplayName("listPendingForGoal returns nothing for a goal the user does not own")
+    void listPendingForGoalOfAnotherUserIsEmpty() {
+        // GET /api/ai/proposals/goal/{id} takes the id straight off the URL. Filtering by
+        // goal alone returned the owner's pending changes — goal titles, target names, note
+        // text — to whoever asked. The owner-scoped query simply finds nothing.
+        when(repo.findByAppUserIdAndGoalIdAndStatusOrderByCreatedAtDesc(
+                USER_ID, 4242L, AiProposal.Status.PENDING)).thenReturn(List.of());
+
+        assertThat(service.listPendingForGoal(4242L)).isEmpty();
+    }
+
+    @Test
     @DisplayName("approve transitions a PENDING proposal to APPROVED")
     void approveTransitions() {
         AiProposal p = pending(5L);

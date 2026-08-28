@@ -10,12 +10,15 @@ import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.ai.provider.ToolCall;
 import com.spiramindscape.backend.ai.provider.ToolSpec;
+import com.spiramindscape.backend.ai.provider.ImageTextReader;
 import com.spiramindscape.backend.ai.provider.VisionSupport;
+import com.spiramindscape.backend.ai.provider.cohere.CohereVisionReader;
 import com.spiramindscape.backend.ai.provider.mistral.MistralOcrService;
 import com.spiramindscape.backend.ai.prompt.PromptResources;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.proposal.dto.ProposalDto;
 import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.ai.safety.SafetyCategory;
 import com.spiramindscape.backend.ai.safety.SafetyService;
 import com.spiramindscape.backend.ai.safety.SafetyVerdict;
@@ -740,6 +743,30 @@ public class AiChatService {
      *  a multi-step task (e.g. several web searches) before a forced final turn. */
     private static final int MAX_TOOL_ITERATIONS = 6;
 
+    /**
+     * The servlet-level timeout on a chat stream. Deliberately <b>longer</b> than
+     * {@link ChatStreamGuard#DEADLINE}: whichever fires first decides what the user sees,
+     * and a bare {@code AsyncRequestTimeoutException} (which is what this one produces) is
+     * a 500 with no explanation — exactly the failure BUG-055 was about.
+     */
+    static final java.time.Duration SSE_TIMEOUT = java.time.Duration.ofMinutes(3);
+
+    /**
+     * How much of a provider's own error text reaches the user.
+     *
+     * <p>It was 300, and 300 cut the answer off. Google's quota refusal is 405 characters and
+     * spends its first 235 on an apology and two documentation URLs, so the cut landed mid-word
+     * at {@code "…generativelanguage.googleapis.c…"} and threw away the only part worth reading:
+     * <b>{@code limit: 20, model: gemini-3.5-flash}</b> and {@code "Please retry in 57.8s"}. The
+     * owner reported the failure as that exact truncated string — the app had hidden which model
+     * and which allowance from them, and then they had to come and ask.
+     *
+     * <p>600 fits that message whole with room to spare, and it is not tuned to one provider:
+     * every provider puts the apology first and the specifics last, so a head-truncation always
+     * throws away the useful end.
+     */
+    private static final int PROVIDER_MESSAGE_MAX_CHARS = 600;
+
     /** Shown when a request somehow produces no text and no proposal, so the user
      *  never gets a blank "no response" (see {@link #ensureNonEmpty}). */
     private static final String EMPTY_RESPONSE_FALLBACK =
@@ -758,6 +785,8 @@ public class AiChatService {
     private final PromptResources prompts;
     private final GoalMemoryService goalMemory;
     private final MistralOcrService mistralOcr;
+    private final CohereVisionReader cohereVision;
+    private final GoalService goalService;
 
     // Cached thread pool for blocking SSE I/O. Threads are reused between requests.
     // Wrapped so the caller's Spring Security context propagates to the worker
@@ -765,6 +794,24 @@ public class AiChatService {
     // resolves the authenticated user from the security context.
     private final ExecutorService executor =
             new DelegatingSecurityContextExecutorService(Executors.newCachedThreadPool());
+
+    /**
+     * Drives every stream's heartbeat and deadline ({@link ChatStreamGuard}).
+     *
+     * <p><b>A pool, not one thread.</b> A heartbeat write can block — a client on a bad mobile
+     * link with a full TCP window stalls {@code emitter.send} — and a single shared thread
+     * would then stop ticking for every other conversation in flight, so their deadlines would
+     * arrive late and produce the very 500 the guard exists to replace. Four threads is ample
+     * for work that is one small write per stream every fifteen seconds, and bounds the damage
+     * one stuck socket can do. Daemon threads, so a shutting-down JVM is never held open by a
+     * chat.
+     */
+    private final java.util.concurrent.ScheduledExecutorService streamGuards =
+            Executors.newScheduledThreadPool(4, r -> {
+                Thread t = new Thread(r, "ai-chat-stream-guard");
+                t.setDaemon(true);
+                return t;
+            });
 
     public AiChatService(
             SafetyService safety,
@@ -778,7 +825,9 @@ public class AiChatService {
             UrlReadService urlReadService,
             PromptResources prompts,
             GoalMemoryService goalMemory,
-            MistralOcrService mistralOcr) {
+            MistralOcrService mistralOcr,
+            CohereVisionReader cohereVision,
+            GoalService goalService) {
         this.safety = safety;
         this.abuseAuditLogger = abuseAuditLogger;
         this.keyService = keyService;
@@ -791,6 +840,8 @@ public class AiChatService {
         this.prompts = prompts;
         this.goalMemory = goalMemory;
         this.mistralOcr = mistralOcr;
+        this.cohereVision = cohereVision;
+        this.goalService = goalService;
     }
 
     /**
@@ -826,6 +877,12 @@ public class AiChatService {
             return blocked;
         }
 
+        // The goal id is client-supplied and untrusted. Everything downstream is keyed
+        // off it — the prompt's goal block, the read_resource tool, the proposals this
+        // turn writes — so it is resolved to an OWNED id exactly once, here, and the
+        // rest of the method uses that instead of request.goalId() (BUG-054).
+        Long goalId = ownedGoalId(request.goalId());
+
         // Determine provider
         ProviderType providerType = resolveProvider(request.provider());
 
@@ -843,7 +900,7 @@ public class AiChatService {
         // and therefore no Mistral key. On a REFER verdict, append the duty-to-refer
         // instruction so the coach hands off to a professional in the user's language
         // instead of "treating".
-        String systemPrompt = buildSystemPrompt(request.goalId(), request.sessionType())
+        String systemPrompt = buildSystemPrompt(goalId, request.sessionType())
                 + safety.referInstruction(verdict.category());
 
         // What this turn may do with a picture (BUG-027): show it to the model only if the
@@ -867,28 +924,54 @@ public class AiChatService {
         // Reading a pasted URL — regular chat only (external fetch, like web search).
         if (!isGrow) tools.add(READ_URL_TOOL);
         // Reading the goal's own resources is fine in chat and GROW alike.
-        if (request.goalId() != null) tools.add(READ_RESOURCE_TOOL);
+        if (goalId != null) tools.add(READ_RESOURCE_TOOL);
         // Only a coaching session has an ending to declare.
         if (isGrow) tools.add(END_SESSION_TOOL);
 
-        SseEmitter emitter = new SseEmitter(3 * 60 * 1000L);
+        // The servlet's own limit. Nothing should ever reach it now — ChatStreamGuard.DEADLINE
+        // fires 30 seconds earlier with a message the user can read — but it stays as the
+        // backstop for a stream that somehow escapes the guard entirely.
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT.toMillis());
+        ChatStreamGuard guard = ChatStreamGuard.start(emitter, streamGuards);
 
         if (isGrow) {
             // How long is left, then memory of earlier sessions (saved by the user
             // at session end); the memory is optional and empty when there is none.
-            String memory = goalMemory.memoryBlock(request.goalId());
+            String memory = goalMemory.memoryBlock(goalId);
             String growPrompt = systemPrompt + sessionTimingBlock(request)
                     + (memory.isEmpty() ? "" : "\n\n" + memory);
             executor.submit(() -> runAgenticLoop(
                     provider, messages, growPrompt, tools, null,
-                    request.goalId(), vision, emitter));
+                    goalId, vision, emitter, guard));
         } else {
             executor.submit(() -> runAgenticLoop(
                     provider, messages, systemPrompt, tools, tavilyKey.orElse(null),
-                    request.goalId(), vision, emitter));
+                    goalId, vision, emitter, guard));
         }
 
         return emitter;
+    }
+
+    /**
+     * The goal this turn may work with: {@code request.goalId()} when the current user
+     * owns it, {@code null} otherwise.
+     *
+     * <p><b>Why it degrades instead of refusing.</b> A 404 would be the obvious answer,
+     * but the same "not owned" branch also catches a goal that was deleted on the
+     * user's other device while this tab still had it open — a case the chat has always
+     * handled by falling back to the All-Goals context. So a foreign id is treated as
+     * "no goal open": the prompt carries the user's own overview, {@code read_resource}
+     * is not offered, and nothing this turn proposes can be attached to a goal that is
+     * not theirs. Nothing about the other person's goal is disclosed, not even that the
+     * id exists.
+     */
+    private Long ownedGoalId(Long requestedGoalId) {
+        if (requestedGoalId == null) return null;
+        if (goalService.isOwnedByCurrentUser(requestedGoalId)) return requestedGoalId;
+        // WARN, not ERROR: a stale tab produces this legitimately. The id is the user's
+        // own input, never their content, so it is safe to record.
+        log.warn("chat_goal_not_owned goalId={}", requestedGoalId);
+        return null;
     }
 
     /**
@@ -951,7 +1034,8 @@ public class AiChatService {
             AiKeyService.StoredKey tavilyKey,
             Long goalId,
             VisionContext vision,
-            SseEmitter emitter) {
+            SseEmitter emitter,
+            ChatStreamGuard guard) {
 
         try {
             // Tracks whether ANYTHING reached the user this request (a text token or
@@ -960,6 +1044,16 @@ public class AiChatService {
             boolean produced = false;
 
             for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+                // The stream can end under this loop — the deadline fired, the client hung up,
+                // an earlier turn errored. Nothing used to notice, so the worker kept calling
+                // the provider for up to six more turns after the user had been told the turn
+                // had failed: billed, invisible, and the proposals from those turns were still
+                // written to the database, so cards appeared for a conversation the user had
+                // already been told was over.
+                if (guard.isFinished()) {
+                    log.debug("chat_loop_abandoned iteration={}", iteration);
+                    return;
+                }
                 StringBuilder turnText = new StringBuilder();
                 List<ToolCall> calls = new ArrayList<>();
                 AtomicBoolean failed = new AtomicBoolean(false);
@@ -976,8 +1070,12 @@ public class AiChatService {
                 if (failed.get()) return; // emitter already errored
                 if (turnText.length() > 0) produced = true;
 
-                // Surface proposals and a session ending (neither loops on its own)
+                // Surface proposals and a session ending (neither loops on its own). Skipped
+                // outright if the stream ended while this turn was streaming: a proposal is
+                // persisted as it is surfaced, so writing one now would leave a card behind
+                // for a turn the user was told had failed.
                 for (ToolCall c : calls) {
+                    if (guard.isFinished()) break;
                     if ("propose_goal_change".equals(c.name())) {
                         sendProposal(emitter, c, goalId);
                         produced = true;
@@ -1010,6 +1108,10 @@ public class AiChatService {
             // right after a search — results fetched but never used — and the user
             // would get NOTHING. Give one FINAL turn that can still write to the goal
             // (proposals) but has NO looping tools, so it must finish now.
+            if (guard.isFinished()) {
+                log.debug("chat_loop_abandoned iteration=final");
+                return;
+            }
             StringBuilder finalText = new StringBuilder();
             List<ToolCall> finalCalls = new ArrayList<>();
             AtomicBoolean finalFailed = new AtomicBoolean(false);
@@ -1027,6 +1129,7 @@ public class AiChatService {
             if (finalFailed.get()) return;
             if (finalText.length() > 0) produced = true;
             for (ToolCall c : finalCalls) {
+                if (guard.isFinished()) break;
                 if ("propose_goal_change".equals(c.name())) {
                     sendProposal(emitter, c, goalId);
                     produced = true;
@@ -1069,12 +1172,12 @@ public class AiChatService {
                 String ocr = vision.readText(VisionSupport.toDataUrl(image.get()));
                 if (!vision.modelCanSee()) {
                     return LlmMessage.toolResult(c.id(), fenceUntrusted(
-                            ocr.isBlank() ? imageUnreadableNote(vision) : imageTextNote(ocr)));
+                            ocr.isBlank() ? imageUnreadableNote(vision) : imageTextNote(vision, ocr)));
                 }
                 return LlmMessage.toolResultWithImages(
                         c.id(),
                         fenceUntrusted("(image resource — shown below for you to view and describe)"
-                                + (ocr.isBlank() ? "" : "\n" + imageTextNote(ocr))),
+                                + (ocr.isBlank() ? "" : "\n" + imageTextNote(vision, ocr))),
                         List.of(image.get()));
             }
         }
@@ -1090,11 +1193,10 @@ public class AiChatService {
                 + "what it contains.)";
     }
 
-    /** Wraps OCR output, flagged so the model reports it as a machine reading, not as sight. */
-    private static String imageTextNote(String ocr) {
-        return "(text read out of the image by OCR — it may contain mistakes, especially with "
-                + "handwriting. Use it, say where you are unsure, and never fill gaps by "
-                + "guessing:)\n" + ocr;
+    /** Wraps the reading, flagged so the model reports it as machine text, not as sight. */
+    private static String imageTextNote(VisionContext vision, String text) {
+        return "(" + vision.describeReading() + ". Use it, say where you are unsure, and never "
+                + "fill gaps by guessing:)" + System.lineSeparator() + text;
     }
 
     /** Produces the tool_result text for a single tool call in the agentic loop. */
@@ -1184,11 +1286,11 @@ public class AiChatService {
     private List<LlmMessage> buildMessages(ChatRequest request, VisionContext vision) {
         List<LlmMessage> messages = new ArrayList<>();
 
-        // Replay history
-        if (request.history() != null) {
-            for (ChatRequest.MessageEntry entry : request.history()) {
-                messages.add(new LlmMessage(entry.role(), entry.content()));
-            }
+        // Replay history — bounded (BUG-056). The clients trim before sending; this is the
+        // backstop, because the history is client-supplied and used to be replayed whole,
+        // so a long-lived chat re-posted a quarter of a megabyte on every turn.
+        for (ChatRequest.MessageEntry entry : ChatHistory.trim(request.history())) {
+            messages.add(new LlmMessage(entry.role(), entry.content()));
         }
 
         // Append current user message, folding in any directly-attached files.
@@ -1206,21 +1308,34 @@ public class AiChatService {
      * handwriting poorly even when they do have vision. It needs the user's Mistral key; when
      * there is none, an unreadable image is reported as such instead of being guessed at.
      */
-    private record VisionContext(ProviderType provider, String model, String ocrKey,
-                                 MistralOcrService ocr) {
+    /**
+     * What this turn can do with a picture: show it, read it, or neither.
+     *
+     * <p>{@code reader} is whichever {@link ImageTextReader} the turn is entitled to use, and
+     * {@code readerKey} is the key that pays for it — see {@link #visionContextFor}. Both are
+     * null when the user has no way to read an image at all, and then the model is told so
+     * rather than left to invent (BUG-027).
+     */
+    private record VisionContext(ProviderType provider, String model, String readerKey,
+                                 ImageTextReader reader) {
 
         boolean modelCanSee() {
             return VisionSupport.modelCanSeeImages(provider, model);
         }
 
         boolean canReadText() {
-            return ocrKey != null && !ocrKey.isBlank();
+            return reader != null && readerKey != null && !readerKey.isBlank();
         }
 
-        /** OCR text for a data URL, or "" when OCR is unavailable or found nothing. */
+        /** The image's text, or "" when nothing can read it or it held none. */
         String readText(String dataUrl) {
             if (!canReadText()) return "";
-            return ocr.extractText(ocrKey, dataUrl, ATTACHMENT_TEXT_MAX_CHARS).orElse("");
+            return reader.extractText(readerKey, dataUrl, ATTACHMENT_TEXT_MAX_CHARS).orElse("");
+        }
+
+        /** How the reading should be described to the model. */
+        String describeReading() {
+            return reader == null ? "" : reader.describeReading();
         }
 
         /** The model name to show the user in an explanation. */
@@ -1231,17 +1346,40 @@ public class AiChatService {
         }
     }
 
+    /**
+     * Decides how this turn will read a picture, and on whose key.
+     *
+     * <p><b>The user's own provider first.</b> That rule was always here for Mistral — a Mistral
+     * user's OCR runs on the Mistral key they already have — and it now covers Cohere too, whose
+     * vision model reads the image on the Cohere key. Picking a provider should not oblige
+     * anyone to go and get a second API key from a second company before they can attach a
+     * photo (owner, 2026-08-28).
+     *
+     * <p>A Mistral key remains the fallback for everyone else, and the better answer for scans
+     * and handwriting — {@code mistral-ocr-latest} is a document-OCR product, while a vision
+     * model is a general one asked to transcribe. Without either, {@code canReadText()} is false
+     * and the model is told plainly that it was shown nothing.
+     *
+     * <p>Mistral is read even when its chat model <i>can</i> see, on purpose: its chat models
+     * read handwriting poorly, and the OCR product does not.
+     */
     private VisionContext visionContextFor(ProviderType providerType, AiKeyService.StoredKey key) {
-        boolean useOcr = providerType == ProviderType.MISTRAL
+        boolean useReader = providerType == ProviderType.MISTRAL
                 || !VisionSupport.modelCanSeeImages(providerType, key.model());
-        String ocrKey = null;
-        if (useOcr) {
-            ocrKey = providerType == ProviderType.MISTRAL
-                    ? key.apiKey()
-                    : keyService.getKey(ProviderType.MISTRAL)
-                            .map(AiKeyService.StoredKey::apiKey).orElse(null);
+        if (!useReader) {
+            return new VisionContext(providerType, key.model(), null, null);
         }
-        return new VisionContext(providerType, key.model(), ocrKey, mistralOcr);
+        // The provider's own key, when that provider can read a picture itself.
+        if (providerType == ProviderType.MISTRAL) {
+            return new VisionContext(providerType, key.model(), key.apiKey(), mistralOcr);
+        }
+        if (providerType == ProviderType.COHERE) {
+            return new VisionContext(providerType, key.model(), key.apiKey(), cohereVision);
+        }
+        // Otherwise borrow a saved Mistral key, if there is one.
+        String mistralKey = keyService.getKey(ProviderType.MISTRAL)
+                .map(AiKeyService.StoredKey::apiKey).orElse(null);
+        return new VisionContext(providerType, key.model(), mistralKey, mistralOcr);
     }
 
     /** Max characters pulled from an attached PDF / DOCX (bounds the chat context). */
@@ -1306,12 +1444,12 @@ public class AiChatService {
                 if (vision.modelCanSee()) {
                     images.add(img);
                     extras.append("\n\n[Attached image: ").append(name).append("]");
-                    if (!ocr.isBlank()) extras.append(attachmentBlock(name, imageTextNote(ocr)));
+                    if (!ocr.isBlank()) extras.append(attachmentBlock(name, imageTextNote(vision, ocr)));
                 } else {
                     // Blind model: it must get the text or the truth, never a silent gap it
                     // will fill with invention (BUG-027).
                     extras.append(attachmentBlock(name,
-                            ocr.isBlank() ? imageUnreadableNote(vision) : imageTextNote(ocr)));
+                            ocr.isBlank() ? imageUnreadableNote(vision) : imageTextNote(vision, ocr)));
                 }
             } else if (mime.contains("pdf")) {
                 String text = ResourceTextExtractor.extractPdfText(dataUrl, ATTACHMENT_TEXT_MAX_CHARS);
@@ -1370,7 +1508,7 @@ public class AiChatService {
             // JSON-encode the token so it is always a single SSE data line. Raw
             // tokens may contain newlines (Markdown headings, lists, code), which
             // would otherwise break SSE framing and truncate the message.
-            emitter.send(SseEmitter.event().name("token").data(jsonEncode(token)));
+            sendEvent(emitter, SseEmitter.event().name("token").data(jsonEncode(token)));
         } catch (Exception e) {
             log.debug("SSE send failed (client likely disconnected): {}", e.getMessage());
             emitter.completeWithError(e);
@@ -1431,7 +1569,7 @@ public class AiChatService {
         try {
             String payload = MAPPER.writeValueAsString(
                     MAPPER.createObjectNode().put("summary", composeSessionRecord(data)));
-            emitter.send(SseEmitter.event().name("session_end").data(payload));
+            sendEvent(emitter, SseEmitter.event().name("session_end").data(payload));
         } catch (Exception e) {
             log.debug("SSE session_end send failed: {}", e.getMessage());
             emitter.completeWithError(e);
@@ -1518,7 +1656,7 @@ public class AiChatService {
             }
         }
         try {
-            emitter.send(SseEmitter.event().name("proposal").data(data));
+            sendEvent(emitter, SseEmitter.event().name("proposal").data(data));
         } catch (Exception e) {
             log.debug("SSE proposal send failed: {}", e.getMessage());
             emitter.completeWithError(e);
@@ -1544,18 +1682,38 @@ public class AiChatService {
 
     private void completeSse(SseEmitter emitter) {
         try {
-            emitter.send(SseEmitter.event().name("done").data(""));
-            emitter.complete();
+            synchronized (emitter) {
+                emitter.send(SseEmitter.event().name("done").data(""));
+                emitter.complete();
+            }
         } catch (Exception e) {
             emitter.completeWithError(e);
+        }
+    }
+
+    /**
+     * Every write to a chat emitter goes through here, and holds the emitter as its own
+     * monitor.
+     *
+     * <p>{@link ChatStreamGuard} writes a heartbeat from a scheduler thread while the
+     * agentic loop writes tokens from a worker thread, and two interleaved writes would
+     * corrupt the SSE framing — a half-written {@code data:} line reads as a truncated
+     * message on both clients. {@code SseEmitter} does not lock for us.
+     */
+    private static void sendEvent(SseEmitter emitter, SseEmitter.SseEventBuilder event)
+            throws java.io.IOException {
+        synchronized (emitter) {
+            emitter.send(event);
         }
     }
 
     private void errorSse(SseEmitter emitter, Throwable error) {
         log.error("AI stream error", error);
         try {
-            emitter.send(SseEmitter.event().name("error").data(friendlyError(error)));
-            emitter.complete();
+            synchronized (emitter) {
+                emitter.send(SseEmitter.event().name("error").data(friendlyError(error)));
+                emitter.complete();
+            }
         } catch (Exception e) {
             emitter.completeWithError(error);
         }
@@ -1568,7 +1726,9 @@ public class AiChatService {
      * falls back to a short hint based on the HTTP status. The full error is
      * always in the server log.
      */
-    private String friendlyError(Throwable error) {
+    // Package-private for ProviderErrorMessageTest: this is user-facing text, and it has
+    // already shipped once in a shape that hid the answer from the person reading it.
+    String friendlyError(Throwable error) {
         String m = error.getMessage() == null ? "" : error.getMessage();
 
         // Surface the provider's own error text when present — it's meant for
@@ -1576,7 +1736,9 @@ public class AiChatService {
         String providerMsg = extractProviderMessage(m);
         if (providerMsg != null && !providerMsg.isBlank()) {
             String clean = providerMsg.replaceAll("\\s+", " ").trim();
-            return clean.length() > 300 ? clean.substring(0, 300) + "…" : clean;
+            return clean.length() > PROVIDER_MESSAGE_MAX_CHARS
+                    ? clean.substring(0, PROVIDER_MESSAGE_MAX_CHARS) + "…"
+                    : clean;
         }
 
         String lower = m.toLowerCase();

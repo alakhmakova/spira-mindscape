@@ -168,14 +168,34 @@ export function proposalContext(p: Proposal): string {
 }
 
 /**
+ * The most turns replayed to the model, and the most characters across them.
+ *
+ * Mirrors `ChatHistory.MAX_ENTRIES` / `MAX_CHARS` on the server and the pair in Android's
+ * `Proposal.kt`. The three have to agree: the server is the backstop that holds whatever a
+ * client sends, but if the web sent more than the server enforces, the trim would happen
+ * after the request had already gone over the wire — which is the cost being avoided.
+ */
+export const HISTORY_MAX_ENTRIES = 60;
+export const HISTORY_MAX_CHARS = 30_000;
+
+/**
  * The transcript as the model should see it: real user/assistant turns only (no error
  * bubbles, no in-flight placeholder, no empties), with **consecutive same-role turns
- * merged**.
+ * merged**, and **bounded** to the most recent turns that fit the limits above.
  *
  * The merge matters because a card revise now writes the user's instruction into the
  * transcript: if that turn fails or is cancelled, the transcript holds two user messages in a
  * row. `AiChatService.buildMessages` replays history verbatim and no provider adapter
  * normalises roles, so we normalise here.
+ *
+ * The bound matters because nothing used to apply one (BUG-056). The panel keeps a hundred
+ * messages in localStorage and every send replayed all of them, so a chat cost more the
+ * longer it lived: production logs show one conversation re-posting 270 KB a turn until the
+ * user pressed "new chat" and the next request was 3.7 KB. Trimming happens **after** the
+ * merge, so the budget is spent on whole turns rather than on fragments of them, and any
+ * assistant turn left stranded at the front is dropped — Anthropic rejects a conversation
+ * that does not start with the user, and a reply with no question above it reads as though
+ * the model spoke first.
  */
 export function buildHistory(
   msgs: {
@@ -185,7 +205,7 @@ export function buildHistory(
     streaming?: boolean;
   }[],
 ): { role: "user" | "assistant"; content: string }[] {
-  const out: { role: "user" | "assistant"; content: string }[] = [];
+  const merged: { role: "user" | "assistant"; content: string }[] = [];
   msgs
     .filter(
       (m) =>
@@ -196,11 +216,66 @@ export function buildHistory(
     )
     .forEach((m) => {
       const role = m.role as "user" | "assistant";
-      const last = out[out.length - 1];
+      const last = merged[merged.length - 1];
       if (last && last.role === role) last.content += `\n\n${m.content}`;
-      else out.push({ role, content: m.content });
+      else merged.push({ role, content: m.content });
     });
-  return out;
+  return trimHistory(merged);
+}
+
+/** Keeps the newest turns that fit both limits; see {@link buildHistory}. */
+function trimHistory(
+  merged: { role: "user" | "assistant"; content: string }[],
+): { role: "user" | "assistant"; content: string }[] {
+  const kept: { role: "user" | "assistant"; content: string }[] = [];
+  let chars = 0;
+  for (
+    let i = merged.length - 1;
+    i >= 0 && kept.length < HISTORY_MAX_ENTRIES;
+    i--
+  ) {
+    const entry = merged[i];
+    const cost = entry.content.length;
+    // The newest turn is kept even when it alone busts the budget — truncated to its tail
+    // rather than dropped, since dropping it answers a question the model never saw.
+    if (kept.length === 0 && cost > HISTORY_MAX_CHARS) {
+      kept.push({
+        role: entry.role,
+        content: entry.content.slice(-HISTORY_MAX_CHARS),
+      });
+      chars = HISTORY_MAX_CHARS;
+      continue;
+    }
+    if (chars + cost > HISTORY_MAX_CHARS) break;
+    chars += cost;
+    kept.push(entry);
+  }
+  kept.reverse();
+  let start = 0;
+  while (start < kept.length && kept[start].role !== "user") start++;
+  if (start < kept.length) return start === 0 ? kept : kept.slice(start);
+  // The window held only assistant turns, so stripping emptied it. That is not rare: the
+  // newest entry is normally the assistant's last reply, and one long reply near the budget
+  // leaves no room for the user turn before it. Fall back to the newest thing the user
+  // actually said — it can lead, and it beats sending no history at all.
+  return newestUserTurn(merged);
+}
+
+/** The most recent user turn, truncated to the budget; see {@link trimHistory}. */
+function newestUserTurn(
+  merged: { role: "user" | "assistant"; content: string }[],
+): { role: "user" | "assistant"; content: string }[] {
+  for (let i = merged.length - 1; i >= 0; i--) {
+    if (merged[i].role === "user") {
+      return [
+        {
+          role: "user" as const,
+          content: merged[i].content.slice(-HISTORY_MAX_CHARS),
+        },
+      ];
+    }
+  }
+  return [];
 }
 
 /**

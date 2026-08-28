@@ -20,6 +20,11 @@ import static org.mockito.Mockito.when;
  * to text, and — the security boundary — a resource on a different goal is never
  * returned. Plus {@code resolveOwnedAttachment} (BUG-030), whose boundary is the
  * requesting **user**, not just the goal.
+ *
+ * <p>{@code read} and {@code readImage} answer to the same **user** boundary since
+ * BUG-054. Matching the resource against the tool call's {@code goalId} was never a
+ * boundary on its own, because that id is itself part of the request: naming another
+ * person's goal and one of its resources used to hand back their note body or PDF text.
  */
 class ResourceReadServiceTest {
 
@@ -35,9 +40,17 @@ class ResourceReadServiceTest {
         when(currentUser.getCurrentUser()).thenReturn(me);
     }
 
+    /** A file on {@code goalId}, owned by {@link #CURRENT_USER} unless stated otherwise. */
     private Resource fileResource(long goalId, String mime, String dataUrl) {
+        return fileResource(goalId, CURRENT_USER, mime, dataUrl);
+    }
+
+    private Resource fileResource(long goalId, long ownerId, String mime, String dataUrl) {
+        AppUser owner = new AppUser();
+        owner.setId(ownerId);
         Goal goal = new Goal();
         goal.setId(goalId);
+        goal.setUser(owner);
         Resource r = new Resource();
         r.setType("file");
         r.setMime(mime);
@@ -91,6 +104,59 @@ class ResourceReadServiceTest {
 
         assertThat(service.readImage(999L, 10L)).isEmpty();
         assertThat(service.read(999L, 10L)).isEqualTo("Resource not found.");
+    }
+
+    @Test
+    void aResourceOnAnotherUsersGoalIsNeverRead() {
+        // The tool call names goal 5 and resource 10, and the resource really is on goal 5 —
+        // but goal 5 belongs to user 999. Before BUG-054 the goal match alone let this through,
+        // so a guessed pair of ids read a stranger's file straight into the conversation.
+        when(repo.findById(10L)).thenReturn(
+                Optional.of(fileResource(5L, 999L, "image/png", "data:image/png;base64,SECRET")));
+
+        assertThat(service.readImage(5L, 10L)).isEmpty();
+        assertThat(service.read(5L, 10L)).isEqualTo("Resource not found.");
+    }
+
+    @Test
+    void aNoteOnAnotherUsersGoalIsNeverRead() {
+        AppUser stranger = new AppUser();
+        stranger.setId(999L);
+        Goal theirGoal = new Goal();
+        theirGoal.setId(5L);
+        theirGoal.setUser(stranger);
+        Resource note = new Resource();
+        note.setType("note");
+        note.setBody("<p>my salary is</p>");
+        note.setGoal(theirGoal);
+        when(repo.findById(11L)).thenReturn(Optional.of(note));
+
+        assertThat(service.read(5L, 11L)).isEqualTo("Resource not found.");
+    }
+
+    @Test
+    void anOrphanedResourceIsNeverRead() {
+        // A goal with no owner cannot pass the check either — belongsTo… must not read
+        // null as "anyone's".
+        Goal ownerless = new Goal();
+        ownerless.setId(5L);
+        Resource r = new Resource();
+        r.setType("note");
+        r.setBody("<p>text</p>");
+        r.setGoal(ownerless);
+        when(repo.findById(12L)).thenReturn(Optional.of(r));
+
+        assertThat(service.read(5L, 12L)).isEqualTo("Resource not found.");
+        assertThat(service.readImage(5L, 12L)).isEmpty();
+    }
+
+    @Test
+    void aForeignResourceReadsExactlyLikeAMissingOne() {
+        when(repo.findById(10L)).thenReturn(
+                Optional.of(fileResource(5L, 999L, "application/pdf", "data:application/pdf;base64,X")));
+        when(repo.findById(20L)).thenReturn(Optional.empty());
+
+        assertThat(service.read(5L, 10L)).isEqualTo(service.read(5L, 20L));
     }
 
     @Test
