@@ -83,7 +83,7 @@ class VisionSupportTest {
     @Test
     void buildsOpenAiImageUserMessageWithDataUrl() {
         Map<String, Object> msg =
-                VisionSupport.openAiImageUserMessage(List.of(new LlmImage("image/jpeg", "BBBB")));
+                VisionSupport.imageUrlUserMessage(List.of(new LlmImage("image/jpeg", "BBBB")));
         assertThat(msg.get("role")).isEqualTo("user");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> parts = (List<Map<String, Object>>) msg.get("content");

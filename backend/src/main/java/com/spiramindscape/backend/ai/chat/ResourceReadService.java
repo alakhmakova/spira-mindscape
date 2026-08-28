@@ -99,8 +99,17 @@ public class ResourceReadService {
 
     /**
      * Returns the readable content of the resource, or a short explanatory
-     * message if it is missing, not part of {@code goalId}, or unreadable.
-     * Never throws — the result is fed back to the model as a tool result.
+     * message if it is missing, not part of {@code goalId}, owned by someone else,
+     * or unreadable. Never throws — the result is fed back to the model as a tool
+     * result.
+     *
+     * <p><b>Both the goal and the owner are checked</b> (BUG-054). Matching the
+     * resource against {@code goalId} alone was not a boundary at all, because
+     * {@code goalId} itself comes from the request body: naming another person's goal
+     * and one of its resource ids made the {@code read_resource} tool hand back their
+     * note body, link or extracted PDF text. Every failure returns the same
+     * "Resource not found." so the model — and through it the user — cannot tell the
+     * three cases apart.
      */
     @Transactional(readOnly = true)
     public String read(Long goalId, Long resourceId) {
@@ -109,8 +118,8 @@ public class ResourceReadService {
         if (opt.isEmpty()) return "Resource not found.";
 
         Resource r = opt.get();
-        if (r.getGoal() == null || !goalId.equals(r.getGoal().getId())) {
-            return "Resource not found."; // not part of this goal
+        if (!belongsToCurrentUsersGoal(r, goalId)) {
+            return "Resource not found."; // missing, another goal, or another user
         }
 
         String type = r.getType() == null ? "" : r.getType();
@@ -152,8 +161,9 @@ public class ResourceReadService {
     /**
      * Returns the image to SHOW the model for an image resource the model asked
      * to read, or empty if the resource is missing, not part of {@code goalId},
-     * not a file, or not a vision-viewable image type. Owner scoping is the same
-     * goal check as {@link #read} — a resource on another goal is never returned.
+     * owned by someone else, not a file, or not a vision-viewable image type. It
+     * applies exactly the boundary {@link #read} does — see the note there on why
+     * the goal match alone was not one.
      */
     @Transactional(readOnly = true)
     public Optional<LlmImage> readImage(Long goalId, Long resourceId) {
@@ -162,13 +172,24 @@ public class ResourceReadService {
         if (opt.isEmpty()) return Optional.empty();
 
         Resource r = opt.get();
-        if (r.getGoal() == null || !goalId.equals(r.getGoal().getId())) {
-            return Optional.empty(); // not part of this goal
+        if (!belongsToCurrentUsersGoal(r, goalId)) {
+            return Optional.empty(); // missing, another goal, or another user
         }
         if (!"file".equals(r.getType())) return Optional.empty();
         String mime = r.getMime() == null ? "" : r.getMime().toLowerCase();
         if (!VisionSupport.isVisionMime(mime)) return Optional.empty();
         return Optional.ofNullable(VisionSupport.fromDataUrl(r.getDataUrl()));
+    }
+
+    /**
+     * True when {@code r} hangs off {@code goalId} <b>and</b> that goal belongs to the
+     * user making the request. The second half is the part that was missing: the goal
+     * id travels in the request body, so trusting it made the first half circular.
+     */
+    private boolean belongsToCurrentUsersGoal(Resource r, Long goalId) {
+        if (r.getGoal() == null || !goalId.equals(r.getGoal().getId())) return false;
+        Long ownerId = r.getGoal().getUser() == null ? null : r.getGoal().getUser().getId();
+        return ownerId != null && ownerId.equals(currentUserProvider.getCurrentUser().getId());
     }
 
     private String contactDetails(Resource r) {

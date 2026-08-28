@@ -2,6 +2,7 @@ package com.spiramindscape.backend.ai.provider.google;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spiramindscape.backend.ai.provider.LlmHttp;
 import com.spiramindscape.backend.ai.provider.LlmMessage;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.ProviderType;
@@ -45,7 +46,29 @@ public class GeminiProvider implements LlmProvider {
 
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-    static final String DEFAULT_MODEL = "gemini-2.5-flash";
+    /**
+     * The model used when the user saved a Gemini key without choosing one.
+     *
+     * <p><b>An alias, not a version</b> (BUG-059). It used to be {@code gemini-2.5-flash}, and
+     * Google retired that for new keys: choosing it answers <i>"This model
+     * models/gemini-2.5-flash is no longer available to new users."</i> So the default shipped
+     * in a state where a fresh Gemini key could not send a single message, and the app itself
+     * had put it there. A pinned version is a default with an expiry date that nobody is
+     * watching; {@code gemini-flash-latest} is Google's own moving pointer at the current
+     * Flash, so it cannot go stale the same way.
+     *
+     * <p><b>Lite, and measured rather than assumed.</b> Against a real free-tier key on
+     * 2026-08-28, {@code gemini-flash-latest} answered 503 "experiencing high demand" on three
+     * consecutive tries and then a quota refusal, while {@code gemini-flash-lite-latest}
+     * replied first time. A default exists to make the first message work for someone who has
+     * expressed no preference — and someone with no preference is, overwhelmingly, someone on
+     * the free tier, where the lite quota is the roomier one. Anybody who wants the stronger
+     * model picks it in the key sheet.
+     *
+     * <p>The trade is that the model behind an alias changes without us. That is acceptable
+     * for a fallback, and far better than a pinned version that is guaranteed to break.
+     */
+    static final String DEFAULT_MODEL = "gemini-flash-lite-latest";
     private static final int MAX_TOKENS = 8192;
 
     private final String apiKey;
@@ -75,15 +98,18 @@ public class GeminiProvider implements LlmProvider {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(ENDPOINT))
+                    // Bounds the wait for the response headers. Without it a provider
+                    // that accepts the connection and then says nothing held the worker
+                    // thread until the SSE emitter gave up (BUG-055).
+                    .timeout(LlmHttp.REQUEST_TIMEOUT)
                     .header("content-type", "application/json")
                     .header("authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 
-            HttpResponse<java.util.stream.Stream<String>> response = httpClient.send(
-                    request,
-                    HttpResponse.BodyHandlers.ofLines()
-            );
+            // Retries a transient refusal (429, 5xx, a Cloudflare 52x) before giving up.
+            HttpResponse<java.util.stream.Stream<String>> response =
+                    LlmHttp.sendStreaming(httpClient, request);
 
             if (response.statusCode() != 200) {
                 String errorBody = response.body().collect(Collectors.joining("\n"));
@@ -241,7 +267,7 @@ public class GeminiProvider implements LlmProvider {
             // The tool role can't hold image parts here, so a read_resource that
             // returned an image is followed by a user message carrying the image.
             if (m.hasImages()) {
-                allMessages.add(VisionSupport.openAiImageUserMessage(m.images()));
+                allMessages.add(VisionSupport.imageUrlUserMessage(m.images()));
             }
         }
         body.put("messages", allMessages);

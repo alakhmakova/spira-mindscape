@@ -7,11 +7,13 @@ import com.spiramindscape.backend.ai.prompt.PromptResources;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
 import com.spiramindscape.backend.ai.provider.ProviderType;
+import com.spiramindscape.backend.ai.provider.cohere.CohereVisionReader;
 import com.spiramindscape.backend.ai.provider.mistral.MistralOcrService;
 import com.spiramindscape.backend.ai.provider.ToolCall;
 import com.spiramindscape.backend.ai.provider.ToolSpec;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.ai.safety.SafetyService;
 import com.spiramindscape.backend.ai.safety.SafetyVerdict;
 import com.spiramindscape.backend.ai.search.TavilySearchService;
@@ -63,6 +65,8 @@ class AiChatServiceAgenticLoopTest {
     @Mock private UrlReadService urlReadService;
     @Mock private GoalMemoryService goalMemory;
     @Mock private MistralOcrService mistralOcr;
+    @Mock private CohereVisionReader cohereVision;
+    @Mock private GoalService goalService;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -71,9 +75,12 @@ class AiChatServiceAgenticLoopTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
+        // The chat resolves the request's goalId to an OWNED id before using it
+        // (BUG-054); these fixtures speak for a goal the signed-in user owns.
+        lenient().when(goalService.isOwnedByCurrentUser(any())).thenReturn(true);
         lenient().when(goalContextBuilder.build(any())).thenReturn("");
         lenient().when(keyService.getKey(ProviderType.ANTHROPIC))
                 .thenReturn(Optional.of(new AiKeyService.StoredKey("chat-key", "claude")));

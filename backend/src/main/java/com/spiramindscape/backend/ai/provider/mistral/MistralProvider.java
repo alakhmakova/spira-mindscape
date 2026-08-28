@@ -2,6 +2,7 @@ package com.spiramindscape.backend.ai.provider.mistral;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spiramindscape.backend.ai.provider.LlmHttp;
 import com.spiramindscape.backend.ai.provider.LlmMessage;
 import com.spiramindscape.backend.ai.provider.LlmProvider;
 import com.spiramindscape.backend.ai.provider.ProviderType;
@@ -71,15 +72,18 @@ public class MistralProvider implements LlmProvider {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(ENDPOINT))
+                    // Bounds the wait for the response headers. Without it a provider
+                    // that accepts the connection and then says nothing held the worker
+                    // thread until the SSE emitter gave up (BUG-055).
+                    .timeout(LlmHttp.REQUEST_TIMEOUT)
                     .header("content-type", "application/json")
                     .header("authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 
-            HttpResponse<java.util.stream.Stream<String>> response = httpClient.send(
-                    request,
-                    HttpResponse.BodyHandlers.ofLines()
-            );
+            // Retries a transient refusal (429, 5xx, a Cloudflare 52x) before giving up.
+            HttpResponse<java.util.stream.Stream<String>> response =
+                    LlmHttp.sendStreaming(httpClient, request);
 
             if (response.statusCode() != 200) {
                 String errorBody = response.body().collect(Collectors.joining("\n"));
@@ -189,7 +193,7 @@ public class MistralProvider implements LlmProvider {
             // The tool role can't hold image parts here, so a read_resource that
             // returned an image is followed by a user message carrying the image.
             if (m.hasImages()) {
-                allMessages.add(VisionSupport.openAiImageUserMessage(m.images()));
+                allMessages.add(VisionSupport.imageUrlUserMessage(m.images()));
             }
         }
         body.put("messages", allMessages);

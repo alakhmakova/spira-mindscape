@@ -99,6 +99,23 @@ public class GoalService {
     }
 
     /**
+     * Whether {@code goalId} names a goal the current user owns.
+     *
+     * <p>For callers that are handed a goal id by the client and must decide whether to
+     * act on it at all — the AI chat is the one that matters (BUG-054), where a goal id
+     * arrives in a POST body and used to be passed straight into the prompt builder, the
+     * resource reader and the proposal writer. A null id, a missing goal and someone
+     * else's goal all answer {@code false}: the caller is meant to fall back, not to
+     * learn which of the three it hit.
+     */
+    @Transactional(readOnly = true)
+    public boolean isOwnedByCurrentUser(Long goalId) {
+        if (goalId == null) return false;
+        return goalRepository.existsByIdAndUserId(
+                goalId, currentUserProvider.getCurrentUser().getId());
+    }
+
+    /**
      * The most goals one user may have **in motion** at a time. Achieved goals are not counted.
      *
      * <p><b>Why there is a cap at all.</b> Nothing stopped a user — or a looping assistant, or a

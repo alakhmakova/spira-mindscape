@@ -49,9 +49,15 @@ public class AiProposalService {
                 .toList();
     }
 
-    /** List all pending proposals for a specific goal. */
+    /**
+     * Pending proposals for one goal — <b>the current user's only</b>. The goal id
+     * comes straight off the URL, so filtering by it alone returned other people's
+     * proposals to whoever asked (BUG-054); a foreign id now yields an empty list,
+     * which is also what a goal with nothing pending returns.
+     */
     public List<ProposalDto> listPendingForGoal(Long goalId) {
-        return repo.findByGoalIdAndStatusOrderByCreatedAtDesc(goalId, AiProposal.Status.PENDING)
+        return repo.findByAppUserIdAndGoalIdAndStatusOrderByCreatedAtDesc(
+                        currentUserId(), goalId, AiProposal.Status.PENDING)
                 .stream()
                 .map(ProposalDto::from)
                 .toList();

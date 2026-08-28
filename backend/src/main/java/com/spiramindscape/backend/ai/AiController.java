@@ -239,7 +239,8 @@ public class AiController {
 
     public record SavePreferencesRequest(
             @jakarta.validation.constraints.Pattern(
-                    regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|anthropic|openai|mistral|gemini")
+                    regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|COHERE"
+                            + "|anthropic|openai|mistral|gemini|cohere")
             String provider) {}
 
     /** The current user's saved chat provider (null if none chosen yet). */

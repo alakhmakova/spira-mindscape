@@ -7,6 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { SheetHead } from "@/components/spira/SheetHead";
 import { X, ArrowUp, Paperclip } from "@/components/spira/icons";
 import {
   Drawer,
@@ -204,17 +205,39 @@ const PROVIDERS_DEFAULT: ProviderInfo[] = [
     ],
   },
   {
+    id: "COHERE",
+    vendor: "Cohere",
+    context: "256 000 tokens",
+    connected: false,
+    // Cohere keys carry no distinguishing prefix, so there is nothing to check for.
+    keyPrefix: "",
+    // Pinned ids, because Cohere publishes no "-latest" alias to hide behind. The live list
+    // (GET /v1/models?endpoint=chat) replaces these as soon as it loads; this is only what is
+    // shown before it does. Command A is the one Cohere's own rate-limit page puts at 500
+    // requests a minute, where the newest variants are "contact sales".
+    activeModel: "command-a-03-2025",
+    models: [
+      "command-a-03-2025",
+      "command-r-plus-08-2024",
+      "command-r-08-2024",
+    ],
+  },
+  {
     id: "GEMINI",
     vendor: "Google Gemini",
     context: "1 000 000 tokens",
     connected: false,
     keyPrefix: "AIza",
-    activeModel: "gemini-2.5-flash",
+    // Aliases, not pinned versions (BUG-059). This list is the fallback shown before the
+    // live one loads from the provider, and it had gone stale: Google retired
+    // gemini-2.5-flash for new keys ("no longer available to new users"), and 2.0/1.5 with
+    // it, so three of the four offered here could not send a message. Google maintains
+    // "-latest" as a pointer at the current model, so these cannot rot the same way.
+    activeModel: "gemini-flash-lite-latest",
     models: [
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.0-flash",
-      "gemini-1.5-pro",
+      "gemini-flash-lite-latest",
+      "gemini-flash-latest",
+      "gemini-pro-latest",
     ],
   },
 ];
@@ -628,7 +651,14 @@ export function AiPanel() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        <DrawerContent className="h-[88dvh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
+        {/* svh, not dvh (BUG-060). `dvh` is DEFINED to move as the browser's UI expands and
+            collapses, and Chrome for Android hides and re-shows its toolbar on every scroll —
+            so a `dvh` height on a fixed drawer is a drawer that resizes while you read it,
+            which is what the owner saw across three screenshots. `svh` assumes the toolbar is
+            always there and therefore never changes with it. The keyboard is a separate case
+            and is already handled by `interactive-widget=resizes-content` in index.html, which
+            shrinks the layout viewport — so the units follow it either way. */}
+        <DrawerContent className="h-[88svh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -3058,7 +3088,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // Cap the card area and let it scroll: a proposal can be tall (a stepper, a long
           // preview), and without this the panel simply grew past its own bottom edge, so
           // Accept/Dismiss became unreachable.
-          <div className="px-3 pb-3 pt-1 shrink-0 max-h-[60%] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
+          <div className="min-h-0 flex-1 basis-auto px-3 pb-3 pt-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
             {proposalGroupFor(pendingMsg)}
           </div>
         )}
@@ -3912,7 +3942,11 @@ function ProposalCard({
               )}
             </div>
           ) : (
-            <div className="mt-3.5 flex items-center gap-2">
+            // Sticky, so Accept is reachable however tall the proposal is (BUG-060). A long
+            // preview inside a short drawer pushed this row below the scroller's fold, and the
+            // owner's screenshot caught a card cut straight across Accept and Edit — a card you
+            // cannot answer is worse than no card.
+            <div className="sticky bottom-0 -mx-4 -mb-4 mt-3.5 flex items-center gap-2 bg-white px-4 pb-4 pt-2">
               <button
                 onClick={() => {
                   onResolve("approved");
@@ -5158,305 +5192,297 @@ function ProviderSheet({
       className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
       onClick={onClose}
     >
+      {/* The app's sheet shape (BUG-061): a fixed Kale head, and only the body scrolls.
+          It used to be one `overflow-y-auto` container with a hand-drawn grab handle and a
+          white head, so the title, the close button and — the part with consequence — the
+          sentence saying what happens to a pasted API key all scrolled away as soon as the
+          user reached the provider they wanted. `max-h-[88%]` also made it the shortest
+          drawer in the app, since the 88% is of the panel, which is itself 88dvh. */}
       <div
-        className="w-full max-h-[88%] overflow-y-auto bg-white text-[#003737] rounded-t-[22px] px-5 pt-3 pb-5"
+        className="flex w-full max-h-[92%] min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
-        <div className="w-[38px] h-1 rounded-full bg-[#E5E5E5] mx-auto mb-3.5" />
-        <div className="flex items-start justify-between gap-2 mb-1">
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
-              <Ic path={PATHS.key} size={14} className="text-[#005961]" /> Bring
-              your own key
-            </span>
-            <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-1.5 leading-[1.18]">
-              AI providers
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-[#003737]/50 hover:bg-black/5 hover:text-[#003737] transition-colors"
-          >
-            <Ic path={PATHS.x} size={16} />
-          </button>
-        </div>
-        <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
-          Keys are stored encrypted on your account. Keep several connected and
-          switch anytime.
-        </p>
+        <SheetHead title="AI providers" onClose={onClose} />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-5">
+          <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
+            Keys are stored encrypted on your account. Keep several connected
+            and switch anytime.
+          </p>
 
-        <div className="flex flex-col gap-3">
-          {providers.map((p) => {
-            const isActive = p.id === activeId && p.connected;
-            const dropOpen = openDropdown === p.id;
-            const fetchedModels = modelLists[p.id];
-            const isLoadingMdl = loadingModels === p.id;
+          <div className="flex flex-col gap-3">
+            {providers.map((p) => {
+              const isActive = p.id === activeId && p.connected;
+              const dropOpen = openDropdown === p.id;
+              const fetchedModels = modelLists[p.id];
+              const isLoadingMdl = loadingModels === p.id;
 
-            return (
-              <div
-                key={p.id}
-                className={cn(
-                  "border rounded-xl p-3.5",
-                  isActive
-                    ? "border-[#005961] bg-[#E5F4F3]/50"
-                    : "border-[#E5E5E5]",
-                )}
-              >
-                {/* Header row */}
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <span className="font-semibold text-[15px]">
-                      {p.vendor}
-                    </span>
-                    <span className="ml-2 text-[12px] text-[#003737]/50">
-                      {p.context}
-                    </span>
-                  </div>
-                  {/* Green, not teal: "Active" sat on a teal-outlined card and vanished into its
-                      own frame. Success reads as "this one is working". */}
-                  {isActive ? (
-                    <Badge tone="success">Active</Badge>
-                  ) : p.connected ? (
-                    <button
-                      onClick={() => onActivate(p.id)}
-                      className="inline-flex items-center gap-1 text-[12px] font-medium text-[#003737] border border-[#E5E5E5] px-2.5 py-1 rounded-lg hover:border-[#005961]/40 transition-colors"
-                    >
-                      <Ic path={PATHS.switch_} size={12} /> Use this
-                    </button>
-                  ) : (
-                    <span className="text-[12px] text-[#003737]/40">
-                      Not connected
-                    </span>
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "border rounded-xl p-3.5",
+                    isActive
+                      ? "border-[#005961] bg-[#E5F4F3]/50"
+                      : "border-[#E5E5E5]",
                   )}
-                </div>
-
-                {/* Model selector — only when connected */}
-                {p.connected && editing !== p.id && (
-                  <div className="relative mt-2.5">
-                    <button
-                      onClick={() => handleDropdownToggle(p.id, p.connected)}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#E5E5E5] bg-white hover:border-[#005961]/40 transition-colors text-left"
-                    >
-                      <span className="text-[13px] text-[#003737] font-mono truncate">
-                        {p.activeModel || "Select model"}
+                >
+                  {/* Header row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-semibold text-[15px]">
+                        {p.vendor}
                       </span>
-                      <Ic
-                        path={PATHS.chevron}
-                        size={14}
-                        className={cn(
-                          "shrink-0 text-[#003737]/50 transition-transform duration-150",
-                          dropOpen && "rotate-180",
-                        )}
-                      />
-                    </button>
-
-                    {dropOpen && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#E5E5E5] rounded-xl shadow-lg overflow-hidden">
-                        {isLoadingMdl ? (
-                          <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
-                            Loading models…
-                          </div>
-                        ) : (fetchedModels ?? p.models).length === 0 ? (
-                          <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
-                            No models found
-                          </div>
-                        ) : (
-                          <div className="max-h-[200px] overflow-y-auto">
-                            {(fetchedModels ?? p.models).map((m) => (
-                              <button
-                                key={m}
-                                onClick={() => {
-                                  onModelChange(p.id, m);
-                                  setOpenDropdown(null);
-                                }}
-                                className={cn(
-                                  "w-full text-left px-3 py-2.5 text-[13px] font-mono transition-colors",
-                                  m === p.activeModel
-                                    ? "bg-[#E5F4F3] text-[#005961] font-semibold"
-                                    : "text-[#003737] hover:bg-[#F4F4F3]",
-                                )}
-                              >
-                                {m}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      <span className="ml-2 text-[12px] text-[#003737]/50">
+                        {p.context}
+                      </span>
+                    </div>
+                    {/* Green, not teal: "Active" sat on a teal-outlined card and vanished into its
+                      own frame. Success reads as "this one is working". */}
+                    {isActive ? (
+                      <Badge tone="success">Active</Badge>
+                    ) : p.connected ? (
+                      <button
+                        onClick={() => onActivate(p.id)}
+                        className="inline-flex items-center gap-1 text-[12px] font-medium text-[#003737] border border-[#E5E5E5] px-2.5 py-1 rounded-lg hover:border-[#005961]/40 transition-colors"
+                      >
+                        <Ic path={PATHS.switch_} size={12} /> Use this
+                      </button>
+                    ) : (
+                      <span className="text-[12px] text-[#003737]/40">
+                        Not connected
+                      </span>
                     )}
                   </div>
-                )}
 
-                {/* Key hint + replace */}
-                {p.connected && editing !== p.id && (
-                  <div className="flex items-center justify-between mt-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
-                      <Ic path={PATHS.shield} size={12} /> {p.keyHint}
-                    </span>
+                  {/* Model selector — only when connected */}
+                  {p.connected && editing !== p.id && (
+                    <div className="relative mt-2.5">
+                      <button
+                        onClick={() => handleDropdownToggle(p.id, p.connected)}
+                        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#E5E5E5] bg-white hover:border-[#005961]/40 transition-colors text-left"
+                      >
+                        <span className="text-[13px] text-[#003737] font-mono truncate">
+                          {p.activeModel || "Select model"}
+                        </span>
+                        <Ic
+                          path={PATHS.chevron}
+                          size={14}
+                          className={cn(
+                            "shrink-0 text-[#003737]/50 transition-transform duration-150",
+                            dropOpen && "rotate-180",
+                          )}
+                        />
+                      </button>
+
+                      {dropOpen && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#E5E5E5] rounded-xl shadow-lg overflow-hidden">
+                          {isLoadingMdl ? (
+                            <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
+                              Loading models…
+                            </div>
+                          ) : (fetchedModels ?? p.models).length === 0 ? (
+                            <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
+                              No models found
+                            </div>
+                          ) : (
+                            <div className="max-h-[200px] overflow-y-auto">
+                              {(fetchedModels ?? p.models).map((m) => (
+                                <button
+                                  key={m}
+                                  onClick={() => {
+                                    onModelChange(p.id, m);
+                                    setOpenDropdown(null);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-2.5 text-[13px] font-mono transition-colors",
+                                    m === p.activeModel
+                                      ? "bg-[#E5F4F3] text-[#005961] font-semibold"
+                                      : "text-[#003737] hover:bg-[#F4F4F3]",
+                                  )}
+                                >
+                                  {m}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Key hint + replace */}
+                  {p.connected && editing !== p.id && (
+                    <div className="flex items-center justify-between mt-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
+                        <Ic path={PATHS.shield} size={12} /> {p.keyHint}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditing(p.id);
+                          setKeyVal("");
+                          setShowKey(false);
+                          setOpenDropdown(null);
+                        }}
+                        className="text-[12px] text-[#005961] hover:underline"
+                      >
+                        Replace key
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Connect key button */}
+                  {!p.connected && editing !== p.id && (
                     <button
                       onClick={() => {
                         setEditing(p.id);
                         setKeyVal("");
                         setShowKey(false);
-                        setOpenDropdown(null);
                       }}
-                      className="text-[12px] text-[#005961] hover:underline"
+                      className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
                     >
-                      Replace key
+                      <Ic path={PATHS.plus} size={14} /> Connect a key
                     </button>
-                  </div>
-                )}
+                  )}
 
-                {/* Connect key button */}
-                {!p.connected && editing !== p.id && (
-                  <button
-                    onClick={() => {
-                      setEditing(p.id);
-                      setKeyVal("");
-                      setShowKey(false);
-                    }}
-                    className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
-                  >
-                    <Ic path={PATHS.plus} size={14} /> Connect a key
-                  </button>
-                )}
+                  {/* Key input form */}
+                  {editing === p.id && (
+                    <div className="mt-3">
+                      <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
+                        <input
+                          type={showKey ? "text" : "password"}
+                          value={keyVal}
+                          onChange={(e) => setKeyVal(e.target.value)}
+                          placeholder={
+                            p.keyPrefix ? `${p.keyPrefix}…` : "API key"
+                          }
+                          autoFocus
+                          className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
+                        />
+                        <button
+                          onClick={() => setShowKey((s) => !s)}
+                          className="bg-black/5 text-[#003737]/60 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg"
+                        >
+                          {showKey ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2.5">
+                        <button
+                          disabled={!keyVal.trim()}
+                          onClick={() => {
+                            onSaveKey(p.id, keyVal.trim());
+                            setEditing(null);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
+                        >
+                          <Ic path={PATHS.check} size={14} /> Save &amp;
+                          activate
+                        </button>
+                        <button
+                          onClick={() => setEditing(null)}
+                          className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-                {/* Key input form */}
-                {editing === p.id && (
-                  <div className="mt-3">
-                    <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
-                      <input
-                        type={showKey ? "text" : "password"}
-                        value={keyVal}
-                        onChange={(e) => setKeyVal(e.target.value)}
-                        placeholder={
-                          p.keyPrefix ? `${p.keyPrefix}…` : "API key"
-                        }
-                        autoFocus
-                        className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
-                      />
-                      <button
-                        onClick={() => setShowKey((s) => !s)}
-                        className="bg-black/5 text-[#003737]/60 text-[11.5px] font-semibold px-2.5 py-1.5 rounded-lg"
-                      >
-                        {showKey ? "Hide" : "Show"}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2.5">
-                      <button
-                        disabled={!keyVal.trim()}
-                        onClick={() => {
-                          onSaveKey(p.id, keyVal.trim());
-                          setEditing(null);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
-                      >
-                        <Ic path={PATHS.check} size={14} /> Save &amp; activate
-                      </button>
-                      <button
-                        onClick={() => setEditing(null)}
-                        className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+          {/* Web search (Tavily) — a search key, separate from chat providers */}
+          <div className="mt-5 pt-4 border-t border-[#E5E5E5]">
+            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
+              <Ic path={PATHS.key} size={13} className="text-[#005961]" /> Web
+              search
+            </span>
+            <p className="text-[12.5px] text-[#003737]/60 mt-1 mb-2.5 leading-[1.5]">
+              Add a Tavily key (tavily.com) to let the assistant search the web.
+              Optional.
+            </p>
+            <div className="border rounded-xl p-3.5 border-[#E5E5E5]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-[15px]">Tavily</span>
+                {tavily.connected ? (
+                  <Badge tone="success">Connected</Badge>
+                ) : (
+                  <span className="text-[12px] text-[#003737]/40">
+                    Not connected
+                  </span>
                 )}
               </div>
-            );
-          })}
-        </div>
 
-        {/* Web search (Tavily) — a search key, separate from chat providers */}
-        <div className="mt-5 pt-4 border-t border-[#E5E5E5]">
-          <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
-            <Ic path={PATHS.key} size={13} className="text-[#005961]" /> Web
-            search
-          </span>
-          <p className="text-[12.5px] text-[#003737]/60 mt-1 mb-2.5 leading-[1.5]">
-            Add a Tavily key (tavily.com) to let the assistant search the web.
-            Optional.
-          </p>
-          <div className="border rounded-xl p-3.5 border-[#E5E5E5]">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-[15px]">Tavily</span>
-              {tavily.connected ? (
-                <Badge tone="success">Connected</Badge>
-              ) : (
-                <span className="text-[12px] text-[#003737]/40">
-                  Not connected
-                </span>
+              {tavily.connected && !editingTavily && (
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
+                    <Ic path={PATHS.shield} size={12} /> {tavily.hint}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setEditingTavily(true);
+                      setTavilyVal("");
+                    }}
+                    className="text-[12px] text-[#005961] hover:underline"
+                  >
+                    Replace key
+                  </button>
+                </div>
               )}
-            </div>
 
-            {tavily.connected && !editingTavily && (
-              <div className="flex items-center justify-between mt-2.5">
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
-                  <Ic path={PATHS.shield} size={12} /> {tavily.hint}
-                </span>
+              {!tavily.connected && !editingTavily && (
                 <button
                   onClick={() => {
                     setEditingTavily(true);
                     setTavilyVal("");
                   }}
-                  className="text-[12px] text-[#005961] hover:underline"
+                  className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
                 >
-                  Replace key
+                  <Ic path={PATHS.plus} size={14} /> Connect a key
                 </button>
-              </div>
-            )}
+              )}
 
-            {!tavily.connected && !editingTavily && (
-              <button
-                onClick={() => {
-                  setEditingTavily(true);
-                  setTavilyVal("");
-                }}
-                className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] text-[#005961] hover:text-[#003737] font-medium"
-              >
-                <Ic path={PATHS.plus} size={14} /> Connect a key
-              </button>
-            )}
-
-            {editingTavily && (
-              <div className="mt-3">
-                <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
-                  <input
-                    type="password"
-                    value={tavilyVal}
-                    onChange={(e) => setTavilyVal(e.target.value)}
-                    placeholder="tvly-…"
-                    autoFocus
-                    className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
-                  />
+              {editingTavily && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 px-3 py-1 border-2 border-[#005961] rounded-xl bg-white shadow-[0_0_0_3px_rgba(0,89,97,0.12)]">
+                    <input
+                      type="password"
+                      value={tavilyVal}
+                      onChange={(e) => setTavilyVal(e.target.value)}
+                      placeholder="tvly-…"
+                      autoFocus
+                      className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <button
+                      disabled={!tavilyVal.trim()}
+                      onClick={() => {
+                        onSaveTavily(tavilyVal.trim());
+                        setEditingTavily(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
+                    >
+                      <Ic path={PATHS.check} size={14} /> Save
+                    </button>
+                    <button
+                      onClick={() => setEditingTavily(false)}
+                      className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-2.5">
-                  <button
-                    disabled={!tavilyVal.trim()}
-                    onClick={() => {
-                      onSaveTavily(tavilyVal.trim());
-                      setEditingTavily(false);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
-                  >
-                    <Ic path={PATHS.check} size={14} /> Save
-                  </button>
-                  <button
-                    onClick={() => setEditingTavily(false)}
-                    className="text-[13px] text-[#003737]/50 hover:text-[#003737] px-2 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        <p className="mt-4 flex items-center gap-1.5 text-[12px] text-[#003737]/40">
-          <Ic path={PATHS.shield} size={12} /> Keys never leave your account and
-          are encrypted at rest.
-        </p>
+          <p className="mt-4 flex items-center gap-1.5 text-[12px] text-[#003737]/40">
+            <Ic path={PATHS.shield} size={12} /> Keys never leave your account
+            and are encrypted at rest.
+          </p>
+        </div>
       </div>
       <style>{`@keyframes slideUp { from { transform: translateY(34px); opacity: 0.25; } to { transform: translateY(0); opacity: 1; } }`}</style>
     </div>
