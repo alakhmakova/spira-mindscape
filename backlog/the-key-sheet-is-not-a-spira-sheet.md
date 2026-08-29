@@ -95,3 +95,29 @@ Verified by looking at the pixels on both, as the design rules require rather th
 a Playwright screenshot at 412×780 (head band present, no handle) and the same after scrolling to
 the last provider (**the head stays put**, and the body reaches the Tavily card and the footer);
 and `VisualCheckProviderSheetTest` re-rendered on Android, showing the same band.
+
+## Correction, 2026-08-28 (after merge)
+
+**The height was still wrong, and the owner caught it on the merged build**: "drawers чата и
+ключей короткие, они должны занимать почти всю высоту с небольшим отступом от верхнего края
+экрана, как и другие drawer."
+
+Measured in a browser at 880 px rather than argued about:
+
+| | Before | Every other sheet | After |
+|---|---|---|---|
+| Chat drawer | 774 px = **88 %** | 92 % | 810 px = **92 %** |
+| Key sheet | 712 px = **81 %** | 92 % | 810 px = **92 %** |
+
+Two mistakes, both mine:
+
+- **`mt-0` was missing** on the chat drawer. Every other caller passes it to cancel
+  `DrawerContent`'s base `mt-24`; this was the only one that did not.
+- **The key sheet was `max-h-[92%]` of the AI panel**, and the panel is itself a fraction of the
+  screen — so 92 % of 88 % came out at 81 %. It is `h-full` now, which lands it on the panel's own
+  92 dvh, and it is a fixed height rather than a `max-`, so a short list no longer makes a short
+  sheet.
+
+Both now sit at exactly the number the app's other sheets use, with the same 70 px gap from the
+top of an 880 px viewport.
+

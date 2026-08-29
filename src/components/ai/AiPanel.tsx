@@ -651,14 +651,13 @@ export function AiPanel() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
-        {/* svh, not dvh (BUG-060). `dvh` is DEFINED to move as the browser's UI expands and
-            collapses, and Chrome for Android hides and re-shows its toolbar on every scroll —
-            so a `dvh` height on a fixed drawer is a drawer that resizes while you read it,
-            which is what the owner saw across three screenshots. `svh` assumes the toolbar is
-            always there and therefore never changes with it. The keyboard is a separate case
-            and is already handled by `interactive-widget=resizes-content` in index.html, which
-            shrinks the layout viewport — so the units follow it either way. */}
-        <DrawerContent className="h-[88svh] flex flex-col px-0 border-0 bg-[#0A8080] text-white">
+        {/* A chat has no natural content height — a two-message conversation would make a
+            two-message-tall drawer — so unlike the form sheets this one cannot be
+            content-sized. `sheet-h-92` gives it a real one, measured from the KEYBOARD-FREE
+            viewport rather than from `vh`: with `interactive-widget=resizes-content` the
+            keyboard shrinks the layout viewport, so `92vh` meant "92 % of the sliver above the
+            keyboard" — 276 px of an 888 px phone. See CLAUDE.md → Sheets → the height. */}
+        <DrawerContent className="sheet-h-92 mt-0 flex flex-col px-0 border-0 bg-[#0A8080] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -3085,10 +3084,22 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
           the user's commitments, and those cards must stay actionable. */}
         {!revising && pendingMsg && (
-          // Cap the card area and let it scroll: a proposal can be tall (a stepper, a long
-          // preview), and without this the panel simply grew past its own bottom edge, so
-          // Accept/Dismiss became unreachable.
-          <div className="min-h-0 flex-1 basis-auto px-3 pb-3 pt-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
+          // `flex-initial` — that is `flex: 0 1 auto`, and each of the three numbers is doing
+          // a job:
+          //
+          //   grow 0    take no space the card does not need. `flex-1` was tried here and left
+          //             a band of empty gradient under a short card, because grow 1 claims a
+          //             share of the panel whether or not there is anything to put in it
+          //             (owner, 2026-08-28, with a screenshot of exactly that).
+          //   shrink 1  give way when the drawer is short. The original `shrink-0` could not,
+          //             so on a squeezed viewport the card was pushed past the bottom edge and
+          //             Accept could not be reached at all.
+          //   basis auto  size to the card.
+          //
+          // The cap then stops a very tall proposal (a stepper, a long preview) from squeezing
+          // the transcript to nothing, and the card scrolls inside it — with its action row
+          // `sticky bottom-0`, so Accept stays reachable however far it scrolls.
+          <div className="min-h-0 flex-initial max-h-[70%] px-3 pb-3 pt-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
             {proposalGroupFor(pendingMsg)}
           </div>
         )}
@@ -3888,6 +3899,20 @@ function InstructBox({
 const CARD_CLS =
   "rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
 
+/**
+ * **Every card's action row is sticky to the bottom of the scroller** (BUG-060).
+ *
+ * The pending-card block is capped at `max-h-[70%]` of the chat column so a tall proposal
+ * cannot squeeze the transcript to nothing — which means any card can scroll, and a row that
+ * scrolls with it ends below the fold. The owner's screenshot caught exactly that: a card cut
+ * straight across Accept and Edit, and a card you cannot answer is worse than no card.
+ *
+ * It was sticky on `ProposalCard` alone for a while, so the three cards most likely to be tall —
+ * a multi-change review, a create-with-checklist — were the ones without it. The negative margins
+ * cancel `CARD_CLS`'s `p-4` so the white strip reaches the card's edges.
+ */
+const CARD_ACTIONS_CLS = "sticky bottom-0 -mx-4 -mb-4 bg-white px-4 pb-4 pt-2";
+
 /** A single proposed change (the common case): polished card, Accept / Edit / Dismiss. */
 function ProposalCard({
   p,
@@ -3946,7 +3971,9 @@ function ProposalCard({
             // preview inside a short drawer pushed this row below the scroller's fold, and the
             // owner's screenshot caught a card cut straight across Accept and Edit — a card you
             // cannot answer is worse than no card.
-            <div className="sticky bottom-0 -mx-4 -mb-4 mt-3.5 flex items-center gap-2 bg-white px-4 pb-4 pt-2">
+            <div
+              className={cn(CARD_ACTIONS_CLS, "mt-3.5 flex items-center gap-2")}
+            >
               <button
                 onClick={() => {
                   onResolve("approved");
@@ -4098,7 +4125,12 @@ function OptionAspectCard({
       >
         <Ic path={PATHS.sparkles} size={12} /> Type a change for the AI…
       </button>
-      <div className="mt-3.5 flex items-center gap-2 border-t border-[#F3F3F3] pt-3">
+      <div
+        className={cn(
+          CARD_ACTIONS_CLS,
+          "mt-3.5 flex items-center gap-2 border-t border-[#F3F3F3] pt-3",
+        )}
+      >
         <button
           onClick={confirm}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
@@ -4404,7 +4436,7 @@ function SteppedProposalCard({
             )}
           </div>
 
-          <div className="mt-3 flex flex-col gap-1.5">
+          <div className={cn(CARD_ACTIONS_CLS, "mt-3 flex flex-col gap-1.5")}>
             <button
               onClick={saveAll}
               disabled={includedCount === 0}
@@ -4779,7 +4811,7 @@ function CreateConfirmCard({
       {settled ? (
         <CreateSettled p={p} isGoal={isGoal} onOpen={onOpen} />
       ) : (
-        <div className="mt-3.5 flex items-center gap-2">
+        <div className={cn(CARD_ACTIONS_CLS, "mt-3.5 flex items-center gap-2")}>
           <button
             onClick={() => {
               onResolve("approved");
@@ -5197,11 +5229,22 @@ function ProviderSheet({
           white head, so the title, the close button and — the part with consequence — the
           sentence saying what happens to a pasted API key all scrolled away as soon as the
           user reached the provider they wanted. `max-h-[88%]` also made it the shortest
-          drawer in the app, since the 88% is of the panel, which is itself 88dvh. */}
+          drawer in the app, since that 88% was of the panel rather than of the screen — the
+          owner's "он короче чем обычный drawer — думаю это неверно".
+
+          `sheet-h-88` is the owner's number (2026-08-28), measured against the SCREEN like
+          every other sheet. Note what that means here: this sheet is `absolute inset-0` inside
+          the 92 %-tall chat drawer, so 88 % of the screen covers all but ~36 px of it. That
+          thin teal strip is the whole of the coach that shows through, and it is meant to read
+          as one sheet stacked on another rather than as a gap. Making it 88 % of the DRAWER
+          instead would leave the coach's head visible, but it is also exactly the "too short"
+          this sheet was reported for. */}
       <div
-        className="flex w-full max-h-[92%] min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
+        className="sheet-h-88 flex w-full min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
         onClick={(e) => e.stopPropagation()}
-        style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
+        style={{
+          animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both",
+        }}
       >
         <SheetHead title="AI providers" onClose={onClose} />
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-5">

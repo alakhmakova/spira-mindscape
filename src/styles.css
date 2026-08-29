@@ -925,3 +925,38 @@
   --normal-border: #006cc1;
   --normal-text: #222525;
 }
+
+/* ─── Sheet heights ──────────────────────────────────────────────────────────
+   Every drawer and side panel takes its height from HERE, never from a raw `vh`
+   class. The reason is the on-screen keyboard: `interactive-widget=resizes-content`
+   (see index.html) makes it shrink the layout viewport, and `vh`/`dvh`/`svh` are all
+   percentages of that viewport — so `h-[92vh]` silently becomes "92 % of the sliver
+   above the keyboard", about 395 px of an 888 px phone. That is the collapsed chat
+   drawer, the collapsed key sheet and the New-target sheet that shrank the moment
+   tasks were typed into it (2026-08-28).
+
+   `--app-vh` is one percent of the keyboard-free height, published by
+   `lib/spira/sheet-height.ts`; the `min(…, 100dvh)` keeps a sheet inside the space
+   that is actually available while the keyboard IS open, so it fills that space
+   instead of running off the top of the screen. The `1vh` fallback is what the very
+   first paint uses, before the script has run.
+
+   Rules: a sheet with no natural content height (the chat — a two-message
+   conversation would be two messages tall) takes a `sheet-h-*`; everything else
+   takes a `sheet-max-*` and is sized by its content up to that cap.  */
+@layer utilities {
+  .sheet-h-92 {
+    height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
+    max-height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
+  }
+  .sheet-h-88 {
+    height: min(calc(var(--app-vh, 1vh) * 88), 100dvh);
+    max-height: min(calc(var(--app-vh, 1vh) * 88), 100dvh);
+  }
+  .sheet-max-92 {
+    max-height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
+  }
+  .sheet-max-85 {
+    max-height: min(calc(var(--app-vh, 1vh) * 85), 100dvh);
+  }
+}

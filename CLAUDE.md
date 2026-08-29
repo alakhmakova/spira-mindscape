@@ -279,6 +279,7 @@ both unless it names a surface.
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
 | **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
+| **Sheet heights** — `repositionInputs={false}`, and never a raw `vh` | Components and chrome → 3e-bis |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
@@ -589,6 +590,129 @@ The rules that hold it together:
 - Two web sheets still wear a white head and are to be converted when next touched: the note
   editor's **Add a link** sheet (its head carries a description line that has to move into the body
   first) and the numeric **Update Progress** panel in `Targets.tsx`.
+
+#### 3e-bis. Nothing but our own CSS sets a sheet's height (hard rule, 2026-08-29)
+
+**A sheet is `overflow-clip`, never `overflow-hidden`, and it has exactly one scroller: its body**
+(BUG-063). The two clip identically, but `hidden` still makes the box a **scroll container** — it
+only hides the scrollbars — so anything that scrolls programmatically can slide the whole sheet
+inside its own frame. Something did: opening the deadline calendar in New goal calls
+`scrollIntoView` on the field, and `scrollIntoView` walks up and scrolls **every** scrollable
+ancestor. The sheet landed at `scrollTop: 450` with its teal head at **y −292** — a stub of a form
+with a calendar floating over it. The browser's own "pull the focused element into view" reaches
+the same box. `clip` is not a scroll container at all, so none of them can move it.
+
+**And a popover never states a height either.** `PopoverContent` caps itself at
+`max-h-(--radix-popover-content-available-height)` with `collisionPadding={8}`. Radix flips a
+popover above its trigger when there is no room below, but it will not **shrink** one that fits
+neither way — it simply hangs off the top. With the keyboard up the 414 px deadline calendar sat at
+**y −136**: its own head with the close X, the month arrows and the weekday row were all above the
+screen, so the month could not be changed and the picker could not be dismissed. When the cap bites
+it must be the **content** that scrolls, not the card — the deadline card is a flex column so its
+head and its Today / Clear row stay put, because capping the card alone put the close button out of
+reach.
+
+**A sheet must not resize at the moment of a tap, and a blur is not the keyboard being gone**
+(BUG-064). `sheet-height.ts` publishes `--app-vh` on `resize` **only** — never on `focusout`. A
+blur is the keyboard *starting* to go; for a couple of hundred milliseconds the viewport is still
+the small one, so a `focusout` publish republished the keyboard's height as the screen's
+(`--app-vh` 7.8 → 4.3), every sheet lost 34 px, and a `bottom: 0` sheet moves its contents when it
+shrinks. That happened **between `mousedown` and `mouseup`**, so Chrome dispatched **no `click` at
+all** — the first tap on Confidence after typing did nothing but close the keyboard, and the same
+was true of every other control in every sheet.
+
+`e2e/sheet-chrome-stays-put.spec.ts` holds all three, and every case was checked red first. Note
+what it takes to see the last one: a **real touch** (`hasTouch`, `page.touchscreen.tap`).
+Playwright's synthetic `.click()` does not go through the mousedown/mouseup target comparison, so
+it cannot reproduce a swallowed tap — which is why every existing spec passed.
+
+**`vaul` must never reposition inputs.** `src/components/ui/drawer.tsx` passes
+`repositionInputs={false}` to `Drawer.Root`, and that one prop is the whole keyboard fix (BUG-060).
+vaul turns it on by default, and what it does is write an **inline `height` and `bottom`** onto the
+drawer whenever the visual viewport resizes with something typeable focused. An inline style beats
+every class, so with it on the sheet is not sized by the `sheet-*` utilities below **at all** — and
+four consecutive CSS fixes were therefore no-ops. Measured on a 412x780 phone with the composer
+focused, shrinking to 300 and back:
+
+| Viewport | What vaul wrote | Drawer |
+|---|---|---|
+| 780 | — | 718 (92 %) |
+| 300 (keyboard up) | `height: 300px` | 300 |
+| **780 (keyboard gone)** | **`height: 300px`** | **300 — 38 % of the screen** |
+
+The pixel value is `initialDrawerHeight`, captured on the first resize the handler ever sees and
+then reapplied for the drawer's life. That is the owner's "меньше половины экрана", the jumping
+height, and the band of the drawer's own background under content that no longer fills the box it
+was pinned to. We can simply switch it off because `interactive-widget=resizes-content` already
+makes Chrome put the sheet above the keyboard; vaul was a second hand on the same wheel. It is
+iOS-only in everything else it guards — see
+`backlog/ios-safari-keyboard-covers-the-sheet-composer.md`.
+
+**The general rule this is an instance of: when a style you own does not take effect, read the
+element's inline and computed style before writing another rule.** Four rounds asked what height
+the CSS computed and none asked what was setting the element's height; a two-line
+`el.style.height` probe found it in one run. A third-party component that positions itself is
+entitled to overwrite you.
+
+**And no sheet is written in a viewport unit.** Heights come from four utilities in `src/styles.css`:
+
+| Class | For | Today |
+|---|---|---|
+| `sheet-h-92` | a sheet with **no natural content height** | the AI chat drawer; the PDF preview |
+| `sheet-h-88` | the same, one step shorter on purpose | the AI key sheet, so the coach shows above it |
+| `sheet-max-92` | everything else — content-sized, up to the cap | New goal, New target, Add a resource, every filter & sort panel, attach a resource, Add a link |
+| `sheet-max-85` | a deliberately shorter cap | inline resources |
+
+They are all `min(calc(var(--app-vh) * N), 100dvh)`, where **`--app-vh` is one percent of the
+keyboard-free viewport**, published by `src/lib/spira/sheet-height.ts` and installed from
+`main.tsx`.
+
+**Why a raw `vh` is wrong, measured rather than argued.** `index.html` sets
+`interactive-widget=resizes-content` — the right call, because it makes the on-screen keyboard
+shrink the **layout viewport** so a bottom-anchored sheet sits above the keyboard instead of behind
+it. The cost is that **every viewport unit shrinks with the keyboard**: `vh`, `dvh` and `svh` alike,
+because all three are percentages of that same viewport. So `h-[92vh]` does not mean "92 % of the
+screen"; it means "92 % of whatever is left", and 92 % of the ~300 px above an Android keyboard is
+**276 px of an 888 px phone** — the drawer "under half the screen" the owner reported four times.
+`min(…, 100dvh)` is the other half of the rule: while the keyboard IS up the sheet fills the space
+above it exactly, rather than running off the top of the screen.
+
+This also explains the split the owner spotted, which is what finally identified the cause: the
+sheets that misbehaved (chat, keys, New target once tasks were typed) all have a field you type
+into. **Filter and sort never misbehaved because they have no keyboard.**
+
+**Two earlier explanations, and why they are not the whole story.** Commit `62197ad` (2026-08-27)
+did change `h-[88vh]` → `h-[88dvh]` on the chat drawer, and that was a genuine regression — a `dvh`
+sheet breathes as Chrome's toolbar comes and goes. But it cannot produce half a screen, and the
+measurement says so: on the owner's phone (`public/viewport-check.html`, 2026-08-28) `92vh` = 817 px
+whether the toolbar shows or hides, `92dvh` = 817/765, `92svh` = 765. Every one of those is ~92 % of
+the screen. Taking the reported number literally — "меньше половины экрана" — is what ruled the unit
+out and left the keyboard as the only mechanism that fits.
+
+**And nothing automated could see any of it for four rounds.** A headless browser has no keyboard
+and no collapsing toolbar, so every unit measured a correct 92 % while the owner's phone showed a
+third. What broke the deadlock was **a diagnostic page rendered on the actual device**
+(`public/viewport-check.html` — three boxes, one per unit, with a live readout) plus **reading the
+git history for when it last worked**. When a layout bug will not reproduce, put a ruler on the real
+screen before writing a fifth fix.
+
+Three tests hold the rule now, and each was checked to fail on the code it guards:
+
+- `src/components/spira/sheet-units.test.ts` scans every `.tsx` under `src/components` and fails
+  the build on any viewport-unit height outside a documented `ACCEPTED` list (the note editor's
+  `100dvh`, which is genuinely full-screen, and a desktop-only editor minimum). It also asserts the
+  utilities exist in `styles.css`, that `main.tsx` still publishes `--app-vh` — without that call
+  every sheet silently falls back to `1vh` — and that `drawer.tsx` still says
+  `repositionInputs={false}`, because a `npm i vaul@latest` restoring the default would otherwise
+  reach a phone before anything said a word.
+- `e2e/ai-drawer-height.spec.ts` → *"comes back to full height after the keyboard closes, with the
+  field still focused"*. It **focuses the composer, shrinks, and grows back** — that order is the
+  test, because vaul's handler only runs while a field is focused and only misbehaves on the way
+  back up. It asserts the height **and** that `style.height` is empty, so it pins the cause rather
+  than the symptom. Red on the old code: 300 where > 663 was expected.
+- The same file's earlier cases shrink the viewport to 412×300 mid-conversation and assert the
+  drawer fills it. Keep in mind what they could **not** see: all five passed throughout the four
+  failed rounds, because each either shrank with nothing focused or never grew back.
 
 #### 3f. Search fields — the reset is the word "Clear", never a cross (hard spec, 2026-08-22)
 

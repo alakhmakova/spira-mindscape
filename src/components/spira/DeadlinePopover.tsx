@@ -256,7 +256,11 @@ export function DeadlinePopover({
         align={align}
         side={side}
         avoidCollisions={true}
-        className="w-auto p-0 bg-surface border hairline shadow-lg overflow-hidden"
+        // A column, so that when the calendar is capped to the room it has (see
+        // `PopoverContent`) it is the GRID that scrolls: the "Set deadline" head with its X and
+        // the Today / Clear row stay put. Scrolling the whole card instead would put the close
+        // button out of reach, which is the state this was found in.
+        className="w-auto p-0 bg-surface border hairline shadow-lg overflow-hidden flex flex-col"
         onCloseAutoFocus={(e) => {
           if (variant === "input" && !disableScroll) {
             e.preventDefault();
@@ -271,7 +275,7 @@ export function DeadlinePopover({
           }
         }}
       >
-        <div className="flex items-center justify-between px-3 py-2 bg-primary text-primary-foreground">
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 bg-primary text-primary-foreground">
           <span className="text-sm font-semibold">
             {date ? format(date, "MMMM d, yyyy") : "Set deadline"}
           </span>
@@ -283,59 +287,61 @@ export function DeadlinePopover({
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
-        <Calendar
-          mode="single"
-          selected={date}
-          month={month}
-          onMonthChange={setMonth}
-          onSelect={(d) => {
-            onChange(d ? d.toISOString() : undefined);
-            setOpen(false);
-          }}
-          showWeekNumber
-          weekStartsOn={1}
-          ISOWeek
-          initialFocus
-          fixedWeeks
-          components={{
-            CaptionLabel: () => {
-              const currentYear = month.getFullYear();
-              const years = Array.from(
-                { length: 20 },
-                (_, i) => new Date().getFullYear() - 2 + i,
-              );
-              return (
-                <div className="flex items-center gap-1.5 ml-1">
-                  <span className="text-[15px] font-semibold tracking-tight text-foreground/90">
-                    {format(month, "MMMM")}
-                  </span>
-                  <Select
-                    value={currentYear.toString()}
-                    onValueChange={(y) =>
-                      setMonth(new Date(parseInt(y), month.getMonth(), 1))
-                    }
-                  >
-                    <SelectTrigger className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-56 min-w-[5rem]">
-                      {years.map((y) => (
-                        <SelectItem
-                          key={y}
-                          value={y.toString()}
-                          className="text-sm font-medium"
-                        >
-                          {y}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            },
-          }}
-        />
-        <div className="flex items-center justify-between px-3 py-2 border-t hairline">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <Calendar
+            mode="single"
+            selected={date}
+            month={month}
+            onMonthChange={setMonth}
+            onSelect={(d) => {
+              onChange(d ? d.toISOString() : undefined);
+              setOpen(false);
+            }}
+            showWeekNumber
+            weekStartsOn={1}
+            ISOWeek
+            initialFocus
+            fixedWeeks
+            components={{
+              CaptionLabel: () => {
+                const currentYear = month.getFullYear();
+                const years = Array.from(
+                  { length: 20 },
+                  (_, i) => new Date().getFullYear() - 2 + i,
+                );
+                return (
+                  <div className="flex items-center gap-1.5 ml-1">
+                    <span className="text-[15px] font-semibold tracking-tight text-foreground/90">
+                      {format(month, "MMMM")}
+                    </span>
+                    <Select
+                      value={currentYear.toString()}
+                      onValueChange={(y) =>
+                        setMonth(new Date(parseInt(y), month.getMonth(), 1))
+                      }
+                    >
+                      <SelectTrigger className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-56 min-w-[5rem]">
+                        {years.map((y) => (
+                          <SelectItem
+                            key={y}
+                            value={y.toString()}
+                            className="text-sm font-medium"
+                          >
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              },
+            }}
+          />
+        </div>
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t hairline">
           <button
             onClick={() => {
               const today = new Date();

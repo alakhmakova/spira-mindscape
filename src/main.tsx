@@ -4,6 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { logger } from "./lib/logger";
 import { getRouter } from "./router";
+import { trackViewportHeight } from "./lib/spira/sheet-height";
 import "./styles.css";
 
 // React only sees errors thrown during render. Everything else — an event handler, a
@@ -18,6 +19,10 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   logger.reportError(event.reason, { kind: "unhandled-rejection" });
 });
+
+// Sheets are sized from `--app-vh` rather than from `vh`, so the on-screen keyboard
+// cannot shrink them — see `lib/spira/sheet-height.ts`.
+trackViewportHeight();
 
 const router = getRouter();
 

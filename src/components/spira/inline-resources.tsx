@@ -485,7 +485,7 @@ function ResourcePickerDialog({
      * carries, so a sheet reads as part of the app rather than a white box floating over it.
      */
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="mt-0 flex max-h-[85vh] flex-col px-0">
+      <DrawerContent className="sheet-max-85 mt-0 flex flex-col px-0">
         <SheetHead
           title="Attach a resource"
           onClose={() => onOpenChange(false)}

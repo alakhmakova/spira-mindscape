@@ -1376,6 +1376,13 @@ function ResourcePreview({
     if (resource?.type === "note") {
       return (
         <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+          {/* The one sheet that keeps `dvh`, and the exception proves the rule (see CLAUDE.md
+              → Sheets → the unit). A sheet that covers only PART of the screen is anchored to
+              the bottom of the layout viewport, so a fraction of `vh` keeps its top edge still
+              while Chrome's toolbar comes and goes; `dvh` would make it breathe. A FULL-screen
+              surface has the opposite need — it must match what is visible, and `100vh` would
+              push its bottom edge under the toolbar, taking the note editor's own toolbar with
+              it. */}
           <DrawerContent className="mt-0 h-[100dvh] max-h-[100dvh] rounded-none border-0 px-0 flex flex-col bg-surface">
             <MobileNoteBody
               title={resource.title}
@@ -1408,7 +1415,7 @@ function ResourcePreview({
         <DrawerContent
           className={cn(
             "px-0 pb-6 flex flex-col",
-            isPdf ? "h-[92dvh]" : "max-h-[92dvh]",
+            isPdf ? "sheet-h-92" : "sheet-max-92",
           )}
         >
           {Body}
@@ -1717,7 +1724,7 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="mt-0 px-0 h-[92dvh] max-h-[92dvh] flex flex-col bg-surface">
+        <DrawerContent className="sheet-max-92 mt-0 px-0 flex flex-col bg-surface">
           {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>

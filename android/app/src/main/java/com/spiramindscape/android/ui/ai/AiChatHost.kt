@@ -42,7 +42,7 @@ import kotlin.math.roundToInt
 
 /**
  * Hosts the AI panel as a **drawer** pulled up from the bottom — the same shape the web gives it on
- * a phone (`Drawer` at `h-[88vh]`): it stops short of the top edge, so the page it belongs to stays
+ * a phone (`Drawer` at `sheet-h-92`): it stops short of the top edge, so the page it belongs to stays
  * visible behind a scrim and the assistant never reads as a screen of its own.
  *
  * The assistant used to slide in **sideways** from the right edge, which fought with the
@@ -167,8 +167,18 @@ fun AiChatHost(
     }
 }
 
-/** How much of the screen the drawer covers — the web's `h-[88vh]`, so the page shows above it. */
-private const val DRAWER_HEIGHT_FRACTION = 0.88f
+/**
+ * How much of the screen the drawer covers, so the page still shows above it — 0.92, matching
+ * the web's chat drawer (owner, 2026-08-28: it "должен занимать почти всю высоту … как и другие
+ * drawer").
+ *
+ * The fraction is of the FULL screen, and that is the important part: `MainActivity` runs
+ * `enableEdgeToEdge()`, so the box this is measured against does not shrink when the keyboard
+ * opens — `AiChatScreen` applies `imePadding()` inside instead. The web had no equivalent and
+ * spent a day on it: there `h-[92vh]` was 92 % of whatever the keyboard left, about a third of
+ * the screen. It is sized from `--app-vh` now, which is this same idea written in CSS.
+ */
+private const val DRAWER_HEIGHT_FRACTION = 0.92f
 
 /** The rounded top edge that says "sheet", not "screen". */
 private val DRAWER_CORNER = 20.dp

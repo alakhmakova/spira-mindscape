@@ -21,6 +21,8 @@ import { createGoal } from "./helpers";
 const PHONE = { width: 412, height: 780 };
 /** What is left of a phone once Chrome's toolbar is back and the keyboard is up. */
 const PHONE_SQUEEZED = { width: 412, height: 300 };
+/** An ordinary phone with room to spare — where empty space under a card is visible. */
+const PHONE_TALL = { width: 412, height: 900 };
 
 const noteArgs = (title: string) =>
   JSON.stringify({
@@ -30,7 +32,7 @@ const noteArgs = (title: string) =>
     proposalId: 1,
   });
 
-async function stubAi(page: Page) {
+async function stubAi(page: Page, opts: { hangOnRevise?: boolean } = {}) {
   await page.route("**/api/ai/keys", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -59,16 +61,28 @@ async function stubAi(page: Page) {
       body: JSON.stringify({ goalId: null, content: null, updatedAt: null }),
     }),
   );
-  await page.route("**/api/ai/chat", (route) =>
-    route.fulfill({
+  let turn = 0;
+  await page.route("**/api/ai/chat", async (route) => {
+    turn += 1;
+    // The second turn is the revise. Holding it open is what keeps the panel in the
+    // "Revising" state long enough to measure it — and then it is ABORTED rather than left
+    // hanging: an unanswered route outlives the test body, so a 30 s sleep here would stall
+    // teardown and, with two retries, turn a spec whose assertions finish in seconds into a
+    // slow flake. The product's own revise safety net is 90 s, so the state holds either way.
+    if (turn > 1 && opts.hangOnRevise) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      await route.abort();
+      return;
+    }
+    await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body:
         `event: token\ndata: ${JSON.stringify("Here is one for you.")}\n\n` +
         `event: proposal\ndata: ${noteArgs("Interview prep")}\n\n` +
         "event: done\ndata: \n\n",
-    }),
-  );
+    });
+  });
 }
 
 function drawer(page: Page): Locator {
@@ -125,6 +139,60 @@ test.describe("the AI drawer on a phone", () => {
     await expect(page.getByRole("button", { name: "Accept" })).toBeInViewport();
   });
 
+  test("leaves no dead space under a short proposal card", async ({ page }) => {
+    // The gap this spec did not have, and the owner found it on the merged build: a band of
+    // empty gradient under the card, because the card's block had `flex-1` and so claimed a
+    // share of the panel whether or not it needed one. Nothing here asserted what sits BELOW
+    // the card, only that Accept was reachable — so the regression sailed through.
+    await stubAi(page);
+    await createGoal(page, `Drawer height ${Date.now()}`);
+    await page.setViewportSize(PHONE_TALL);
+    await openCoachWithACard(page);
+
+    const card = page.getByRole("button", { name: "Accept" });
+    const cardBox = await card.boundingBox();
+    const drawerBox = await drawer(page).boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(drawerBox).not.toBeNull();
+
+    // Whatever sits under the card — the composer is hidden while one is pending — must not be
+    // a void. A hand-width of slack covers the card's own padding and the rounded bottom.
+    const gap =
+      drawerBox!.y + drawerBox!.height - (cardBox!.y + cardBox!.height);
+    expect(gap).toBeLessThan(120);
+  });
+
+  test("leaves no dead space under the Revising row either", async ({
+    page,
+  }) => {
+    // A second path with its own bottom row, and the one the owner photographed: while a card is
+    // being revised the composer is hidden and this row takes its place. It is a different
+    // element from the card block, so the card's fix says nothing about it — which is why it
+    // gets its own assertion rather than an assumption.
+    await stubAi(page, { hangOnRevise: true });
+    await createGoal(page, `Drawer revising ${Date.now()}`);
+    await page.setViewportSize(PHONE_TALL);
+    await openCoachWithACard(page);
+
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page
+      .getByPlaceholder(
+        "e.g. “in English”, “make it shorter”, “due next Friday”",
+      )
+      .fill("fix it");
+    await page.getByRole("button", { name: "Send to AI" }).click();
+    await expect(page.getByText(/Revising/)).toBeVisible();
+
+    const row = page.getByText(/Revising/).locator("xpath=../..");
+    const rowBox = await row.boundingBox();
+    const drawerBox = await drawer(page).boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(drawerBox).not.toBeNull();
+
+    const gap = drawerBox!.y + drawerBox!.height - (rowBox!.y + rowBox!.height);
+    expect(gap).toBeLessThan(40);
+  });
+
   test("does not grow past the viewport when the keyboard closes again", async ({
     page,
   }) => {
@@ -143,5 +211,101 @@ test.describe("the AI drawer on a phone", () => {
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(PHONE.height + 1);
     await expect(page.getByRole("button", { name: "Accept" })).toBeInViewport();
+
+    // …and it comes BACK to full height. This is the owner's actual complaint — a drawer
+    // "under half the screen" — and the assertion the old spec was missing: it only checked
+    // that the drawer had not overgrown, so a drawer left permanently collapsed passed.
+    expect(box!.height).toBeGreaterThan(PHONE.height * 0.85);
+  });
+
+  test("comes back to full height after the keyboard closes, with the field still focused", async ({
+    page,
+  }) => {
+    // **The regression the four earlier rounds could not see** (2026-08-29). Every spec above
+    // either shrank the viewport with nothing focused, or shrank it and never grew it back —
+    // and both of those pass on the broken code, because the defect lives in a handler vaul
+    // only runs while something typeable is focused.
+    //
+    // vaul's `repositionInputs` (on by default) listens for `visualViewport` resizes and writes
+    // an INLINE `height` onto the drawer, taken from `initialDrawerHeight` — the height it
+    // happened to measure on the first such resize. An inline style beats `sheet-h-92`, so from
+    // that moment the sheet is not sized by our CSS at all. Measured here before the fix:
+    // 718 px at rest → 300 px with the keyboard up → **still 300 px on a 780 px screen** once
+    // the keyboard went away. That is the owner's "меньше половины экрана", and no CSS change
+    // could ever have reached it.
+    //
+    // The order below is the whole test: focus FIRST (a keyboard cannot be up otherwise), then
+    // shrink, then grow back **without blurring** — closing the keyboard with the back gesture
+    // and leaving the caret in the field is the ordinary way out on Android.
+    await stubAi(page);
+    await createGoal(page, `Drawer regrow ${Date.now()}`);
+    await page.setViewportSize(PHONE);
+    await page
+      .getByRole("button", { name: /ai coach/i })
+      .first()
+      .click();
+    const composer = page.getByPlaceholder("Ask, plan, or request an action…");
+    await expect(composer).toBeVisible();
+    await composer.click();
+
+    await page.setViewportSize(PHONE_SQUEEZED);
+    await page.waitForTimeout(300);
+    await page.setViewportSize(PHONE);
+    await page.waitForTimeout(400);
+
+    const box = await drawer(page).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThan(PHONE.height * 0.85);
+
+    // And the reason it came back: nothing wrote a pixel height onto the element. Asserting the
+    // absence is what pins the cause rather than the symptom — a future vaul upgrade that turns
+    // the handler back on fails here with a message that says what happened.
+    const inline = await drawer(page).evaluate(
+      (el) => (el as HTMLElement).style.height,
+    );
+    expect(
+      inline,
+      "vaul wrote an inline height onto the drawer — `repositionInputs` is back on (see drawer.tsx)",
+    ).toBe("");
+  });
+
+  test("fills the space above the keyboard instead of taking 92 % of it", async ({
+    page,
+  }) => {
+    // The bug this whole spec exists for, stated as arithmetic. `index.html` sets
+    // `interactive-widget=resizes-content`, so the keyboard shrinks the LAYOUT viewport and
+    // every viewport unit shrinks with it: `92vh` of the ~300 px left above an Android
+    // keyboard is ~276 px, and on the owner's 888 px phone that is under a third of the
+    // screen — the "меньше половины экрана" drawer, reported four times.
+    //
+    // Sized from `--app-vh` (the keyboard-free height) and capped at `100dvh`, the drawer
+    // instead fills what is available: no wasted band, and the head still on screen.
+    await stubAi(page);
+    await createGoal(page, `Drawer keyboard ${Date.now()}`);
+    await page.setViewportSize(PHONE);
+    await page
+      .getByRole("button", { name: /ai coach/i })
+      .first()
+      .click();
+
+    // Focus the composer FIRST, then shrink. The order is the test: a keyboard cannot be up
+    // without a focused editable element, and that is exactly how `sheet-height.ts` tells a
+    // keyboard from an ordinary window resize — a resize with nothing focused is a smaller
+    // window and the sheets must follow it down, which is what `setViewportSize` alone
+    // simulates.
+    const composer = page.getByPlaceholder("Ask, plan, or request an action…");
+    await expect(composer).toBeVisible();
+    await composer.click();
+    await page.setViewportSize(PHONE_SQUEEZED);
+    await page.waitForTimeout(300);
+
+    const box = await drawer(page).boundingBox();
+    expect(box).not.toBeNull();
+    // Within the viewport…
+    expect(box!.y).toBeGreaterThanOrEqual(-1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(PHONE_SQUEEZED.height + 1);
+    // …and using nearly all of it. 92 % would leave a 24 px band of page showing above the
+    // drawer; anything much shorter than that is the collapse itself.
+    expect(box!.height).toBeGreaterThan(PHONE_SQUEEZED.height * 0.95);
   });
 });

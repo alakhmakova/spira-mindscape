@@ -3,12 +3,48 @@ import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * **`repositionInputs` is off, and that is the whole keyboard fix** (BUG-060, 2026-08-29).
+ *
+ * vaul turns it on by default. What it does is listen for `visualViewport` resizes and, while
+ * something typeable is focused, write **inline `height` and `bottom`** onto the drawer element
+ * (`onVisualViewportChange` in `vaul/dist/index.js`). An inline style beats every class, so from
+ * the first keystroke onwards the sheet is no longer sized by `sheet-h-*` / `sheet-max-*` at all
+ * — which is exactly why four rounds of CSS fixes changed nothing, and why only the sheets with
+ * a field to type in ever misbehaved.
+ *
+ * Its arithmetic is wrong here, measured rather than argued (412x780 phone, composer focused,
+ * viewport shrunk to 300 and back — `e2e/ai-drawer-height.spec.ts`):
+ *
+ * | viewport | what vaul wrote | drawer |
+ * |---|---|---|
+ * | 780 | nothing | 718 (92 %) |
+ * | 300 (keyboard up) | `height: 300px` | 300 |
+ * | **780 (keyboard gone)** | **`height: 300px`** | **300 — 38 % of the screen** |
+ *
+ * The pixel value is `initialDrawerHeight`, captured on the FIRST resize the handler sees, and
+ * then reapplied forever. That is the owner's "меньше половины экрана", the jumping height, and
+ * — on a sheet whose content no longer fills the box it was pinned to — the band of the drawer's
+ * own background showing below the content.
+ *
+ * The reason we can simply switch it off is that the flag exists for browsers where the keyboard
+ * does NOT resize the layout viewport. `index.html` asks for `interactive-widget=resizes-content`,
+ * so Chrome does resize it, and the sheet sits above the keyboard natively — vaul's compensation
+ * is a second hand on the same wheel. Turning it off also disables vaul's iOS-Safari scroll
+ * workaround (`usePreventScroll` reads the same flag); everything else it guards is iOS-only, so
+ * on Android and the desktop nothing but the height writer goes away. iOS Safari has no
+ * `interactive-widget` support, so a sheet's composer there will sit behind the keyboard — see
+ * `backlog/ios-safari-keyboard-covers-the-sheet-composer.md`.
+ *
+ * A caller can still pass `repositionInputs` to override this; none does.
+ */
 const Drawer = ({
   shouldScaleBackground = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
   <DrawerPrimitive.Root
     shouldScaleBackground={shouldScaleBackground}
+    repositionInputs={false}
     {...props}
   />
 );
@@ -45,13 +81,27 @@ const DrawerContent = React.forwardRef<
         // opens with its own head at the very top, exactly as the Android `ModalBottomSheet`
         // does; vaul's default handle put a white strip with a pill above the teal head, so the
         // web sheet read as two stacked bars where Android has one. Dragging the sheet down
-        // still works — the head itself is the drag surface. `overflow-hidden` is what lets the
+        // still works — the head itself is the drag surface. `overflow-clip` is what lets the
         // head take the rounded top corners instead of poking square ones through them. The
         // corner is `xl` (12px) because Android's sheet is `SpiraRadii.lg` (12dp) - both are the
         // base radius + 4, so the same sheet is the same shape on the phone and the laptop. The
         // hairline border went with it: over the dimmed page it drew a pale outline round the
         // teal head that Android's sheet has not got, and half the drawers already cancelled it.
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col overflow-hidden rounded-t-xl bg-background",
+        // No `h-auto` here. It is the CSS default, so it bought nothing — and it put every
+        // caller that sets its own height into a fight with the base class inside one
+        // `cn()` string. tailwind-merge resolves that correctly today; not relying on it
+        // costs nothing.
+        // **`overflow-clip`, never `overflow-hidden`** (2026-08-29). They clip identically, but
+        // `hidden` still makes the box a **scroll container** — it just hides the scrollbars —
+        // so anything that scrolls programmatically can move the whole sheet inside its own
+        // frame. Something does: opening the deadline calendar in New goal calls
+        // `scrollIntoView` on the field, which walks up and scrolls **every** scrollable
+        // ancestor, and the sheet ended up at `scrollTop: 450` with its teal head at y −292 —
+        // off the top of its own box, leaving a stub of a form with a floating calendar over it.
+        // The browser's own "scroll the focused element into view" reaches the same box. `clip`
+        // is not a scroll container at all, so none of them can move it. The body's
+        // `overflow-y-auto` is the one scroller a sheet has, by design (CLAUDE.md → Sheets).
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex flex-col overflow-clip rounded-t-xl bg-background",
         className,
       )}
       {...props}
