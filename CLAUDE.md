@@ -279,6 +279,7 @@ both unless it names a surface.
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
 | **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
+| **Dates** — a sheet on a phone, a popover on a laptop | Components and chrome → 3e-ter |
 | **Sheet heights** — `repositionInputs={false}`, and never a raw `vh` | Components and chrome → 3e-bis |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
@@ -713,6 +714,41 @@ Three tests hold the rule now, and each was checked to fail on the code it guard
 - The same file's earlier cases shrink the viewport to 412×300 mid-conversation and assert the
   drawer fills it. Keep in mind what they could **not** see: all five passed throughout the four
   failed rounds, because each either shrank with nothing focused or never grew back.
+
+#### 3e-ter. Asking for a date is a sheet on a phone, a popover on a laptop (hard spec, 2026-08-29)
+
+`DeadlinePopover` is the app's one date control, and it draws **two** surfaces. On a phone it was
+the popover too, and it read wrong: a floating card over an open form, its own teal strip directly
+under the sheet's teal band — **two heads stacked for one question**. The rule in 3e is not a rule
+about forms, it is a rule about asking: on a phone the app asks in a sheet.
+
+| | Laptop — popover | Phone — sheet |
+|---|---|---|
+| Chrome | its own compact teal strip | the shared `SheetHead` |
+| Commit | tapping a day commits and closes | a day is a **draft**; the foot commits |
+| Foot | `Today` / `Clear` as small links | `Cancel` (quiet outline) · `Set deadline` (filled Kale) |
+| Cells | `--cell-size: 2rem`, a mouse target | `2.5rem` and full width, a finger target |
+| `Today` / `Clear` | commit immediately | set the draft, like everything else in the sheet |
+
+Three things that are the spec, not implementation detail:
+
+- **The phone confirms; the laptop commits.** A sheet in this app always ends in a pinned pair, and
+  on a 48px date grid a mis-tap that commits *and closes* leaves nothing to undo. So `Clear` is a
+  draft too, and the confirm word follows it — `Remove deadline` when there is one to remove and
+  the draft has dropped it, `Set deadline` otherwise, disabled when there is nothing to confirm.
+- **The chosen date is stated in words above the grid** ("Saturday, August 15, 2026 · 14d overdue").
+  A highlighted 48px cell is not a legible answer on a phone.
+- **The trigger is described once and rendered twice.** Seven variants (`pill`, `input`, `button`,
+  `text`, `icon`, `icon-text`, `renderTrigger`) each have to be a `PopoverTrigger` on one surface
+  and a plain button on the other; `DeadlinePopover` builds `{ className, content }` and picks the
+  element afterwards, so the two surfaces cannot drift.
+
+The switch is `useIsMobile()` (768), matching every form sheet. The filter panel switches at 640
+instead, so between 640 and 767 a bottom date sheet can open from a right-hand filter panel — that
+band is the seam `ListToolbar.tsx` already documents, and a bottom sheet is right on both sides of
+it. Matching the container instead would make the picker change shape depending on who opened it.
+
+`e2e/deadline-sheet.spec.ts` pins both surfaces, the laptop's one-click commit included.
 
 #### 3f. Search fields — the reset is the word "Clear", never a cross (hard spec, 2026-08-22)
 

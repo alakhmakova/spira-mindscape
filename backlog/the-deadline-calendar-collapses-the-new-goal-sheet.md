@@ -88,9 +88,20 @@ Fixed 2026-08-29 alongside BUG-060. Both bugs in this session came from the same
 **something other than the component's own CSS was moving it** — vaul's inline height in BUG-060,
 a stray `scrollIntoView` into a box that should never have been scrollable here.
 
-## Still open, and deliberately not changed
+## The redesign that followed (owner, 2026-08-29: "сделай редизайн")
 
-- On a phone the calendar opens as a **popover over the sheet**, so two teal heads end up stacked
-  ("New goal" and "Set deadline"). It works and is legible, but the app's own language for "ask me
-  something" on a phone is a sheet (CLAUDE.md → Sheets), so a nested date sheet may be the right
-  shape. That is a redesign, not a bug fix — ask the owner first.
+Fixing the two defects left the calendar working but still a **popover over a sheet**, so two teal
+heads ended up stacked — "New goal" and "Set deadline" — for one question. The owner asked for the
+app's own shape instead, and `DeadlinePopover` now draws two surfaces: the popover on a laptop, a
+nested **sheet** on a phone. The full spec is CLAUDE.md → Components and chrome → **3e-ter**; the
+short version:
+
+- the shared `SheetHead`, a full-width finger-sized grid, and the app's pinned foot;
+- **a day is a draft on the phone** — `Cancel` / `Set deadline` commit it — because a 48px grid
+  that commits *and closes* on a mis-tap leaves nothing to undo. `Today` and `Clear` are drafts
+  too, and the confirm word follows them (`Remove deadline` when the draft has dropped one);
+- the laptop keeps its one-click commit, unchanged, and `e2e/deadline-sheet.spec.ts` pins that as
+  well as the sheet — the redesign added a surface, it did not replace the popover.
+
+The `overflow-clip` fix above still matters after it: it is what every sheet in the app relies on,
+and it is now also what keeps a **nested** sheet from disturbing the form beneath it.

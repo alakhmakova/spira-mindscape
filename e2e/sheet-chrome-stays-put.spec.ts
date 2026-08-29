@@ -61,19 +61,29 @@ test.describe("sheet chrome stays put", () => {
     }
   });
 
-  test("opening the deadline calendar leaves the sheet's head where it was", async ({
+  test("opening the deadline sheet leaves the form beneath it untouched", async ({
     page,
   }) => {
-    // The symptom the owner photographed. `DeadlinePopover` calls `scrollIntoView` on the field
-    // so a long form makes room for the calendar; `scrollIntoView` walks up and scrolls EVERY
-    // scrollable ancestor, and the sheet was one. It landed at `scrollTop: 450` with its teal
-    // head at y −292 — a stub of a form with a calendar floating over it.
+    // The symptom the owner photographed, in the shape the app has now. It used to be a popover
+    // here, and `DeadlinePopover` calls `scrollIntoView` on the field so a long form makes room
+    // for the calendar — `scrollIntoView` walks up and scrolls EVERY scrollable ancestor, and
+    // the sheet was one. It landed at `scrollTop: 450` with its teal head at y −292: a stub of a
+    // form with a calendar floating over it.
+    //
+    // The picker is a nested sheet on a phone now (`e2e/deadline-sheet.spec.ts`), so what is
+    // guarded here is the thing that outlives the redesign: opening and dismissing a second
+    // sheet must leave the first exactly as it was.
     await openNewGoal(page);
-    const head = page.getByRole("heading", { name: "New goal" });
+    const head = sheet(page).getByText("New goal", { exact: true });
     const before = (await head.boundingBox())!;
 
     await page.getByText("Pick a deadline").click();
     await page.waitForTimeout(700);
+    // The date sheet is on top; Radix takes the form out of the a11y tree while it is, which is
+    // why the head is measured by its box rather than by role.
+    expect(await page.locator("[data-vaul-drawer]").count()).toBe(2);
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.waitForTimeout(600);
 
     const after = (await head.boundingBox())!;
     expect(after.y).toBeCloseTo(before.y, 0);
@@ -82,21 +92,24 @@ test.describe("sheet chrome stays put", () => {
     ).toBe(0);
   });
 
-  test("the calendar stays on screen with the keyboard up", async ({
-    page,
-  }) => {
+  test("a popover never grows past the room it has", async ({ page }) => {
     // Radix flips a popover above its trigger when there is no room below, but it will not
-    // SHRINK one that fits neither way — it simply hangs off the top. With the keyboard up the
-    // 414 px calendar sat at y −136: its own head with the close X, the month arrows and the
-    // weekday row were all above the screen, so the month could not be changed and the picker
-    // could not be dismissed. `PopoverContent` caps itself to
-    // `--radix-popover-content-available-height` now, and the grid is what scrolls.
-    await openNewGoal(page);
-    const title = page.getByPlaceholder("e.g. Launch Spira to first 50 users");
-    await title.click();
-    await title.fill("A goal");
-    await page.setViewportSize(PHONE_KB_UP);
-    await page.waitForTimeout(300);
+    // SHRINK one that fits neither way — it simply hangs off the top. The 414 px deadline
+    // calendar was measured at y −136 on a phone with the keyboard up: its own head with the
+    // close X, the month arrows and the weekday row were all above the screen, so the month
+    // could not be changed and the picker could not be dismissed.
+    //
+    // The popover is the LAPTOP surface now, so the same squeeze is reproduced the way a laptop
+    // meets it: a short window. `PopoverContent` caps itself to
+    // `--radix-popover-content-available-height`, and the grid is what scrolls.
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await page.getByRole("button", { name: "New goal" }).first().click();
+    await expect(
+      page.getByPlaceholder("e.g. Launch Spira to first 50 users"),
+    ).toBeVisible();
+    await page.waitForTimeout(400);
 
     await page.getByText("Pick a deadline").click();
     await page.waitForTimeout(700);
@@ -104,7 +117,7 @@ test.describe("sheet chrome stays put", () => {
     const popper = page.locator("[data-radix-popper-content-wrapper]").first();
     const box = (await popper.boundingBox())!;
     expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.y + box.height).toBeLessThanOrEqual(PHONE_KB_UP.height + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(421);
     // The two rows that were off the top: the head with the close X, and the weekday row that
     // sits under the month navigation. Named by things that do not change with the calendar
     // month, so this spec still means the same in November.
