@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- The SAME viewport declaration the app uses, or the test measures a different browser. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>Keyboard check</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: #222525; background: #fff; }
+
+      /* A box drawn exactly the way a Spira sheet is: fixed, bottom-anchored, 92 % of a
+         viewport unit. If the keyboard shrinks the layout viewport, this shrinks with it. */
+      #sheet {
+        position: fixed; inset: auto 0 0 0; height: 92vh;
+        background: rgba(10,128,128,.92); color: #fff;
+        display: flex; flex-direction: column; padding: 8px 10px;
+      }
+      #sheet b { font-size: 12px; }
+      #log { flex: 1; min-height: 0; overflow-y: auto; margin: 6px 0;
+             font: 11.5px/1.35 ui-monospace, monospace; white-space: pre; }
+      /* The composer, where a Spira sheet's input sits — tap it to raise the keyboard. */
+      input { width: 100%; padding: 10px; border: 0; border-radius: 8px; font-size: 16px; }
+
+      #readout { position: fixed; inset: auto 0 0 0; z-index: 10; background: #fff;
+                 border-top: 3px solid #222525; padding: 8px 12px; }
+      table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+      td { padding: 1px 0; }
+      td:last-child { text-align: right; font-weight: 700; }
+      h1 { font-size: 13px; margin: 0 0 4px; }
+      p { margin: 5px 0 0; font-size: 11px; color: #525257; }
+    </style>
+  </head>
+  <body>
+    <div id="sheet">
+      <b>A sheet at 92vh</b>
+      <div id="log"></div>
+      <input id="composer" placeholder="Tap here to open the keyboard" />
+    </div>
+
+    <div id="readout">
+      <h1>Keyboard check</h1>
+      <table id="t"></table>
+      <p>1 · tap the field · 2 · close the keyboard (back gesture) · 3 · screenshot this.</p>
+    </div>
+
+    <script>
+      // The largest layout viewport ever seen at this width. The keyboard can only ever make
+      // the viewport smaller, so the maximum is the keyboard-free height — which is exactly
+      // the number a sheet ought to be sized from.
+      let stable = window.innerHeight;
+      let width = window.innerWidth;
+      const lines = [];
+
+      const sheetPx = () =>
+        Math.round(document.getElementById("sheet").getBoundingClientRect().height);
+
+      function note(event) {
+        const now = new Date();
+        const t = now.toTimeString().slice(3, 8) + "." +
+          String(now.getMilliseconds()).padStart(3, "0");
+        lines.push(t + "  " + event.padEnd(9) + " inner=" + window.innerHeight +
+          " sheet=" + sheetPx());
+        if (lines.length > 14) lines.shift();
+        const log = document.getElementById("log");
+        log.textContent = lines.join("\n");
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function render(event) {
+        if (window.innerWidth !== width) { width = window.innerWidth; stable = 0; }
+        stable = Math.max(stable, window.innerHeight);
+
+        const vv = window.visualViewport;
+        const visible = vv ? Math.round(vv.height) : window.innerHeight;
+        // With `resizes-content` the keyboard shrinks the LAYOUT viewport, so innerHeight
+        // itself drops below the keyboard-free maximum.
+        const keyboard = stable - window.innerHeight;
+        const rows = [
+          ["window.innerHeight (now)", window.innerHeight],
+          ["largest ever seen", stable],
+          ["keyboard is taking", keyboard + (keyboard > 40 ? "  ← OPEN" : "")],
+          ["visible (visualViewport)", visible],
+          ["the 92vh sheet is", sheetPx() + " (" + Math.round((sheetPx() / stable) * 100) + "% of full)"],
+        ];
+        document.getElementById("t").innerHTML = rows
+          .map(([k, v]) => "<tr><td>" + k + "</td><td>" + v + "</td></tr>")
+          .join("");
+        if (event) note(event);
+      }
+
+      render();
+      note("start");
+      addEventListener("resize", () => render("resize"));
+      document.getElementById("composer").addEventListener("focus", () => render("focus"));
+      document.getElementById("composer").addEventListener("blur", () => render("blur"));
+      if (window.visualViewport) {
+        visualViewport.addEventListener("resize", () => render("vv-resize"));
+      }
+      // A late sample after the keyboard animation has settled, which is where a browser
+      // that fails to restore the viewport shows itself.
+      setInterval(() => render(), 500);
+    </script>
+  </body>
+</html>
