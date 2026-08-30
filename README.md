@@ -462,7 +462,7 @@ cd android; .\gradlew.bat :app:installDev
 
 ```powershell
 curl -i http://localhost:8080/api/auth/me        # → 200 with dev@local, not 401
-adb shell dumpsys package com.spiramindscape.android | Select-String versionName   # → 0.2.7-dev
+adb shell dumpsys package com.spiramindscape.android | Select-String versionName   # → ends in -dev
 adb exec-out screencap -p > shot.png             # → All goals, no sign-in screen
 ```
 

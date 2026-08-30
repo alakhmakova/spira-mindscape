@@ -50,8 +50,13 @@ android {
         applicationId = "com.spiramindscape.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.2.7"
+        // Keep `versionName` equal to the git tag without its `v` and `-alpha`: the tag
+        // `v0.3.0-alpha` and this string are the same release, and they are the only two places
+        // the number is written down (the backend `pom.xml` stays `0.0.1-SNAPSHOT` and
+        // `package.json` has no version field at all). `versionCode` only ever goes up — Play
+        // and App Distribution order builds by it, never by the name.
+        versionCode = 10
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
