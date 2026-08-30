@@ -279,4 +279,9 @@ public class AnthropicProvider implements LlmProvider {
     public ProviderType providerType() {
         return ProviderType.ANTHROPIC;
     }
+
+    @Override
+    public String model() {
+        return model;
+    }
 }

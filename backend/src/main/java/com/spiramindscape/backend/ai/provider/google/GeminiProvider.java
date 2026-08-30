@@ -345,4 +345,9 @@ public class GeminiProvider implements LlmProvider {
     public ProviderType providerType() {
         return ProviderType.GEMINI;
     }
+
+    @Override
+    public String model() {
+        return model;
+    }
 }

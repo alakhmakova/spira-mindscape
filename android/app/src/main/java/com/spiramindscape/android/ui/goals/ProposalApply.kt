@@ -6,6 +6,7 @@ import com.spiramindscape.android.data.ai.TargetShape
 import com.spiramindscape.android.data.ai.applyExcludedAspects
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.TargetItem
+import com.spiramindscape.android.ui.ai.AiHandoff
 
 /**
  * Applies an accepted AI proposal to the open goal, through the same actions the user's own taps
@@ -167,3 +168,77 @@ private fun GoalDetail.checklistTargetHolding(itemId: String): TargetItem.Checkl
     targets.filterIsInstance<TargetItem.Checklist>().firstOrNull { target ->
         target.items.any { it.id == itemId }
     }
+
+/**
+ * What the all-goals chat can do to a goal as a whole. Lambdas rather than a view model so
+ * [applyGlobalProposal] stays testable.
+ */
+data class GlobalProposalActions(
+    val onCreateGoal: (
+        title: String, description: String?, confidence: Int, deadline: String?,
+    ) -> Unit = { _, _, _, _ -> },
+    val onEditGoal: (id: String, field: String, value: String) -> Unit = { _, _, _ -> },
+    val onOpenGoal: (id: String) -> Unit = {},
+    /** Raises the confirmation — a goal is never deleted straight from a card. */
+    val onConfirmDelete: (id: String) -> Unit = {},
+)
+
+/**
+ * Applies a proposal from the all-goals chat: the four kinds that are about a goal as a whole.
+ * Anything scoped to the INSIDE of one goal is applied by that goal's own assistant, which has
+ * its data loaded.
+ *
+ * <p>**Three of these four used to be refused** (2026-08-30). `edit_goal`, `open_goal` and
+ * `delete_goal` all fell through to "Open that goal and ask there — I can only create goals from
+ * here", which is true of none of them: the overview is exactly where a goal's name, confidence
+ * and deadline are editable, and it is the only place `open_goal` means anything at all. The web
+ * has applied all four since the kinds existed, so the phone was declining a card the model is
+ * instructed — at some length, in every prompt — to produce.
+ *
+ * <p>A pure function over [GlobalProposalActions] rather than over the view model, so the four
+ * decisions can be tested without a screen — which is how three of them came to be wrong.
+ *
+ * @param askedFor the user's own words that led to this card, carried into the goal
+ */
+fun applyGlobalProposal(
+    proposal: Proposal,
+    excludedAspects: Set<String>,
+    askedFor: String?,
+    actions: GlobalProposalActions,
+): String? {
+    val p = applyExcludedAspects(proposal, excludedAspects)
+    return when (p.kind) {
+        ProposalKind.NEW_GOAL -> {
+            actions.onCreateGoal(p.title, p.body, p.confidence ?: 5, p.deadline)
+            null
+        }
+
+        ProposalKind.EDIT_GOAL -> {
+            val id = p.goalId ?: return MISSING_GOAL
+            val field = p.field ?: return "I couldn't tell which field that was."
+            actions.onEditGoal(id, field, p.rawValue ?: p.title)
+            null
+        }
+
+        ProposalKind.OPEN_GOAL -> {
+            val id = p.goalId ?: return MISSING_GOAL
+            // The request travels with the navigation, so the goal's own chat can pick up where
+            // this one had to stop — see AiHandoff.
+            askedFor?.let { AiHandoff.stash(id, it) }
+            actions.onOpenGoal(id)
+            null
+        }
+
+        ProposalKind.DELETE_GOAL -> {
+            val id = p.goalId ?: return MISSING_GOAL
+            actions.onConfirmDelete(id)
+            null
+        }
+
+        else -> "Open that goal and ask there — that change lives inside it."
+    }
+}
+
+/** The model named no goal, or named one that is no longer in the list. */
+private const val MISSING_GOAL =
+    "I couldn't tell which goal that was — say which one and I'll try again."

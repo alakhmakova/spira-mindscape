@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -32,6 +33,10 @@ import java.util.stream.Stream;
  * {@code 503 "This model is currently experiencing high demand. Spikes in demand are
  * usually temporary. Please try again later."} — an error that says, in words, to try
  * again, which nothing did. One retry turns most of those into an answer.
+ *
+ * <p>The same is true of a provider's per-minute rate limit, which is a window that reopens
+ * on its own — as long as the wait is long enough to be worth taking. {@link #shouldRetry}
+ * and {@link #namesATransientRateLimit} between them decide which 429s those are.
  *
  * <h2>What the timeout does and does not cover</h2>
  *
@@ -138,6 +143,21 @@ public final class LlmHttp {
             }
 
             int status = response.statusCode();
+
+            // A 429 with no Retry-After needs the body read before it can be judged, so it
+            // has its own branch — everything else decides on the status alone.
+            if (status == TOO_MANY_REQUESTS && retryAfter(response) == null) {
+                List<String> body = drain(response);
+                if (!namesATransientRateLimit(body) || !canRetry(attempt, deadlineNanos)) {
+                    // Handed back with its body replayable: the provider's own words are
+                    // what the user reads, and draining it must not silence them.
+                    return withReplayableBody(response, body);
+                }
+                logRetry(request, attempt, "status_429_rate_limited");
+                sleep(rateLimitWait(attempt, deadlineNanos));
+                continue;
+            }
+
             if (!shouldRetry(status, response) || !canRetry(attempt, deadlineNanos)) {
                 return response;
             }
@@ -181,14 +201,22 @@ public final class LlmHttp {
      *
      * <p>Retrying blindly turned every quota error into three, tripling the consumption at the
      * exact moment the user had none left, and delayed the one message that would have told
-     * them why. So: <b>retry a 429 only when the provider named a wait we can afford.</b>
-     * A bare 429 is handed straight back, and the user reads the provider's own words
-     * immediately.
+     * them why. So this method retries a 429 <b>only when the provider named a wait we can
+     * afford</b>, and it is one rule for every provider rather than a special case for
+     * Google: Anthropic and OpenAI send {@code Retry-After} on a genuine rate limit too.
      *
-     * <p>This is one rule for every provider, not a special case for Google — Anthropic and
-     * OpenAI send {@code Retry-After} on a genuine rate limit too, so they keep their retry,
-     * while OpenAI's {@code insufficient_quota} (a bare 429) now surfaces at once instead of
-     * after two more wasted calls. Nobody is disadvantaged by it.
+     * <h4>The third case: a rate limit that names no wait</h4>
+     *
+     * <p>Sending a bare 429 straight back was right for {@code insufficient_quota} and wrong
+     * for Mistral, which answers a per-minute limit with
+     * {@code {"type":"rate_limited","message":"Rate limit exceeded","code":"1300"}} and
+     * <b>no {@code Retry-After} at all</b>. That is the transient case wearing the permanent
+     * case's clothes, and the owner met it on 30 Aug 2026 as five failures in an hour, each
+     * one arriving in under a second while the very next message a minute later worked.
+     *
+     * <p>That case is not decided here, because deciding it means reading the body — see
+     * {@link #namesATransientRateLimit} and the branch in {@link #sendStreaming}. This method
+     * still answers for the header, which is what its callers ask it about.
      */
     static boolean shouldRetry(int status, HttpResponse<?> response) {
         if (status == TOO_MANY_REQUESTS) {
@@ -225,6 +253,107 @@ public final class LlmHttp {
         if (spare <= 0) return Duration.ZERO;
         Duration cap = Duration.ofNanos(spare);
         return wait.compareTo(cap) > 0 ? cap : wait;
+    }
+
+    /**
+     * How long to wait before trying a rate-limited 429 again, when the provider named no
+     * wait of its own. Doubled for the attempt after that, so three attempts span about
+     * eighteen seconds — long enough for a per-minute window to reopen, short enough that
+     * the whole ladder still fits {@link #TOTAL_BUDGET} with a full attempt to spare.
+     */
+    static final Duration RATE_LIMIT_WAIT = Duration.ofSeconds(6);
+
+    /** The ladder above, never longer than the budget left. */
+    private static Duration rateLimitWait(int attempt, long deadlineNanos) {
+        Duration wait = RATE_LIMIT_WAIT.multipliedBy(1L << (attempt - 1));
+        long spare = deadlineNanos - System.nanoTime() - REQUEST_TIMEOUT.toNanos();
+        if (spare <= 0) return Duration.ZERO;
+        Duration cap = Duration.ofNanos(spare);
+        return wait.compareTo(cap) > 0 ? cap : wait;
+    }
+
+    /**
+     * Wording that means <b>the allowance itself is gone</b> — a day's or a month's worth,
+     * or an unpaid bill. Waiting cannot fix any of them, and every attempt spends more of
+     * what has already run out.
+     */
+    private static final Set<String> QUOTA_MARKERS = Set.of(
+            "quota", "billing", "insufficient", "credit", "balance", "payment", "expired");
+
+    /**
+     * Wording that means <b>too much in this window</b> — the limit reopens on its own.
+     * Mistral says it in a field: {@code {"type":"rate_limited","message":"Rate limit
+     * exceeded","code":"1300"}}, and it sends no {@code Retry-After} with it.
+     */
+    private static final Set<String> RATE_MARKERS = Set.of(
+            "rate limit", "rate_limit", "rate-limit", "ratelimit",
+            "too many requests", "requests per", "tokens per", "slow down");
+
+    /**
+     * Whether a 429 body describes a window that will reopen rather than an allowance that
+     * is spent.
+     *
+     * <p><b>Silence means no retry.</b> A 429 that explains nothing is treated as the
+     * expensive case, which is what the plain rule did for every 429 before this: the cost
+     * of guessing wrong towards "rate limit" is a user who has run out of quota waiting
+     * eighteen seconds to be told so, and two more calls billed against an allowance they
+     * no longer have.
+     *
+     * <p>A body naming both — "you have exceeded your rate limit; check your plan and
+     * billing details" — counts as quota, because the quota words are the specific ones.
+     */
+    static boolean namesATransientRateLimit(List<String> body) {
+        return namesATransientRateLimit(String.join(" ", body));
+    }
+
+    /**
+     * The same question asked of one string, so the retry and the sentence the user reads
+     * cannot disagree about what kind of refusal this was ({@code AiChatService.friendlyError}
+     * tells them we already waited — it may only say that where we actually did).
+     */
+    public static boolean namesATransientRateLimit(String body) {
+        String text = body == null ? "" : body.toLowerCase();
+        if (text.isBlank()) return false;
+        if (QUOTA_MARKERS.stream().anyMatch(text::contains)) return false;
+        return RATE_MARKERS.stream().anyMatch(text::contains);
+    }
+
+    /**
+     * Reads the whole body and closes it. Only ever called on an error response, which is a
+     * few hundred bytes — never on a 200, whose body is the answer being streamed to the
+     * user and must stay lazy.
+     */
+    private static List<String> drain(HttpResponse<Stream<String>> response) {
+        try (Stream<String> body = response.body()) {
+            return body.toList();
+        } catch (RuntimeException e) {
+            log.debug("llm_http_body_read_failed {}", e.toString());
+            return List.of();
+        }
+    }
+
+    /**
+     * The same response with an already-read body put back, so the caller can collect it
+     * exactly as it would have done. Everything else delegates, because the provider reads
+     * the status and, for some errors, the headers.
+     */
+    private static HttpResponse<Stream<String>> withReplayableBody(
+            HttpResponse<Stream<String>> original, List<String> lines) {
+
+        return new HttpResponse<>() {
+            @Override public int statusCode() { return original.statusCode(); }
+            @Override public HttpRequest request() { return original.request(); }
+            @Override public java.util.Optional<HttpResponse<Stream<String>>> previousResponse() {
+                return java.util.Optional.empty();
+            }
+            @Override public java.net.http.HttpHeaders headers() { return original.headers(); }
+            @Override public Stream<String> body() { return lines.stream(); }
+            @Override public java.util.Optional<javax.net.ssl.SSLSession> sslSession() {
+                return original.sslSession();
+            }
+            @Override public java.net.URI uri() { return original.uri(); }
+            @Override public HttpClient.Version version() { return original.version(); }
+        };
     }
 
     /** {@code Retry-After} in delta-seconds; null when absent or an HTTP-date. */

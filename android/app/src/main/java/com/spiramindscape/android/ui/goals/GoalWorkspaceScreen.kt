@@ -280,7 +280,7 @@ fun GoalWorkspaceRoute(
         goalId = goalId,
         open = assistantOpen,
         onOpenChange = { assistantOpen = it },
-        onApplyProposal = { proposal, excluded ->
+        onApplyProposal = { proposal, excluded, _ ->
             val goal = (state as? GoalUiState.Content)?.goal
             if (goal == null) {
                 "The goal is still loading — try again in a moment."
