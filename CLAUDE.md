@@ -18,9 +18,26 @@ contributors — human or agent — should read this top-to-bottom, then `README
   `gh pr merge`.
 - ✅ Read-only git is fine: `git status`, `git diff`, `git log`, `git show`, `git branch`
   (listing).
-- ⚠️ There is **no `.claude/settings.json` in this repository**, so nothing enforces this but
-  the rule itself. (An earlier version of this file claimed a `PreToolUse` hook blocked
-  committing; it does not exist. Corrected 2026-08-23.)
+- ⚠️ **A hook enforces this on the owner's machine, and only there** (corrected 2026-08-30).
+  `.claude/settings.json` registers a `PreToolUse` hook on Bash — `.claude/hooks/block-git-write.js`
+  — which exits 2 on every writing form listed above. It fired for real on 2026-08-30.
+  - **But `.claude/` is gitignored** (`.gitignore` line 26) and none of it is committed, so a
+    fresh clone or another machine has **no** hook and nothing but this rule. The rule is the
+    authority; the hook is a safety net that may not be there.
+  - This entry has now been wrong in both directions: it once claimed a hook that did not exist,
+    and was then "corrected" to deny the one that does. The fact that reconciles them is that
+    the file lives **on disk and not in git** — run `ls .claude/` before believing either claim.
+  - **It matches the raw command text, not the intent**, and scans the whole string so
+    `cd x; <write command>` is caught too. That also means a heredoc *quoting* one of those
+    commands is blocked — editing this very section from Bash fails. Use Edit/Write for it.
+  - The same untracked `settings.json` runs the `Stop` hooks named below, so if lint and the
+    unit tests never seem to run at the end of a turn, this is why.
+
+**A GitHub release is a tag, and the hook does not catch it.** `gh release create` publishes a
+new tag on the remote, which is the thing the ❌ list forbids — but it is not one of the patterns
+`block-git-write.js` matches, so nothing stops it. Only the rule does: **ask, and let the owner
+pick the ref and the version.** The owner asked for one on 2026-08-30 and chose `v0.3.0-alpha` on
+`main`; that was their call to make, not a precedent for making it unasked.
 
 When work is ready, summarize what changed and let the user commit.
 
@@ -55,7 +72,8 @@ Follow this sequence for any code change, small or large:
 4. **Verify** — run the fast checks and fix any failure:
    - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm test`
    - Backend (if touched): `cd backend && .\mvnw.cmd test`
-   - The `Stop` hooks also run lint/typecheck + fast unit tests and will surface failures.
+   - The `Stop` hooks also run lint/typecheck + fast unit tests and will surface failures — when
+     they are installed. They live in the **untracked** `.claude/`; see the commit policy above.
    - **A green `curl` is not proof the browser works.** curl sends no `Origin`, runs no JavaScript,
      keeps no cookies and obeys no CSP. A phone on a tunnel once got **403 on every GraphQL call**
      while `curl` and the page load both answered `200` — the screen said "We couldn't sync with the
