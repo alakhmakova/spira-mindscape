@@ -158,7 +158,7 @@ export function ResourceAttachSheet({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="sheet-max-92 mt-0 flex flex-col bg-white px-0">
+        <DrawerContent className="sheet-max mt-0 flex flex-col bg-white px-0">
           {body}
         </DrawerContent>
       </Drawer>

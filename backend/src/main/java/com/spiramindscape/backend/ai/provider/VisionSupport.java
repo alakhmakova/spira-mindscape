@@ -37,10 +37,13 @@ public final class VisionSupport {
 
     /**
      * Mistral chat models that can actually LOOK at an image. Unlike Anthropic, OpenAI and
-     * Gemini — whose current chat line-ups are multimodal throughout — most Mistral models are
-     * text-only, including the default {@code mistral-large-latest}. Sending a picture to one
-     * of those is worse than useless: the provider drops it, the turn still says an image was
-     * attached, and the model answers as if it had seen it (BUG-027).
+     * Gemini — whose current chat line-ups are multimodal throughout — much of the Mistral line
+     * is text-only, {@code mistral-large-latest} among it. Sending a picture to one of those is
+     * worse than useless: the provider drops it, the turn still says an image was attached, and
+     * the model answers as if it had seen it (BUG-027).
+     *
+     * <p>The default is {@code mistral-medium-latest} now, which IS in this set — so the blank
+     * case below answers true, and a photo reaches the model rather than being dropped.
      */
     private static final Set<String> MISTRAL_VISION_FAMILIES =
             Set.of("pixtral", "mistral-medium", "mistral-small", "magistral");
@@ -70,7 +73,8 @@ public final class VisionSupport {
     public static boolean modelCanSeeImages(ProviderType provider, String model) {
         String m = (model == null ? "" : model.trim().toLowerCase());
         if (provider == ProviderType.MISTRAL) {
-            if (m.isBlank()) return false; // default is mistral-large-latest — text-only
+            // A blank model is the provider default, `mistral-medium-latest`, which sees.
+            if (m.isBlank()) return true;
             return MISTRAL_VISION_FAMILIES.stream().anyMatch(m::contains);
         }
         if (provider == ProviderType.TAVILY) return false;

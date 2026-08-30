@@ -91,17 +91,54 @@ a stray `scrollIntoView` into a box that should never have been scrollable here.
 ## The redesign that followed (owner, 2026-08-29: "сделай редизайн")
 
 Fixing the two defects left the calendar working but still a **popover over a sheet**, so two teal
-heads ended up stacked — "New goal" and "Set deadline" — for one question. The owner asked for the
-app's own shape instead, and `DeadlinePopover` now draws two surfaces: the popover on a laptop, a
-nested **sheet** on a phone. The full spec is CLAUDE.md → Components and chrome → **3e-ter**; the
-short version:
+heads ended up stacked — "New goal" and "Set deadline" — for one question. It became a nested
+bottom **sheet**, which fixed that; the owner then asked for the shape Android already had:
+*"на вебе вместо того отдельного drawer для календаря сделай модальное окно как на андроид,
+кстати, на андроид тоже нужен календарь с номерами недель."*
 
-- the shared `SheetHead`, a full-width finger-sized grid, and the app's pinned foot;
-- **a day is a draft on the phone** — `Cancel` / `Set deadline` commit it — because a 48px grid
-  that commits *and closes* on a mis-tap leaves nothing to undo. `Today` and `Clear` are drafts
-  too, and the confirm word follows them (`Remove deadline` when the draft has dropped one);
-- the laptop keeps its one-click commit, unchanged, and `e2e/deadline-sheet.spec.ts` pins that as
-  well as the sheet — the redesign added a surface, it did not replace the popover.
+Both notes are right, and they point in opposite directions — the web had the wrong container, and
+Android had the wrong grid inside the right one.
 
-The `overflow-clip` fix above still matters after it: it is what every sheet in the app relies on,
-and it is now also what keeps a **nested** sheet from disturbing the form beneath it.
+**The container.** A sheet is how the app asks for something *about the page*, and it comes from
+the bottom edge because it belongs to what is under it. A calendar is a value being picked inside
+a form that is already open, and a second bottom sheet stacked on the first reads as leaving that
+form. It is a centred modal now, on both surfaces.
+
+**The grid.** Android used Material's `DatePickerDialog` + `DatePicker` — a raw platform default
+in the middle of a Spira form (CLAUDE.md → Components and chrome → 1), and one that **cannot draw
+week numbers at all**: Material 3 has no support for the column. So the month grid is the app's
+own now (`SpiraMonthGrid`), with the same ISO weeks the web has always drawn. `WeekFields.ISO`,
+never `WeekFields.of(Locale)` — the locale form starts weeks on Sunday in the US and would number
+the same rows differently on the two surfaces.
+
+The full spec is CLAUDE.md → Components and chrome → **3e-ter**. The short version: the shared
+`SheetHead`, the chosen date written out in words, the grid with its `W` column, `Today` / `Clear`
+as worded links, and the app's foot — quiet outline left, filled Kale right. **A day is a draft**
+on the phone and on Android; the laptop's popover keeps its one-click commit, unchanged.
+
+`SheetHead` grew a `titleComponent` so the dialog can pass `DialogTitle`: Radix needs one for the
+dialog's accessible name, and a screen-reader-only second copy beside the band announced the title
+twice.
+
+The `overflow-clip` fix above still matters after all of it — it is what every sheet in the app
+relies on, and what keeps the form underneath undisturbed while the modal is open.
+
+`e2e/deadline-picker.spec.ts` pins both web surfaces; `VisualCheckDatePickerTest` pins Android's
+week numbers against a known month (August 2026 runs 31–36) and writes the picture.
+
+
+### One more pass on the head (owner, 2026-08-29)
+
+*"эта информация Sunday, August 16, 2026 · 13d overdue должна отображаться в шапке календаря
+вместо set deadline, когда дата уже выбрана, только нужно сделать короче … название дня недели или
+сколько дней осталось/overdue можно убрать, если нормально не помещается."*
+
+The card had a band with a fixed title and, right under it, a sentence restating what the band was
+for. The head carries the date now — `MMMM d, yyyy`, the string the laptop's popover head has
+always shown — and the line is gone, on both surfaces.
+
+The weekday and the relative are dropped rather than shortened: with them the title measures
+~250px, which fits a 412px phone and truncates on a 320px one. Measured after the change: 212px on
+a 320px screen with no truncation. Both facts still show on the trigger the picker was opened
+from. `e2e/deadline-picker.spec.ts` asserts the head's text **and** that it does not truncate, so
+a longer format cannot creep back in unnoticed.

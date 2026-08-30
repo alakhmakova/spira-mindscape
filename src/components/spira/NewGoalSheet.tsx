@@ -212,7 +212,7 @@ export function NewGoalSheet({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="sheet-max-92 mt-0 px-0 flex flex-col">
+        <DrawerContent className="sheet-max mt-0 px-0 flex flex-col">
           <FormBody onDone={() => onOpenChange(false)} />
         </DrawerContent>
       </Drawer>

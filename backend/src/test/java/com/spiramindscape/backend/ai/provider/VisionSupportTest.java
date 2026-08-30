@@ -1,5 +1,6 @@
 package com.spiramindscape.backend.ai.provider;
 
+import com.spiramindscape.backend.ai.provider.mistral.MistralProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -41,18 +42,39 @@ class VisionSupportTest {
      * it, and the model then answers as if it had seen it — a confident, fabricated reading.
      */
     @Test
-    void mistralVisionIsAnAllowListAndTheDefaultIsBlind() {
+    void mistralVisionIsAnAllowListAndTheDefaultNowSees() {
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "pixtral-large-latest")).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-medium-latest")).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-small-latest")).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "magistral-medium-latest")).isTrue();
 
-        // The app's default, and what the user had selected when this was reported.
+        // Still an allow-list: much of the Mistral line is text-only, Large among it — which is
+        // why it stopped being this app's default (2026-08-29).
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-large-latest")).isFalse();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "codestral-latest")).isFalse();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "ministral-8b-latest")).isFalse();
-        // No model stored → the provider default (mistral-large-latest), which is blind.
-        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, null)).isFalse();
-        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "  ")).isFalse();
+
+        // **No model stored is the provider's default, and that default now sees.** This pair
+        // has to move with `MistralProvider.DEFAULT_MODEL`: it read `false` while the default was
+        // `mistral-large-latest`, and leaving it there would drop every photo sent by a user who
+        // has never opened the model picker — the exact shape of BUG-027.
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, null)).isTrue();
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "  ")).isTrue();
+    }
+
+    /**
+     * The blank case above is only right while the provider's default is a model in the
+     * allow-list. Rather than trusting the two to be edited together, check them against each
+     * other — a default swapped to a text-only model would otherwise silently start dropping
+     * images again.
+     */
+    @Test
+    void theBlankCaseAgreesWithTheProviderDefault() {
+        assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, ""))
+                .as("blank must answer the same as MistralProvider.DEFAULT_MODEL (%s)",
+                        MistralProvider.DEFAULT_MODEL)
+                .isEqualTo(VisionSupport.modelCanSeeImages(
+                        ProviderType.MISTRAL, MistralProvider.DEFAULT_MODEL));
     }
 
     @Test

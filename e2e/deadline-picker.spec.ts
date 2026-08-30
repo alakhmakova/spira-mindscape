@@ -1,15 +1,16 @@
 import { test, expect, Page } from "@playwright/test";
 
 /**
- * **The deadline picker is a sheet on a phone and a popover on a laptop** (owner, 2026-08-29).
+ * **The deadline picker is a modal on a phone and a popover on a laptop** (owner, 2026-08-29).
  *
- * On a phone it used to be the popover too, and it read wrong: a floating card over an open form,
- * its own teal strip directly under the sheet's teal band — two heads stacked for one question.
- * The app's language for "ask me something without leaving the page" on a phone is a bottom
- * sheet (CLAUDE.md → Sheets).
+ * On a phone it was the popover once — a floating card over an open form, its own teal strip
+ * directly under the sheet's teal band, two heads stacked for one question — and then a bottom
+ * sheet, which fixed that and introduced another: a second sheet stacked on the first reads as
+ * leaving the form you are filling in. A centred modal is what Android has always done
+ * (`DeadlinePickerDialog`), and the two surfaces draw the same card now.
  *
  * The behaviours differ on purpose and both are pinned here: the popover commits the moment a day
- * is tapped, the sheet treats a day as a **draft** and commits from its foot. A 48px date grid
+ * is tapped, the modal treats a day as a **draft** and commits from its foot. A 48px date grid
  * that commits *and closes* on a mis-tap leaves nothing to undo.
  */
 
@@ -41,19 +42,23 @@ const deadlineField = (page: Page) =>
 test.describe("the deadline picker on a phone", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: PHONE });
 
-  test("opens as a sheet with the app's own head, and a day is only a draft", async ({
+  test("opens as a modal with the app's own head, and a day is only a draft", async ({
     page,
   }) => {
     await openNewGoal(page);
     await page.getByText("Pick a deadline").click();
     await page.waitForTimeout(600);
 
-    // The app's sheet, not a popover: a Kale head with the title and an X, and a pinned foot.
-    // Two drawers are open at once — the form and the date sheet on top of it.
-    expect(await page.locator("[data-vaul-drawer]").count()).toBe(2);
-    await expect(
-      page.getByRole("heading", { name: "Set deadline" }),
-    ).toBeVisible();
+    // A centred modal over the form's sheet — not a second sheet, and not a popover. The form's
+    // drawer is still the only drawer on the page.
+    expect(await page.locator("[data-vaul-drawer]").count()).toBe(1);
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    // **The head states the draft** (owner, 2026-08-29). Nothing chosen yet, so it is still the
+    // prompt; once a day is picked it becomes that date, and the line that used to repeat it
+    // above the grid is gone.
+    const head = page.getByRole("dialog").getByRole("heading");
+    await expect(head).toHaveText("Set deadline");
     await expect(
       page.getByRole("button", { name: "Set deadline", exact: true }),
     ).toBeVisible();
@@ -62,11 +67,17 @@ test.describe("the deadline picker on a phone", () => {
       page.getByRole("button", { name: "Set deadline", exact: true }),
     ).toBeDisabled();
 
-    // A day is a draft — it does not close the sheet and does not reach the form.
+    // A day is a draft — it does not close the modal and does not reach the form.
     await dayCell(page, DAY).click();
-    await expect(
-      page.getByRole("heading", { name: "Set deadline" }),
-    ).toBeVisible();
+    await expect(head).toHaveText(/^\w+ \d{1,2}, \d{4}$/);
+    // Short on purpose: the weekday and the "13d overdue" the old line carried would truncate
+    // the head on a narrow phone, and a head that is sometimes cut is worse than a short one.
+    expect(
+      await head.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      "the head truncated — its title is too long to fit the band",
+    ).toBe(true);
+    // The modal is still open — a day commits nothing — and the foot can now be pressed.
+    await expect(page.getByRole("dialog")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Set deadline", exact: true }),
     ).toBeEnabled();
@@ -101,6 +112,34 @@ test.describe("the deadline picker on a phone", () => {
     await page.waitForTimeout(400);
     await expect(page.getByText("Pick a deadline")).toBeVisible();
   });
+});
+
+test.describe("the picker's foot fits its words", () => {
+  // Android wrapped "Set deadline" onto two lines (owner, 2026-08-29) because its dialog took
+  // the platform's default width and left each button ~139dp. The web sizes the card itself, so
+  // it never did — but "never did" is worth pinning at the narrowest phone rather than assumed,
+  // and 320 is where a label runs out of room first.
+  test.use({ hasTouch: true, isMobile: true });
+
+  for (const width of [320, 360, 412]) {
+    test(`neither button wraps at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 780 });
+      await openNewGoal(page);
+      await page.getByText("Pick a deadline").click();
+      await page.waitForTimeout(500);
+      await dayCell(page, DAY).click();
+
+      const dialog = page.getByRole("dialog");
+      for (const name of ["Cancel", "Set deadline"]) {
+        const fits = await dialog
+          .getByRole("button", { name, exact: true })
+          .evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+        expect(fits, `"${name}" does not fit its button at ${width}px`).toBe(
+          true,
+        );
+      }
+    });
+  }
 });
 
 test.describe("the deadline picker on a laptop", () => {

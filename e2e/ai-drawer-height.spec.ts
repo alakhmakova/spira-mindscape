@@ -269,17 +269,107 @@ test.describe("the AI drawer on a phone", () => {
     ).toBe("");
   });
 
-  test("fills the space above the keyboard instead of taking 92 % of it", async ({
+  test("the composer floats over the transcript, and the keyboard scrolls it to the bottom", async ({
     page,
   }) => {
-    // The bug this whole spec exists for, stated as arithmetic. `index.html` sets
-    // `interactive-widget=resizes-content`, so the keyboard shrinks the LAYOUT viewport and
-    // every viewport unit shrinks with it: `92vh` of the ~300 px left above an Android
-    // keyboard is ~276 px, and on the owner's 888 px phone that is under a third of the
-    // screen — the "меньше половины экрана" drawer, reported four times.
+    // The other half of the owner's 2026-08-29 change, and the reason the sheet can afford to
+    // stop growing to the top edge: the room comes from scrolling now.
     //
-    // Sized from `--app-vh` (the keyboard-free height) and capped at `100dvh`, the drawer
-    // instead fills what is available: no wasted band, and the head still on screen.
+    //   "вместо этого должна проходить автоматическая прокрутка контента в самый низ, когда
+    //    открывается клавиатура и при открытой клавиатуре можно полностью прокручивать контент
+    //    как бы за поле с сообщением"
+    //
+    // Two things are asserted, because they are two separate mechanisms: the footer is an
+    // absolutely-positioned layer over a full-height transcript (`AiPanel.tsx`), and a viewport
+    // that shrinks while a field is focused scrolls that transcript to the end
+    // (`useKeyboardStickyBottom`).
+    await stubAi(page);
+    // Plain prose rather than the shared stub's proposal: a pending card IS the input, so it
+    // would hide the composer this test is about. A later route wins in Playwright.
+    await page.route("**/api/ai/chat", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body:
+          `event: token\ndata: ${JSON.stringify(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(
+              8,
+            ),
+          )}\n\n` + "event: done\ndata: \n\n",
+      }),
+    );
+    await createGoal(page, `Drawer float ${Date.now()}`);
+    await page.setViewportSize(PHONE);
+    await page
+      .getByRole("button", { name: /ai coach/i })
+      .first()
+      .click();
+
+    const composer = page.getByPlaceholder("Ask, plan, or request an action…");
+    await expect(composer).toBeVisible();
+    for (let i = 0; i < 3; i += 1) {
+      await composer.fill(`message ${i}`);
+      await page.getByTitle("Send").click();
+      await page.waitForTimeout(250);
+    }
+
+    const transcript = drawer(page).locator("[data-vaul-no-drag]").first();
+    const footer = drawer(page).locator(".pointer-events-auto").first();
+
+    // 1. The footer floats: the transcript runs to the same bottom edge rather than stopping
+    //    above it, and is padded by exactly the footer it disappears behind.
+    const geo = await page.evaluate(() => {
+      const t = document.querySelector(
+        "[data-vaul-drawer] [data-vaul-no-drag]",
+      ) as HTMLElement;
+      const f = document.querySelector(
+        "[data-vaul-drawer] .pointer-events-auto",
+      ) as HTMLElement;
+      return {
+        transcriptBottom: Math.round(t.getBoundingClientRect().bottom),
+        footerBottom: Math.round(f.getBoundingClientRect().bottom),
+        footerHeight: Math.round(f.getBoundingClientRect().height),
+        padBottom: Math.round(parseFloat(getComputedStyle(t).paddingBottom)),
+      };
+    });
+    expect(geo.transcriptBottom).toBe(geo.footerBottom);
+    expect(geo.padBottom).toBeGreaterThanOrEqual(geo.footerHeight);
+    expect(geo.padBottom).toBeLessThan(geo.footerHeight + 24);
+
+    // 2. Scrolled up, focused, then squeezed — the keyboard brings the end of the conversation
+    //    back to the composer.
+    await transcript.evaluate((el) => {
+      (el as HTMLElement).scrollTop = 0;
+    });
+    await composer.click();
+    await page.setViewportSize(PHONE_SQUEEZED);
+    await page.waitForTimeout(700);
+
+    const atBottom = await transcript.evaluate((el) => {
+      const e = el as HTMLElement;
+      return e.scrollHeight - e.clientHeight - e.scrollTop;
+    });
+    expect(
+      atBottom,
+      "the keyboard opening did not scroll the transcript to the end — see " +
+        "`useKeyboardStickyBottom` in AiPanel.tsx",
+    ).toBeLessThan(4);
+  });
+
+  test("keeps its top edge exactly where it was when the keyboard opens", async ({
+    page,
+  }) => {
+    // **The rule, and the third attempt at it.** Every earlier version sized a sheet as a
+    // percentage of a viewport that the keyboard resizes, so the top edge could not hold still:
+    //
+    //   `92vh`                          → 92 % of what the keyboard left: a third of the screen
+    //   `min(92 * --app-vh, 100dvh)`    → with a keyboard the cap won at 100 %: top edge at 0
+    //   `min(92 * --app-vh, 92dvh)`     → 8 % of 888 is 71, 8 % of 430 is 34: a 37 px jump up,
+    //                                     onto the app header (owner: "подскакивает немного и
+    //                                     начинает перекрывать хедер")
+    //
+    // `calc(100dvh - var(--sheet-top-gap))` cannot: the bottom is the viewport's bottom, the top
+    // is a constant below its top, and the keyboard only ever shrinks it from below.
     await stubAi(page);
     await createGoal(page, `Drawer keyboard ${Date.now()}`);
     await page.setViewportSize(PHONE);
@@ -288,24 +378,31 @@ test.describe("the AI drawer on a phone", () => {
       .first()
       .click();
 
-    // Focus the composer FIRST, then shrink. The order is the test: a keyboard cannot be up
-    // without a focused editable element, and that is exactly how `sheet-height.ts` tells a
-    // keyboard from an ordinary window resize — a resize with nothing focused is a smaller
-    // window and the sheets must follow it down, which is what `setViewportSize` alone
-    // simulates.
+    // Focus FIRST, then shrink: a keyboard cannot be up without a focused editable element.
     const composer = page.getByPlaceholder("Ask, plan, or request an action…");
     await expect(composer).toBeVisible();
     await composer.click();
+    const before = (await drawer(page).boundingBox())!;
+
     await page.setViewportSize(PHONE_SQUEEZED);
     await page.waitForTimeout(300);
+    const withKeyboard = (await drawer(page).boundingBox())!;
 
-    const box = await drawer(page).boundingBox();
-    expect(box).not.toBeNull();
-    // Within the viewport…
-    expect(box!.y).toBeGreaterThanOrEqual(-1);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(PHONE_SQUEEZED.height + 1);
-    // …and using nearly all of it. 92 % would leave a 24 px band of page showing above the
-    // drawer; anything much shorter than that is the collapse itself.
-    expect(box!.height).toBeGreaterThan(PHONE_SQUEEZED.height * 0.95);
+    await page.setViewportSize(PHONE);
+    await page.waitForTimeout(300);
+    const after = (await drawer(page).boundingBox())!;
+
+    // The top edge does not move. Not "moves a little" — at all.
+    expect(withKeyboard.y).toBeCloseTo(before.y, 0);
+    expect(after.y).toBeCloseTo(before.y, 0);
+
+    // And it is clear of the 64px app header, with the page showing above it.
+    expect(before.y).toBeGreaterThanOrEqual(64);
+    // Still a drawer, not a stub: it fills everything below that edge.
+    expect(before.y + before.height).toBeCloseTo(PHONE.height, 0);
+    expect(withKeyboard.y + withKeyboard.height).toBeCloseTo(
+      PHONE_SQUEEZED.height,
+      0,
+    );
   });
 });

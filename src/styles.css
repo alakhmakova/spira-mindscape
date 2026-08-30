@@ -928,35 +928,59 @@
 
 /* ─── Sheet heights ──────────────────────────────────────────────────────────
    Every drawer and side panel takes its height from HERE, never from a raw `vh`
-   class. The reason is the on-screen keyboard: `interactive-widget=resizes-content`
-   (see index.html) makes it shrink the layout viewport, and `vh`/`dvh`/`svh` are all
-   percentages of that viewport — so `h-[92vh]` silently becomes "92 % of the sliver
-   above the keyboard", about 395 px of an 888 px phone. That is the collapsed chat
-   drawer, the collapsed key sheet and the New-target sheet that shrank the moment
-   tasks were typed into it (2026-08-28).
+   class, and never from a percentage of anything.
 
-   `--app-vh` is one percent of the keyboard-free height, published by
-   `lib/spira/sheet-height.ts`; the `min(…, 100dvh)` keeps a sheet inside the space
-   that is actually available while the keyboard IS open, so it fills that space
-   instead of running off the top of the screen. The `1vh` fallback is what the very
-   first paint uses, before the script has run.
+   **A sheet's TOP EDGE is a constant, and that is the whole rule** (owner,
+   2026-08-29: "все должно быть стабильно, без скачков"). It sits
+   `--sheet-top-gap` below the top of the layout viewport and its bottom is the
+   viewport's bottom, so the on-screen keyboard shrinks the sheet from below and
+   the top edge does not move at all.
+
+   Every earlier version of this was a PERCENTAGE, and a percentage of a viewport
+   that the keyboard resizes cannot hold still:
+
+   - `h-[92vh]` was 92 % of whatever the keyboard left — a third of the screen.
+   - `min(92 * --app-vh, 100dvh)` fixed that, but with the keyboard up the second
+     term won at 100 %, so the sheet filled everything above the keyboard and put
+     its own top edge on the screen's.
+   - `min(92 * --app-vh, 92dvh)` fixed THAT, and still moved: 8 % of an 888 px
+     viewport is 71 px, 8 % of the 430 px left above a keyboard is 34 — so the top
+     edge jumped up 37 px on every focus and started covering the app header.
+
+   A constant cannot do any of that. `--app-vh` and `lib/spira/sheet-height.ts`
+   were retired with the last of those.
+
+   **The gap is 76px** because the app header is a 64px sticky bar and the page has
+   to stay visible above the sheet — 12 px of it, the same breathing room Android's
+   `HEADER_CLEARANCE` leaves (`AiChatHost.kt`). Android clears its GROW tab row as
+   well, because there the tabs are part of the fixed top chrome; on the web that
+   strip is sticky page content and the sheet may cover it.
 
    Rules: a sheet with no natural content height (the chat — a two-message
-   conversation would be two messages tall) takes a `sheet-h-*`; everything else
-   takes a `sheet-max-*` and is sized by its content up to that cap.  */
+   conversation would be two messages tall) takes `.sheet-h`; everything else takes
+   `.sheet-max` and is sized by its content up to that cap. `.sheet-inset` is for a
+   sheet stacked INSIDE another one — it is a percentage of its parent, not of the
+   viewport, so it cannot outgrow the sheet it sits in.  */
+:root {
+  --sheet-top-gap: 76px;
+}
+
 @layer utilities {
-  .sheet-h-92 {
-    height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
-    max-height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
+  .sheet-h {
+    height: calc(100dvh - var(--sheet-top-gap));
+    max-height: calc(100dvh - var(--sheet-top-gap));
   }
-  .sheet-h-88 {
-    height: min(calc(var(--app-vh, 1vh) * 88), 100dvh);
-    max-height: min(calc(var(--app-vh, 1vh) * 88), 100dvh);
+  .sheet-max {
+    max-height: calc(100dvh - var(--sheet-top-gap));
   }
-  .sheet-max-92 {
-    max-height: min(calc(var(--app-vh, 1vh) * 92), 100dvh);
+  /* A CENTRED modal, not a sheet: it is not anchored to the viewport's bottom, so it has no top
+     edge to hold still — it simply must never be taller than what is on screen. With the
+     keyboard up that means the space above it, which is what `dvh` is. */
+  .modal-max {
+    max-height: calc(100dvh - 32px);
   }
-  .sheet-max-85 {
-    max-height: min(calc(var(--app-vh, 1vh) * 85), 100dvh);
+  .sheet-inset {
+    height: calc(100% - 36px);
+    max-height: calc(100% - 36px);
   }
 }

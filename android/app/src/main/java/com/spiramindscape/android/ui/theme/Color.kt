@@ -88,6 +88,9 @@ val Info900 = Color(0xFF006CC1)
 val Intelligence100 = Color(0xFFFEFBFF)
 val Success100 = Color(0xFFF8FDF7)
 val Warning100 = Color(0xFFFFFBF7)
+/** The app's warning yellow — the notice card's outline and its triangle. NOT the `900` step,
+ *  which is brown on screen (see `SpiraNotice.kt`). */
+val Warning500 = Color(0xFFC99500)
 val Warning900 = Color(0xFF896500)
 val Error100 = Color(0xFFFFFBFB)
 val Neutral100 = Color(0xFFFAFAFA)

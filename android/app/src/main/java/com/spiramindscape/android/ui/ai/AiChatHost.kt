@@ -10,7 +10,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,8 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
@@ -34,6 +32,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -44,6 +45,9 @@ import kotlin.math.roundToInt
  * Hosts the AI panel as a **drawer** pulled up from the bottom — the same shape the web gives it on
  * a phone (`Drawer` at `sheet-h-92`): it stops short of the top edge, so the page it belongs to stays
  * visible behind a scrim and the assistant never reads as a screen of its own.
+ *
+ * Where it stops is [drawerTopEdgePx]: **below the page's header**, not at a fraction of the
+ * screen. Read that first — the fraction is what was there before and it covered the header.
  *
  * The assistant used to slide in **sideways** from the right edge, which fought with the
  * workspace's horizontal tab swiping. Now the workspace swipes horizontally between GROW phases
@@ -65,9 +69,12 @@ fun AiChatHost(
     modifier: Modifier = Modifier,
     content: @Composable (swipeUpGesture: Modifier) -> Unit,
 ) {
-    // The drawer's own height — a fraction of the screen, so the page shows above it.
+    // The drawer's own height — see [drawerTopEdgePx]: it starts below the page's header.
     var screenHeightPx by remember { mutableFloatStateOf(0f) }
-    val heightPx = screenHeightPx * DRAWER_HEIGHT_FRACTION
+    val density = LocalDensity.current
+    val statusBarPx = WindowInsets.systemBars.getTop(density).toFloat()
+    val clearancePx = with(density) { HEADER_CLEARANCE.toPx() }
+    val heightPx = screenHeightPx - drawerTopEdgePx(screenHeightPx, statusBarPx, clearancePx)
     val offset = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     // While a finger is down the offset follows it directly; animation only settles the release.
@@ -134,8 +141,9 @@ fun AiChatHost(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .fillMaxHeight(DRAWER_HEIGHT_FRACTION)
+                    .height(with(density) { heightPx.toDp() })
                     .zIndex(3f)
+                    .testTag(AI_DRAWER_TAG)
                     .offset { IntOffset(0, (heightPx - offset.value).roundToInt()) }
                     .clip(RoundedCornerShape(topStart = DRAWER_CORNER, topEnd = DRAWER_CORNER))
                     // Painted here as well as by the panel: the corners are clipped from THIS box,
@@ -167,16 +175,56 @@ fun AiChatHost(
     }
 }
 
+/** So a test can measure where the drawer's top edge actually landed. */
+const val AI_DRAWER_TAG = "ai-drawer"
+
 /**
- * How much of the screen the drawer covers, so the page still shows above it — 0.92, matching
- * the web's chat drawer (owner, 2026-08-28: it "должен занимать почти всю высоту … как и другие
- * drawer").
+ * Where the drawer's top edge sits, in px from the top of the screen.
  *
- * The fraction is of the FULL screen, and that is the important part: `MainActivity` runs
- * `enableEdgeToEdge()`, so the box this is measured against does not shrink when the keyboard
- * opens — `AiChatScreen` applies `imePadding()` inside instead. The web had no equivalent and
- * spent a day on it: there `h-[92vh]` was 92 % of whatever the keyboard left, about a third of
- * the screen. It is sized from `--app-vh` now, which is this same idea written in CSS.
+ * **The rule is "below the page's header", not "a fraction of the screen"** (owner, 2026-08-29:
+ * "на андроид drawer стал слишком высоким, он не должен перекрывать хедер"). A fraction was what
+ * it used to be — 0.92 — and the trouble was what it was a fraction OF: `MainActivity` runs
+ * `enableEdgeToEdge()`, so the box being measured is the **whole screen, status bar included**.
+ * On the owner's phone the remaining 8 % is about the height of the status bar alone, so the
+ * drawer's top edge landed inside `GoalWorkspaceTopBar` and covered it.
+ *
+ * That is also why it looked right on the web and wrong here: there `--app-vh` is one percent of
+ * the **layout viewport**, which Chrome has already trimmed of the status bar and its own
+ * toolbar, so the same 92 % starts from a lower ceiling. Copying the number across without
+ * copying what it measured is the whole bug.
+ *
+ * So the top edge is stated directly instead: the status bar, then [HEADER_CLEARANCE]. The
+ * fraction survives only as a second constraint, for a screen short enough that the clearance
+ * would leave a stub of a drawer — there the proportion is the safer of the two.
+ */
+internal fun drawerTopEdgePx(
+    screenHeightPx: Float,
+    statusBarPx: Float,
+    clearancePx: Float,
+): Float = maxOf(
+    statusBarPx + clearancePx,
+    screenHeightPx * (1f - DRAWER_HEIGHT_FRACTION),
+).coerceIn(0f, screenHeightPx)
+
+/**
+ * The band below the status bar that the drawer must not cover — the page's own header.
+ *
+ * It is the goal workspace's chrome, which is the taller of the two screens that host the
+ * assistant: `GoalWorkspaceTopBar` is a fixed **64dp** under its status-bar padding, `GrowTabsRow`
+ * measures about **46dp**, and the remainder is a deliberate gap so the page reads as being
+ * *behind* the sheet rather than exactly abutting it. The dashboard's header is shorter, and gets
+ * the same drawer on purpose: the assistant should not change height depending on which screen
+ * called it.
+ *
+ * `AiDrawerClearsTheHeaderTest` renders the real chrome against the real drawer and fails if this
+ * number stops clearing it, so the chrome cannot grow past it unnoticed.
+ */
+private val HEADER_CLEARANCE: Dp = 122.dp
+
+/**
+ * The most of the screen the drawer may take when [HEADER_CLEARANCE] would leave too little —
+ * 0.92, the web's chat drawer (owner, 2026-08-28: it "должен занимать почти всю высоту … как и
+ * другие drawer"). On an ordinary phone the clearance is what binds.
  */
 private const val DRAWER_HEIGHT_FRACTION = 0.92f
 

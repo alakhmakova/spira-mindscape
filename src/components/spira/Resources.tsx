@@ -1415,7 +1415,7 @@ function ResourcePreview({
         <DrawerContent
           className={cn(
             "px-0 pb-6 flex flex-col",
-            isPdf ? "sheet-h-92" : "sheet-max-92",
+            isPdf ? "sheet-h" : "sheet-max",
           )}
         >
           {Body}
@@ -1724,7 +1724,7 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="sheet-max-92 mt-0 px-0 flex flex-col bg-surface">
+        <DrawerContent className="sheet-max mt-0 px-0 flex flex-col bg-surface">
           {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>

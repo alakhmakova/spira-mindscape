@@ -415,7 +415,83 @@ opening it won't be recognized as an Android project.
   target — real touch and performance.
 - **Emulator:** create one in **Device Manager → Create Device** if you don't have a phone
   handy.
-- The emulator reaches a locally-running backend at `http://10.0.2.2:8080`.
+- The emulator reaches a locally-running backend at `http://10.0.2.2:8080` — which is what the
+  **`dev` build type** points at (see below).
+
+### Build variants — skip Google login for quick local checks
+
+This is the Android twin of the backend's **`local` profile** above, and it works the same way,
+because **the login is not the app's decision**. The app has no bypass of its own and must never
+grow one: on start it asks `/api/auth/me` and believes the answer.
+
+- Production answers `401` → the sign-in screen, real Google OAuth.
+- A backend on the **`local` profile** signs every request in as `dev@local`
+  ([`LocalDevAuthFilter`](backend/src/main/java/com/spiramindscape/backend/auth/LocalDevAuthFilter.java))
+  → `me` returns a user and the app lands **straight on All goals, no login screen**.
+
+So "no login on dev, a login on prod" is entirely a question of *which backend the build talks
+to*, exactly as on the web, where `npm run dev` simply proxies to whichever backend is running.
+On Android that choice is the **build type**:
+
+| Build type | Backend baked into `BuildConfig.API_BASE_URL` | Sign-in | Cleartext HTTP |
+|---|---|---|---|
+| **`dev`** | `http://10.0.2.2:8080` — your machine, as seen from inside the emulator | **none**, when that backend runs the `local` profile | yes |
+| **`debug`** | production (Cloud Run) | real Google sign-in | yes |
+| **`release`** | production (Cloud Run) | real Google sign-in | no |
+
+`debug` is what `distributeDebug` sends to testers, which is why it points at production:
+**a build made without thinking about it is the safe one.**
+
+#### Running the dev build
+
+```powershell
+# 1. the database, then the backend on the `local` profile (see "Full Local Run" above)
+docker compose -f backend/docker-compose.yml up -d postgres
+cd backend; .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+
+# 2. an emulator (Android Studio's Device Manager, or from the command line).
+#    Headless is fine and is what an agent should use — windowed mode crashes on some GPUs:
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd <your-avd> `
+    -no-window -no-snapshot-load -gpu swiftshader_indirect -no-boot-anim -no-audio
+
+# 3. the app
+cd android; .\gradlew.bat :app:installDev
+```
+
+**Verify it's active** — three independent signals:
+
+```powershell
+curl -i http://localhost:8080/api/auth/me        # → 200 with dev@local, not 401
+adb shell dumpsys package com.spiramindscape.android | Select-String versionName   # → 0.2.7-dev
+adb exec-out screencap -p > shot.png             # → All goals, no sign-in screen
+```
+
+#### Testing against something other than the emulator
+
+A real phone on the same Wi-Fi, or a cloudflared tunnel, is neither default. **Override the URL
+rather than editing a committed file:**
+
+```powershell
+.\gradlew.bat :app:installDev -PspiraApiBaseUrl=http://<your-PC-LAN-IP>:8080
+.\gradlew.bat :app:installDev -PspiraApiBaseUrl=https://<something>.trycloudflare.com
+```
+
+Notes:
+
+- **`distributeDebug` refuses to run with `-PspiraApiBaseUrl` set.** The flag is baked into
+  `BuildConfig` at assemble time, so a build made for the emulator and then distributed would
+  send the owner an app pointing at `10.0.2.2`, which resolves to nothing on a phone. That used
+  to be a line in the docs asking you to remember; it is now a build failure.
+- **`dev` and `debug` share an `applicationId`**, so only one of them lives on a device at a
+  time. `versionName` carries a `-dev` suffix, so which one is installed is a fact you can read
+  rather than remember. (Giving `dev` its own `applicationIdSuffix` would let them sit side by
+  side, but needs a second Android app registered in the Firebase console — `google-services.json`
+  has one client today.)
+- **A tunnel URL has no login on it.** Under the `local` profile every request is `dev@local`,
+  so anyone holding the link is inside the app with full access to your local database, real API
+  keys included. Don't post one anywhere public.
+- **Dev-only and safe:** `release` never gets the local URL and never allows cleartext HTTP, and
+  production never activates the `local` profile, so full Google OAuth is enforced there.
 
 ### Build from the terminal
 
@@ -423,7 +499,8 @@ opening it won't be recognized as an Android project.
 cd android
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
 .\gradlew.bat :app:assembleDebug     # APK → app/build/outputs/apk/debug/
-.\gradlew.bat installDebug           # install on a connected device/emulator
+.\gradlew.bat installDebug           # install on a connected device/emulator (production)
+.\gradlew.bat installDev             # install pointed at the local backend (no login)
 ```
 
 Why Gradle here and Maven for the backend? See [`docs/build-tools.md`](docs/build-tools.md).
