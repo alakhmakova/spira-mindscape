@@ -33,13 +33,39 @@ contributors — human or agent — should read this top-to-bottom, then `README
   - The same untracked `settings.json` runs the `Stop` hooks named below, so if lint and the
     unit tests never seem to run at the end of a turn, this is why.
 
-**A GitHub release is a tag, and the hook does not catch it.** `gh release create` publishes a
-new tag on the remote, which is the thing the ❌ list forbids — but it is not one of the patterns
-`block-git-write.js` matches, so nothing stops it. Only the rule does: **ask, and let the owner
-pick the ref and the version.** The owner asked for one on 2026-08-30 and chose `v0.3.0-alpha` on
-`main`; that was their call to make, not a precedent for making it unasked.
-
 When work is ready, summarize what changed and let the user commit.
+
+### Cutting a release (hard order, owner 2026-08-30)
+
+**A GitHub release is a tag, and the hook does not catch it.** `gh release create` publishes a new
+tag on the remote — the thing the ❌ list forbids — but it is not one of the patterns
+`block-git-write.js` matches, so nothing stops it. Only this rule does: **the owner asks for the
+release and picks the ref and the version.** Never cut one unprompted.
+
+**The order below is not a preference. Done out of order it costs a deleted, re-published tag**,
+which is what happened on 2026-08-30: `v0.3.0-alpha` went up first, its tree still said
+`versionName 0.2.7`, and the whole release had to be destroyed and recreated an hour later.
+
+1. **Agree the version with the owner**, and the ref. Read the existing tags first —
+   `git for-each-ref --sort=-creatordate refs/tags` — because `gh release list` shows **nothing**
+   when tags were pushed without releases attached, which is how this repo's first four look.
+2. **Bump the version in the code and let the owner commit it.** The number lives in exactly
+   **one** place: `versionName` / `versionCode` in `android/app/build.gradle.kts`. Not
+   `backend/pom.xml` (permanently `0.0.1-SNAPSHOT`) and not `package.json` (no `version` field at
+   all). `versionName` is the tag without its `v` and `-alpha`; `versionCode` only ever goes up.
+3. **Wait for that commit to reach `main`** — every tag in this repo sits on a `mobile → main`
+   merge commit — and **wait for its CI to go green**. `gh run list --branch main --limit 3`.
+   A release pointing at a red or a not-yet-merged commit is worse than a late one.
+4. **Only then create the release**, from the full 40-character SHA. A short SHA is rejected with
+   `HTTP 422 … Release.target_commitish is invalid`; a branch name works but records whatever the
+   tip is at that instant, which is not the same promise.
+5. **Write the notes from the range, never from memory** — `git log <prev-tag>..origin/main`,
+   `git diff --name-status <prev-tag>..origin/main -- backlog` for the bugs actually closed (and
+   which are still `🐞 Open`), and the added files for what is genuinely new.
+
+**If it is already published at the wrong commit**, the target cannot be edited: GitHub ignores
+`target_commitish` once the tag exists. It has to be `gh release delete <tag> --cleanup-tag --yes`
+and then created again — a public artefact deleted and re-announced. Get step 2 right instead.
 
 ### The one carve-out: history surgery (owner, 2026-08-23)
 

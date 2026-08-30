@@ -109,6 +109,35 @@ class ProviderErrorMessageTest {
         assertThat(shown).endsWith("…");
     }
 
+    /** Mistral's whole answer to a per-minute limit, from Cloud Run on 2026-08-30. */
+    private static final String MISTRAL_RATE_LIMIT =
+            "Mistral API error 429: {\"object\":\"error\",\"message\":\"Rate limit exceeded\","
+            + "\"type\":\"rate_limited\",\"param\":null,\"code\":\"1300\",\"raw_status_code\":429}";
+
+    @Test
+    @DisplayName("A rate limit says what to do, because the provider's own three words do not")
+    void aRateLimitIsExplained() {
+        // "Rate limit exceeded" is the entire message the owner saw, twice on one screen. It
+        // does not say who is limiting them, that it clears by itself, or that the app already
+        // waited and tried again.
+        String shown = service().friendlyError(new RuntimeException(MISTRAL_RATE_LIMIT));
+
+        assertThat(shown).contains("per minute");
+        assertThat(shown).contains("about a minute");
+        assertThat(shown).contains("Rate limit exceeded");   // the provider still speaks
+    }
+
+    @Test
+    @DisplayName("A spent quota is NOT dressed up as a wait — nothing reopens in a minute")
+    void aQuotaErrorIsNotCalledARateLimit() {
+        // The advice would be a lie here, and it would send the user back to try again into an
+        // allowance that is gone until their billing period turns over.
+        String shown = service().friendlyError(new RuntimeException(GEMINI_QUOTA_ERROR));
+
+        assertThat(shown).doesNotContain("about a minute");
+        assertThat(shown).startsWith("You exceeded your current quota");
+    }
+
     @Test
     @DisplayName("A failure with no provider text still gets a sentence, not a status code")
     void fallsBackToAReadableHint() {

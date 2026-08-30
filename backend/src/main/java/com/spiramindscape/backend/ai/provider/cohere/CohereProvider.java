@@ -300,4 +300,9 @@ public class CohereProvider implements LlmProvider {
     public ProviderType providerType() {
         return ProviderType.COHERE;
     }
+
+    @Override
+    public String model() {
+        return model;
+    }
 }

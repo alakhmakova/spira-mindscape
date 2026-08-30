@@ -258,4 +258,9 @@ public class OpenAiProvider implements LlmProvider {
     public ProviderType providerType() {
         return ProviderType.OPENAI;
     }
+
+    @Override
+    public String model() {
+        return model;
+    }
 }

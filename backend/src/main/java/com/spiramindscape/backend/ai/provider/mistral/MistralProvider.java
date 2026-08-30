@@ -271,4 +271,9 @@ public class MistralProvider implements LlmProvider {
     public ProviderType providerType() {
         return ProviderType.MISTRAL;
     }
+
+    @Override
+    public String model() {
+        return model;
+    }
 }

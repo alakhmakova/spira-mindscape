@@ -77,6 +77,7 @@ import com.spiramindscape.android.data.goals.GoalsStore
 import com.spiramindscape.android.ui.ai.WithAiAssistant
 import com.spiramindscape.android.ui.components.CircularProgress
 import com.spiramindscape.android.ui.components.EmptyState
+import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraInlineBanner
 import com.spiramindscape.android.ui.components.SpiraMenuDivider
@@ -173,11 +174,28 @@ fun GoalsRoute(
     // the app having restarted on its own (owner, 2026-08-23).
     var assistantOpen by rememberSaveable { mutableStateOf(false) }
 
+    // The goal an assistant card has asked to delete. Held rather than applied on the spot
+    // because the card promises a confirmation ("Opens a confirmation"), and a whole goal is the
+    // one deletion reachable from this screen that cannot be undone.
+    var goalPendingDelete by remember { mutableStateOf<String?>(null) }
+
     WithAiAssistant(
         goalId = null,
         open = assistantOpen,
         onOpenChange = { assistantOpen = it },
-        onApplyProposal = { proposal, excluded -> applyGlobalProposal(proposal, excluded, viewModel) },
+        onApplyProposal = { proposal, excluded, askedFor ->
+            applyGlobalProposal(
+                proposal, excluded, askedFor,
+                GlobalProposalActions(
+                    onCreateGoal = { title, description, confidence, deadline ->
+                        viewModel.createGoal(title, description, confidence, deadline)
+                    },
+                    onEditGoal = viewModel::editGoal,
+                    onOpenGoal = onGoalClick,
+                    onConfirmDelete = { goalPendingDelete = it },
+                ),
+            )
+        },
     ) { _ ->
         // The dashboard has no bottom bar to swipe up from, so the assistant opens from the
         // header icon here; the swipe is the goal workspace's affordance.
@@ -245,29 +263,19 @@ fun GoalsRoute(
             onDismissActionError = viewModel::clearActionError,
         )
     }
-}
 
-/**
- * Applies a proposal from the all-goals chat. Only goal-level creation belongs here; anything
- * scoped to one goal is applied inside that goal's own assistant, which has its data loaded.
- */
-private fun applyGlobalProposal(
-    proposal: com.spiramindscape.android.data.ai.Proposal,
-    excluded: Set<String>,
-    viewModel: GoalsViewModel,
-): String? {
-    val p = com.spiramindscape.android.data.ai.applyExcludedAspects(proposal, excluded)
-    return when (p.kind) {
-        com.spiramindscape.android.data.ai.ProposalKind.NEW_GOAL -> {
-            viewModel.createGoal(
-                title = p.title,
-                description = p.body,
-                confidence = p.confidence ?: 5,
-                deadline = p.deadline,
-            )
-            null
-        }
-        else -> "Open that goal and ask there — I can only create goals from here."
+    goalPendingDelete?.let { id ->
+        val name = allGoals.firstOrNull { it.id == id }?.title ?: "This goal"
+        ConfirmDialog(
+            title = "Delete this goal?",
+            message = "\"$name\" will be permanently deleted. Targets, options and everything " +
+                "else inside it will be removed. You can't undo this.",
+            subject = "\"$name\"",
+            confirmLabel = "Yes, delete",
+            cancelLabel = "No, go back",
+            onConfirm = { viewModel.deleteGoal(id); goalPendingDelete = null },
+            onDismiss = { goalPendingDelete = null },
+        )
     }
 }
 

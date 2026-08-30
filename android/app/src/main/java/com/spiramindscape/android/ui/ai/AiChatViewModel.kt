@@ -275,11 +275,34 @@ class AiChatViewModel(
     /** The server's `updatedAt` for our own last write, so polling doesn't re-adopt it. */
     private var lastSyncedAt: String? = null
 
+    /**
+     * Completes once the stored transcript is in, so a message sent the instant this screen
+     * opens cannot be swallowed by the load landing after it — see [sendOnArrival].
+     */
+    private val initialLoad = kotlinx.coroutines.CompletableDeferred<Unit>()
+
     init {
         viewModelScope.launch {
             _provider.value = runCatching { api.getProvider() }.getOrNull() ?: DEFAULT_PROVIDER
             refreshKeys()
             loadTranscript()
+            initialLoad.complete(Unit)
+        }
+    }
+
+    /**
+     * Sends a message the moment this chat is usable — the All-Goals assistant's handoff, which
+     * arrives with the navigation rather than from the composer (see `AiHandoff`).
+     *
+     * <p>It waits, because [loadTranscript] REPLACES the message list with the server's copy:
+     * a send that lands first would be wiped a moment later by the load, and the user would
+     * watch their own question disappear. The web has the same wait, spelt as an 80 ms timer;
+     * this one waits for the actual event.
+     */
+    fun sendOnArrival(text: String) {
+        viewModelScope.launch {
+            initialLoad.await()
+            send(text)
         }
     }
 

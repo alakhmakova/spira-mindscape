@@ -530,8 +530,15 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
             }
         }
         ProposalKind.OPEN_GOAL -> {
-            title = "Open this goal"
-            detail = "Open goal"
+            // `openSubject` is the concrete thing the overview cannot edit, and the whole point
+            // of the card: without it this read "Open this goal", which answers a request to add
+            // a description with an unexplained offer to navigate. It was parsed and then
+            // dropped on the floor until 2026-08-30. The web's wording, minus the goal's name —
+            // the card already belongs to the goal it names.
+            // (This is where `openSubject` is read from — the tool's own 'value'.)
+            title = value.ifEmpty { null }?.let { "You can't edit $it from the goals overview" }
+                ?: "Open this goal"
+            detail = "Open the goal to continue there"
         }
         ProposalKind.DELETE_GOAL -> {
             title = "Delete this goal"

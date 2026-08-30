@@ -54,16 +54,21 @@ class LlmHttpTest {
 
     /** One scripted outcome: either a response to return or a failure to throw. */
     private sealed interface Turn {
-        record Respond(int status, Map<String, List<String>> headers) implements Turn {}
+        record Respond(int status, Map<String, List<String>> headers, String body) implements Turn {}
         record Fail(IOException error) implements Turn {}
     }
 
     private static Turn ok() {
-        return new Turn.Respond(200, Map.of());
+        return new Turn.Respond(200, Map.of(), "data: {}");
     }
 
     private static Turn status(int code) {
-        return new Turn.Respond(code, Map.of());
+        return new Turn.Respond(code, Map.of(), "data: {}");
+    }
+
+    /** A refusal that says, in the provider's own words, why. */
+    private static Turn refusal(int code, String body) {
+        return new Turn.Respond(code, Map.of(), body);
     }
 
     private final Deque<Turn> script = new ArrayDeque<>();
@@ -83,18 +88,19 @@ class LlmHttpTest {
                             : script.removeFirst();
                     if (turn instanceof Turn.Fail f) throw f.error();
                     Turn.Respond r = (Turn.Respond) turn;
-                    return response(r.status(), r.headers());
+                    return response(r.status(), r.headers(), r.body());
                 });
         return client;
     }
 
     @SuppressWarnings("unchecked")
-    private HttpResponse<Stream<String>> response(int status, Map<String, List<String>> headers) {
+    private HttpResponse<Stream<String>> response(
+            int status, Map<String, List<String>> headers, String body) {
         HttpResponse<Stream<String>> response = mock(HttpResponse.class);
         when(response.statusCode()).thenReturn(status);
         // A real ofLines() body still holds the connection, so the close is what matters.
         when(response.body()).thenReturn(
-                Stream.of("data: {}").onClose(closedBodies::incrementAndGet));
+                Stream.of(body).onClose(closedBodies::incrementAndGet));
         when(response.headers()).thenReturn(
                 HttpHeaders.of(headers, (a, b) -> true));
         return response;
@@ -261,7 +267,7 @@ class LlmHttpTest {
         // Anthropic and OpenAI both send this header, so the rule keeps their retry while
         // dropping the pointless one — it is not a special case for any provider.
         HttpClient client = clientPlaying(
-                new Turn.Respond(429, Map.of("retry-after", List.of("1"))), ok());
+                new Turn.Respond(429, Map.of("retry-after", List.of("1")), "data: {}"), ok());
 
         assertThat(LlmHttp.sendStreaming(client, REQUEST).statusCode()).isEqualTo(200);
         assertThat(sends).hasValue(2);
@@ -275,7 +281,7 @@ class LlmHttpTest {
         // and to cost another request — so the honest answer is the provider's own message,
         // now.
         HttpClient client = clientPlaying(
-                new Turn.Respond(429, Map.of("retry-after", List.of("300"))), ok());
+                new Turn.Respond(429, Map.of("retry-after", List.of("300")), "data: {}"), ok());
 
         long start = System.nanoTime();
         HttpResponse<Stream<String>> response = LlmHttp.sendStreaming(client, REQUEST);
@@ -284,6 +290,95 @@ class LlmHttpTest {
         assertThat(response.statusCode()).isEqualTo(429);
         assertThat(sends).hasValue(1);
         assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+    }
+
+    // ─── 429 with no Retry-After: the body is the only thing that can tell them apart ───
+
+    /** Mistral's real answer, from the owner's Cloud Run log of 30 Aug 2026. No Retry-After. */
+    private static final String MISTRAL_RATE_LIMIT = """
+            {"object":"error","message":"Rate limit exceeded","type":"rate_limited",\
+            "param":null,"code":"1300","raw_status_code":429}""";
+
+    /** Google's, from the same investigation — the same status, the opposite meaning. */
+    private static final String GOOGLE_QUOTA = """
+            {"error":{"code":429,"message":"You exceeded your current quota, please check \
+            your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}""";
+
+    @Test
+    @DisplayName("Mistral's bare 429 says 'rate_limited' in words, so it is waited out and retried")
+    void retriesA429ThatCallsItselfARateLimit() throws Exception {
+        // The failure the owner met five times in an hour: a per-minute window, refused in
+        // under a second, with the very next message a minute later going through. There is
+        // no Retry-After to key on — the provider says it in the body instead.
+        HttpClient client = clientPlaying(refusal(429, MISTRAL_RATE_LIMIT), ok());
+
+        long start = System.nanoTime();
+        HttpResponse<Stream<String>> response = LlmHttp.sendStreaming(client, REQUEST);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(sends).hasValue(2);
+        // Long enough to be worth taking: a 700ms transient backoff would land inside the
+        // same window and fail again.
+        assertThat(Duration.ofNanos(System.nanoTime() - start))
+                .isGreaterThanOrEqualTo(LlmHttp.RATE_LIMIT_WAIT);
+    }
+
+    @Test
+    @DisplayName("A 429 that names a spent quota is still handed back at once")
+    void doesNotRetryA429ThatNamesAQuota() throws Exception {
+        // The rule this replaced existed for exactly this body, and it must survive: waiting
+        // cannot refill an allowance, and each attempt spends more of what has run out.
+        HttpClient client = clientPlaying(refusal(429, GOOGLE_QUOTA), ok());
+
+        assertThat(LlmHttp.sendStreaming(client, REQUEST).statusCode()).isEqualTo(429);
+        assertThat(sends).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("A 429 naming both a rate limit and billing counts as quota")
+    void quotaWordsWinOverRateWords() {
+        // "You have exceeded your rate limit; check your plan and billing details" is one
+        // provider's way of saying the allowance is gone. The specific words decide.
+        assertThat(LlmHttp.namesATransientRateLimit(
+                "You have exceeded your rate limit. Check your plan and billing details."))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("A 429 that explains nothing is not retried — silence is the expensive case")
+    void doesNotRetryAnUnexplained429() {
+        assertThat(LlmHttp.namesATransientRateLimit("")).isFalse();
+        assertThat(LlmHttp.namesATransientRateLimit("data: {}")).isFalse();
+    }
+
+    @Test
+    @DisplayName("A 429 handed back can still be read — deciding on the body must not eat it")
+    void theBodyOfARefusedRequestSurvivesBeingRead() throws Exception {
+        // The whole branch reads the body to judge it, and ofLines() is a one-shot stream.
+        // If the caller were handed the drained original, the provider's own sentence would
+        // reach the user as an empty string — the user-facing message, silently blanked.
+        HttpClient client = clientPlaying(refusal(429, GOOGLE_QUOTA));
+
+        HttpResponse<Stream<String>> response = LlmHttp.sendStreaming(client, REQUEST);
+        String body = response.body().collect(java.util.stream.Collectors.joining("\n"));
+
+        assertThat(body).contains("You exceeded your current quota");
+    }
+
+    @Test
+    @DisplayName("A rate limit that outlives every attempt is handed back with its body intact")
+    void exhaustsTheRateLimitRetriesAndStillExplainsItself() throws Exception {
+        HttpClient client = clientPlaying(
+                refusal(429, MISTRAL_RATE_LIMIT),
+                refusal(429, MISTRAL_RATE_LIMIT),
+                refusal(429, MISTRAL_RATE_LIMIT));
+
+        HttpResponse<Stream<String>> response = LlmHttp.sendStreaming(client, REQUEST);
+
+        assertThat(response.statusCode()).isEqualTo(429);
+        assertThat(sends).hasValue(LlmHttp.MAX_ATTEMPTS);
+        assertThat(response.body().collect(java.util.stream.Collectors.joining()))
+                .contains("Rate limit exceeded");
     }
 
     @Test
@@ -298,7 +393,7 @@ class LlmHttpTest {
         // Parsing "Wed, 21 Oct 2026 07:28:00 GMT" as a number would either throw or, worse,
         // silently become zero and remove the backoff.
         HttpClient client = clientPlaying(
-                new Turn.Respond(503, Map.of("retry-after", List.of("Wed, 21 Oct 2026 07:28:00 GMT"))),
+                new Turn.Respond(503, Map.of("retry-after", List.of("Wed, 21 Oct 2026 07:28:00 GMT")), "data: {}"),
                 ok());
 
         long start = System.nanoTime();

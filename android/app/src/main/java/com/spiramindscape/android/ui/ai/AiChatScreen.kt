@@ -134,7 +134,8 @@ fun AiChatScreen(
     /** The open goal, for the opening prompts. Null in the all-goals chat. */
     goal: GoalDetail? = null,
     /** Apply an accepted proposal. Returns the message to show, or null when it was applied. */
-    onApplyProposal: (Proposal, Set<String>) -> String? = { _, _ -> "This build can't apply that yet." },
+    onApplyProposal: (Proposal, Set<String>, String?) -> String? =
+        { _, _, _ -> "This build can't apply that yet." },
     /**
      * Opens the note the assistant last created, for the "Open note" action on an applied card.
      * Null in the all-goals chat, which has no goal to hang a resource on.
@@ -314,7 +315,8 @@ fun AiChatScreen(
                     message = message,
                     onOpenNote = onOpenNote,
                     onAcceptProposal = { proposal, excluded ->
-                        val error = onApplyProposal(proposal, excluded)
+                        val error =
+                            onApplyProposal(proposal, excluded, askedFor(messages, message.id))
                         notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
                         viewModel.settleProposal(message.id, proposal.id, approved = error == null)
                     },
@@ -429,7 +431,10 @@ fun AiChatScreen(
                 ProposalGroup(
                     proposals = pendingMessage.proposals,
                     onAccept = { proposal, excluded ->
-                        val error = onApplyProposal(proposal, excluded)
+                        val error =
+                            onApplyProposal(
+                                proposal, excluded, askedFor(messages, pendingMessage.id),
+                            )
                         notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
                         viewModel.settleProposal(
                             pendingMessage.id, proposal.id, approved = error == null,
@@ -998,6 +1003,17 @@ private fun SuggestionButton(
             color = CHAT_INK,
         )
     }
+}
+
+/**
+ * The user's own message that led to the proposals on [messageId] — the nearest user turn above
+ * it. Some cards can only be applied somewhere else, and carrying the original request there is
+ * what stops "open the goal" from meaning "type it again" (see `AiHandoff`).
+ */
+private fun askedFor(messages: List<ChatMessage>, messageId: String): String? {
+    val i = messages.indexOfFirst { it.id == messageId }
+    if (i < 0) return null
+    return messages.take(i).lastOrNull { it.role == ChatRole.USER }?.content?.ifBlank { null }
 }
 
 @Composable
