@@ -70,18 +70,20 @@ test.describe("sheet chrome stays put", () => {
     // the sheet was one. It landed at `scrollTop: 450` with its teal head at y −292: a stub of a
     // form with a calendar floating over it.
     //
-    // The picker is a nested sheet on a phone now (`e2e/deadline-sheet.spec.ts`), so what is
+    // The picker is a centred modal on a phone now (`e2e/deadline-picker.spec.ts`), so what is
     // guarded here is the thing that outlives the redesign: opening and dismissing a second
-    // sheet must leave the first exactly as it was.
+    // layer must leave the sheet underneath exactly as it was.
     await openNewGoal(page);
     const head = sheet(page).getByText("New goal", { exact: true });
     const before = (await head.boundingBox())!;
 
     await page.getByText("Pick a deadline").click();
     await page.waitForTimeout(700);
-    // The date sheet is on top; Radix takes the form out of the a11y tree while it is, which is
-    // why the head is measured by its box rather than by role.
-    expect(await page.locator("[data-vaul-drawer]").count()).toBe(2);
+    // The date modal is on top; Radix takes the form out of the a11y tree while it is, which is
+    // why the head is measured by its box rather than by role. The form's drawer stays the only
+    // drawer on the page — the picker is a dialog, not a second sheet.
+    expect(await page.locator("[data-vaul-drawer]").count()).toBe(1);
+    await expect(page.getByRole("dialog")).toBeVisible();
     await page.getByRole("button", { name: "Cancel" }).click();
     await page.waitForTimeout(600);
 

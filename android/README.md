@@ -18,11 +18,12 @@ Native Kotlin / Jetpack Compose app for Spira. It reuses the same backend as the
 ```powershell
 cd android
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio1\jbr"
-.\gradlew.bat :app:assembleDebug          # build the debug APK
-.\gradlew.bat installDebug                # install on a running emulator/device
+.\gradlew.bat :app:installDev             # local backend, NO sign-in — use this locally
+.\gradlew.bat :app:assembleDebug          # build the production-pointing debug APK
+.\gradlew.bat installDebug                # install that on a running emulator/device
 ```
 
-The debug APK lands in `app/build/outputs/apk/debug/`.
+The debug APK lands in `app/build/outputs/apk/debug/`, the dev one in `app/build/outputs/apk/dev/`.
 
 ### Distribute to testers (one command)
 
@@ -39,11 +40,25 @@ Builds the debug APK and uploads it to **Firebase App Distribution** using your 
 Open the `android/` folder (not the repo root) in Android Studio, let it sync, then Run ▶ on
 an emulator. It picks up the SDK from `local.properties` (gitignored) and its embedded JDK.
 
-## Backend URL
+## Backend URL — and whether you have to sign in
 
-The emulator reaches a locally-running backend at `http://10.0.2.2:8080` (that IP is the host
-machine as seen from inside the emulator). Build config wiring for `local` vs `prod` is added
-with the GraphQL layer (Step 2).
+Three build types, differing only in the backend baked into `BuildConfig.API_BASE_URL`. That one
+difference is also what decides the login, because the app has no bypass of its own: it asks
+`/api/auth/me` on start and believes the answer.
+
+| Build type | Backend | Sign-in |
+|---|---|---|
+| **`dev`** | `http://10.0.2.2:8080` — the host machine as seen from inside the emulator | **none**, when that backend runs the `local` Spring profile (`LocalDevAuthFilter` signs every request in as `dev@local`) |
+| **`debug`** | production (Cloud Run) | real Google — this is what `distributeDebug` sends to testers |
+| **`release`** | production (Cloud Run) | real Google |
+
+For a real phone on the same Wi-Fi, or a tunnel, override the URL instead of editing a file:
+`-PspiraApiBaseUrl=http://<your-PC-LAN-IP>:8080`. `distributeDebug` **refuses to run** with that
+flag set, so a distributed APK can never carry a local URL.
+
+Full walkthrough — starting the backend, the emulator, and how to verify the dev build is really
+what is running — is in the repo `README.md` → "Build variants — skip Google login for quick
+local checks".
 
 ## Notes
 

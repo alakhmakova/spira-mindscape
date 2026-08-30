@@ -12,7 +12,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SheetHead } from "@/components/spira/SheetHead";
 import {
   Select,
@@ -42,13 +42,9 @@ import { cn } from "@/lib/utils";
  * | Cells | 2rem, a mouse target | ~2.5rem and full width, a finger target |
  * | Clear / Today | small links in a footer strip | worded links under the grid, also drafts |
  *
- * The switch is `useIsMobile()` — 768, the same breakpoint every form sheet uses, so a picker
- * opened from New goal or New target is the same kind of thing as the sheet that launched it.
- * The filter panel deliberately switches at 640 instead (see the note in `ListToolbar.tsx`), so
- * between 640 and 767 a bottom date sheet can open from a right-hand filter panel. That band is
- * the seam that file already documents, and a bottom sheet is the right shape on both sides of
- * it; matching the container instead would mean the picker changed shape depending on who opened
- * it, which is worse.
+ * The switch is `useIsMobile()` — 768, the same breakpoint every form sheet uses. A modal is the
+ * right shape on both sides of the 640/767 seam `ListToolbar.tsx` documents, so unlike the sheet
+ * it raises no question about which container opened it.
  *
  * Confirming rather than committing on the phone is the point of the redesign, not an oversight:
  * a sheet in this app always ends in a pinned pair — a quiet outline left, filled Kale right —
@@ -332,29 +328,37 @@ export function DeadlinePopover({
             {trigger.content}
           </button>,
         )}
-        <Drawer open={open} onOpenChange={setOpen}>
-          <DrawerContent className="sheet-max-92 mt-0 px-0 flex flex-col">
-            {/* `SheetHead` is the whole head, exactly as in New goal / New target / the filter
-                panel — no second, screen-reader-only title beside it. One heading per sheet. */}
-            <SheetHead title="Set deadline" onClose={() => setOpen(false)} />
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent
+            // `p-0` and no corner X: `SheetHead` is the whole head and carries its own close
+            // button, so the dialog's default one would land on top of it. `modal-max` is the
+            // only height it states — a centred card has no top edge to hold still, it just
+            // must not outgrow the screen when the keyboard is up.
+            closeButton={false}
+            className="modal-max flex w-[calc(100%-32px)] max-w-[380px] flex-col gap-0 overflow-hidden rounded-xl border-0 p-0"
+          >
+            {/* **The head states the draft** (owner, 2026-08-29): the date once one is chosen,
+                and "Set deadline" only while there is none — including straight after `Clear`,
+                where reverting to the prompt is exactly what is about to be true. It used to be
+                a line of its own above the grid, which said the same thing twice over: a band
+                with a fixed title, then a sentence restating what the band was for.
+
+                `MMMM d, yyyy` and nothing else, which is the string the laptop's popover head
+                has always shown — so the two web surfaces read identically. The weekday and the
+                "13d overdue" that the line carried are dropped on purpose: with them the title
+                is ~250px, which fits a 412px phone and truncates on a 320px one, and a head that
+                is sometimes cut is worse than one that is always short. Both still show on the
+                trigger the picker was opened from.
+
+                `DialogTitle` renders this heading — Radix needs one for the dialog's accessible
+                name, and a second sr-only copy would announce the title twice. */}
+            <SheetHead
+              title={picked ? format(picked, "MMMM d, yyyy") : "Set deadline"}
+              onClose={() => setOpen(false)}
+              titleComponent={DialogTitle}
+            />
 
             <div className="px-5 pt-4 pb-6 overflow-y-auto flex-1 min-h-0">
-              <p className="mb-3 text-sm">
-                {picked ? (
-                  <>
-                    <span className="font-semibold text-foreground">
-                      {format(picked, "EEEE, MMMM d, yyyy")}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {" · "}
-                      {describeDistance(picked)}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">No deadline</span>
-                )}
-              </p>
-
               <MonthGrid
                 selected={picked}
                 month={month}
@@ -413,8 +417,8 @@ export function DeadlinePopover({
                 {confirmLabel}
               </button>
             </div>
-          </DrawerContent>
-        </Drawer>
+          </DialogContent>
+        </Dialog>
       </>
     );
   }
@@ -517,13 +521,6 @@ export function DeadlinePopover({
       </PopoverContent>
     </Popover>
   );
-}
-
-/** "3d left" / "2d overdue" / "today", for a date the user is still choosing. */
-function describeDistance(d: Date): string {
-  const n = differenceInCalendarDays(d, new Date());
-  if (n === 0) return "today";
-  return n < 0 ? `${Math.abs(n)}d overdue` : `${n}d left`;
 }
 
 /**

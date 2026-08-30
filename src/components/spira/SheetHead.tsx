@@ -25,16 +25,23 @@ export function SheetHead({
   title,
   onClose,
   actions,
+  /**
+   * What renders the title. Defaults to a plain `h2`; a **dialog** passes `DialogTitle`, because
+   * Radix needs one as the dialog's accessible name and adding a second, screen-reader-only copy
+   * beside this band puts two headings called "Set deadline" in the tree. One head, one heading.
+   */
+  titleComponent: Title = "h2",
 }: {
   title: string;
   onClose: () => void;
   actions?: React.ReactNode;
+  titleComponent?: React.ElementType;
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 bg-primary px-5 py-3.5">
-      <h2 className="flex-1 text-base font-bold text-primary-foreground">
+      <Title className="flex-1 text-base font-bold text-primary-foreground">
         {title}
-      </h2>
+      </Title>
       {actions}
       <button
         type="button"

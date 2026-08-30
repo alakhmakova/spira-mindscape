@@ -42,7 +42,24 @@ public class MistralProvider implements LlmProvider {
     private static final Logger log = LoggerFactory.getLogger(MistralProvider.class);
 
     private static final String ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
-    static final String DEFAULT_MODEL = "mistral-large-latest";
+
+    /**
+     * **`mistral-medium-latest`, not Large** (owner, 2026-08-29, asking which Mistral model this
+     * app should be on).
+     *
+     * Large is still listed by the API — the owner's key returns `mistral-large-latest` among 54
+     * models — but it is the wrong default here for a reason that has nothing to do with
+     * availability: it is **text-only**. Every image in the chat has to detour through
+     * {@code MistralOcrService}, and `VisionSupport` has to keep an allow-list precisely because
+     * this default cannot see (BUG-027). Medium 3.x is Mistral's current general model, it does
+     * function calling, and it takes image parts — so a photo in the chat is answered by the
+     * model that is already in the conversation.
+     *
+     * `-latest` on purpose: naming a dated build is how BUG-059 happened. Documents still go to
+     * {@code mistral-ocr-latest}, which is a different product ({@code POST /v1/ocr}) and better
+     * at a scanned page than any chat model.
+     */
+    public static final String DEFAULT_MODEL = "mistral-medium-latest";
     private static final int MAX_TOKENS = 8192;
 
     private final String apiKey;

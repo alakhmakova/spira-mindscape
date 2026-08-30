@@ -15,6 +15,33 @@ if (hasGoogleServices) {
     apply(plugin = "com.google.firebase.crashlytics")
 }
 
+// ── Which backend a build talks to ────────────────────────────────────────────────────────────
+//
+// This is the Android half of the web's Spring profiles, and it is what decides whether the app
+// asks for a login at all. The app has no bypass of its own and must never grow one: it asks
+// `/api/auth/me` on start, and the answer depends on the backend it is pointed at.
+//
+//   • Production answers 401 → the sign-in screen, real Google OAuth.
+//   • A backend on the `local` profile signs EVERY request in as `dev@local`
+//     (`LocalDevAuthFilter`) → `me` returns a user and the app lands straight on All goals.
+//
+// So "dev has no login" is one line of Gradle — which backend the URL points at — and exactly
+// the same mechanism the web has, where `npm run dev` proxies to whatever backend is running.
+//
+//   ./gradlew.bat :app:installDev     → the local backend, no login
+//   ./gradlew.bat :app:installDebug   → production, real Google sign-in
+//   ./gradlew.bat distributeDebug     → production (and it refuses to run with the override
+//                                       below, so a distributed APK can never carry a local URL)
+//
+// `-PspiraApiBaseUrl=…` overrides either, for the cases neither default covers: a real phone on
+// the same Wi-Fi (`http://<your-PC-LAN-IP>:8080`) or a cloudflared tunnel URL.
+val prodApiBaseUrl = "https://spira-952567559986.europe-west1.run.app"
+
+/** 10.0.2.2 is the host machine as seen from inside the emulator. */
+val devApiBaseUrl = "http://10.0.2.2:8080"
+
+val apiBaseUrlOverride = project.findProperty("spiraApiBaseUrl") as String?
+
 android {
     namespace = "com.spiramindscape.android"
     compileSdk = 34
@@ -28,21 +55,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Backend base URL. Defaults to production (Cloud Run) so the app works on a real
-        // device on any network, and is overridable from the command line so testing against a
-        // local backend needs no edit to a committed file:
-        //
-        //   ./gradlew.bat :app:installDebug -PspiraApiBaseUrl=http://10.0.2.2:8080
-        //
-        //   • Emulator:   http://10.0.2.2:8080  (10.0.2.2 = the host machine from the emulator)
-        //   • Real phone: http://<your-PC-LAN-IP>:8080  (same Wi-Fi) or an ngrok HTTPS URL
-        //
-        // It used to be a hardcoded literal, so reproducing anything against a local backend
-        // meant editing this file and remembering to put it back — and an agent that forgot
-        // would ship a debug APK pointing at localhost (2026-08-24).
-        val apiBaseUrl = (project.findProperty("spiraApiBaseUrl") as String?)
-            ?: "https://spira-952567559986.europe-west1.run.app"
-        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        // Production is the DEFAULT, for every build type but `dev` — so a build made without
+        // thinking about it is the safe one. It used to be a hardcoded literal, so reproducing
+        // anything against a local backend meant editing this file and remembering to put it
+        // back; an agent that forgot shipped a debug APK pointing at localhost (2026-08-24).
+        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrlOverride ?: prodApiBaseUrl}\"")
 
         // The project's WEB OAuth client ID (from google-services.json). The app requests a
         // Google ID token whose audience is this ID, and the backend verifies against it (see
@@ -59,6 +76,25 @@ android {
             // JaCoCo coverage for JVM unit tests → :app:createDebugUnitTestCoverageReport
             enableUnitTestCoverage = true
         }
+        // The dev build: the same debug app, pointed at a backend on the `local` profile, so it
+        // needs no sign-in. See the note at the top of this file for why that is all it takes.
+        //
+        // **A build type, not a product flavor**, though a flavor is the textbook answer for an
+        // environment. A flavor renames every task there is — `assembleDebug` becomes
+        // `assembleProdDebug`, `testDebugUnitTest` becomes `testProdDebugUnitTest` — and those
+        // names are written into CI, `distributeDebug`, the JaCoCo report and the docs. A third
+        // build type adds `installDev` and leaves `debug` and `release` untouched, which is the
+        // whole of what is wanted here: one app, one extra environment.
+        create("dev") {
+            initWith(getByName("debug"))
+            // Libraries publish `debug` and `release` only, so a custom build type has nothing
+            // of theirs to resolve against without being told what it resembles.
+            matchingFallbacks += "debug"
+            // Visible in `adb shell dumpsys package`, so which build is on a device is a fact
+            // rather than a memory.
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrlOverride ?: devApiBaseUrl}\"")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -66,6 +102,16 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+
+    // `dev` is `debug` plus a different backend, so it takes the debug overlay as well:
+    // cleartext HTTP (a local backend is plain `http://` on 10.0.2.2 or a LAN IP, which Android
+    // 9+ blocks) and the exported note-editor probe. `initWith` copies a build type's
+    // PROPERTIES and never its source set, so without this the dev build compiles and installs
+    // and then cannot reach the backend at all.
+    sourceSets.getByName("dev") {
+        manifest.srcFile("src/debug/AndroidManifest.xml")
+        java.srcDir("src/debug/java")
     }
 
     compileOptions {
@@ -152,6 +198,15 @@ tasks.register<Exec>("distributeDebug") {
     val notes = (project.findProperty("releaseNotes") as String?) ?: "Spira mobile debug build."
 
     doFirst {
+        // **A distributed APK must never carry a local backend URL.** `-PspiraApiBaseUrl` is
+        // baked into `BuildConfig` at assemble time, so a build made for the emulator and then
+        // distributed sends the owner an app pointing at 10.0.2.2, which resolves to nothing on
+        // a phone. CLAUDE.md asked the reader to remember to rebuild without the flag; this
+        // makes remembering unnecessary. Local work has its own build type — use `installDev`.
+        require(apiBaseUrlOverride == null) {
+            "distributeDebug must not run with -PspiraApiBaseUrl: it would ship an APK " +
+                "pointing at $apiBaseUrlOverride. Drop the flag, or use :app:installDev."
+        }
         val firebaseArgs = listOf(
             "appdistribution:distribute", apk.get().asFile.absolutePath,
             "--app", appId,

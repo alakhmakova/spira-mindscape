@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 
 /**
@@ -27,13 +27,17 @@ import { join, sep } from "node:path";
  *
  * ## The rule
  *
- * Heights come from the `.sheet-*` utilities in `styles.css`, which are built on `--app-vh` —
- * one percent of the **keyboard-free** viewport, published by `lib/spira/sheet-height.ts`:
+ * Heights come from the `.sheet-*` utilities in `styles.css`, and every one of them states a
+ * **constant top edge** rather than a percentage: `calc(100dvh - var(--sheet-top-gap))`. The
+ * bottom is the viewport's bottom, so the keyboard shrinks a sheet from below and its top edge
+ * never moves — which is the whole point (owner, 2026-08-29: "все должно быть стабильно, без
+ * скачков"). `--app-vh` and `lib/spira/sheet-height.ts` were retired with the last percentage.
  *
  * | Class | For |
  * |---|---|
- * | `sheet-h-92` / `sheet-h-88` | a sheet with no natural content height (the chat: a two-message conversation would be two messages tall) |
- * | `sheet-max-92` / `sheet-max-85` | everything else — sized by its content, up to that cap |
+ * | `sheet-h` | a sheet with no natural content height (the chat: a two-message conversation would be two messages tall) |
+ * | `sheet-max` | everything else — sized by its content, up to that cap |
+ * | `sheet-inset` | a sheet stacked INSIDE another one; a percentage of its parent, so it cannot outgrow it |
  */
 
 const SRC = join(process.cwd(), "src");
@@ -118,7 +122,7 @@ describe("sheets are sized from the keyboard-free viewport, not from `vh`", () =
     // If a refactor moves the sheets somewhere else, this test would otherwise pass by
     // scanning nothing — the failure mode every source-scanning check has.
     expect(allFiles.length).toBeGreaterThan(20);
-    expect(styles).toContain("--app-vh");
+    expect(styles).toContain("--sheet-top-gap");
   });
 
   it("has no viewport-unit height outside the accepted list", () => {
@@ -127,8 +131,9 @@ describe("sheets are sized from the keyboard-free viewport, not from `vh`", () =
     expect(
       stray.map((u) => `${u.file}:${u.line} ${u.text}`),
       "A viewport unit is a percentage of the LAYOUT viewport, which the on-screen keyboard " +
-        "shrinks (index.html sets `interactive-widget=resizes-content`). Use `sheet-h-92`, " +
-        "`sheet-h-88`, `sheet-max-92` or `sheet-max-85` — see CLAUDE.md → Sheets → the height.",
+        "shrinks (index.html sets `interactive-widget=resizes-content`), so a sheet written in " +
+        "one cannot hold its top edge still. Use `sheet-h`, `sheet-max` or `sheet-inset` — see " +
+        "CLAUDE.md → Sheets → the height.",
     ).toEqual([]);
   });
 
@@ -136,7 +141,7 @@ describe("sheets are sized from the keyboard-free viewport, not from `vh`", () =
     const used = new Set<string>();
     for (const path of allFiles) {
       for (const m of readFileSync(path, "utf8").matchAll(
-        /\bsheet-(?:max|h)-\d+\b/g,
+        /\bsheet-(?:h|max|inset)\b/g,
       )) {
         used.add(m[0]);
       }
@@ -144,33 +149,40 @@ describe("sheets are sized from the keyboard-free viewport, not from `vh`", () =
     // A class Tailwind has never heard of is not an error anywhere — it simply does nothing,
     // and the sheet silently falls back to its content height.
     expect([...used].filter((c) => !styles.includes(`.${c}`))).toEqual([]);
-    expect(used.size).toBeGreaterThan(2);
+    // Three of them: `sheet-h`, `sheet-max`, `sheet-inset`.
+    expect(used.size).toBe(3);
   });
 
-  it("publishes --app-vh from the entry point", () => {
-    // Without this call every sheet falls back to the `1vh` in the utilities' `var()`, which is
-    // the exact behaviour the change exists to remove — and nothing would look broken until a
-    // keyboard opened on a phone.
-    expect(mainEntry).toContain("trackViewportHeight()");
+  it("states a constant top edge, never a percentage of the viewport", () => {
+    // The three failed shapes, in order: `92vh` (92 % of what the keyboard left — a third of the
+    // screen), `min(92 * --app-vh, 100dvh)` (with a keyboard the second term won at 100 %, so the
+    // sheet's top edge landed on the screen's), and `min(92 * --app-vh, 92dvh)` (8 % of 888 is
+    // 71 px, 8 % of 430 is 34, so the top edge jumped 37 px on every focus and began covering the
+    // app header). Every one of them was a percentage of a viewport the keyboard resizes.
+    //
+    // `calc(100dvh - var(--sheet-top-gap))` cannot move: the bottom is the viewport's bottom and
+    // the top is a constant below its top, so the keyboard shrinks the sheet from below only.
+    for (const cls of ["sheet-h", "sheet-max"]) {
+      const rule = styles.slice(styles.indexOf(`.${cls} {`));
+      expect(
+        rule.slice(0, rule.indexOf("}")),
+        `.${cls} must be sized as calc(100dvh - var(--sheet-top-gap))`,
+      ).toContain("calc(100dvh - var(--sheet-top-gap))");
+    }
   });
 
-  it("never republishes --app-vh on a blur", () => {
-    // A `focusout` listener here looks obviously right — "the field lost focus, so the keyboard
-    // is gone" — and was added on exactly that reasoning. It is wrong: a blur is the keyboard
-    // *starting* to go, and for a couple of hundred milliseconds `innerHeight` is still
-    // keyboard-sized, so publishing then republishes the keyboard's height as the screen's.
-    // Every sheet shrinks mid-tap, and because that lands between `mousedown` and `mouseup`
-    // Chrome dispatches no `click` at all — the first tap on any control in a sheet, after
-    // typing, did nothing but close the keyboard (BUG-064). Read the module's own note before
-    // adding it back.
-    const mod = readFileSync(
-      join(SRC, "lib", "spira", "sheet-height.ts"),
-      "utf8",
-    ).replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(
-      mod,
-      "sheet-height.ts publishes --app-vh on a blur again — see the `focusout` note in that file",
-    ).not.toContain("focusout");
+  it("has no viewport-height module left to go stale", () => {
+    // `lib/spira/sheet-height.ts` published `--app-vh`, one percent of the keyboard-free
+    // viewport, so a sheet could be a stable percentage of the SCREEN. Two defects came out of
+    // it: it republished on `focusout` — the instant the keyboard starts leaving but is still
+    // there — which shrank every sheet mid-tap and cost the first tap on any control in a sheet
+    // (BUG-064); and even correct, a percentage still moved the top edge when the keyboard
+    // opened. A constant top gap needs no module at all, and the module is gone. Bringing it
+    // back means bringing back a percentage, which is the thing that never worked.
+    expect(existsSync(join(SRC, "lib", "spira", "sheet-height.ts"))).toBe(
+      false,
+    );
+    expect(mainEntry).not.toContain("trackViewportHeight");
   });
 
   it("keeps vaul's `repositionInputs` switched off", () => {
@@ -196,13 +208,13 @@ describe("sheets are sized from the keyboard-free viewport, not from `vh`", () =
     ).toContain("repositionInputs={false}");
   });
 
-  it("keeps the AI chat drawer and the key sheet at the heights the owner chose", () => {
-    // Named explicitly because these two were argued over for a whole session (2026-08-28):
-    // the chat drawer at 92, the key sheet a little shorter at 88 so the coach shows above it.
-    // They are also the only two sheets with a FIXED height — a chat has no content height of
-    // its own to be sized by.
+  it("keeps the AI chat drawer and the key sheet on their own utilities", () => {
+    // The chat has no content height of its own — a two-message conversation would be a
+    // two-message-tall drawer — so it is the one surface that must state a height. The key sheet
+    // is `absolute inset-0` INSIDE it, so it is sized against its parent: a viewport-based height
+    // there could outgrow the sheet it is stacked on.
     const ai = readFileSync(join(COMPONENT_ROOT, "ai", "AiPanel.tsx"), "utf8");
-    expect(ai).toContain("sheet-h-92");
-    expect(ai).toContain("sheet-h-88");
+    expect(ai).toContain("sheet-h");
+    expect(ai).toContain("sheet-inset");
   });
 });

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * vaul turns it on by default. What it does is listen for `visualViewport` resizes and, while
  * something typeable is focused, write **inline `height` and `bottom`** onto the drawer element
  * (`onVisualViewportChange` in `vaul/dist/index.js`). An inline style beats every class, so from
- * the first keystroke onwards the sheet is no longer sized by `sheet-h-*` / `sheet-max-*` at all
+ * the first keystroke onwards the sheet is no longer sized by `.sheet-h` / `.sheet-max` at all
  * — which is exactly why four rounds of CSS fixes changed nothing, and why only the sheets with
  * a field to type in ever misbehaved.
  *

@@ -1,9 +1,11 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
   type ReactNode,
+  type RefObject,
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -653,11 +655,11 @@ export function AiPanel() {
       <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
         {/* A chat has no natural content height — a two-message conversation would make a
             two-message-tall drawer — so unlike the form sheets this one cannot be
-            content-sized. `sheet-h-92` gives it a real one, measured from the KEYBOARD-FREE
+            content-sized. `sheet-h` gives it a real one, measured from the KEYBOARD-FREE
             viewport rather than from `vh`: with `interactive-widget=resizes-content` the
             keyboard shrinks the layout viewport, so `92vh` meant "92 % of the sliver above the
             keyboard" — 276 px of an 888 px phone. See CLAUDE.md → Sheets → the height. */}
-        <DrawerContent className="sheet-h-92 mt-0 flex flex-col px-0 border-0 bg-[#0A8080] text-white">
+        <DrawerContent className="sheet-h mt-0 flex flex-col px-0 border-0 bg-[#0A8080] text-white">
           {/* Title kept for accessibility only — PanelContent renders the
               visible header (wordmark + New chat + close), so avoid duplicating it. */}
           <DrawerHeader className="sr-only">
@@ -711,6 +713,73 @@ function Wordmark() {
 }
 
 // ── Panel content (state machine) ──────────────────────────────────────────
+
+/**
+ * Measures the floating footer, so the transcript can be padded by exactly its height.
+ *
+ * A `ResizeObserver` rather than a measurement taken during render, because the thing that
+ * changes most often is the composer's textarea growing a line as you type — and that happens
+ * inside `Composer`'s own state, without re-rendering the panel around it.
+ */
+function useFooterHeight(
+  ref: RefObject<HTMLElement | null>,
+  onChange: (h: number) => void,
+) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () =>
+      onChange(Math.round(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, onChange]);
+}
+
+/**
+ * **Scrolls the transcript to the bottom when the keyboard opens** (owner, 2026-08-29).
+ *
+ * A sheet no longer grows to the top edge of the screen when a field is focused — it keeps the
+ * share of the screen it already had (see the `.sheet-*` utilities in `styles.css`). What
+ * replaces the height it gives up is this: the moment the keyboard takes its room, the
+ * conversation moves down to meet the composer, so the thing you are answering is the last
+ * thing you saw.
+ *
+ * The signal is a viewport that **shrank** while something typeable is focused. Under
+ * `interactive-widget=resizes-content` the keyboard always resizes the layout viewport, so
+ * `resize` is the event that means "the keyboard just took its room"; a `focus` handler would be
+ * a frame too early and would scroll against the old layout. Growing back is deliberately not
+ * handled — the keyboard leaving should not yank a transcript the reader has scrolled up into.
+ */
+function useKeyboardStickyBottom(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    let last = window.innerHeight;
+    const onResize = () => {
+      const shrank = window.innerHeight < last;
+      last = window.innerHeight;
+      const el = document.activeElement as HTMLElement | null;
+      const typing =
+        !!el &&
+        (el.tagName === "TEXTAREA" ||
+          el.tagName === "INPUT" ||
+          el.isContentEditable);
+      if (!shrank || !typing) return;
+      // One frame later, so the sheet has been laid out at its new height first — and
+      // **instantly**, not smoothly (owner, 2026-08-29: "кажется, иногда есть дергание"). The
+      // keyboard's own slide is already the motion; a 300ms smooth scroll running against it,
+      // over a scroll height that the footer's ResizeObserver is changing in the same frames,
+      // is three animations arguing. Jumping to the end and letting the keyboard do the moving
+      // reads as one movement.
+      requestAnimationFrame(() => {
+        const el = ref.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [ref]);
+}
 
 function PanelContent({ onClose }: { onClose: () => void }) {
   const { context } = useAi();
@@ -1284,8 +1353,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   // Keyed on the notice's id, so a second message restarts the clock instead of inheriting
   // whatever was left of the first one's.
+  //
+  // **An error stays until it is dismissed.** Errors stopped being written into the transcript
+  // (owner, 2026-08-29 — they are not messages), so the notice is now the only place one is
+  // reported, and a six-second window is not long enough to read a provider's quota error. It
+  // carries an X; everything else still clears itself.
   useEffect(() => {
-    if (!notice) return;
+    if (!notice || notice.kind === "error") return;
     const t = setTimeout(() => setNotice(null), PANEL_NOTICE_MS);
     return () => clearTimeout(t);
   }, [notice]);
@@ -1333,6 +1407,21 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // the input) — an unfinished message must never silently disappear.
   const draftRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The floating footer's own height, so the transcript can be padded by exactly it — see the
+  // comment on the footer layer below.
+  const footerRef = useRef<HTMLDivElement>(null);
+  const [footerH, setFooterH] = useState(0);
+  useFooterHeight(footerRef, setFooterH);
+  useKeyboardStickyBottom(scrollRef);
+  // Whether the transcript is resting at its end. The composer grows a line as you type and the
+  // proposal card comes and goes, and each of those changes the transcript's bottom padding —
+  // which, without this, slides the conversation under the reader's eyes. Pinned only when it
+  // was already pinned, so scrolling back through the history is never yanked.
+  const atBottomRef = useRef(true);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [footerH]);
   // In-place card revision ("Type a change for the AI…"): shows a cancellable "Revising…"
   // state in the footer so a stalled revise is never a dead-end (no Stop button otherwise).
   const reviseTokenRef = useRef(0);
@@ -1364,6 +1453,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const pendingMsg = list.find((m) =>
     m.proposals?.some((pr) => pr.status === "pending"),
   );
+
+  // And so is the end of a session. `Session complete` used to be a message in the transcript
+  // with the composer still sitting under it, which invites a reply to a coach that has gone
+  // (owner, 2026-08-29: "чтобы пользователь даже не имел возможности что-то написать после
+  // окончания"). In the footer it replaces the composer, and `Close` is the only way on.
+  const sessionClosed = list.some((m) => m.role === "closed");
 
   // Load saved keys on mount
   useEffect(() => {
@@ -1767,15 +1862,16 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           err === "NETWORK"
             ? "Backend unreachable — is it running?"
             : err || "AI error. Try again.";
-        // Show the error in place of the empty streaming bubble — visible and
-        // persistent (a transient toast is easy to miss for long messages).
-        setMsgs((p) =>
-          p.map((m) =>
-            m.id === id
-              ? { ...m, streaming: false, content: msg, error: true }
-              : m,
-          ),
-        );
+        // **An error is not a message** (owner, 2026-08-29: "и ошибки это не сообщения"). It used
+        // to be written into the transcript as a turn AND raised as a notice, so a quota error
+        // from Gemini appeared twice on one screen, in two shapes, saying the same thing. The
+        // notice is the one place the panel reports anything, so the failed turn's empty
+        // streaming bubble is taken back out rather than filled in with the error.
+        //
+        // The old comment's worry — "a transient toast is easy to miss" — is answered by the
+        // notice not being transient: an error one stays until it is dismissed (see the timer
+        // below), because a message you cannot read twice is worse than one that lingers.
+        setMsgs((p) => p.filter((m) => m.id !== id));
         chatToast.error(msg);
       },
     });
@@ -1818,13 +1914,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       setRevising((r) => (r && r.token === token ? null : r));
       setBusy(false);
     };
-    /** A failed revise reads as a bubble in the conversation, like a failed chat turn — the
-     *  user's request is visible above it, so a silent toast would leave it unanswered. */
-    const failWith = (text: string) =>
-      setList((ms) => [
-        ...ms,
-        { id: uid(), role: "assistant" as const, content: text, error: true },
-      ]);
+    /** A failed revise is a notice, like every other error — see the note in `sendChat`. It used
+     *  to be a bubble in the conversation on the argument that the user's request is visible
+     *  above it; the request is still visible, and the failure is no longer pretending to be a
+     *  turn the assistant took. */
+    const failWith = (text: string) => chatToast.error(text);
 
     // The request goes into the transcript straight away — before the answer, and whatever
     // the answer turns out to be.
@@ -2819,12 +2913,22 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           backgroundImage:
             "linear-gradient(180deg, #83D2D2 3.43%, #F2FFFF 118.85%)",
         }}
-        className="flex min-h-0 flex-1 flex-col"
+        className="relative flex min-h-0 flex-1 flex-col"
       >
         <div
           ref={scrollRef}
           data-vaul-no-drag
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            atBottomRef.current =
+              el.scrollHeight - el.clientHeight - el.scrollTop < 8;
+          }}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-black/15"
+          // The transcript runs the full height of the gradient and the footer floats over it
+          // (owner, 2026-08-29), so the last message can be scrolled clear of the composer
+          // instead of the composer eating the bottom of the panel. `footerH` is the footer's
+          // measured height, so the padding is exactly the card the content disappears behind.
+          style={{ paddingBottom: footerH + 8 }}
         >
           {/* Empty state */}
           {!inGrow && msgs.length === 0 && (
@@ -2930,24 +3034,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 </div>
               );
             }
-            if (m.role === "closed") {
-              return (
-                <div
-                  key={m.id}
-                  className="rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]"
-                >
-                  <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
-                    <Ic path={PATHS.check} size={12} /> Session complete
-                  </span>
-                  <button
-                    onClick={() => leaveGrow()}
-                    className="mt-3 w-full h-10 rounded-[9px] bg-[#0A8080] text-white text-[13.5px] font-semibold hover:bg-[#005961] transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              );
-            }
+            // A finished session's card is NOT drawn here. It belongs in the footer, in the
+            // composer's place, so the session ends with nothing left to type into — see
+            // `sessionClosed` below (owner, 2026-08-29).
+            if (m.role === "closed") return null;
             if (m.role === "end") {
               return (
                 <GrowEndCard
@@ -2966,14 +3056,27 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               return (
                 <div
                   key={m.id}
-                  className="flex items-start gap-2 text-[14px] leading-[1.55] text-[#C99500] max-w-[94%] min-w-0 break-words [overflow-wrap:anywhere]"
+                  // **Near-black words, a yellow mark** (owner, 2026-08-29: chat warnings
+                  // "коричневые, а не жёлтые"). The whole line used to be set in `warning-500`,
+                  // and mustard type on the pale teal gradient reads brown — which is exactly
+                  // the mistake CLAUDE.md → Notices already names: the kind belongs on the mark
+                  // and the border, never on the words. `warning-500 #C99500` is the app's
+                  // warning yellow, the one `Notice.tsx` draws its triangle in.
+                  className="flex max-w-[94%] min-w-0 items-start gap-2 break-words rounded-2xl rounded-bl-sm border border-[#C99500] bg-[#FFFBF7] px-3.5 py-2.5 text-[14px] leading-[1.55] text-[#222525] [overflow-wrap:anywhere]"
                 >
                   <Ic
                     path={PATHS.alert}
                     size={15}
-                    className="shrink-0 mt-[3px]"
+                    className="mt-[3px] shrink-0 text-[#C99500]"
                   />
-                  <span className="select-text">{m.content}</span>
+                  {/* `min-w-0` is what keeps a long URL inside the card. A flex item's automatic
+                      minimum size is its CONTENT's, so without this the span refuses to shrink
+                      below an unbroken link and the text runs past the card's right edge —
+                      `[overflow-wrap:anywhere]` on the parent cannot help a child that never
+                      narrows (owner, 2026-08-29: "ничего не должно вываливаться из блоков"). */}
+                  <span className="min-w-0 select-text break-words [overflow-wrap:anywhere]">
+                    {m.content}
+                  </span>
                 </div>
               );
             }
@@ -3034,134 +3137,177 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* The chat's toast rides directly above whatever the footer is showing — the
-          composer, or the card that has taken its place — at exactly that thing's width.
-          `px-3 sm:px-4` is the composer's own gutter, so the two line up on any screen. */}
-        {notice && (
-          <div className="shrink-0 px-3 pt-1 sm:px-4">
-            <NoticeCard
-              kind={notice.kind}
-              onDismiss={() => setNotice(null)}
-              role={notice.kind === "error" ? "alert" : "status"}
-            >
-              {notice.message}
-            </NoticeCard>
-          </div>
-        )}
+        {/* **The footer floats over the transcript** (owner, 2026-08-29, with screenshots of the
+            Claude app doing it): the composer's white card sits on the gradient with the
+            conversation scrolling underneath it, rather than a solid strip taking the bottom of
+            the panel. It is what pays for the sheet no longer growing to the top edge when the
+            keyboard opens — the room comes from scrolling now, not from height.
 
-        {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
+            Two layers, and each one is load-bearing:
+
+            - the OUTER is `inset-0`, so it has a definite height for `max-h-[70%]` to resolve
+              against (a percentage needs a definite height, not a `max-height`), and
+              `pointer-events-none` so the transcript behind it stays scrollable everywhere the
+              footer is not actually drawn;
+            - the INNER hugs its content, which is what `footerH` measures, and carries the 70 %
+              cap for the whole stack — a very tall proposal card must not cover the
+              conversation it is about.
+
+            The toast rides directly above whatever the footer is showing — the composer, or the
+            card that has taken its place — at exactly that thing's width. `px-3 sm:px-4` is the
+            composer's own gutter, so the two line up on any screen. */}
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end">
+          <div
+            ref={footerRef}
+            className="pointer-events-auto flex min-h-0 max-h-[70%] flex-col justify-end"
+          >
+            {notice && (
+              <div className="shrink-0 px-3 pt-1 sm:px-4">
+                <NoticeCard
+                  kind={notice.kind}
+                  onDismiss={() => setNotice(null)}
+                  role={notice.kind === "error" ? "alert" : "status"}
+                >
+                  {notice.message}
+                </NoticeCard>
+              </div>
+            )}
+
+            {/* Footer. While revising a card, show a cancellable "Revising…" state; otherwise a
           pending card renders here (the card IS the input); otherwise the composer. */}
-        {mode === "grow-review" && !busy && sessionProposals > 0 && (
-          <div className="bg-[#F2FFFF] px-3 pb-3 pt-1 shrink-0">
-            <button
-              onClick={() => !goodbyeRef.current && askForGoodbye()}
-              className="w-full h-11 rounded-[14px] border border-[#005961]/30 bg-white text-[#005961] text-[13.5px] font-semibold hover:bg-[#005961]/5 transition-colors"
-            >
-              Finish session
-            </button>
-            <p className="mt-1.5 text-center text-[11.5px] text-[#003737]/45">
-              Anything you leave undecided stays waiting in the goal.
-            </p>
-          </div>
-        )}
+            {mode === "grow-review" && !busy && sessionProposals > 0 && (
+              <div className="px-3 pb-3 pt-1 shrink-0">
+                <button
+                  onClick={() => !goodbyeRef.current && askForGoodbye()}
+                  className="w-full h-11 rounded-[14px] border border-[#005961]/30 bg-white text-[#005961] text-[13.5px] font-semibold hover:bg-[#005961]/5 transition-colors"
+                >
+                  Finish session
+                </button>
+                <p className="mt-1.5 text-center text-[11.5px] text-[#003737]/45">
+                  Anything you leave undecided stays waiting in the goal.
+                </p>
+              </div>
+            )}
 
-        {mode !== "grow-end" && revising && (
-          <div className="bg-[#F2FFFF] px-3 pb-3 pt-1 shrink-0">
-            <div className="flex items-center gap-2.5 rounded-[14px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
-              <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
-              <span className="flex-1 min-w-0 text-[13.5px] truncate">
-                Revising «{revising.label}»…
-              </span>
-              <button
-                onClick={cancelRevise}
-                className="shrink-0 text-[13px] font-medium text-[#003737]/55 hover:text-red-600 transition-colors px-1.5 py-1"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-        {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
+            {mode !== "grow-end" && revising && (
+              <div className="px-3 pb-3 pt-1 shrink-0">
+                <div className="flex items-center gap-2.5 rounded-[14px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+                  <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
+                  <span className="flex-1 min-w-0 text-[13.5px] truncate">
+                    Revising «{revising.label}»…
+                  </span>
+                  <button
+                    onClick={cancelRevise}
+                    className="shrink-0 text-[13px] font-medium text-[#003737]/55 hover:text-red-600 transition-colors px-1.5 py-1"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Note: shown in grow-end too — the wrap-up turn may propose capturing
           the user's commitments, and those cards must stay actionable. */}
-        {!revising && pendingMsg && (
-          // `flex-initial` — that is `flex: 0 1 auto`, and each of the three numbers is doing
-          // a job:
-          //
-          //   grow 0    take no space the card does not need. `flex-1` was tried here and left
-          //             a band of empty gradient under a short card, because grow 1 claims a
-          //             share of the panel whether or not there is anything to put in it
-          //             (owner, 2026-08-28, with a screenshot of exactly that).
-          //   shrink 1  give way when the drawer is short. The original `shrink-0` could not,
-          //             so on a squeezed viewport the card was pushed past the bottom edge and
-          //             Accept could not be reached at all.
-          //   basis auto  size to the card.
-          //
-          // The cap then stops a very tall proposal (a stepper, a long preview) from squeezing
-          // the transcript to nothing, and the card scrolls inside it — with its action row
-          // `sticky bottom-0`, so Accept stays reachable however far it scrolls.
-          <div className="min-h-0 flex-initial max-h-[70%] px-3 pb-3 pt-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
-            {proposalGroupFor(pendingMsg)}
+            {!revising && pendingMsg && (
+              // `flex-initial` — that is `flex: 0 1 auto`, and each of the three numbers is doing
+              // a job:
+              //
+              //   grow 0    take no space the card does not need. `flex-1` was tried here and left
+              //             a band of empty gradient under a short card, because grow 1 claims a
+              //             share of the panel whether or not there is anything to put in it
+              //             (owner, 2026-08-28, with a screenshot of exactly that).
+              //   shrink 1  give way when the drawer is short. The original `shrink-0` could not,
+              //             so on a squeezed viewport the card was pushed past the bottom edge and
+              //             Accept could not be reached at all.
+              //   basis auto  size to the card.
+              //
+              // The 70 % cap that stops a very tall proposal (a stepper, a long preview) from
+              // covering the conversation it is about now sits on the floating footer stack above,
+              // because that is where a percentage still has a definite height to resolve against.
+              // The card still scrolls inside whatever it is given — with its action row
+              // `sticky bottom-0`, so Accept stays reachable however far it scrolls.
+              <div className="min-h-0 flex-initial px-3 pb-3 pt-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-black/15">
+                {proposalGroupFor(pendingMsg)}
+              </div>
+            )}
+            {sessionClosed && (
+              <div className="px-3 pb-3 pt-1 shrink-0">
+                <div className="rounded-[14px] border border-black/10 bg-white p-4 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+                  <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
+                    <Ic path={PATHS.check} size={12} /> Session complete
+                  </span>
+                  <button
+                    onClick={() => leaveGrow()}
+                    className="mt-3 h-10 w-full rounded-[9px] bg-[#0A8080] text-[13.5px] font-semibold text-white transition-colors hover:bg-[#005961]"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+            {mode !== "grow-end" &&
+              !revising &&
+              !pendingMsg &&
+              !sessionClosed && (
+                <>
+                  <Composer
+                    onSend={(text, attachments) =>
+                      inGrow ? sendGrow(text) : sendChat(text, attachments)
+                    }
+                    allowAttachments={!inGrow}
+                    // A GROW session is ephemeral by design, so nothing typed into one is kept.
+                    draftScope={inGrow ? undefined : scopeKey}
+                    attachResources={
+                      !inGrow && goal
+                        ? goal.resources.map((r) => ({
+                            id: r.id,
+                            label: r.type === "email" ? r.name : r.title,
+                            // The raw type, so the picker can draw the same glyph Android's does.
+                            type: r.type,
+                            typeLabel: resourceTypeMeta[r.type].label,
+                            mime: r.type === "file" ? r.mime : undefined,
+                          }))
+                        : undefined
+                    }
+                    resolveAttachmentOpen={(a) =>
+                      attachmentOpener(a, goal?.resources, setContentModal)
+                    }
+                    placeholder={
+                      inGrow
+                        ? "Answer in your own words…"
+                        : "Ask, plan, or request an action…"
+                    }
+                    busy={busy}
+                    onStop={stopStream}
+                    initialValue={draftRef.current}
+                    onDraftChange={(v) => {
+                      draftRef.current = v;
+                    }}
+                    leftAction={
+                      inGrow ? (
+                        // The early-stop lives where "Start GROW session" was — same slot, so ending a
+                        // session is where starting one is (owner, 2026-08-17).
+                        <button
+                          onClick={() => setConfirmEnd(true)}
+                          disabled={!canEndEarly}
+                          className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                        >
+                          <Ic path={PATHS.x} size={14} /> End session early
+                        </button>
+                      ) : goal ? (
+                        <button
+                          onClick={() => setMode("grow-start")}
+                          className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
+                        >
+                          <Ic path={PATHS.growSparkles} size={15} /> Start GROW
+                          session
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                </>
+              )}
           </div>
-        )}
-        {mode !== "grow-end" && !revising && !pendingMsg && (
-          <>
-            <Composer
-              onSend={(text, attachments) =>
-                inGrow ? sendGrow(text) : sendChat(text, attachments)
-              }
-              allowAttachments={!inGrow}
-              // A GROW session is ephemeral by design, so nothing typed into one is kept.
-              draftScope={inGrow ? undefined : scopeKey}
-              attachResources={
-                !inGrow && goal
-                  ? goal.resources.map((r) => ({
-                      id: r.id,
-                      label: r.type === "email" ? r.name : r.title,
-                      // The raw type, so the picker can draw the same glyph Android's does.
-                      type: r.type,
-                      typeLabel: resourceTypeMeta[r.type].label,
-                      mime: r.type === "file" ? r.mime : undefined,
-                    }))
-                  : undefined
-              }
-              resolveAttachmentOpen={(a) =>
-                attachmentOpener(a, goal?.resources, setContentModal)
-              }
-              placeholder={
-                inGrow
-                  ? "Answer in your own words…"
-                  : "Ask, plan, or request an action…"
-              }
-              busy={busy}
-              onStop={stopStream}
-              initialValue={draftRef.current}
-              onDraftChange={(v) => {
-                draftRef.current = v;
-              }}
-              leftAction={
-                inGrow ? (
-                  // The early-stop lives where "Start GROW session" was — same slot, so ending a
-                  // session is where starting one is (owner, 2026-08-17).
-                  <button
-                    onClick={() => setConfirmEnd(true)}
-                    disabled={!canEndEarly}
-                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
-                  >
-                    <Ic path={PATHS.x} size={14} /> End session early
-                  </button>
-                ) : goal ? (
-                  <button
-                    onClick={() => setMode("grow-start")}
-                    className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
-                  >
-                    <Ic path={PATHS.growSparkles} size={15} /> Start GROW
-                    session
-                  </button>
-                ) : undefined
-              }
-            />
-          </>
-        )}
+        </div>
       </div>
 
       {/* Overlays */}
@@ -3544,7 +3690,9 @@ const BADGE_TONES = {
   // info-900 on info-100 — a kind, a category, a neutral fact worth naming
   info: "border-[#006CC1] bg-[#FDFCFF]",
   success: "border-[#007A4B] bg-[#F8FDF7]",
-  warning: "border-[#896500] bg-[#FFFBF7]",
+  // warning-500 on warning-100. NOT `warning-900 #896500`, which is brown on screen — the same
+  // mistake `Notice.tsx` documents, and the one the owner saw in the chat (2026-08-29).
+  warning: "border-[#C99500] bg-[#FFFBF7]",
   error: "border-[#C53336] bg-[#FFFBFB]",
   neutral: "border-[#6B6B6B] bg-[#FAFAFA]",
 } as const;
@@ -5232,7 +5380,7 @@ function ProviderSheet({
           drawer in the app, since that 88% was of the panel rather than of the screen — the
           owner's "он короче чем обычный drawer — думаю это неверно".
 
-          `sheet-h-88` is the owner's number (2026-08-28), measured against the SCREEN like
+          `sheet-inset` is the owner's number (2026-08-28), measured against the SCREEN like
           every other sheet. Note what that means here: this sheet is `absolute inset-0` inside
           the 92 %-tall chat drawer, so 88 % of the screen covers all but ~36 px of it. That
           thin teal strip is the whole of the coach that shows through, and it is meant to read
@@ -5240,7 +5388,7 @@ function ProviderSheet({
           instead would leave the coach's head visible, but it is also exactly the "too short"
           this sheet was reported for. */}
       <div
-        className="sheet-h-88 flex w-full min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
+        className="sheet-inset flex w-full min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
         onClick={(e) => e.stopPropagation()}
         style={{
           animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both",
