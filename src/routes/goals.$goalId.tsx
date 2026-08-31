@@ -33,6 +33,7 @@ import {
   useListActive,
   useListLocked,
   useShellFilters,
+  useViewField,
   type OptionLeanFilter,
 } from "@/components/shell/shell-store";
 import {
@@ -96,14 +97,15 @@ function GoalWorkspace() {
   // Which thumb lean the Options list is narrowed to. In the store, not in local state, so this
   // list's padlock has something to pin (see the padlock note in `shell-store.ts`); the trigger
   // sits in the section header beside the Reorder toggle, not inside OptionsList.
-  const optionsLean = useShellFilters((s) => s.optionLean);
+  // Scoped to this goal, like its targets and its resources — see `shell-store.ts` → Scope.
+  const optionsLean = useViewField("optionLean", goalId);
   const setOptionsView = useShellFilters((s) => s.setView);
   const resetList = useShellFilters((s) => s.resetList);
   const setLocked = useShellFilters((s) => s.setLocked);
-  const optionsLocked = useListLocked("options");
-  const optionsActive = useListActive("options");
+  const optionsLocked = useListLocked("options", goalId);
+  const optionsActive = useListActive("options", goalId);
   const setOptionsLean = (next: OptionLeanFilter) =>
-    setOptionsView({ optionLean: next });
+    setOptionsView({ optionLean: next }, goalId);
 
   useEffect(() => {
     setContext({ goalId });
@@ -291,10 +293,10 @@ function GoalWorkspace() {
                   open={optionsFilterOpen}
                   onOpenChange={setOptionsFilterOpen}
                   title="Filter"
-                  onReset={() => resetList("options")}
+                  onReset={() => resetList("options", goalId)}
                   resetDisabled={!optionsActive}
                   locked={optionsLocked}
-                  onLockedChange={(next) => setLocked("options", next)}
+                  onLockedChange={(next) => setLocked("options", goalId, next)}
                 >
                   <SheetGroup title="Idea">
                     <SheetPills

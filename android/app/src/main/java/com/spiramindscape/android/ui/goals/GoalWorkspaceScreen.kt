@@ -348,7 +348,10 @@ fun GoalWorkspaceScreen(
     // Sort/filter in this header apply to the TARGETS tab.
     // The chosen sort/filter is remembered across sessions (web parity: the filters that persist
     // in localStorage), so a user who only ever looks at open targets doesn't re-pick every visit.
-    val targetView = rememberTargetViewState()
+    // Keyed on the goal, so each goal keeps its own answers and its own padlock — see "Scope" in
+    // `ViewPreferences.kt`. Blank only while the goal is still loading, when no tab is drawn yet.
+    val workspaceGoalId = (state as? GoalUiState.Content)?.goal?.id.orEmpty()
+    val targetView = rememberTargetViewState(workspaceGoalId)
     // Screen-local searches: they start empty on every visit to the goal (CLAUDE.md: a search
     // typed on one screen must never follow the user onto the next) but survive a tab swipe.
     var targetsQuery by remember { mutableStateOf("") }
@@ -1443,7 +1446,7 @@ private fun OptionsTabContent(
 ) {
     val sortedOptions = goal.options.sortedBy { it.position }
     // In its own store, so this list has a padlock like the other three.
-    val optionView = rememberOptionViewState()
+    val optionView = rememberOptionViewState(goal.id)
     val optionFilter = optionView.filter
     // "Narrowed" covers both ways the drawn list can differ from the real one — a search and the
     // lean filter. Everything that depends on the two agreeing has to watch both, not just search.
