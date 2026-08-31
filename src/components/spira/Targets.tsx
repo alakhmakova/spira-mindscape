@@ -95,6 +95,7 @@ import {
   useListActive,
   useListLocked,
   useShellFilters,
+  useViewField,
   type TargetDeadlineFilter,
   type TargetLockFilter,
   type TargetSortKey,
@@ -435,26 +436,31 @@ export function TargetsSection({
   const setView = useShellFilters((s) => s.setView);
   const resetList = useShellFilters((s) => s.resetList);
   const setLocked = useShellFilters((s) => s.setLocked);
-  const statusFilter = useShellFilters((s) => s.targetStatus);
-  const deadlineFilter = useShellFilters((s) => s.targetDeadline);
-  const lockFilter = useShellFilters((s) => s.targetLock);
-  const typeFilter = useShellFilters((s) => s.targetType);
-  const deadlineFrom = useShellFilters((s) => s.targetDeadlineFrom);
-  const deadlineTo = useShellFilters((s) => s.targetDeadlineTo);
-  const sortField = useShellFilters((s) => s.targetSort);
-  const sortDesc = useShellFilters((s) => s.targetSortDesc);
-  const targetsLocked = useListLocked("targets");
-  const targetsActive = useListActive("targets");
+  // **Every question is asked of THIS goal** (owner, 2026-08-31). Targets are a list inside a
+  // goal, so each goal keeps its own answers and its own padlock — see `shell-store.ts` → Scope.
+  const scope = goal.id;
+  const statusFilter = useViewField("targetStatus", scope);
+  const deadlineFilter = useViewField("targetDeadline", scope);
+  const lockFilter = useViewField("targetLock", scope);
+  const typeFilter = useViewField("targetType", scope);
+  const deadlineFrom = useViewField("targetDeadlineFrom", scope);
+  const deadlineTo = useViewField("targetDeadlineTo", scope);
+  const sortField = useViewField("targetSort", scope);
+  const sortDesc = useViewField("targetSortDesc", scope);
+  const targetsLocked = useListLocked("targets", scope);
+  const targetsActive = useListActive("targets", scope);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const setStatusFilter = (next: TargetStatusFilter) =>
-    setView({ targetStatus: next });
+    setView({ targetStatus: next }, scope);
   const setLockFilter = (next: TargetLockFilter) =>
-    setView({ targetLock: next });
+    setView({ targetLock: next }, scope);
   const setTypeFilter = (next: TargetTypeFilter) =>
-    setView({ targetType: next });
-  const setSortField = (next: TargetSortKey) => setView({ targetSort: next });
-  const setSortDesc = (next: boolean) => setView({ targetSortDesc: next });
+    setView({ targetType: next }, scope);
+  const setSortField = (next: TargetSortKey) =>
+    setView({ targetSort: next }, scope);
+  const setSortDesc = (next: boolean) =>
+    setView({ targetSortDesc: next }, scope);
 
   // **"No deadline" and a date range can never both be on** (owner, 2026-08-18, "this goes for the
   // filters everywhere"). A range asks which deadlines to keep and "No deadline" asks for the
@@ -468,21 +474,28 @@ export function TargetsSection({
             targetDeadlineTo: "",
           }
         : { targetDeadline: next },
+      scope,
     );
   const setDeadlineFrom = (value: string) =>
-    setView({
-      targetDeadlineFrom: value,
-      ...(value && deadlineFilter === "none"
-        ? { targetDeadline: "all" as const }
-        : {}),
-    });
+    setView(
+      {
+        targetDeadlineFrom: value,
+        ...(value && deadlineFilter === "none"
+          ? { targetDeadline: "all" as const }
+          : {}),
+      },
+      scope,
+    );
   const setDeadlineTo = (value: string) =>
-    setView({
-      targetDeadlineTo: value,
-      ...(value && deadlineFilter === "none"
-        ? { targetDeadline: "all" as const }
-        : {}),
-    });
+    setView(
+      {
+        targetDeadlineTo: value,
+        ...(value && deadlineFilter === "none"
+          ? { targetDeadline: "all" as const }
+          : {}),
+      },
+      scope,
+    );
 
   // Celebrate a target crossing the line. This lives here, not on the card: completing a target
   // filters its row out of the list, so the row unmounts before any effect of its own could run.
@@ -622,10 +635,10 @@ export function TargetsSection({
               title="Filter & Sort"
               // **Everything**: the four questions used to be exempt as "standing preferences",
               // so a button promising all of them quietly kept four answers (owner, 2026-08-21).
-              onReset={() => resetList("targets")}
+              onReset={() => resetList("targets", scope)}
               resetDisabled={!targetsActive}
               locked={targetsLocked}
-              onLockedChange={(next) => setLocked("targets", next)}
+              onLockedChange={(next) => setLocked("targets", scope, next)}
             >
               {/* The questions, in the order and under the headings Android asks them
                   (`GoalWorkspaceScreen.kt`): Progress, Status, Deadline, Type, Lock, then the

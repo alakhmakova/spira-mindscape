@@ -31,6 +31,7 @@ import {
   useListActive,
   useListLocked,
   useShellFilters,
+  useViewField,
   type ResourceSortKey,
   type ResourceTypeFilter,
 } from "@/components/shell/shell-store";
@@ -300,16 +301,19 @@ export function ResourcesSection({
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   // In the store, so this list's padlock has something to pin.
-  const sort = useShellFilters((s) => s.resourceSort);
-  const typeFilter = useShellFilters((s) => s.resourceType);
+  // Per goal, like the two lists beside it — see `shell-store.ts` → Scope.
+  const scope = goal.id;
+  const sort = useViewField("resourceSort", scope);
+  const typeFilter = useViewField("resourceType", scope);
   const setResourcesView = useShellFilters((s) => s.setView);
   const resetList = useShellFilters((s) => s.resetList);
   const setLocked = useShellFilters((s) => s.setLocked);
-  const resourcesLocked = useListLocked("resources");
-  const resourcesActive = useListActive("resources");
-  const setSort = (next: ResSort) => setResourcesView({ resourceSort: next });
+  const resourcesLocked = useListLocked("resources", scope);
+  const resourcesActive = useListActive("resources", scope);
+  const setSort = (next: ResSort) =>
+    setResourcesView({ resourceSort: next }, scope);
   const setTypeFilter = (next: ResType) =>
-    setResourcesView({ resourceType: next });
+    setResourcesView({ resourceType: next }, scope);
   // The phone asks both questions in one drawer; the desktop keeps its two menus.
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -362,10 +366,10 @@ export function ResourcesSection({
               open={sheetOpen}
               onOpenChange={setSheetOpen}
               title="Filter & Sort"
-              onReset={() => resetList("resources")}
+              onReset={() => resetList("resources", scope)}
               resetDisabled={!resourcesActive}
               locked={resourcesLocked}
-              onLockedChange={(next) => setLocked("resources", next)}
+              onLockedChange={(next) => setLocked("resources", scope, next)}
             >
               <SheetGroup title="Type">
                 <SheetPills

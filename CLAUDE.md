@@ -1060,8 +1060,34 @@ inside either. Both surfaces implement it once — Android `ui/components/SpiraF
 - **Reset all resets ALL** (owner, 2026-08-21). There used to be a class of "standing preference" it
   was not allowed to undo — the status questions — so a button promising everything quietly kept
   four answers. There is no such class now: one `DEFAULTS` table per list, and reset restores it.
+- **A goal's lists answer for themselves — filters, sort AND padlock** (owner, 2026-08-31).
+  `targets`, `options` and `resources` live *inside* a goal, so each goal keeps its own answers and
+  its own padlock; only the All-goals list is app-wide. Both stores key on the goal id — the web by
+  scope (`targets:<goalId>`), Android by prefixing **every** key it touches, the padlock included.
+  - **Two faults, and the second is the worse one.** One flat set of answers meant a filter pinned
+    on goal 1 was already on when goal 2 opened *with goal 2's padlock open* — and then changing it
+    there rewrote goal 1's arrangement behind goal 1's *closed* padlock. A lock another screen can
+    write through is not a lock.
+  - **A goal-less caller gets `NO_GOAL`, on both surfaces** — and that is a **legibility** guard,
+    not an isolation one. No goal has a blank id, so a blank one could never collide with a real
+    goal's answers whatever the fallback. What the name buys is that `targets:none` (web) and
+    `none.filter` (Android) say plainly "something wrote without a goal", where a bare `targets:`
+    reads as the shared bucket this scoping removes and a key starting with `.` reads as
+    corruption. Android normalises it **in the constructor**, so a store built directly cannot skip
+    it. The app-wide store takes `APP_SCOPE`.
+  - **A goal-owned list's pre-scoping arrangement is dropped** — one global answer cannot honestly
+    be attributed to any single goal, so those lists open on their defaults with every padlock open.
+  - **The All-goals list is the exception and migrates intact, padlock included.** It was never part
+    of the defect: it is app-wide, there is only one of it, and its old keys mean exactly what they
+    mean now. Dropping a dashboard arrangement the user had pinned would be the failure this very
+    spec names, inflicted by the fix for a different list. Web: `migrate` lifts the flat fields into
+    `views.goals`. Android: the `schema` bump **renames** `spira_goal_view`'s keys into `app.*`
+    (`adoptLegacyKeys`) instead of clearing them. `viewMode` survives on the web too — it is not a
+    filter and no padlock covers it.
+  - **Known gap:** a deleted goal's scope is never pruned, on either surface. It is small and
+    bounded by the 50-goal cap for live goals, but deleted ones accumulate — see BUG-067.
 - **A padlock sits in the head, right of the title, beside the X** (owner, 2026-08-21) — one per
-  list, on both surfaces.
+  list **per goal**, on both surfaces.
 
   | Padlock | What it means |
   |---|---|

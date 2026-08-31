@@ -16,10 +16,12 @@ import { useAuth } from "@/lib/spira/auth";
 import { useApplyAppFont } from "@/lib/spira/app-font";
 import { useActivityGate } from "@/lib/useActivityGate";
 import {
+  GOALS_SCOPE,
   useListActive,
   useListLocked,
   useResetQueryOnNavigate,
   useShellFilters,
+  useViewField,
   type GoalDeadlineFilter,
   type GoalStatusFilter,
   type SortDirection,
@@ -115,21 +117,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const resetList = useShellFilters((s) => s.resetList);
   const setLocked = useShellFilters((s) => s.setLocked);
   const viewMode = useShellFilters((s) => s.viewMode);
-  const sort = useShellFilters((s) => s.sort);
-  const sortDirection = useShellFilters((s) => s.sortDirection);
-  const deadlineFrom = useShellFilters((s) => s.deadlineFrom);
-  const deadlineTo = useShellFilters((s) => s.deadlineTo);
-  const confidence = useShellFilters((s) => s.confidence);
-  const status = useShellFilters((s) => s.status);
-  const goalDeadline = useShellFilters((s) => s.goalDeadline);
-  const goalsLocked = useListLocked("goals");
-  const goalsActive = useListActive("goals");
+  // The All-goals list is the app's own, not a goal's — hence `GOALS_SCOPE` everywhere below.
+  // The three lists inside a goal each answer for themselves; see `shell-store.ts` → Scope.
+  const sort = useViewField("sort", GOALS_SCOPE);
+  const sortDirection = useViewField("sortDirection", GOALS_SCOPE);
+  const deadlineFrom = useViewField("deadlineFrom", GOALS_SCOPE);
+  const deadlineTo = useViewField("deadlineTo", GOALS_SCOPE);
+  const confidence = useViewField("confidence", GOALS_SCOPE);
+  const status = useViewField("status", GOALS_SCOPE);
+  const goalDeadline = useViewField("goalDeadline", GOALS_SCOPE);
+  const goalsLocked = useListLocked("goals", GOALS_SCOPE);
+  const goalsActive = useListActive("goals", GOALS_SCOPE);
 
-  const setSort = (next: SortKey) => setView({ sort: next });
+  const setSort = (next: SortKey) => setView({ sort: next }, GOALS_SCOPE);
   const setSortDirection = (next: SortDirection) =>
-    setView({ sortDirection: next });
-  const setConfidence = (next: string) => setView({ confidence: next });
-  const setStatus = (next: GoalStatusFilter) => setView({ status: next });
+    setView({ sortDirection: next }, GOALS_SCOPE);
+  const setConfidence = (next: string) =>
+    setView({ confidence: next }, GOALS_SCOPE);
+  const setStatus = (next: GoalStatusFilter) =>
+    setView({ status: next }, GOALS_SCOPE);
   // **"No deadline" and a date range can never both be on.** A range asks which deadlines to keep
   // and "No deadline" asks for the goals that haven't got one, so together they match nothing and
   // neither control says why. Picking either takes the other off.
@@ -138,17 +144,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       next === "none"
         ? { goalDeadline: next, deadlineFrom: "", deadlineTo: "" }
         : { goalDeadline: next },
+      GOALS_SCOPE,
     );
   const setDeadlineFrom = (value: string) =>
-    setView({
-      deadlineFrom: value,
-      ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
-    });
+    setView(
+      {
+        deadlineFrom: value,
+        ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
+      },
+      GOALS_SCOPE,
+    );
   const setDeadlineTo = (value: string) =>
-    setView({
-      deadlineTo: value,
-      ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
-    });
+    setView(
+      {
+        deadlineTo: value,
+        ...(value && goalDeadline === "none" ? { goalDeadline: "all" } : {}),
+      },
+      GOALS_SCOPE,
+    );
 
   // A search is scoped to the screen it was typed on — see useResetQueryOnNavigate.
   useResetQueryOnNavigate(path);
@@ -553,10 +566,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onOpenChange={setMobileFiltersOpen}
                 title="Filter & Sort"
                 // **Everything**, including the status questions that used to be exempt.
-                onReset={() => resetList("goals")}
+                onReset={() => resetList("goals", GOALS_SCOPE)}
                 resetDisabled={!goalsActive}
                 locked={goalsLocked}
-                onLockedChange={(next) => setLocked("goals", next)}
+                onLockedChange={(next) => setLocked("goals", GOALS_SCOPE, next)}
               >
                 <SheetGroup title="Status">
                   {/* One line of success-ramp pills. Stacked as full-width rows, three short

@@ -35,94 +35,210 @@ import androidx.compose.ui.platform.LocalContext
  * in a warning notice and the trigger carries a dot.
  *
  * The **search box** is still never pinned: a query belongs to the screen it was typed on.
+ *
+ * # Scope — whose questions are these?
+ *
+ * **A goal's lists remember their own arrangement** (owner, 2026-08-31). Targets, options and
+ * resources are lists *inside a goal*, so each goal answers the panel's questions for itself and
+ * carries its own padlock; only the All-goals dashboard's own list is app-wide. Every key such a
+ * store writes is prefixed with the goal id (the `namespace` below), so one goal can neither read
+ * nor clear another's.
+ *
+ * Before this, each list had one flat set of keys shared by every goal. Two things went wrong at
+ * once, and the second is the worse of them: a filter set and pinned on goal 1 was already on when
+ * goal 2 opened — with goal 2's padlock sitting open — and then changing it there rewrote goal 1's
+ * arrangement behind goal 1's *closed* padlock. A lock another screen can write through is not a
+ * lock. The web carries the identical fix (`src/components/shell/shell-store.ts`).
  */
-
-/** A stored enum name that no longer maps to an entry (an old build's value) falls back silently. */
-private fun <T : Enum<T>> SharedPreferences.readEnum(key: String, entries: List<T>, fallback: T): T {
-    val stored = getString(key, null) ?: return fallback
-    return entries.firstOrNull { it.name == stored } ?: fallback
-}
 
 /** The key every lockable store keeps its own padlock under. */
 private const val KEY_LOCKED = "locked"
 
 /**
+ * The layout of a preferences file, so a change of shape can retire what it cannot reinterpret.
+ *
+ * Version 2 is the per-goal namespacing above, and a version 1 file holds one arrangement shared by
+ * every goal. What happens to it depends on whose arrangement it actually was:
+ *
+ *  - **A goal-owned file** — targets, options, resources — is **dropped**. One global answer cannot
+ *    honestly be attributed to any single goal, so the lists open on their defaults with every
+ *    padlock open, exactly as a fresh install does.
+ *  - **The app-wide file** (`spira_goal_view`) is **adopted**: its keys are renamed into
+ *    [APP_SCOPE] and everything, the padlock included, comes across. The All-goals list was never
+ *    part of the defect — there is only one of it and its v1 keys mean exactly what they mean now.
+ *    Dropping a dashboard arrangement the user had pinned would be the failure the padlock spec
+ *    names, inflicted by the fix for a different list.
+ *
+ * The web splits it the same way, through a `persist` version bump.
+ */
+private const val KEY_SCHEMA = "schema"
+private const val SCHEMA_PER_GOAL = 2
+
+/** The scope of the one list that belongs to the app rather than to a goal. */
+private const val APP_SCOPE = "app"
+
+/**
+ * The scope a goal-owned store falls back to before its screen knows which goal it is showing.
+ *
+ * **A legibility guard, not an isolation one** — worth being precise about, because the sloppy
+ * version of this sentence has already been wrong once here. No goal has a blank id, so a blank one
+ * could never have collided with a real goal's answers whatever the fallback; every goal-less caller
+ * shares this one scope, which is fine, because nothing meaningful is written before a goal loads.
+ * What the name buys is that `none.filter` in the file says plainly "something wrote without a
+ * goal", where the alternative is a key beginning with a bare `.` that reads as corruption.
+ *
+ * The web's `NO_GOAL` is the same guard.
+ */
+private const val NO_GOAL = "none"
+
+/**
  * Shared behaviour for a store behind a padlock: reads answer with the default while it is open,
  * writes are dropped, and closing it writes the whole arrangement at once.
+ *
+ * @param namespace which scope's answers these are: [APP_SCOPE] for a list that belongs to the app,
+ *   the goal id for one that belongs to a goal. It prefixes **every** key this store touches, which
+ *   is what keeps two goals apart inside one file — including on a clear, which must never reach
+ *   past its own scope. A blank one is normalised to [NO_GOAL] **here** rather than at the call
+ *   sites, so a store constructed directly (the tests do) cannot skip it.
+ * @param adoptLegacyKeys whether a pre-scoping file's unprefixed keys belong to *this* scope and
+ *   can simply be renamed into it. True only for the app-wide store — see [KEY_SCHEMA].
  */
-abstract class LockablePreferences(protected val prefs: SharedPreferences) {
+abstract class LockablePreferences(
+    protected val prefs: SharedPreferences,
+    namespace: String,
+    private val adoptLegacyKeys: Boolean = false,
+) {
+    /** Never blank — see the note on [NO_GOAL]. Declared above `init`, which already uses it. */
+    private val namespace: String = namespace.ifBlank { NO_GOAL }
 
     init {
+        if (prefs.getInt(KEY_SCHEMA, 1) < SCHEMA_PER_GOAL) migrateToScopes()
         // **The upgrade sweep.** Before the padlock these stores wrote unconditionally, so an
         // installed copy has a filter sitting in here with no padlock behind it — and an open
         // padlock is supposed to mean "nothing is kept". Without this, the first launch after the
         // update would silently apply an arrangement the user has no way of seeing was still on.
-        // The web does the same thing with a `persist` version bump (`shell-store.ts`).
-        if (!prefs.getBoolean(KEY_LOCKED, false) && prefs.all.isNotEmpty()) {
-            prefs.edit().clear().apply()
-        }
+        if (!locked && ownKeys().isNotEmpty()) clearOwn()
     }
 
-    /** Whether this list's arrangement is pinned. */
-    val locked: Boolean get() = prefs.getBoolean(KEY_LOCKED, false)
+    /**
+     * Move a pre-scoping file to version 2: drop its unprefixed keys, or — for the app-wide store —
+     * rename them into this scope, which is where they already belonged.
+     */
+    private fun migrateToScopes() {
+        val legacy = prefs.all.filterKeys { it != KEY_SCHEMA && !it.contains('.') }
+        val editor = prefs.edit().clear().putInt(KEY_SCHEMA, SCHEMA_PER_GOAL)
+        if (adoptLegacyKeys) {
+            for ((name, value) in legacy) {
+                when (value) {
+                    is String -> editor.putString(key(name), value)
+                    is Boolean -> editor.putBoolean(key(name), value)
+                    is Int -> editor.putInt(key(name), value)
+                    else -> Unit // No other type is written by any of these stores.
+                }
+            }
+        }
+        editor.apply()
+    }
+
+    /** Where one of this scope's answers is filed. */
+    private fun key(name: String) = "$namespace.$name"
+
+    /**
+     * Every key this scope owns — what an opening padlock clears, and nothing beyond it.
+     *
+     * The schema marker carries no prefix because it describes the file rather than any one scope,
+     * so it can never be swept by one.
+     */
+    private fun ownKeys(): Set<String> =
+        prefs.all.keys.filterTo(mutableSetOf()) { it.startsWith("$namespace.") }
+
+    private fun clearOwn() {
+        val editor = prefs.edit()
+        for (name in ownKeys()) editor.remove(name)
+        editor.apply()
+    }
+
+    /** Whether this list's arrangement is pinned, for this goal. */
+    val locked: Boolean get() = prefs.getBoolean(key(KEY_LOCKED), false)
 
     /**
      * Close or open the padlock.
      *
      * Closing pins **what is on screen right now** — [pinCurrent] is how the caller hands it over,
-     * because the state lives with the screen, not here. Opening wipes the store, which is both
-     * the "stop writing" and the "forget what you had" halves of the same gesture.
+     * because the state lives with the screen, not here. Opening wipes this scope, which is both
+     * the "stop writing" and the "forget what you had" halves of the same gesture — and wipes only
+     * this scope, so opening one goal's padlock leaves every other goal's pinned.
      */
     fun setLocked(next: Boolean, pinCurrent: () -> Unit) {
         if (next) {
-            prefs.edit().putBoolean(KEY_LOCKED, true).apply()
+            prefs.edit().putBoolean(key(KEY_LOCKED), true).apply()
             pinCurrent()
         } else {
-            prefs.edit().clear().apply()
+            clearOwn()
         }
     }
 
+    /** A stored enum name that no longer maps to an entry (an old build's value) falls back silently. */
+    protected fun <T : Enum<T>> readEnum(name: String, entries: List<T>, fallback: T): T {
+        val stored = prefs.getString(key(name), null) ?: return fallback
+        return entries.firstOrNull { it.name == stored } ?: fallback
+    }
+
     /** Write one value, or drop it on the floor while the padlock is open. */
-    protected fun writeEnum(key: String, value: Enum<*>) {
-        if (locked) prefs.edit().putString(key, value.name).apply()
+    protected fun writeEnum(name: String, value: Enum<*>) {
+        if (locked) prefs.edit().putString(key(name), value.name).apply()
     }
 
-    protected fun writeBoolean(key: String, value: Boolean) {
-        if (locked) prefs.edit().putBoolean(key, value).apply()
+    protected fun writeBoolean(name: String, value: Boolean) {
+        if (locked) prefs.edit().putBoolean(key(name), value).apply()
     }
 
-    protected fun writeString(key: String, value: String) {
-        if (locked) prefs.edit().putString(key, value).apply()
+    protected fun writeString(name: String, value: String) {
+        if (locked) prefs.edit().putString(key(name), value).apply()
     }
 
-    protected fun readString(key: String, fallback: String) = prefs.getString(key, fallback) ?: fallback
+    protected fun writeInt(name: String, value: Int) {
+        if (locked) prefs.edit().putInt(key(name), value).apply()
+    }
+
+    protected fun readBoolean(name: String, fallback: Boolean) = prefs.getBoolean(key(name), fallback)
+
+    protected fun readInt(name: String, fallback: Int) = prefs.getInt(key(name), fallback)
+
+    protected fun readString(name: String, fallback: String) =
+        prefs.getString(key(name), fallback) ?: fallback
 }
 
-/** The goal dashboard's sort + status/deadline/confidence filters. */
-class GoalViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
+/**
+ * The All-goals dashboard's sort + status/deadline/confidence filters.
+ *
+ * The one list that belongs to the app rather than to a goal, so it takes no namespace — there is
+ * only ever one of it. See "Scope" at the top of this file.
+ */
+class GoalViewPreferences(
+    prefs: SharedPreferences,
+) : LockablePreferences(prefs, APP_SCOPE, adoptLegacyKeys = true) {
 
     var sort: SortKey
-        get() = prefs.readEnum(KEY_SORT, SortKey.entries, SortKey.Recent)
+        get() = readEnum(KEY_SORT, SortKey.entries, SortKey.Recent)
         set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
-        get() = prefs.getBoolean(KEY_ASCENDING, false)
+        get() = readBoolean(KEY_ASCENDING, false)
         set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var status: StatusFilter
-        get() = prefs.readEnum(KEY_STATUS, StatusFilter.entries, StatusFilter.All)
+        get() = readEnum(KEY_STATUS, StatusFilter.entries, StatusFilter.All)
         set(value) = writeEnum(KEY_STATUS, value)
 
     var deadline: DeadlineFilter
-        get() = prefs.readEnum(KEY_DEADLINE, DeadlineFilter.entries, DeadlineFilter.Any)
+        get() = readEnum(KEY_DEADLINE, DeadlineFilter.entries, DeadlineFilter.Any)
         set(value) = writeEnum(KEY_DEADLINE, value)
 
     /** 1..10, or 0 for "any". */
     var confidence: Int
-        get() = prefs.getInt(KEY_CONFIDENCE, 0)
-        set(value) {
-            if (locked) prefs.edit().putInt(KEY_CONFIDENCE, value).apply()
-        }
+        get() = readInt(KEY_CONFIDENCE, 0)
+        set(value) = writeInt(KEY_CONFIDENCE, value)
 
     /** The deadline range's two ends, as ISO instants ("" = an open end). */
     var deadlineFrom: String
@@ -155,31 +271,34 @@ fun rememberGoalViewPreferences(): GoalViewPreferences {
     return remember(context) { GoalViewPreferences.from(context) }
 }
 
-/** The goal workspace's target sort + filters. */
-class TargetViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
+/** One goal's target sort + filters — see "Scope" at the top of this file. */
+class TargetViewPreferences(
+    prefs: SharedPreferences,
+    goalId: String,
+) : LockablePreferences(prefs, goalId) {
 
     var sort: TargetSort
-        get() = prefs.readEnum(KEY_SORT, TargetSort.entries, TargetSort.Name)
+        get() = readEnum(KEY_SORT, TargetSort.entries, TargetSort.Name)
         set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
-        get() = prefs.getBoolean(KEY_ASCENDING, true)
+        get() = readBoolean(KEY_ASCENDING, true)
         set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var filter: TargetFilter
-        get() = prefs.readEnum(KEY_FILTER, TargetFilter.entries, TargetFilter.All)
+        get() = readEnum(KEY_FILTER, TargetFilter.entries, TargetFilter.All)
         set(value) = writeEnum(KEY_FILTER, value)
 
     var deadlineFilter: TargetDeadlineFilter
-        get() = prefs.readEnum(KEY_DEADLINE, TargetDeadlineFilter.entries, TargetDeadlineFilter.All)
+        get() = readEnum(KEY_DEADLINE, TargetDeadlineFilter.entries, TargetDeadlineFilter.All)
         set(value) = writeEnum(KEY_DEADLINE, value)
 
     var lockFilter: TargetLockFilter
-        get() = prefs.readEnum(KEY_LOCK, TargetLockFilter.entries, TargetLockFilter.All)
+        get() = readEnum(KEY_LOCK, TargetLockFilter.entries, TargetLockFilter.All)
         set(value) = writeEnum(KEY_LOCK, value)
 
     var typeFilter: TargetTypeFilter
-        get() = prefs.readEnum(KEY_TYPE, TargetTypeFilter.entries, TargetTypeFilter.All)
+        get() = readEnum(KEY_TYPE, TargetTypeFilter.entries, TargetTypeFilter.All)
         set(value) = writeEnum(KEY_TYPE, value)
 
     /** The deadline range's two ends, as ISO instants ("" = an open end). */
@@ -202,8 +321,9 @@ class TargetViewPreferences(prefs: SharedPreferences) : LockablePreferences(pref
         private const val KEY_DEADLINE_FROM = "deadline_from"
         private const val KEY_DEADLINE_TO = "deadline_to"
 
-        fun from(context: Context) = TargetViewPreferences(
+        fun from(context: Context, goalId: String) = TargetViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+            goalId,
         )
     }
 }
@@ -358,11 +478,15 @@ class TargetViewState internal constructor(
         ).count { it }
 }
 
+/**
+ * This goal's target view state. Keyed on [goalId], so switching goals reseeds every question from
+ * that goal's own store rather than carrying the last goal's answers across.
+ */
 @Composable
-fun rememberTargetViewState(): TargetViewState {
+fun rememberTargetViewState(goalId: String): TargetViewState {
     val context = LocalContext.current
-    return remember(context) {
-        val preferences = TargetViewPreferences.from(context)
+    return remember(context, goalId) {
+        val preferences = TargetViewPreferences.from(context, goalId)
         TargetViewState(
             preferences = preferences,
             sortState = mutableStateOf(preferences.sort),
@@ -385,18 +509,21 @@ fun rememberTargetViewState(): TargetViewState {
  * The default is [ResourceSort.Added] ascending, which is the server's own order: the page looked
  * like that before it had a toolbar, so nobody's list rearranges itself on upgrade.
  */
-class ResourceViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
+class ResourceViewPreferences(
+    prefs: SharedPreferences,
+    goalId: String,
+) : LockablePreferences(prefs, goalId) {
 
     var sort: ResourceSort
-        get() = prefs.readEnum(KEY_SORT, ResourceSort.entries, ResourceSort.Added)
+        get() = readEnum(KEY_SORT, ResourceSort.entries, ResourceSort.Added)
         set(value) = writeEnum(KEY_SORT, value)
 
     var ascending: Boolean
-        get() = prefs.getBoolean(KEY_ASCENDING, true)
+        get() = readBoolean(KEY_ASCENDING, true)
         set(value) = writeBoolean(KEY_ASCENDING, value)
 
     var filter: ResourceFilter
-        get() = prefs.readEnum(KEY_FILTER, ResourceFilter.entries, ResourceFilter.All)
+        get() = readEnum(KEY_FILTER, ResourceFilter.entries, ResourceFilter.All)
         set(value) = writeEnum(KEY_FILTER, value)
 
     companion object {
@@ -405,8 +532,9 @@ class ResourceViewPreferences(prefs: SharedPreferences) : LockablePreferences(pr
         private const val KEY_ASCENDING = "ascending"
         private const val KEY_FILTER = "filter"
 
-        fun from(context: Context) = ResourceViewPreferences(
+        fun from(context: Context, goalId: String) = ResourceViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+            goalId,
         )
     }
 }
@@ -464,11 +592,12 @@ class ResourceViewState internal constructor(
         ).count { it }
 }
 
+/** This goal's resource view state — keyed on [goalId], like the targets one. */
 @Composable
-fun rememberResourceViewState(): ResourceViewState {
+fun rememberResourceViewState(goalId: String): ResourceViewState {
     val context = LocalContext.current
-    return remember(context) {
-        val preferences = ResourceViewPreferences.from(context)
+    return remember(context, goalId) {
+        val preferences = ResourceViewPreferences.from(context, goalId)
         ResourceViewState(
             preferences = preferences,
             sortState = mutableStateOf(preferences.sort),
@@ -480,18 +609,22 @@ fun rememberResourceViewState(): ResourceViewState {
 }
 
 /** The Options list's one question — the thumb lean — behind its own padlock. */
-class OptionViewPreferences(prefs: SharedPreferences) : LockablePreferences(prefs) {
+class OptionViewPreferences(
+    prefs: SharedPreferences,
+    goalId: String,
+) : LockablePreferences(prefs, goalId) {
 
     var filter: OptionFilter
-        get() = prefs.readEnum(KEY_FILTER, OptionFilter.entries, OptionFilter.All)
+        get() = readEnum(KEY_FILTER, OptionFilter.entries, OptionFilter.All)
         set(value) = writeEnum(KEY_FILTER, value)
 
     companion object {
         private const val PREFS_NAME = "spira_option_view"
         private const val KEY_FILTER = "filter"
 
-        fun from(context: Context) = OptionViewPreferences(
+        fun from(context: Context, goalId: String) = OptionViewPreferences(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+            goalId,
         )
     }
 }
@@ -523,11 +656,12 @@ class OptionViewState internal constructor(
     val activeCount: Int get() = if (filter != OptionFilter.All) 1 else 0
 }
 
+/** This goal's option view state — keyed on [goalId], like the targets one. */
 @Composable
-fun rememberOptionViewState(): OptionViewState {
+fun rememberOptionViewState(goalId: String): OptionViewState {
     val context = LocalContext.current
-    return remember(context) {
-        val preferences = OptionViewPreferences.from(context)
+    return remember(context, goalId) {
+        val preferences = OptionViewPreferences.from(context, goalId)
         OptionViewState(
             preferences = preferences,
             filterState = mutableStateOf(preferences.filter),
