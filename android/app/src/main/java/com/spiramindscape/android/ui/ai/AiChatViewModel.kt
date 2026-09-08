@@ -145,8 +145,26 @@ class AiChatViewModel(
     private var ended = false
     private var wrapUpSent = false
     private var goodbyeSent = false
-    private var endedEarly = false
     private var memorySaved = false
+
+    /**
+     * Guard `closeSession`/`leaveGrow` against running twice (owner report, 2026-09-02: "I've
+     * prepared this for your review." / "Session memory saved." each showed up twice in a row).
+     * Neither function previously guarded itself, unlike every other one-shot step of the ending
+     * ([wrapUpSent], [goodbyeSent]) — a double-tap on Save/Discard, or a recomposition re-firing
+     * the same click, ran the whole body (including the transcript append) twice.
+     */
+    private var closeSessionCalled = false
+    private var leaveGrowCalled = false
+
+    /**
+     * Seconds of overtime with no message from the user. Incremented once a second while the
+     * clock is negative, reset to 0 by any real user turn (never by a wrap-up/goodbye control
+     * turn) — see [startTimer]. Distinct from *total* overtime elapsed: a session the user is
+     * actively continuing past its planned length must not be cut off just because the planned
+     * length was exceeded a while ago.
+     */
+    private var overtimeInactivitySeconds = 0
 
     /**
      * The composer's unsent draft and its pending attachments live **here**, not in the composable.
@@ -286,6 +304,9 @@ class AiChatViewModel(
             _provider.value = runCatching { api.getProvider() }.getOrNull() ?: DEFAULT_PROVIDER
             refreshKeys()
             loadTranscript()
+            // A session left running — here or on another device — is picked up after the
+            // transcript, so the chat is already whole underneath it.
+            restoreGrowSession()
             initialLoad.complete(Unit)
         }
     }
@@ -392,6 +413,73 @@ class AiChatViewModel(
         }
     }
 
+    /**
+     * **Mirror the live session to the server** (owner, 2026-09-08).
+     *
+     * A GROW session is still ephemeral in the sense that matters — it is deleted the moment it
+     * ends, and only the record the user keeps outlives it — but it is no longer tied to the
+     * device it began on. The payload is deliberately the web's own shape (`mins`, `total` in
+     * seconds, the wall-clock `endsAt`, and the messages), so a session started on the phone
+     * resumes on the laptop and back.
+     *
+     * Best-effort: a session that cannot reach the server still runs perfectly well here.
+     */
+    private fun persistGrowSession() {
+        val gid = goalId ?: return
+        if (!isGrowMode(_mode.value) || ended) return
+        val payload = org.json.JSONObject()
+            .put("mins", _sessionMinutes.value)
+            .put("total", _sessionMinutes.value * 60)
+            .put("endsAt", System.currentTimeMillis() + _remainingSeconds.value * 1000L)
+            .put(
+                "msgs",
+                org.json.JSONArray(
+                    encodeTranscript(_growMessages.value.filterNot { it.streaming }),
+                ),
+            )
+        viewModelScope.launch { runCatching { api.putGrowSession(gid, payload.toString()) } }
+    }
+
+    /**
+     * Pick up a session left running — here or on another device. Called once, when the panel
+     * opens: if the clock has already run out, the restored negative remainder puts the session
+     * straight into the ending it was heading for rather than losing it.
+     */
+    private fun restoreGrowSession() {
+        val gid = goalId ?: return
+        viewModelScope.launch {
+            val content = runCatching { api.getGrowSession(gid) }.getOrNull() ?: return@launch
+            if (isGrowMode(_mode.value)) return@launch // already in one here — this device wins
+            val stored = runCatching { org.json.JSONObject(content) }.getOrNull() ?: return@launch
+            val msgs = parseTranscript(stored.optJSONArray("msgs")?.toString()) ?: return@launch
+            val endsAt = stored.optLong("endsAt", 0L)
+            if (endsAt == 0L) return@launch
+            val remaining = ((endsAt - System.currentTimeMillis()) / 1000L).toInt()
+            val hasContent = msgs.any { it.role == ChatRole.ASSISTANT && it.content.isNotBlank() }
+            if (remaining <= 0 && !hasContent) {
+                // Expired with nothing said — nothing worth closing ceremonially.
+                clearGrowSessionRemote()
+                return@launch
+            }
+            _growMessages.value = msgs
+            _sessionMinutes.value = stored.optInt("mins", DEFAULT_SESSION_MINUTES)
+            _remainingSeconds.value = remaining
+            ended = false
+            wrapUpSent = false
+            goodbyeSent = false
+            closeSessionCalled = false
+            leaveGrowCalled = false
+            overtimeInactivitySeconds = 0
+            _mode.value = ChatMode.GROW_ACTIVE
+            startTimer()
+        }
+    }
+
+    private fun clearGrowSessionRemote() {
+        val gid = goalId ?: return
+        viewModelScope.launch { runCatching { api.deleteGrowSession(gid) } }
+    }
+
     private fun persist() {
         val json = encodeTranscript(_chatMessages.value)
         viewModelScope.launch {
@@ -436,6 +524,14 @@ class AiChatViewModel(
         wrapUp: Boolean = false,
         /** This turn is the goodbye: the last thing the user hears before the session closes. */
         goodbye: Boolean = false,
+        /**
+         * This turn is STEP 2 of the ending — "what belongs in the goal" — asked on its own,
+         * after the record is decided. It used to share a reply with `end_session`, and that is
+         * the half models dropped: whole sessions ended having proposed nothing at all (owner,
+         * 2026-09-08). Its proposals are attached to the turn like any other, so the footer
+         * shows them; if it proposes nothing, the ending moves straight to the goodbye.
+         */
+        proposalsTurn: Boolean = false,
     ) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && attachments.isEmpty()) return
@@ -447,11 +543,13 @@ class AiChatViewModel(
         // ending this session now, before it reached its natural end. Close it honestly: …]"
         // (owner, 2026-08-24). The web has hidden both from the transcript from the start
         // (`if (!wrapUp)` in `sendGrow`); the model still receives them as the message.
-        val fromTheUser = !wrapUp && !goodbye
+        val fromTheUser = !wrapUp && !goodbye && !proposalsTurn
 
         // The message is on its way — empty the composer so the draft and chips don't linger.
         // A control turn leaves it alone: the user may be halfway through a sentence.
         if (fromTheUser) clearComposer()
+        // The user just picked the session back up — the overtime-inactivity clock starts over.
+        if (fromTheUser) overtimeInactivitySeconds = 0
 
         val userMessage = ChatMessage(
             id = randomProposalId(),
@@ -481,50 +579,78 @@ class AiChatViewModel(
 
             var endRecord: String? = null
 
-            api.streamChat(
-                goalId = goalId,
-                message = trimmed,
-                history = history,
-                provider = _provider.value,
-                sessionType = if (growing) "grow" else "chat",
-                attachments = attachments,
-                sessionTotalMinutes = if (growing) _sessionMinutes.value else null,
-                sessionRemainingSeconds = when {
-                    !growing -> null
-                    wrapUp -> 0
-                    else -> _remainingSeconds.value
-                },
-            ).collect { event ->
-                when (event) {
-                    is AiApi.ChatEvent.Token -> {
-                        answer.append(event.text)
-                        updateMessage(target, placeholderId) { it.copy(content = answer.toString()) }
-                    }
-                    is AiApi.ChatEvent.Proposal ->
-                        proposalFromToolArgs(event.argsJson)?.let { proposals += it }
-                    is AiApi.ChatEvent.Status ->
-                        updateMessage(target, placeholderId) { it.copy(status = event.message) }
-                    is AiApi.ChatEvent.SessionEnd -> endRecord = sessionRecordOf(event.argsJson)
-                    AiApi.ChatEvent.Done -> Unit
-                    is AiApi.ChatEvent.Error -> {
-                        failed = true
-                        if (event.message == AiApi.ERROR_NO_KEY) _needsKey.value = true
-                        updateMessage(target, placeholderId) {
-                            it.copy(
-                                content = errorText(event.message),
-                                streaming = false,
-                                isError = true,
-                                status = null,
-                            )
+            // The `finally` is load-bearing: without it, any exception the collector doesn't
+            // turn into a well-formed `ChatEvent.Error` (a genuine uncaught failure, not the
+            // provider errors `AiApi.streamChat` already catches) leaves `_streaming` stuck
+            // `true` forever — which disables the End pill (`canEndEarly = !streaming && …`)
+            // and the composer, with no way out short of leaving the screen (owner report,
+            // 2026-09-02: the End pill stayed dead once the session ran into overtime).
+            // `CancellationException` is rethrown rather than swallowed: a genuinely cancelled
+            // turn (Stop, or leaving the screen) must not fall through to `beginEnding` below.
+            try {
+                api.streamChat(
+                    goalId = goalId,
+                    message = trimmed,
+                    history = history,
+                    provider = _provider.value,
+                    sessionType = if (growing) "grow" else "chat",
+                    attachments = attachments,
+                    sessionTotalMinutes = if (growing) _sessionMinutes.value else null,
+                    sessionRemainingSeconds = when {
+                        !growing -> null
+                        wrapUp -> 0
+                        else -> _remainingSeconds.value
+                    },
+                ).collect { event ->
+                    when (event) {
+                        is AiApi.ChatEvent.Token -> {
+                            answer.append(event.text)
+                            updateMessage(target, placeholderId) { it.copy(content = answer.toString()) }
+                        }
+                        is AiApi.ChatEvent.Proposal ->
+                            proposalFromToolArgs(event.argsJson)?.let { proposals += it }
+                        is AiApi.ChatEvent.Status ->
+                            updateMessage(target, placeholderId) { it.copy(status = event.message) }
+                        is AiApi.ChatEvent.SessionEnd -> endRecord = sessionRecordOf(event.argsJson)
+                        AiApi.ChatEvent.Done -> Unit
+                        is AiApi.ChatEvent.Error -> {
+                            failed = true
+                            if (event.message == AiApi.ERROR_NO_KEY) _needsKey.value = true
+                            updateMessage(target, placeholderId) {
+                                it.copy(
+                                    content = errorText(event.message),
+                                    streaming = false,
+                                    isError = true,
+                                    status = null,
+                                )
+                            }
                         }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed = true
+                SpiraLog.w(TAG, "ai_stream_collect_failed", e)
+                updateMessage(target, placeholderId) {
+                    it.copy(
+                        content = errorText(AiApi.ERROR_NETWORK),
+                        streaming = false,
+                        isError = true,
+                        status = null,
+                    )
+                }
+            } finally {
+                _streaming.value = false
             }
 
             val settled = dedupCreates(proposals)
             // The ending turn's cards WAIT: the record is decided first, then they are released
             // as the review step. Mid-session cards (which the method forbids anyway) still show.
-            val ending = endRecord != null
+            // A STEP 2 turn is never an ending turn, whatever the model calls — see the note on
+            // the web's `ending` in `AiPanel.tsx`. Without this, a coach that called
+            // `end_session` again on the proposals turn lost every proposal in it.
+            val ending = endRecord != null && !proposalsTurn
 
             if (!failed) {
                 updateMessage(target, placeholderId) {
@@ -537,12 +663,19 @@ class AiChatViewModel(
                         // and the session closed with **no farewell at all** — after a whole
                         // sequence built to end on one (owner, 2026-08-24). The web has always
                         // had this net; Android only had half of it.
+                        // **Never write words the coach did not say.** A turn that is only tool
+                        // calls has no prose, and inventing some produced "Here's what I suggest."
+                        // above nothing at all — the owner asked, twice, what exactly was being
+                        // suggested (2026-09-08), and the same sentence then became the session
+                        // record (see `beginEnding`). An empty turn is dropped just below; the
+                        // card it produced is what speaks for it.
+                        //
+                        // The goodbye keeps its fallback, and only it: a farewell that arrives as
+                        // a bare tool call would otherwise end the session in silence after a
+                        // whole sequence built to end on one (owner, 2026-08-24). That sentence is
+                        // a real goodbye, not a description of something the user cannot see.
                         content = answer.toString().ifBlank {
-                            when {
-                                settled.isNotEmpty() -> "Here's what I suggest."
-                                goodbye -> "Thank you for the session."
-                                else -> ""
-                            }
+                            if (goodbye) "Thank you for the session." else ""
                         },
                         streaming = false,
                         status = null,
@@ -555,13 +688,28 @@ class AiChatViewModel(
                 }
             }
 
-            _streaming.value = false
-
             when {
                 // The goodbye has been said. Do NOT exit here: leaving now would wipe it off
                 // the screen the moment it arrived. The user closes when they have read it.
                 goodbye -> goodbyeSent = false
+                // A wrap-up turn that failed must still end the session. `wrapUpSent` was set
+                // true before this call (both here and in the overrun backstop); if nothing
+                // resets it and nothing ends the session, the End pill and the backstop are
+                // both permanently locked out (owner report, 2026-09-02 — this is what made
+                // "End" stay dead once the session had gone into overtime). Ending on an empty
+                // record falls back to the last real coach message, same as any other ending
+                // with nothing better to show — see `beginEnding`. The web's `onError` does the
+                // same thing (`finishGrow()`) for the identical reason: the session must never
+                // be left with nothing able to close it.
+                failed && wrapUp -> beginEnding("")
+                // The goal keeps whatever it already had; the session still has to end.
+                failed && proposalsTurn -> askForGoodbye()
                 failed -> Unit
+                // STEP 2 answered. Cards → the footer shows them and the user decides; nothing
+                // proposed → nothing to decide, so hand straight over to the goodbye. Either way
+                // the session must not be parked in review with no card, which is the one state
+                // with no way forward.
+                proposalsTurn -> if (sessionProposalsPending() == 0) askForGoodbye()
                 ending -> {
                     heldProposals = settled
                     beginEnding(endRecord ?: "")
@@ -573,8 +721,9 @@ class AiChatViewModel(
                     beginEnding(answer.toString().trim())
                 }
             }
-            // Only the chat transcript is persisted; a GROW session is ephemeral by design.
-            if (!growing) persist()
+            // The chat transcript persists as it always has; the live session now mirrors
+            // itself too, so it is not tied to this device.
+            if (growing) persistGrowSession() else persist()
         }
     }
 
@@ -583,6 +732,20 @@ class AiChatViewModel(
         streamJob?.cancel()
         streamJob = null
         _streaming.value = false
+        // **A cancelled turn never happened, so its one-shot guards must not survive it.**
+        // `wrapUpSent`/`goodbyeSent` are set BEFORE the request and cleared by the completion
+        // handler — which a cancellation never reaches, because the collector throws
+        // CancellationException and the `when` block below it is skipped. So End (which bails on
+        // `wrapUpSent`) stayed dead for the rest of the session: press End, press Stop, and there
+        // was no way left to finish (owner, 2026-09-08, on a session where the provider was
+        // rate-limiting). BUG-076 fixed the same lock-out for a FAILED wrap-up and missed the
+        // cancelled one.
+        wrapUpSent = false
+        goodbyeSent = false
+        // And the inactivity clock restarts. In overtime it is already past the threshold, so
+        // releasing `wrapUpSent` without this let the backstop re-send the wrap-up on the very
+        // next tick: Stop would have been unstoppable, one second at a time.
+        overtimeInactivitySeconds = 0
         activeList().update { list ->
             list.mapNotNull { m ->
                 when {
@@ -715,41 +878,60 @@ class AiChatViewModel(
             val revised = mutableListOf<Proposal>()
             var failed = false
 
-            api.streamChat(
-                goalId = goalId,
-                message = prompt,
-                history = history,
-                provider = _provider.value,
-                sessionType = if (growing) "grow" else "chat",
-                attachments = emptyList(),
-                sessionTotalMinutes = if (growing) _sessionMinutes.value else null,
-                sessionRemainingSeconds = if (growing) _remainingSeconds.value else null,
-            ).collect { event ->
-                when (event) {
-                    is AiApi.ChatEvent.Token -> {
-                        answer.append(event.text)
-                        updateMessage(target, placeholderId) { it.copy(content = answer.toString()) }
-                    }
-                    is AiApi.ChatEvent.Proposal ->
-                        proposalFromToolArgs(event.argsJson)?.let { revised += it }
-                    is AiApi.ChatEvent.Status ->
-                        updateMessage(target, placeholderId) { it.copy(status = event.message) }
-                    // A revision is not a session, so an `end_session` here is not ours to act on.
-                    is AiApi.ChatEvent.SessionEnd -> Unit
-                    AiApi.ChatEvent.Done -> Unit
-                    is AiApi.ChatEvent.Error -> {
-                        failed = true
-                        if (event.message == AiApi.ERROR_NO_KEY) _needsKey.value = true
-                        updateMessage(target, placeholderId) {
-                            it.copy(
-                                content = errorText(event.message),
-                                streaming = false,
-                                isError = true,
-                                status = null,
-                            )
+            // See the matching `finally` in `send()`: without it, an exception the collector
+            // doesn't turn into a `ChatEvent.Error` leaves `_streaming` stuck `true` forever.
+            try {
+                api.streamChat(
+                    goalId = goalId,
+                    message = prompt,
+                    history = history,
+                    provider = _provider.value,
+                    sessionType = if (growing) "grow" else "chat",
+                    attachments = emptyList(),
+                    sessionTotalMinutes = if (growing) _sessionMinutes.value else null,
+                    sessionRemainingSeconds = if (growing) _remainingSeconds.value else null,
+                ).collect { event ->
+                    when (event) {
+                        is AiApi.ChatEvent.Token -> {
+                            answer.append(event.text)
+                            updateMessage(target, placeholderId) { it.copy(content = answer.toString()) }
+                        }
+                        is AiApi.ChatEvent.Proposal ->
+                            proposalFromToolArgs(event.argsJson)?.let { revised += it }
+                        is AiApi.ChatEvent.Status ->
+                            updateMessage(target, placeholderId) { it.copy(status = event.message) }
+                        // A revision is not a session, so an `end_session` here is not ours to act on.
+                        is AiApi.ChatEvent.SessionEnd -> Unit
+                        AiApi.ChatEvent.Done -> Unit
+                        is AiApi.ChatEvent.Error -> {
+                            failed = true
+                            if (event.message == AiApi.ERROR_NO_KEY) _needsKey.value = true
+                            updateMessage(target, placeholderId) {
+                                it.copy(
+                                    content = errorText(event.message),
+                                    streaming = false,
+                                    isError = true,
+                                    status = null,
+                                )
+                            }
                         }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed = true
+                SpiraLog.w(TAG, "ai_stream_collect_failed", e)
+                updateMessage(target, placeholderId) {
+                    it.copy(
+                        content = errorText(AiApi.ERROR_NETWORK),
+                        streaming = false,
+                        isError = true,
+                        status = null,
+                    )
+                }
+            } finally {
+                _streaming.value = false
             }
 
             if (!failed) {
@@ -800,7 +982,6 @@ class AiChatViewModel(
                 }
             }
 
-            _streaming.value = false
             if (!growing) persist()
         }
     }
@@ -827,31 +1008,63 @@ class AiChatViewModel(
         heldProposals = emptyList()
         _memoryDraft.value = null
         ended = false
+        closeSessionCalled = false
+        leaveGrowCalled = false
         wrapUpSent = false
         goodbyeSent = false
-        endedEarly = false
         memorySaved = false
+        overtimeInactivitySeconds = 0
         startTimer()
+        persistGrowSession()
         send("Let's start a GROW session.")
     }
 
     /**
-     * The **End** button: ask the coach to wrap up. It does not end the session by itself.
+     * Ask the coach to wrap up. It does not end the session by itself.
+     *
+     * **This is not what the End button does** (owner, 2026-09-08) — End is [endGrowNow], which
+     * needs nobody and sends nothing. This is the coach-driven close: the overtime backstop's
+     * path, and the shape the ending takes when the conversation itself finishes.
      *
      * The difference matters and is the whole of the owner's complaint. This used to send "We're
      * out of time — please close the session now" and then flip straight to the record card as
      * soon as the reply finished, so the coach never got to run its own close: no *"Are we
      * complete?"*, no asking the user what they are taking away, no chance to propose anything.
-     * Now it sends the same wrap-up instruction the overrun backstop sends, and the coach ends the
-     * session itself by calling `end_session`.
+     * Now it sends [WRAP_UP_INSTRUCTION] and the coach ends the session itself by calling
+     * `end_session`.
+     *
+     * The timer calls this rather than repeating its body, so the guard and the instruction have
+     * one home. They briefly had two — and once End stopped going through here, this function was
+     * left reachable only from its own tests, sending an instruction nothing else used.
      */
     fun closeGrow() {
         if (_mode.value != ChatMode.GROW_ACTIVE && _mode.value != ChatMode.GROW_CLOSING) return
-        if (_streaming.value || wrapUpSent) return
+        if (ended || _streaming.value || wrapUpSent) return
         wrapUpSent = true
-        endedEarly = true
         _mode.value = ChatMode.GROW_CLOSING
-        send(EARLY_END_INSTRUCTION, wrapUp = true)
+        send(WRAP_UP_INSTRUCTION, wrapUp = true)
+    }
+
+    /**
+     * **End: leave the session now, without the coach.**
+     *
+     * The one action in the panel that must never depend on the provider (owner, 2026-09-08:
+     * "сессия по end должна завершаться даже если провайдер не отвечает… если end то это
+     * завершение без участия ai"). It asks nobody, waits for nothing, and saves nothing — no
+     * record, no memory, no goodbye. Everything it touches is local state.
+     *
+     * The graceful close — record, proposals, farewell — is still there; it is what happens when
+     * the *coach* ends the session, which is where it belongs. End is the way out, and a way out
+     * that can be blocked by a rate-limited provider is not one.
+     */
+    fun endGrowNow() {
+        if (!isGrowMode(_mode.value)) return
+        cancelStream()
+        ended = true
+        stopTimer()
+        _memoryDraft.value = null
+        heldProposals = emptyList()
+        leaveGrow()
     }
 
     /**
@@ -862,12 +1075,18 @@ class AiChatViewModel(
         if (ended) return
         ended = true
         stopTimer()
-        _memoryDraft.value = record.ifBlank {
-            // A coach that ended without a record still ended: say so rather than showing a card
-            // with nothing on it.
-            _growMessages.value.lastOrNull { it.role == ChatRole.ASSISTANT && !it.isError }
-                ?.content.orEmpty()
-        }
+        // The session is over the moment the record appears, so it stops being resumable here —
+        // exactly where the web's `finishGrow` calls `clearGrowSession`. Left behind, the row
+        // outlives the session and the next open (here or on another device) picks it back up as
+        // an ACTIVE session with a stale clock, taking the record card off the screen with it.
+        clearGrowSessionRemote()
+        // **An empty record stays empty.** It used to fall back to the last thing the coach said,
+        // which on a tool-call-only ending was the sentence the app itself had invented — so the
+        // card offered to save "Here's what I suggest." as the memory of the session (owner,
+        // 2026-09-08). A record nobody wrote is not a record: the card shows it as missing, and
+        // `closeSession` already refuses to save a blank one, so nothing is written either way.
+        // The user can still ask for a proper one through "Change the record…".
+        _memoryDraft.value = record
         _mode.value = ChatMode.GROW_END
     }
 
@@ -876,6 +1095,8 @@ class AiChatViewModel(
      * held proposals are released next, and the goodbye comes after those.
      */
     fun closeSession(save: Boolean, onResult: (String?) -> Unit = {}) {
+        if (closeSessionCalled) return
+        closeSessionCalled = true
         val record = _memoryDraft.value.orEmpty().trim()
         memorySaved = save && record.isNotEmpty() && goalId != null
         if (memorySaved) {
@@ -889,6 +1110,12 @@ class AiChatViewModel(
         }
         _memoryDraft.value = null
 
+        // **Anything still pending goes to review — held back or not.** The review step used to
+        // look only at [heldProposals], which are filled on the turn that calls `end_session`. A
+        // proposal that arrived on any other turn was attached to its message instead, and the
+        // footer shows a pending card only in `GROW_REVIEW` — so it was never reachable: the
+        // session went straight to the goodbye and signed off with "1 proposal awaits your
+        // review", pointing at something with nowhere to be answered (owner, 2026-09-08).
         if (heldProposals.isNotEmpty()) {
             _growMessages.update {
                 it + ChatMessage(
@@ -899,9 +1126,11 @@ class AiChatViewModel(
                 )
             }
             heldProposals = emptyList()
+        }
+        if (sessionProposalsPending() > 0) {
             _mode.value = ChatMode.GROW_REVIEW
         } else {
-            askForGoodbye()
+            askForProposals()
         }
     }
 
@@ -911,6 +1140,31 @@ class AiChatViewModel(
      * It is told what the user actually kept, because a farewell thanking someone for accepting
      * what they rejected is worse than none at all.
      */
+    /**
+     * **STEP 2 of the ending, as a turn of its own** (owner, 2026-09-08: "не смешивай память
+     * сессии и то, что нужно сохранить в цель").
+     *
+     * The record and the goal changes used to be asked for in one reply, and the second half was
+     * the half that went missing — Cohere proposed nothing across a whole session, Gemini managed
+     * one. Asked separately, after the record is decided, it is a question the coach has to answer
+     * on its own. The web twin is `askForProposals` in `AiPanel.tsx`.
+     */
+    private fun askForProposals() {
+        _mode.value = ChatMode.GROW_REVIEW
+        send(
+            "[The record is decided. Now the second question, and only this one: looking back " +
+                "over the WHOLE of today's conversation, what — if anything — should change " +
+                "about this goal? Call `propose_goal_change` for each one in this reply: an " +
+                "obstacle or an action that surfaced, a strategy option, something that deserves " +
+                "to be a target (the commitment, if there was one), a resource worth keeping, or " +
+                "a rewording of the goal itself now that they can say what they actually want. " +
+                "Judge each against THIS goal, not against the aim of the session, and use their " +
+                "words. If nothing from today belongs in the goal, proposing nothing is the right " +
+                "answer — say so in one line. No goodbye yet, and do not call end_session again.]",
+            proposalsTurn = true,
+        )
+    }
+
     fun askForGoodbye() {
         if (goodbyeSent || _streaming.value) return
         goodbyeSent = true
@@ -927,7 +1181,8 @@ class AiChatViewModel(
                 )
                 append("They accepted ").append(kept).append(" and declined ").append(declined)
                 append(" of the changes you proposed. ")
-                if (endedEarly) append("Remember they ended this session early, so keep it honest. ")
+                // There is no "they ended early" line any more: End leaves without the coach,
+                // so the only close that reaches a goodbye is one the coach ran itself.
                 append("Say your goodbye now, in the language we have been speaking: short, ")
                 append("human, and shaped by what they actually kept. Do not repeat the summary, ")
                 append("do not propose anything, do not call any tools, and do not ask a question.]")
@@ -938,12 +1193,14 @@ class AiChatViewModel(
 
     /** **Step 4.** The user has read the goodbye: leave the session and note what became of it. */
     fun leaveGrow() {
+        if (leaveGrowCalled) return
+        leaveGrowCalled = true
         val pending = _growMessages.value
             .flatMap { it.proposals }
             .count { it.status == ProposalStatus.PENDING }
         val note = (if (memorySaved) "Session memory saved." else "Session ended without saving memory.") +
             if (pending > 0) {
-                " $pending proposal${if (pending == 1) "" else "s"} from the session await your review."
+                " $pending proposal${if (pending == 1) " awaits" else "s await"} your review."
             } else {
                 ""
             }
@@ -953,10 +1210,23 @@ class AiChatViewModel(
         heldProposals = emptyList()
         _memoryDraft.value = null
         stopTimer()
+        clearGrowSessionRemote()
+        val noteId = randomProposalId()
         _chatMessages.update {
-            it + ChatMessage(randomProposalId(), ChatRole.SYSTEM, note)
+            it + ChatMessage(noteId, ChatRole.SYSTEM, note)
         }
         persist()
+        // The note carries no information into the plain chat — `buildHistory` already drops
+        // SYSTEM messages from what the model sees — so leaving it sitting there forever served
+        // no purpose, and had a second, worse effect: the plain chat's own "New chat" affordance
+        // gates on `messages.isNotEmpty()`, so it appeared over a chat the user never actually
+        // typed a word into. It now self-clears, like the web panel's own toast notices do
+        // (owner, 2026-09-03).
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(SESSION_NOTE_MS)
+            _chatMessages.update { list -> list.filterNot { it.id == noteId } }
+            persist()
+        }
     }
 
     /** Proposals from this session still awaiting a decision. */
@@ -1003,9 +1273,17 @@ class AiChatViewModel(
      *
      *  - at 80% elapsed it moves the session to [ChatMode.GROW_CLOSING], which is a note to the
      *    coach (and a quiet line on screen) that the session should start heading for a close;
-     *  - at [OVERRUN_GRACE_SECONDS] past the planned end it sends the wrap-up instruction — the
-     *    backstop for a coach that never calls `end_session`. Even then the ending is *asked for*
-     *    rather than fabricated by the UI.
+     *  - [OVERTIME_INACTIVITY_SECONDS] after the **user's last message**, once the session is in
+     *    overtime, it sends the wrap-up instruction — the backstop for a coach that never calls
+     *    `end_session`, and for a session the user has simply walked away from.
+     *
+     * The backstop is keyed on **inactivity**, not on total overtime elapsed (owner, 2026-09-02).
+     * It used to be the latter — ten minutes past the *planned* end, whether or not the user was
+     * still actively talking — which is wrong for the same reason the clock does not stop at zero
+     * at all: a session running long because the user is genuinely still in it must not be cut off
+     * out from under them. [overtimeInactivitySeconds] resets on every real user turn (`send`,
+     * `fromTheUser`), so picking the conversation back up buys another ten minutes; going quiet for
+     * ten minutes — whether that is the first ten or the fifth — ends it.
      */
     private fun startTimer() {
         stopTimer()
@@ -1020,9 +1298,13 @@ class AiChatViewModel(
                 if (total > 0 && left <= total / 5 && _mode.value == ChatMode.GROW_ACTIVE) {
                     _mode.value = ChatMode.GROW_CLOSING
                 }
-                if (left <= -OVERRUN_GRACE_SECONDS && !ended && !wrapUpSent && !_streaming.value) {
-                    wrapUpSent = true
-                    send(WRAP_UP_INSTRUCTION, wrapUp = true)
+                if (left < 0) {
+                    overtimeInactivitySeconds++
+                    if (overtimeInactivitySeconds >= OVERTIME_INACTIVITY_SECONDS) {
+                        closeGrow()
+                    }
+                } else {
+                    overtimeInactivitySeconds = 0
                 }
             }
         }
@@ -1045,13 +1327,16 @@ class AiChatViewModel(
         const val DEFAULT_SESSION_MINUTES = 20
 
         /**
-         * How far past the planned end the coach is left alone before it is TOLD to wrap up.
-         *
-         * The clock does not end a session — the coach does. This is the backstop for one that
-         * never calls `end_session`, and it is generous on purpose: a session running ten minutes
-         * over is usually a session in the middle of the part that mattered.
+         * How long the user can go quiet, once the session is in overtime, before the coach is
+         * TOLD to wrap up. Measured from the last real user message, not from the planned end —
+         * see [startTimer]. Ten minutes is generous on purpose: long enough that it never cuts off
+         * a reply that is merely slow to arrive, short enough that a session the user has actually
+         * left does not sit open indefinitely.
          */
-        private const val OVERRUN_GRACE_SECONDS = 10 * 60
+        private const val OVERTIME_INACTIVITY_SECONDS = 10 * 60
+
+        /** How long a GROW session's end note sits in the plain chat before it self-clears. */
+        private const val SESSION_NOTE_MS = 6000L
 
         /** The backstop's instruction: close it, honestly, from what actually happened. */
         private const val WRAP_UP_INSTRUCTION =
@@ -1060,14 +1345,6 @@ class AiChatViewModel(
                 "than writing it up as though we did. Call end_session with the record, and in " +
                 "the same reply propose only what this session genuinely supports adding to the " +
                 "goal (which may be nothing). No goodbye yet.]"
-
-        /** The user pressed End: they asked for a proper close, not for the session to stop. */
-        private const val EARLY_END_INSTRUCTION =
-            "[I am ending this session now, before it reached its natural end. Close it " +
-                "honestly: base everything only on what we actually covered, name what we did " +
-                "and did not get to, and do not present it as a completed session. Call " +
-                "end_session with that record, and propose something for the goal only if this " +
-                "conversation really supports it — most likely nothing. No goodbye yet.]"
 
         /** The record the coach passed to `end_session`, or "" when the payload is unusable. */
         private fun sessionRecordOf(argsJson: String): String = runCatching {
@@ -1119,6 +1396,14 @@ interface AiChat {
     suspend fun getTranscript(goalId: String?): AiApi.StoredTranscript?
     suspend fun putTranscript(goalId: String?, content: String): String?
     suspend fun deleteTranscript(goalId: String?)
+    /**
+     * The live GROW session, synced so it belongs to the user rather than to one device.
+     * Defaulted because every test fake implements this interface, and none of them care.
+     */
+    suspend fun getGrowSession(goalId: String): String? = null
+    suspend fun putGrowSession(goalId: String, content: String) = Unit
+    suspend fun deleteGrowSession(goalId: String) = Unit
+
     suspend fun saveGoalMemory(goalId: String, summary: String)
     suspend fun approveProposal(id: Long)
     suspend fun rejectProposal(id: Long)
@@ -1152,6 +1437,10 @@ object LiveAiChat : AiChat {
     override suspend fun putTranscript(goalId: String?, content: String) =
         AiApi.putTranscript(goalId, content)
     override suspend fun deleteTranscript(goalId: String?) = AiApi.deleteTranscript(goalId)
+    override suspend fun getGrowSession(goalId: String) = AiApi.getGrowSession(goalId)
+    override suspend fun putGrowSession(goalId: String, content: String) =
+        AiApi.putGrowSession(goalId, content)
+    override suspend fun deleteGrowSession(goalId: String) = AiApi.deleteGrowSession(goalId)
     override suspend fun saveGoalMemory(goalId: String, summary: String) =
         AiApi.saveGoalMemory(goalId, summary)
     override suspend fun approveProposal(id: Long) = AiApi.approveProposal(id)

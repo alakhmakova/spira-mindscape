@@ -134,7 +134,10 @@ function GoalsOverview() {
     // shell's `bg-background` underneath was already white, and this covered it (owner,
     // 2026-08-21). White is the canvas; the cards are told apart by their hairline.
     <div className="relative min-h-screen">
-      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-12">
+      {/* pb-24 (not py-*'s bottom) clears the fixed "New goal" FAB (h-14, bottom-5/-7): without
+          it, the last card in a short list sits directly under the circle and the FAB covers its
+          "Start" control (BUG-072, mobile viewport). */}
+      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 pt-8 pb-24 sm:px-6 sm:pt-12">
         <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {viewMode === "cards" ? (

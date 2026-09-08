@@ -88,6 +88,23 @@ class TranscriptTest {
     }
 
     @Test
+    fun `a stranded session note is dropped on the way in`() {
+        // BUG-077. "Session ended…" is posted when a GROW session closes and removed a few
+        // seconds later by a coroutine in the ViewModel. Close the app inside those seconds and
+        // the note is already on the server, where nothing would ever take it out again — the
+        // owner's plain chat carried one for days, and it made the panel offer "New chat" over a
+        // conversation the user had never started. The timer cannot make a line ephemeral; this
+        // filter can, and it heals the transcripts already holding one.
+        val stored = """
+            [{"id":"m1","role":"user","content":"hello"},
+             {"id":"n1","role":"system","content":"Session ended. Nothing was saved."},
+             {"id":"m2","role":"assistant","content":"hi"}]
+        """.trimIndent()
+        val parsed = parseTranscript(stored)!!
+        assertEquals(listOf("m1", "m2"), parsed.map { it.id })
+    }
+
+    @Test
     fun `unusable content leaves the caller holding what it had`() {
         assertNull(parseTranscript(null))
         assertNull(parseTranscript(""))

@@ -445,7 +445,9 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 if (name.isNotEmpty()) put("title", name)
             }
             title = name.ifEmpty { value.ifEmpty { "New link" } }
-            detail = "New link"
+            // When a label is given, the headline shows it and the URL would otherwise never
+            // appear anywhere on the card — show it here instead of a generic label repeat.
+            detail = if (name.isNotEmpty()) value else "New link"
         }
         ProposalKind.EMAIL -> {
             patch = buildMap {
@@ -454,8 +456,15 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 data.optStringOrNull("role")?.let { put("role", it) }
                 data.optStringOrNull("phone")?.let { put("phone", it) }
             }
-            title = name.ifEmpty { value.ifEmpty { "New contact" } }
-            detail = "New contact"
+            title = name.ifEmpty { value.ifEmpty { "New email" } }
+            // The headline is the name (when given) — the address/role/phone are the actual
+            // content of the resource and must show up SOMEWHERE, or a card carrying only a
+            // name is indistinguishable from one that forgot the email entirely.
+            detail = listOfNotNull(
+                value.ifEmpty { null },
+                data.optStringOrNull("role"),
+                data.optStringOrNull("phone"),
+            ).joinToString(" · ").ifEmpty { "New email" }
         }
         ProposalKind.EDIT_TARGET -> {
             title = value.ifEmpty { name }
@@ -484,7 +493,7 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 if (value.isNotEmpty()) put("url", value)
             }
             title = name.ifEmpty { value.ifEmpty { "Update link" } }
-            detail = "Edit link"
+            detail = if (name.isNotEmpty() && value.isNotEmpty()) value else "Edit link"
         }
         ProposalKind.EDIT_EMAIL -> {
             patch = buildMap {
@@ -493,8 +502,12 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 data.optStringOrNull("role")?.let { put("role", it) }
                 data.optStringOrNull("phone")?.let { put("phone", it) }
             }
-            title = name.ifEmpty { value.ifEmpty { "Update contact" } }
-            detail = "Edit contact"
+            title = name.ifEmpty { value.ifEmpty { "Update email" } }
+            detail = listOfNotNull(
+                value.ifEmpty { null },
+                data.optStringOrNull("role"),
+                data.optStringOrNull("phone"),
+            ).joinToString(" · ").ifEmpty { "Edit email" }
         }
         ProposalKind.COMPLETE_TARGET -> {
             title = if (done == false) "Mark target not done" else "Mark target done"

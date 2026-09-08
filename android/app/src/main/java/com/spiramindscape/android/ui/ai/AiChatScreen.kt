@@ -87,6 +87,7 @@ import com.spiramindscape.android.data.ai.ProposalKind
 import com.spiramindscape.android.data.ai.ProposalStatus
 import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.ResourceItem
+import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraBadge
 import com.spiramindscape.android.ui.components.SpiraBadgeTone
@@ -164,6 +165,8 @@ fun AiChatScreen(
     }
 
     var providerSheet by remember { mutableStateOf(false) }
+    // End is destructive now — it leaves without a record — so it asks first.
+    var confirmEnd by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<ChatNotice?>(null) }
     // The attachment being previewed full-screen, or null. Both the composer chips and a sent
     // message's chips open it through LocalOpenAttachment.
@@ -244,11 +247,12 @@ fun AiChatScreen(
                 // No confirmation here, deliberately (owner, 2026-08-23): the empty chat is
                 // itself the feedback, and a toast for it was one more thing to dismiss.
                 onNewChat = viewModel::clearChat,
-                onEndSession = viewModel::closeGrow,
-                // Ending early is only on offer while the session is really running: not
-                // mid-stream, and not once the ending sequence has begun — it is already ending.
-                canEndEarly = !streaming &&
-                    (mode == ChatMode.GROW_ACTIVE || mode == ChatMode.GROW_CLOSING),
+                onEndSession = { confirmEnd = true },
+                // **Always available while a session is open**, mid-stream included. It used to be
+                // greyed out whenever a request was in flight, which is precisely when a user
+                // wants out: a provider that will not answer left the session with no exit at all
+                // (owner, 2026-09-08). End cancels whatever is running — see `endGrowNow`.
+                canEndEarly = isGrowSession(mode),
             )
 
             if (!inGrow) {
@@ -479,7 +483,8 @@ fun AiChatScreen(
                     placeholder = if (inGrow) "Answer in your own words…" else "Ask, plan, or request an action…",
                     growAction = if (!inGrow && viewModel.scopeGoalId != null) viewModel::openGrowStart else null,
                     // In a session the left slot ends it early, where Start GROW would be.
-                    endAction = if (inGrow) viewModel::closeGrow else null,
+                    // Same End as the header's: local, immediate, and behind one question.
+                    endAction = if (inGrow) ({ confirmEnd = true }) else null,
                     draft = composerDraft,
                     onDraftChange = viewModel::setComposerDraft,
                     attachments = composerAttachments,
@@ -510,7 +515,27 @@ fun AiChatScreen(
     if (providerSheet) {
         ProviderSheet(viewModel = viewModel, onDismiss = { providerSheet = false })
     }
+
+    // End leaves the session immediately and keeps nothing, so it is worth one question first —
+    // but the question is local too: nothing here waits on the coach.
+    if (confirmEnd) {
+        ConfirmDialog(
+            title = "End this session?",
+            message = "The session closes now. Nothing from it is saved — no record, no memory.",
+            confirmLabel = "Yes, end it",
+            cancelLabel = "No, keep going",
+            onConfirm = {
+                confirmEnd = false
+                viewModel.endGrowNow()
+            },
+            onDismiss = { confirmEnd = false },
+        )
+    }
 }
+
+/** A GROW session is open — any of its modes, including the ones that are already closing. */
+private fun isGrowSession(mode: ChatMode): Boolean =
+    mode != ChatMode.CHAT && mode != ChatMode.GROW_START
 
 // ── the panel's own tones: white at the opacities the web uses on teal ──────
 
@@ -801,20 +826,14 @@ private fun TimerPill(seconds: Int, totalMinutes: Int) {
 
 @Composable
 private fun Banner(text: String) {
-    Row(
-        Modifier
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 10.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(WHITE_10)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // The owner's watering-can-and-sprout illustration, never the fat checkmark.
-        Image(imageVector = SpiraArt.sprout(), contentDescription = null, modifier = Modifier.size(14.dp))
-        Spacer(Modifier.size(8.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = Color.White)
+    // **The app's one message card, not a fourth shape** (owner, 2026-09-08 — the old strip
+    // "выглядит очень плохо"). It was a bespoke translucent band, the only message in the app not
+    // drawn as [SpiraNoticeCard], which is precisely what the notice spec exists to stop. `Ai` is
+    // its kind: the coach speaking about itself, in the Intelligence violet its own surfaces use.
+    // No dismiss — it is a state, not an event, and stands until the session leaves the closing
+    // stretch (a notice the user cannot act on carries no X).
+    Box(Modifier.padding(horizontal = 12.dp).padding(bottom = 10.dp)) {
+        SpiraNoticeCard(kind = SpiraNoticeKind.Ai, message = text, onDismiss = null)
     }
 }
 
@@ -1498,7 +1517,7 @@ private fun Composer(
                 // **Capped, and it scrolls itself — following the caret.**
                 //
                 // Without a ceiling the field grows with the text and pushes the row below it —
-                // paperclip, "End session early", Send — off the bottom of the panel, so a long
+                // paperclip, "End", Send — off the bottom of the panel, so a long
                 // message leaves nothing to press (owner, 2026-08-24). The web has capped this at
                 // 128px from the start (`Math.min(el.scrollHeight, 128)` in `AiPanel.tsx`).
                 //
@@ -1584,7 +1603,7 @@ private fun Composer(
                 // ending is now where starting was, rather than a separate link above (owner,
                 // 2026-08-17). Kale-500, the working primary: the user is acting, not the assistant.
                 val left = when {
-                    endAction != null -> Triple(SpiraIcons.X, "End session early", endAction)
+                    endAction != null -> Triple(SpiraIcons.X, "End", endAction)
                     growAction != null -> Triple(SpiraIcons.SparklesFilled, "Start GROW session", growAction)
                     else -> null
                 }
@@ -1873,7 +1892,7 @@ private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
 
 /** The closing card: keep what the session worked out on the goal, or let it go. */
 @Composable
-private fun GrowEndCard(
+internal fun GrowEndCard(
     record: String,
     revising: Boolean,
     onRevise: (String) -> Unit,
@@ -1881,6 +1900,13 @@ private fun GrowEndCard(
     onDiscard: () -> Unit,
 ) {
     var instruction by remember { mutableStateOf("") }
+    // **An empty record is said plainly, and cannot be saved.** The coach writes nothing when the
+    // provider fails mid-close, or when End was pressed and the session ended locally with no AI
+    // involved at all. The card then offered "Save memory" over an empty box: a button that
+    // promises to keep something there is nothing to keep, and pressing it wrote a blank memory
+    // over whatever the previous session had left. Say what happened, and let the user ask for
+    // one in the field below or simply close (owner, 2026-09-08).
+    val hasRecord = record.isNotBlank()
     Column(
         Modifier
             .fillMaxWidth()
@@ -1897,7 +1923,11 @@ private fun GrowEndCard(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Save what you worked out, so the next session picks up the thread.",
+            if (hasRecord) {
+                "Save what you worked out, so the next session picks up the thread."
+            } else {
+                "The coach wrote no record of this session. Ask for one below, or close without saving."
+            },
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 13.sp,
             color = ON_WHITE.copy(alpha = 0.7f),
@@ -1924,7 +1954,7 @@ private fun GrowEndCard(
                 .padding(12.dp),
         ) {
             AiMarkdown(
-                text = record.ifBlank { "The coach ended the session without a record." },
+                text = record.ifBlank { "No record was written." },
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 20.sp),
                 color = CHAT_INK,
                 mutedColor = CHAT_INK_MUTED,
@@ -1993,8 +2023,8 @@ private fun GrowEndCard(
                     .weight(1f)
                     .height(40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(ON_WHITE)
-                    .clickable(enabled = !revising) { onSave() },
+                    .background(if (hasRecord) ON_WHITE else ON_WHITE.copy(alpha = 0.3f))
+                    .clickable(enabled = !revising && hasRecord) { onSave() },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -2014,7 +2044,7 @@ private fun GrowEndCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Discard",
+                    if (hasRecord) "Discard" else "Close",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = ON_WHITE,
@@ -2102,7 +2132,10 @@ fun ChatAttachmentViewerContent(
     }
 
     val title = when {
-        res != null && res.type == "email" -> res.name?.takeIf { it.isNotBlank() } ?: "Contact"
+        res != null && res.type == "email" ->
+            res.name?.takeIf { it.isNotBlank() }
+                ?: res.email?.takeIf { it.isNotBlank() }
+                ?: "Email"
         res != null -> res.title?.takeIf { it.isNotBlank() } ?: attachment.name
         else -> attachment.name
     }
@@ -2222,7 +2255,7 @@ fun ChatAttachmentViewerContent(
                         ViewerBlock {
                             Text(
                                 listOfNotNull(res.role, res.email, res.phone)
-                                    .joinToString("\n").ifBlank { "(no contact details)" },
+                                    .joinToString("\n").ifBlank { "No details saved." },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

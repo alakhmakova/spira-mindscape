@@ -29,7 +29,18 @@ import com.spiramindscape.android.ui.theme.spiraExtras
  * kind — and nothing else. The **type stays near-black in every kind**, the same rule the pills
  * follow: colouring the words as well only makes them harder to read.
  */
-enum class SpiraNoticeKind { Success, Error, Warning, Info }
+enum class SpiraNoticeKind {
+    Success, Error, Warning, Info,
+
+    /**
+     * A message **about the assistant**, in the Intelligence violet its own surfaces are drawn in
+     * — the one kind whose border is a `400` step rather than a solid `900`, deliberately, so it
+     * does not out-shout the panel it sits on (CLAUDE.md → Notices). The web has had it since the
+     * spec was written; Android was missing it, which is why the coach's own "moving toward a
+     * close" line was still a hand-rolled strip. Never a fifth way to say "success".
+     */
+    Ai,
+}
 
 /**
  * **The** shape every message in the app takes — a floating toast ([SpiraToast]) and a notice
@@ -114,6 +125,7 @@ fun SpiraNoticeKind.glyph(): ImageVector = when (this) {
     SpiraNoticeKind.Error -> SpiraIcons.CircleExclamationFilled
     SpiraNoticeKind.Warning -> SpiraIcons.TriangleExclamationFill
     SpiraNoticeKind.Info -> SpiraIcons.CircleInfoFill
+    SpiraNoticeKind.Ai -> SpiraIcons.Sparkles
 }
 
 /**
@@ -128,6 +140,8 @@ fun SpiraNoticeKind.ink(): Color = when (this) {
     SpiraNoticeKind.Error -> Color(0xFFC53336)
     SpiraNoticeKind.Warning -> Color(0xFFC99500)
     SpiraNoticeKind.Info -> Color(0xFF006CC1)
+    // Intelligence-400 — see the note on the enum constant.
+    SpiraNoticeKind.Ai -> Color(0xFFBDAEFF)
 }
 
 /**
@@ -141,4 +155,6 @@ fun SpiraNoticeKind.tint(): Color = when (this) {
     SpiraNoticeKind.Error -> Color(0xFFFFFBFB)
     SpiraNoticeKind.Warning -> Color(0xFFFFFBF7)
     SpiraNoticeKind.Info -> Color(0xFFFDFCFF)
+    // Intelligence-100.
+    SpiraNoticeKind.Ai -> Color(0xFFFEFBFF)
 }

@@ -122,9 +122,15 @@ class ProviderErrorMessageTest {
         // waited and tried again.
         String shown = service().friendlyError(new RuntimeException(MISTRAL_RATE_LIMIT));
 
-        assertThat(shown).contains("per minute");
-        assertThat(shown).contains("about a minute");
-        assertThat(shown).contains("Rate limit exceeded");   // the provider still speaks
+        assertThat(shown).contains("rate-limiting");          // who is refusing
+        assertThat(shown).contains("Spira waited");           // and that we already retried
+        assertThat(shown).contains("Rate limit exceeded");    // the provider still speaks
+        // **Both cases, because only one of them clears by waiting.** The message used to say
+        // "leave it about a minute" and nothing else; the owner did exactly that, three times a
+        // minute apart, and every attempt still failed (2026-09-08). A limit that survives a
+        // minute is the key's quota or plan, and the text has to send her somewhere real.
+        assertThat(shown).contains("a minute is enough");
+        assertThat(shown).contains("quota or plan");
     }
 
     @Test

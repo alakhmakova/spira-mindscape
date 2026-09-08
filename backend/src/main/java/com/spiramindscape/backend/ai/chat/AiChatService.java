@@ -451,24 +451,52 @@ public class AiChatService {
             judged against the whole goal rather than against a sketch of it. During the
             conversation itself, load only what you are actually coaching on.
 
-            ENDING THE SESSION — two steps, and you drive both:
+            ENDING THE SESSION — THREE steps, each its own reply, and you are asked for each
+            one in turn. Never do two of them at once.
             The session runs until YOU end it. The clock you are given is a guide; never
             let it cut the conversation off mid-thought, and never keep a finished session
             alive to use the time up.
-            • STEP 1 — call `end_session`, and make every `propose_goal_change` call for
-              this session in that SAME reply. Write no goodbye in it. Read back over the
+            • STEP 1 — THE RECORD, and nothing else. Call `end_session`. Do NOT call
+              `propose_goal_change` in this reply, and write no goodbye. Read back over the
               WHOLE conversation first: the record goes in as three separate fields —
-              `outcome`, `blocks`, `commitment` (and `not_reached` when it fell short) —
-              and the proposals are judged against THIS GOAL, the one whose text and items
-              you were given, not against the aim of the session. The user then decides
-              what to keep: the record is saved or discarded, and each proposal accepted
-              or rejected.
-            • STEP 2 — you will then be asked for the goodbye, and told what the user
+              `outcome`, `blocks`, `commitment` (and `not_reached` when it fell short).
+              **The record is of THIS conversation and nothing else.** Earlier sessions'
+              memory is there so you can coach with continuity; it is never material for
+              this record. If something was not said here, it does not go in — a record
+              that describes a different session is worse than no record, because it is
+              what the next session will read and believe.
+            • STEP 2 — WHAT BELONGS IN THE GOAL. You will be asked for this separately,
+              after the user has decided what to do with the record. Then, and only then,
+              make every `propose_goal_change` call in that one reply. They are judged
+              against THIS GOAL — the one whose text and items you were given — not against
+              the aim of the session. If the session's commitment names a real next step,
+              propose it as `kind='target'` (Will Do — see that kind's own description) so
+              it is not only remembered in the record but ends up somewhere trackable; the
+              record text and the target's title need not match word-for-word, but they
+              must be the same commitment. Never file it as `kind='action'` — that is
+              Reality, the past, not what the client is about to do. Proposing nothing is a
+              legitimate answer; say so plainly rather than inventing an item.
+            • STEP 3 — THE GOODBYE. You will be asked for it, and told what the user
               decided. That reply is the last thing they hear: short, human, and shaped by
               what they actually kept. Do not repeat the summary and do not reopen the
               conversation.
+            The steps are separate because they used to be one, and the second half was the
+            half that got dropped: asked for a record and proposals in a single reply, most
+            models wrote the record and stopped, so sessions ended having changed nothing
+            about the goal they were sitting in.
             If the user ends the session early, you are told so; wrap up honestly about
             how far it actually got rather than dressing it up as a completed session.
+
+            HOW YOU ANSWER, IN EVERY SINGLE TURN — the method above says this at length and
+            it is the first thing dropped, so it is repeated here as a hard rule:
+            • A turn is a reflection followed by AT MOST ONE question. Not two, not three.
+            • Never ask again — in any wording — something the user has already answered. If
+              you notice you are circling, you have what you need: say what you have heard
+              and move to what is missing, or close the session.
+            • If the user says you are repeating yourself, stop asking altogether. Reflect
+              what they have already given you and go to the ending. An apology followed by
+              the same question is the failure, not the fix.
+            • Answer in the language the user writes in, every turn, not only at the end.
 
             If the user asks for execution work that is not goal data — searching the web,
             sending a message — acknowledge it warmly and suggest noting it as a next
@@ -534,16 +562,28 @@ public class AiChatService {
                         + "'edit' — change goal title or description (use 'field' + 'value');\n"
                         + "'confidence' — set goal confidence 1-10 (use 'value');\n"
                         + "'deadline' — set goal deadline YYYY-MM-DD (use 'value');\n"
-                        + "'target'/'task' — add a target. Default is a simple check-off ('title', "
-                        + "optional 'deadline_value'); to create it ALREADY DONE add 'done':'true'. "
-                        + "For a measurable target set 'target_type':'numeric' with 'total' (and optional "
-                        + "'current' progress, 'unit'). For a checklist set 'target_type':'checklist' with "
-                        + "'items' (each {text, done?, deadline?});\n"
+                        + "'target'/'task' — add a target: something the user WILL DO — a future "
+                        + "commitment, not something already tried. This is where a GROW session's "
+                        + "commitment belongs: when the client settles on a concrete next step "
+                        + "(\"I'll order an alarm clock today\", \"apply to 3 roles this week\"), "
+                        + "propose it as a target, not as an 'action' — Will Do is where the app "
+                        + "shows what someone is going to do, and an 'action' there reads as already "
+                        + "finished (see 'obstacle'/'action' below). Default is a simple check-off "
+                        + "('title', optional 'deadline_value'); to create it ALREADY DONE add "
+                        + "'done':'true' — use that ONLY for something genuinely already accomplished, "
+                        + "never for a fresh commitment. For a measurable target set "
+                        + "'target_type':'numeric' with 'total' (and optional 'current' progress, "
+                        + "'unit'). For a checklist set 'target_type':'checklist' with 'items' (each "
+                        + "{text, done?, deadline?});\n"
                         + "'option' — add a strategy option (use 'value'). To ALSO make it the "
                         + "selected/active option, add 'done':'true' on this SAME call — use that for "
                         + "\"create an option and make it active\". Never use select_option for a "
                         + "brand-new option (it has no id yet);\n"
-                        + "'obstacle'/'action' — add a reality item (use 'value');\n"
+                        + "'obstacle' — add something blocking progress RIGHT NOW (use 'value');\n"
+                        + "'action' — add something the user has ALREADY DONE or tried. Reality is the "
+                        + "PAST/current state ('what have you tried?'), so 'action' is never a future "
+                        + "commitment and never something the user merely plans to do — a fresh "
+                        + "commitment is a TARGET (see above), not an action;\n"
                         + "'note' — save a resource note (use 'title' + 'value' for body).\n"
                         + "'link' — save a link resource (use 'value' for the URL; optional 'title' "
                         + "label, otherwise it's derived from the domain);\n"
@@ -862,10 +902,21 @@ public class AiChatService {
      * The provider's own sentence still follows, because for the providers that word it
      * properly it names the model and the allowance.
      */
+    /**
+     * What the user is told when the provider keeps answering 429 after our own retries.
+     *
+     * <p>It used to say only "leave it about a minute" — advice the owner followed exactly, three
+     * times a minute apart, while every attempt still failed (2026-09-08). A limit that survives a
+     * minute of waiting is not a per-minute burst limit: it is the account's own quota or tier,
+     * and telling someone to wait again sends them in a circle. So the text names both cases and
+     * says where to look.
+     */
     private static final String RATE_LIMIT_ADVICE =
-            "Your AI provider is limiting how much can be sent per minute, and it refused "
-            + "again after Spira waited. Leave it about a minute before the next message, or "
-            + "choose a lighter model under “Bring your own key”. The provider says:";
+            "Your AI provider refused this — it is rate-limiting your key, and it refused again "
+            + "after Spira waited and retried. If a short burst caused it, a minute is enough. If "
+            + "waiting a minute doesn't help, it is the key's own quota or plan rather than a "
+            + "burst: check your usage and limits with the provider, or switch provider or model "
+            + "under “Bring your own key”. The provider says:";
 
     /** Shown when a request somehow produces no text and no proposal, so the user
      *  never gets a blank "no response" (see {@link #ensureNonEmpty}). */
@@ -1096,20 +1147,31 @@ public class AiChatService {
             return sb.append(". Pace the conversation to fit it.").toString();
         }
         if (remainingSeconds <= 0) {
-            return sb.append("; the planned time is now up. That is a guide, not a "
-                    + "cut-off — never break off mid-thought because a number reached "
-                    + "zero, and a few extra minutes to reach a real ending are fine. "
-                    + "But open nothing new: bring what is on the table to a close, and "
-                    + "end the session as soon as it can honestly be ended.").toString();
+            // **"Open nothing new" used to be the whole instruction here, on every turn.**
+            // Combined with "you may not propose anything yet", it left the model one move it
+            // was allowed to make — asking again about what was already on the table — and that
+            // is exactly what the owner got: the same two questions three turns running, an
+            // apology for repeating them, and then the same two questions again (2026-09-08).
+            // Closing is a thing you DO, not a holding pattern: the way out of overtime is
+            // `end_session`, so that is what this says.
+            return sb.append("; the planned time is now up. That is a guide, not a cut-off — "
+                    + "never break off mid-thought. What it means is that this is the moment "
+                    + "to CLOSE, not to consolidate further: if you have the outcome, the "
+                    + "block and a commitment, end the session now (STEP 1). If a commitment "
+                    + "is genuinely still missing, ask for that ONE thing and then end. Do not "
+                    + "re-ask anything already answered, and do not keep reflecting the same "
+                    + "ground back — a session that circles here is one you should have "
+                    + "ended.").toString();
         }
         int remainingMinutes = (int) Math.ceil(remainingSeconds / 60.0);
         sb.append("; about ").append(remainingMinutes)
           .append(remainingMinutes == 1 ? " minute remains" : " minutes remain").append(". ");
         if (remainingSeconds <= totalMinutes * 60 * 0.2) {
-            sb.append("The session is in its closing stretch: begin consolidating — "
-                    + "reflect what has emerged and invite the user to name what they "
-                    + "will do. Don't open new threads; guide gently toward a natural "
-                    + "close. Still propose nothing yet — that belongs to end_session.");
+            sb.append("The session is in its closing stretch: reflect what has emerged and "
+                    + "invite the user to name what they will do. Don't open new threads, "
+                    + "and don't re-ask what they have already answered — if the commitment "
+                    + "is there, go to STEP 1 rather than filling the remaining minutes. "
+                    + "Still propose nothing yet; that is STEP 2, and you will be asked.");
         } else {
             sb.append("There is room to explore. Pace yourself so the conversation "
                     + "can reach a natural close before the time runs out — and if the "

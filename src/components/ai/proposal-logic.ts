@@ -475,7 +475,9 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         if (name) next.title = name;
         patch = next;
         title = name || value || "New link";
-        detail = "New link";
+        // When a label is given, the headline shows it and the URL would otherwise never
+        // appear anywhere on the card — show it here instead of a generic label repeat.
+        detail = name ? value : "New link";
         break;
       }
       case "email": {
@@ -486,8 +488,13 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         if (data.role) next.role = data.role;
         if (data.phone) next.phone = data.phone;
         patch = next;
-        title = name || value || "New contact";
-        detail = "New contact";
+        title = name || value || "New email";
+        // The headline is the name (when given) — the address/role/phone are the actual
+        // content of the resource and must show up SOMEWHERE, or a card carrying only a name
+        // is indistinguishable from one that forgot the email entirely.
+        detail =
+          [value, data.role, data.phone].filter(Boolean).join(" · ") ||
+          "New email";
         break;
       }
       // ── edit existing ──
@@ -521,7 +528,7 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         if (value) next.url = value;
         patch = next;
         title = name || value || "Update link";
-        detail = "Edit link";
+        detail = name && value ? value : "Edit link";
         break;
       }
       case "edit_email": {
@@ -532,8 +539,10 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
         if (data.role) next.role = data.role;
         if (data.phone) next.phone = data.phone;
         patch = next;
-        title = name || value || "Update contact";
-        detail = "Edit contact";
+        title = name || value || "Update email";
+        detail =
+          [value, data.role, data.phone].filter(Boolean).join(" · ") ||
+          "Edit email";
         break;
       }
       // ── state changes ──

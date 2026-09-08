@@ -322,7 +322,7 @@ both unless it names a surface.
 | The target card's numeric row | Components and chrome → 3b |
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
-| **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
+| **Sheets** — the drawer, the side panel, the two head types (Kale / white) | Components and chrome → 3e |
 | **Dates** — a modal on a phone, a popover on a laptop; ISO weeks | Components and chrome → 3e-ter |
 | **Sheet heights** — a constant top edge, never a percentage | Components and chrome → 3e-bis |
 | **What a headless host cannot see** — dialog width, the keyboard | Components and chrome → 3e-quater |
@@ -586,7 +586,7 @@ the outer one still said "an empty page" while the inner one said the opposite. 
 the empty state's invitation; the filtered case replaces it rather than sitting inside it (web:
 `src/routes/index.tsx`; Android already drew it this way).
 
-#### 3e. Sheets — one shape and one head, on both surfaces (hard spec, 2026-08-22)
+#### 3e. Sheets — one shape, two heads, on both surfaces (hard spec, 2026-08-22 — heads revised 2026-09-03)
 
 A **sheet** is how the app asks for something without leaving the page — Filter & Sort, New goal,
 New target, Add a resource, Attach a resource. It is a **drawer from the bottom on a phone** and a
@@ -603,16 +603,50 @@ The parts, and what each is made of:
 | **Body** | its own scroller — `px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0` | its own `verticalScroll` — `padding(horizontal = 20.dp, vertical = 16.dp)`, `spacedBy(16.dp)` |
 | **Foot** | a pinned row of two: quiet outline left, filled Kale right, each `h-12 rounded-md flex-1`; `px-5 pt-3`, bottom `max(env(safe-area-inset-bottom), 12px)` | a `Row` of two `SpiraButton`s, Ghost then filled, `spacedBy(12.dp)`, 20dp sides, 24dp bottom |
 
-**The head is the same band everywhere**, and one component per surface draws it — neither may grow
-a variant:
+**A sheet wears one of exactly two heads, and one component per surface draws both — neither may
+grow a third** (owner, 2026-09-03, on the AI providers panel wearing the wrong one: "должно быть
+2 типа drawers с kael шапкой — это основной вид, и с белой шапкой — это вспомогательный вид" —
+"there should be 2 types of drawers: with a Kale head — the primary kind, and with a white head —
+the auxiliary kind"). `Primary` is the band this section used to call "the" head, unqualified —
+it still is, for every sheet that IS the reason the user opened it: a create/edit form, Filter &
+Sort, the coach itself. `Auxiliary` is for a sheet that sits ON TOP of primary content without
+being that content itself — the first, and so far only, case is **AI providers** ("это не
+основной контент" — "it is not primary content" — reached from *inside* the coach panel to
+manage keys, not itself the thing the user came here to work on).
 
-| | Value |
-|---|---|
-| Fill | `bg-primary` / `colorScheme.primary` — Kale-500 `#0A8080` |
-| Padding | 20 start, 12 end, 14 top and bottom |
-| Title | white, **bold, 16px** (`titleMedium`), sentence case, left |
-| Close | a white X on the right, 32px hit area, `hover:bg-white/15` |
-| `actions` | anything about the sheet as a whole, **before** the X — today only the filter panel's padlock (see 7) |
+Picking the wrong one is a defect the same way an off-palette colour is: never reach for
+`Auxiliary` because a sheet happens to be short, plain, or nested inside another — reach for it
+only when the sheet is genuinely secondary to whatever is already open behind it.
+
+| | `Primary` | `Auxiliary` |
+|---|---|---|
+| Fill | `bg-primary` / `colorScheme.primary` — Kale-500 `#0A8080` | white |
+| Bottom edge | none | `1px` hairline — `#F3F3F3` web, `Salt300 #F4F4F3` Android |
+| Padding | 20 start, 12 end, 14 top and bottom | same |
+| Title | white, **bold, 16px** (`titleMedium`), sentence case, left | Salt-1000 (`#003737` web / `#222525` Android), same weight/size |
+| Close | a white X, 32px hit area, `hover:bg-white/15` | a muted-ink X, `text-[#003737]/40`, `hover:bg-[#003737]/5` |
+| `actions` | anything about the sheet as a whole, **before** the X — today only the filter panel's padlock (see 7), which is `Primary` | same slot; nothing uses it yet |
+
+Web: `SheetHead`'s `tone` prop — `"primary"` (default) / `"auxiliary"` —
+`src/components/spira/SheetHead.tsx`. Android: `SpiraSheetHead`'s `tone: SheetHeadTone` —
+`Primary` (default) / `Auxiliary` — `ui/components/SpiraSheetHead.kt`. **AI providers is
+`Auxiliary` on both** (`ProviderSheet`, web and Android) — it opens from a strip inside the
+coach's own chat, manages account-level keys that outlive any one conversation, and was never the
+primary reason the panel is open.
+
+**On a laptop, AI providers is also the one sheet that overlays its OWN parent rather than the
+page.** Every other web sheet either portals to the page (a form, Filter & Sort) or IS the page
+(the coach panel itself, docked on the left of the page as of 2026-09-03 — see the note in
+`AppShell.tsx`; it has already moved sides once and may again, so don't hard-code "right" from
+memory); AI providers stays nested `absolute inset-0` inside the coach panel and slides in from
+the panel's own edge, not the page's — matching the fact
+that it covers the *coach*, not the goal underneath it (owner, 2026-09-03: "на вебе это должна
+быть обычная боковая панель поверх панели чата" — "on web this should be an ordinary side panel
+OVER the chat panel". It had been hard-coded to the phone's bottom-drawer shape at every width,
+which read as a drawer stuck inside a page that otherwise has none — every other sheet in the app
+already splits bottom-drawer-on-a-phone / side-panel-on-a-laptop, so a sheet fixed to the phone
+shape regardless of width was the actual defect, not a deliberate exception). On a phone it stays
+the ordinary bottom drawer, `sheet-inset` sized like any sheet stacked inside another.
 
 The rules that hold it together:
 
@@ -633,9 +667,12 @@ The rules that hold it together:
   "Add a resource"; the web wins, as always.
 - **Checking it by eye needs the card, not the sheet.** A modal sheet renders in its own window, so
   render `SpiraFormSheetContent` / `SpiraFilterSheetContent` directly — see 4 and the note in 7.
-- Two web sheets still wear a white head and are to be converted when next touched: the note
-  editor's **Add a link** sheet (its head carries a description line that has to move into the body
-  first) and the numeric **Update Progress** panel in `Targets.tsx`.
+- Two web sheets still wear a white head that **predates the `tone` system and is not the
+  `Auxiliary` kind** — both are primary content (a create/edit action, not a secondary panel over
+  something else) and are to be converted to `Primary` when next touched, not left as they are on
+  the theory that they're already white: the note editor's **Add a link** sheet (its head carries
+  a description line that has to move into the body first) and the numeric **Update Progress**
+  panel in `Targets.tsx`.
 
 #### 3e-bis. A sheet's top edge is a constant (hard rule, 2026-08-29)
 
@@ -1443,6 +1480,20 @@ of them read to the owner as a redesign nobody asked for (2026-08-14):
 The web's class values are copied into the Kotlin as the measurements to match — card
 `rounded-[14px] p-4`, buttons `rounded-[9px]`, headline 17sp serif, detail 13.5sp at 60% ink. Read
 them from `AiPanel.tsx` before changing anything here.
+
+**Two rules about ending a session, because both were learned by losing whole sessions** (owner,
+2026-09-08 — full account in `docs/grow-sessions-rag-guide.md` §9a):
+
+- **A close is three steps, never one turn**: the **record** (what this session was about, written
+  for the next one), then the **proposals** as their own dedicated turn, then the **goodbye**. Asked
+  for together, models write the record, say goodbye and skip the middle — so a session that agreed
+  on something changed nothing on the goal. The record and the proposals are different things: one
+  is memory for the coach, the other is edits to the user's goal.
+- **"End" is local, unconditional and involves no AI at all.** It cancels the stream, stops the
+  timer, clears the draft and leaves. It must never be an instruction sent to the model and must
+  never wait for one — that is how a dead provider left the owner in a session with no exit. A
+  session ended that way has **no record**, and the closing card says so plainly rather than
+  offering to save an empty one over the last session's.
 
 #### Options cards (interaction)
 

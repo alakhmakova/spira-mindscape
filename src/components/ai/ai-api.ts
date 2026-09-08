@@ -152,9 +152,30 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
   if (!response.ok) {
     if (response.status === 422) {
       onError("NO_KEY");
-    } else {
-      onError(`Server error: ${response.status}`);
+      return;
     }
+    // **Say what the server said.** A rejected request carries an RFC-7807 `detail` written to
+    // be read — "A message needs text or at least one attachment", "Unknown provider: X",
+    // "At most 6 files can be attached to a message" — and this branch used to throw it away
+    // and show "Server error: 400" instead. `apiError` at the top of this file has done it
+    // right all along; only the stream path never used it (owner, 2026-09-08: five failed sends
+    // on production, and the screen said nothing except that a provider didn't work, so it read
+    // as "no provider works even with keys"). A 4xx is the user's request being refused and the
+    // reason is theirs to see; a 5xx keeps the generic line, since its detail is an internal
+    // reference, not an explanation.
+    let detail = "";
+    if (response.status < 500) {
+      try {
+        const body = (await response.json()) as {
+          detail?: string;
+          message?: string;
+        };
+        detail = (body.detail || body.message || "").trim();
+      } catch {
+        /* not JSON — fall back to the status line below */
+      }
+    }
+    onError(detail || `Server error: ${response.status}`);
     return;
   }
 
@@ -232,6 +253,18 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         }
         // lines starting with ":" (comments) or unknown fields are ignored
       }
+    }
+  } catch {
+    // A read failure mid-stream (connection drop, TLS reset) must still resolve
+    // the turn — this function otherwise never calls onDone/onError, and the
+    // caller's "busy" flag (and everything gated on it, e.g. the GROW session's
+    // End button — canEndEarly = !busy && …) is stuck forever. See the matching
+    // fix in AiChatViewModel.kt (Android): the SSE-level `error:` event this
+    // backend sends is already handled by `dispatch()` above; this only catches
+    // a lower-level failure that never reached that path.
+    if (!finished) {
+      onError("NETWORK");
+      finished = true;
     }
   } finally {
     // cancel() aborts the underlying connection and releases the lock.
@@ -424,6 +457,58 @@ export async function putTranscript(
 export async function deleteTranscript(goalId?: string): Promise<void> {
   try {
     await fetch(transcriptUrl(goalId), {
+      method: "DELETE",
+      credentials: "include",
+      headers: mutationHeaders(),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// ── The live GROW session (cross-device) ────────────────────────────────────
+//
+// The transcript has synced since BUG-018; the session running inside it did not, so a session
+// begun on the phone had to be started again on the laptop (owner, 2026-09-08). Every call is
+// best-effort: the local cache is what makes a reopened tab instant, and the server copy is what
+// makes another device possible — a failure here must never take a live session down with it.
+
+const growSessionUrl = (goalId: string) =>
+  `${AI_BASE}/grow/session?goalId=${encodeURIComponent(goalId)}`;
+
+/** The session stored for this goal, or null when there is none (or the call failed). */
+export async function fetchGrowSession(goalId: string): Promise<string | null> {
+  try {
+    const res = await fetch(growSessionUrl(goalId), { credentials: "include" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { content?: string | null };
+    return body.content ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mirror the live session to the server, after a settled turn. */
+export async function putGrowSession(
+  goalId: string,
+  content: string,
+): Promise<void> {
+  try {
+    await fetch(`${AI_BASE}/grow/session`, {
+      method: "PUT",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ goalId: parseInt(goalId, 10), content }),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** The session is over — nothing about it outlives this. */
+export async function deleteGrowSession(goalId: string): Promise<void> {
+  try {
+    await fetch(growSessionUrl(goalId), {
       method: "DELETE",
       credentials: "include",
       headers: mutationHeaders(),

@@ -351,6 +351,37 @@ object AiApi {
         Unit
     }
 
+    // ── The live GROW session (cross-device) ────────────────────────────────
+    //
+    // The transcript has synced for a while; the session running inside it did not, so one
+    // begun on the phone had to be started over on the laptop (owner, 2026-09-08). Best-effort
+    // throughout: a session that cannot reach the server still runs perfectly well here.
+
+    private fun growSessionUrl(goalId: String) =
+        url("/grow/session") + "?goalId=${goalId.toLongOrNull() ?: 0}"
+
+    /** The stored session for this goal, or null when there is none (or the call failed). */
+    suspend fun getGrowSession(goalId: String): String? = io {
+        val text = getText(growSessionUrl(goalId)) ?: return@io null
+        JSONObject(text).optStringOrNull("content")
+    }
+
+    /** Mirror the live session, after a settled turn. Last write wins. */
+    suspend fun putGrowSession(goalId: String, content: String): Unit = io {
+        val body = JSONObject()
+            .put("goalId", goalId.toLongOrNull() ?: 0)
+            .put("content", content)
+        runCatching { putText(url("/grow/session"), body) }
+        Unit
+    }
+
+    /** The session is over — nothing about it outlives this. */
+    suspend fun deleteGrowSession(goalId: String): Unit = io {
+        val request = Request.Builder().url(growSessionUrl(goalId)).delete().build()
+        runCatching { Network.okHttp.newCall(request).execute().use { } }
+        Unit
+    }
+
     // ── GROW session memory ─────────────────────────────────────────────────
 
     /** Persist a GROW session summary on the goal, so later sessions continue the thread. */

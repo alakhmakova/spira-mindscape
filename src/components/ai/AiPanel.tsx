@@ -34,6 +34,7 @@ import {
   saveComposerDraft,
 } from "./composer-draft";
 import type { AiAction, Goal, Resource } from "@/lib/spira/types";
+import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 // Only the option type survives: the chat's messages are no longer sonner toasts (they are
 // the panel's own card, above the field), but the call sites still pass sonner-shaped opts.
 import { type ExternalToast } from "sonner";
@@ -55,6 +56,9 @@ import {
   saveAiProvider,
   type HistoryEntry,
   type ChatAttachment,
+  fetchGrowSession,
+  putGrowSession,
+  deleteGrowSession,
 } from "./ai-api";
 import { resourceTypeMeta } from "@/components/spira/resource-meta";
 import {
@@ -115,31 +119,22 @@ const chatToast = {
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
-type Msg = {
-  id: string;
-  role: "user" | "assistant" | "system" | "end" | "closed";
-  content: string;
-  streaming?: boolean;
-  proposals?: Proposal[];
-  error?: boolean; // an error bubble — rendered with a warning icon, excluded from history
-  /** Ephemeral progress line (GROW library indexing). Display-only: never part
-   *  of content, so it can't leak into the transcript or the model history. */
-  status?: string;
-  /** Files attached to this (user) message — shown as chips; not persisted. */
-  attachments?: ChatAttachment[];
-  /** Set on a user message that came from a card's "Edit" box: the headline of the card
-   *  being revised, shown as a caption above the bubble so the request is traceable. */
-  revisedLabel?: string;
-};
+import { parseTranscript, type Msg } from "./transcript";
 
 /**
- * How far past the planned end the coach may run before the app insists. The
- * coach owns the ending, but a model that never calls `end_session` would leave
- * the session open forever — so at this point it is TOLD to wrap up. It still
- * writes the record and decides the proposals: the backstop triggers the
- * analysis, it does not replace it.
+ * How long the user may go quiet, once the session is in overtime, before the
+ * app insists the coach wrap up. The coach owns the ending, but a model that
+ * never calls `end_session` — or a session the user has simply walked away
+ * from — would otherwise stay open forever. It still writes the record and
+ * decides the proposals: the backstop triggers the analysis, it does not
+ * replace it.
+ *
+ * Measured from the **user's last message**, not from the planned end (owner,
+ * 2026-09-02) — it used to be the latter, which cut off a session the user was
+ * still actively in just because its planned length had been exceeded a while
+ * ago. See `overtimeInactivityRef` below.
  */
-const OVERRUN_GRACE_SECONDS = 10 * 60;
+const OVERTIME_INACTIVITY_SECONDS = 10 * 60;
 
 /**
  * The ending is a sequence, not a single card (owner, 2026-08-22): the coach
@@ -393,14 +388,22 @@ function loadGrowSession(goalId?: string): StoredGrowSession | null {
 
 function saveGrowSession(goalId: string | undefined, data: StoredGrowSession) {
   if (typeof window === "undefined") return;
+  const json = JSON.stringify(data);
   try {
-    window.localStorage.setItem(growSessionKey(goalId), JSON.stringify(data));
+    window.localStorage.setItem(growSessionKey(goalId), json);
   } catch {
     /* ignore */
   }
+  // **And to the server, so the session belongs to the user rather than to this device**
+  // (owner, 2026-09-08). The local copy is what makes a reopened tab instant; this is what
+  // makes another device possible at all. Best-effort on purpose: a failed mirror must never
+  // take down a session that is running perfectly well here.
+  if (goalId) void putGrowSession(goalId, json);
 }
 
 function clearGrowSession(goalId?: string) {
+  // The session is over: it stops existing everywhere, not just here.
+  if (goalId) void deleteGrowSession(goalId);
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(growSessionKey(goalId));
@@ -416,17 +419,6 @@ function loadTranscript(scopeKey: string): Msg[] {
     return parseTranscript(raw) ?? [];
   } catch {
     return [];
-  }
-}
-
-/** Parses a stored transcript JSON string into messages, or null if unusable. */
-function parseTranscript(content: string | null | undefined): Msg[] | null {
-  if (!content) return null;
-  try {
-    const parsed = JSON.parse(content) as Msg[];
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
   }
 }
 
@@ -633,8 +625,14 @@ export function AiPanel() {
     setIsDragging(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    // **Measured from the panel's own left edge, not from the window's.** The coach sits after
+    // the navigation rail now, so `clientX` alone is the panel's width plus the rail's — the
+    // panel's right edge ran ahead of the cursor by 64px collapsed, 244px expanded.
+    const asideLeft =
+      handleRef.current?.parentElement?.getBoundingClientRect().left ?? 0;
     const onMove = (ev: PointerEvent) => {
-      if (draggingRef.current) setWidth(clampPanelWidth(ev.clientX));
+      if (draggingRef.current)
+        setWidth(clampPanelWidth(ev.clientX - asideLeft));
     };
     const onUp = () => {
       draggingRef.current = false;
@@ -676,9 +674,10 @@ export function AiPanel() {
   return (
     <aside
       className={cn(
-        // The coach sits on the RIGHT of the page (owner, 2026-08-23) — the left column is
-        // the standing navigation now. Hence the border and the shadow fall the other way.
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-l border-white/15 bg-[#0A8080] text-white shadow-[-12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        // The coach sits on the LEFT of the page, between the standing navigation and the
+        // content (owner, 2026-09-03, reverting the 2026-08-23 move to the right). Hence the
+        // border and the shadow fall to the right, onto the page content beside it.
+        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
       style={{ width: `${width}px` }}
@@ -687,7 +686,7 @@ export function AiPanel() {
       <div
         ref={handleRef}
         onPointerDown={startDrag}
-        className="resize-handle ai-panel-left-resize-handle ai-panel-resize-handle"
+        className="resize-handle ai-panel-right-resize-handle ai-panel-resize-handle"
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize spira ai coach panel"
@@ -1038,7 +1037,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             ...(p.patch?.role ? { role: p.patch.role } : {}),
             ...(p.patch?.phone ? { phone: p.patch.phone } : {}),
           });
-          chatToast.success("Contact added");
+          chatToast.success("Email added");
           break;
         }
 
@@ -1114,7 +1113,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               p.itemId,
               p.patch as Partial<import("@/lib/spira/types").Resource>,
             );
-            chatToast.success("Contact updated");
+            chatToast.success("Email updated");
           }
           break;
 
@@ -1339,6 +1338,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // Proposals arrive in the same turn as `end_session`, but must not be shown
   // until the user has dealt with the session record — so they wait here.
   const [heldProposals, setHeldProposals] = useState<Proposal[]>([]);
+  /** Bumped when a session is adopted from the server, to re-run the resume effect. */
+  const [resumeTick, setResumeTick] = useState(0);
+  /** Goals already asked about — the server is consulted once per goal, not once per re-run. */
+  const resumeAskedRef = useRef<Set<string>>(new Set());
   // The chat's own toast — see `chatToast`. One at a time: a second message replaces the first
   // rather than stacking a column of cards over the field.
   const [notice, setNotice] = useState<PanelNotice | null>(null);
@@ -1363,9 +1366,6 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     const t = setTimeout(() => setNotice(null), PANEL_NOTICE_MS);
     return () => clearTimeout(t);
   }, [notice]);
-  // How the session ended, which decides what the coach is told when asked for
-  // the goodbye and whether the record may claim the session completed.
-  const endKindRef = useRef<"complete" | "early" | "overrun">("complete");
   // Whether the record was actually saved — the goodbye is told, and the
   // closing system note reports it.
   const memorySavedRef = useRef(false);
@@ -1400,9 +1400,26 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     busyRef.current = busy;
   }, [busy]);
   const endedRef = useRef(false);
+  // Guards `closeSession` and `leaveGrow` against running twice (BUG-069: "I've prepared this
+  // for your review." / "Session memory saved." each showed up twice in a row, on separate
+  // occasions). Both push a message to the transcript and neither is naturally re-render-proof —
+  // the button a click removes from the DOM only disappears once React commits the state update
+  // that filters it out, so two clicks inside that window (a genuine double-click/tap, or a
+  // retry) both run the full body. A `ref` catches the second one synchronously, before that
+  // re-render; `closeSessionRef` is separate from `endedRef` because `closeSession` can
+  // legitimately run before the session has fully "ended" (it may still have proposals to
+  // review).
+  const closeSessionRef = useRef(false);
+  const leaveGrowRef = useRef(false);
   // The timer ran out and the closing turn was requested — guards double-sends
   // while the seconds keep ticking past zero.
   const wrapUpRef = useRef(false);
+  // Seconds of overtime with no message from the user — the GROW timer effect
+  // increments this once a second while `session.remaining < 0`; `sendGrow`
+  // resets it to 0 on every real user turn. Read directly (never a dependency)
+  // by the backstop effect below, which re-runs every second anyway as
+  // `session` ticks.
+  const overtimeInactivityRef = useRef(0);
   // Composer draft survives unmounts (e.g. the end-of-session card replacing
   // the input) — an unfinished message must never silently disappear.
   const draftRef = useRef("");
@@ -1442,11 +1459,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     mode === "grow-review" ||
     mode === "grow-farewell";
   const list = inGrow ? gmsgs : msgs;
-  // Ending early is only on offer while the session is really running: not
-  // mid-stream (the wrap-up request would be dropped and the button would look
-  // dead), and not once the ending sequence has begun — it is already ending.
-  const canEndEarly =
-    !busy && (mode === "grow-active" || mode === "grow-closing");
+  // **Always live while a session is open, mid-stream included** (owner, 2026-09-08). It used to
+  // be greyed out whenever a turn was in flight — which is exactly when someone wants out, and a
+  // provider that will not answer then left the session with no exit at all. End no longer sends
+  // anything, so there is nothing for a stream to block: it cancels the turn and leaves.
+  const canEndEarly = inGrow;
 
   // A pending proposal card IS the input — it renders in the footer (where the
   // composer would be) instead of inline, so it sits right above the keyboard.
@@ -1831,7 +1848,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const content =
           accumulated.trim() ||
           (finalProposals.length
-            ? "I've prepared this for your review."
+            ? "" // the card speaks for itself — see the note in `sendGrow`'s onDone
             : // Safety net: the backend already streams a fallback, but never leave
               // an empty assistant bubble ("no response") if a turn returns nothing.
               "I didn't get a response that time — please try again.");
@@ -2083,9 +2100,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     }
     setGmsgs([]);
     endedRef.current = false;
+    closeSessionRef.current = false;
+    leaveGrowRef.current = false;
     wrapUpRef.current = false;
+    overtimeInactivityRef.current = 0;
     goodbyeRef.current = false;
-    endKindRef.current = "complete";
     memorySavedRef.current = false;
     setHeldProposals([]);
     setMemoryDraft(null);
@@ -2169,12 +2188,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
    */
   const sendGrow = (
     text: string,
-    opts?: { wrapUp?: boolean; goodbye?: boolean },
+    opts?: { wrapUp?: boolean; goodbye?: boolean; proposals?: boolean },
   ) => {
     const wrapUp = opts?.wrapUp ?? false;
     const goodbye = opts?.goodbye ?? false;
+    const proposalsTurn = opts?.proposals ?? false;
     if (busy && !wrapUp) return;
-    if (!wrapUp) {
+    // A real user turn (not a wrap-up/goodbye/proposals control turn) — the user
+    // just picked the session back up, so the overtime-inactivity clock restarts.
+    if (!wrapUp && !goodbye && !proposalsTurn)
+      overtimeInactivityRef.current = 0;
+    if (!wrapUp && !proposalsTurn) {
       const userMsg = { id: uid(), role: "user" as const, content: text };
       setGmsgs((p) => [...p, userMsg]);
     }
@@ -2264,29 +2288,56 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           });
         const others = afterDeletes.filter((pp) => !CREATE_KINDS.has(pp.kind));
         const finalProposals = [...others, ...creates];
-        const content =
-          accumulated.trim() ||
-          (finalProposals.length
-            ? "I've prepared this for your review."
-            : // Safety net: the backend already streams a fallback, but never leave
-              // an empty assistant bubble ("no response") if a turn returns nothing.
-              "I didn't get a response that time — please try again.");
-        const ending = endRecord !== null;
+        // **A STEP 2 turn is never an ending turn, whatever the model calls.** The instruction
+        // says not to call `end_session` again, and the overtime timing block — still attached,
+        // because the clock is past zero by now — says "end the session now". A model that obeys
+        // the louder of the two used to lose every proposal in that reply: `ending` suppressed
+        // the cards (they are held on a real ending), the `proposalsTurn` branch below returned
+        // before anything held them, and the session finished having changed nothing about the
+        // goal, which is the exact failure this whole split was written to fix.
+        const ending = endRecord !== null && !proposalsTurn;
+        // The ending turn's own bubble is wordless surprisingly often — `end_session` plus
+        // `propose_goal_change` calls with no prose is a normal reply. It used to fall back to
+        // "I've prepared this for your review." here too — the SAME literal text the *review
+        // card* posts once the user actually decides to save (`closeSession`, later) — so a
+        // session that ended this way showed that sentence twice in a row, before the user had
+        // even seen the record (BUG-069/070 test session, 2026-09-02). This turn's proposals are
+        // HELD, not shown, until the record is decided (`!ending` below), so there is nothing yet
+        // to "review" — drop the bubble entirely rather than filling it with a sentence that is
+        // both premature and a duplicate; the SESSION WRAP-UP card that follows is what speaks
+        // for this moment.
+        const blankEndingTurn = ending && !accumulated.trim();
+        // **The same rule on any turn: never write words the coach did not say.** A wordless turn
+        // that produced cards is spoken for by the cards; announcing them in a sentence the model
+        // never wrote is how "Here's what I suggest." (Android's twin of this fallback) ended up
+        // above nothing at all, and then inside the session record (owner, 2026-09-08). Only the
+        // genuinely empty turn keeps a line, because there a silent bubble says nothing about
+        // what went wrong.
+        const content = blankEndingTurn
+          ? ""
+          : accumulated.trim() ||
+            (finalProposals.length
+              ? ""
+              : // Safety net: the backend already streams a fallback, but never leave
+                // an empty assistant bubble ("no response") if a turn returns nothing.
+                "I didn't get a response that time — please try again.");
         setGmsgs((p) =>
-          p.map((m) =>
-            m.id === id
-              ? {
-                  ...m,
-                  streaming: false,
-                  status: undefined,
-                  content,
-                  // On the ending turn the cards wait: the record is decided first.
-                  ...(finalProposals.length && !ending
-                    ? { proposals: finalProposals }
-                    : {}),
-                }
-              : m,
-          ),
+          blankEndingTurn
+            ? p.filter((m) => m.id !== id)
+            : p.map((m) =>
+                m.id === id
+                  ? {
+                      ...m,
+                      streaming: false,
+                      status: undefined,
+                      content,
+                      // On the ending turn the cards wait: the record is decided first.
+                      ...(finalProposals.length && !ending
+                        ? { proposals: finalProposals }
+                        : {}),
+                    }
+                  : m,
+              ),
         );
         setBusy(false);
         if (goodbye) {
@@ -2294,6 +2345,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // the moment it arrived. The user closes when they've read it.
           goodbyeRef.current = false;
           setGmsgs((p) => [...p, { id: uid(), role: "closed", content: "" }]);
+          return;
+        }
+        if (proposalsTurn) {
+          // STEP 2 answered. Cards to review → the footer shows them and the user decides;
+          // nothing proposed → there is nothing to decide, so go straight to the goodbye.
+          // Either way this turn must not leave the session parked in review with no card,
+          // which is the one state that has no way forward.
+          if (!finalProposals.length) askForGoodbyeRef.current();
           return;
         }
         if (ending) {
@@ -2318,13 +2377,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           err === "NETWORK"
             ? "Backend unreachable — is it running?"
             : err || "AI error.";
-        setGmsgs((p) =>
-          p.map((m) =>
-            m.id === id
-              ? { ...m, streaming: false, content: msg, error: true }
-              : m,
-          ),
-        );
+        // **An error is not a message** — see the identical note on the plain chat's `onError`
+        // above. This turn used to fill the placeholder in with the error (`error: true`, an
+        // amber bubble) *and* raise `chatToast.error`, so a GROW-session failure — a provider
+        // rate limit, reliably — showed up twice on one screen in two shapes (BUG-068). The
+        // notice is the one place this panel reports anything; the failed turn's empty
+        // streaming bubble is taken back out rather than filled in.
+        setGmsgs((p) => p.filter((m) => m.id !== id));
         chatToast.error(msg);
         // Never strand the user inside the ending sequence.
         if (goodbye) {
@@ -2332,6 +2391,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           setGmsgs((p) => [...p, { id: uid(), role: "closed", content: "" }]);
         } else if (wrapUp) {
           finishGrow();
+        } else if (proposalsTurn) {
+          // The goal keeps whatever it already had; the session still has to end.
+          askForGoodbyeRef.current();
         }
       },
     });
@@ -2347,13 +2409,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const finishGrow = (closingText?: string) => {
     if (endedRef.current) return;
     endedRef.current = true;
-    const lastCoach =
-      closingText ??
-      [...gmsgs]
-        .reverse()
-        .find((m) => m.role === "assistant" && m.content.trim() && !m.error)
-        ?.content ??
-      null;
+    // **Only a real record, or none.** This used to fall back to the last thing the coach said
+    // whenever no record came through — which on a wordless ending turn was a sentence the app
+    // had invented, so the card offered to save that as the memory of the session (owner,
+    // 2026-09-08). `closeSession` refuses to save a blank record, so nothing is written and the
+    // card can say plainly that there is nothing to keep.
+    const lastCoach = closingText ?? null;
     setMemoryDraft(lastCoach);
     // The decision now exists — make it survive reloads until the user chooses.
     // The live-session cache has served its purpose and yields to the pending-end card.
@@ -2421,18 +2482,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     "the same reply propose only what this session genuinely supports adding to the " +
     "goal (which may be nothing). No goodbye yet.]";
 
-  /** The user pressed End and asked for a proper close rather than just quitting. */
-  const EARLY_END_INSTRUCTION =
-    "[I am ending this session now, before it reached its natural end. Close it " +
-    "honestly: base everything only on what we actually covered, name what we did " +
-    "and did not get to, and do not present it as a completed session. Call " +
-    "end_session with that record, and propose something for the goal only if this " +
-    "conversation really supports it — most likely nothing. No goodbye yet.]";
+  // The "close it properly" instruction that End used to send lived here. It is gone with the
+  // option itself (owner, 2026-09-08): End is a local exit now, and the honest early close is
+  // what the coach writes when the *conversation* ends — reached by saying so, not by a button
+  // that needs the provider to answer before it can let you out.
 
   const sendGrowRef = useRef(sendGrow);
   useEffect(() => {
     sendGrowRef.current = sendGrow;
   });
+
+  // `sendGrow` runs before `askForGoodbye` is defined and has to be able to reach it — the
+  // proposals turn hands straight over to the farewell when there is nothing to review.
+  const askForGoodbyeRef = useRef<() => void>(() => {});
 
   // Proposals from this session that still await a decision — accepted and
   // rejected ones must not be counted, or the wrap-up claims phantom work.
@@ -2443,11 +2505,29 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   );
 
   /**
+   * A GROW session's end note ("Session ended.", "Session memory saved.") is posted into the
+   * PLAIN chat's transcript, not the session's own — but it carries no information into that
+   * chat: `buildHistory` already strips system messages from what the model sees. Leaving it
+   * sitting there forever served no purpose and had a second, worse effect — `list.length > 0`
+   * made "New chat" appear over a plain chat the user never actually typed a word into (owner,
+   * 2026-09-03). It now self-clears like the panel's own toast notices do (`PANEL_NOTICE_MS`).
+   */
+  const postSessionNote = (content: string) => {
+    const id = uid();
+    setMsgs((p) => [...p, { id, role: "system", content }]);
+    setTimeout(() => {
+      setMsgs((p) => p.filter((m) => m.id !== id));
+    }, PANEL_NOTICE_MS);
+  };
+
+  /**
    * Step 1 of the ending: the user has decided on the session record. This no
    * longer leaves the session — the held proposals are released next, and the
    * goodbye comes after those. `leaveGrow` is what actually exits.
    */
   const closeSession = (save: boolean) => {
+    if (closeSessionRef.current) return;
+    closeSessionRef.current = true;
     let saved = false;
     if (save && context.goalId && memoryDraft?.trim()) {
       saved = true;
@@ -2463,35 +2543,68 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // A card restored after a reload has no session behind it: there is nothing
     // left to propose and nobody to say goodbye. Decide the record and stop.
     if (!inGrow) {
-      setMsgs((p) => [
-        ...p,
-        {
-          id: uid(),
-          role: "system",
-          content: saved
-            ? "Session memory saved."
-            : "Session ended without saving memory.",
-        },
-      ]);
+      postSessionNote(
+        saved
+          ? "Session memory saved."
+          : "Session ended without saving memory.",
+      );
       return;
     }
-    // Drop the record card, then show whatever the coach proposed.
+    // Drop the record card, then ask what belongs in the goal.
     setGmsgs((p) => p.filter((m) => m.role !== "end"));
+    // A coach that proposed in the ending turn anyway (the old one-reply shape) is honoured
+    // rather than asked twice.
     if (heldProposals.length) {
       setGmsgs((p) => [
         ...p,
         {
           id: uid(),
           role: "assistant",
-          content: "I've prepared this for your review.",
+          content: "",
           proposals: heldProposals,
         },
       ]);
       setHeldProposals([]);
       setMode("grow-review");
-    } else {
-      askForGoodbye();
+      return;
     }
+    askForProposals();
+  };
+
+  /**
+   * **Step 2, and it is a turn of its own now** (owner, 2026-09-08: "не смешивай память сессии
+   * и то, что нужно сохранить в цель").
+   *
+   * The record and the goal changes used to be asked for in one reply. Most models wrote the
+   * record and stopped there — Cohere proposed nothing at all across a whole session, Gemini
+   * managed one — so sessions routinely ended having changed nothing about the goal they sat
+   * inside. Two questions, asked separately, are two things the model has to answer.
+   *
+   * It runs after the record is decided, which is also the order the method prescribes: what
+   * the session was, then what the goal should carry.
+   */
+  const askForProposals = () => {
+    // The mode moves only once the turn is actually going: `sendGrow` bails while another is in
+    // flight, and `grow-review` with neither a card nor a request is the one state with nothing
+    // to press. (End is unconditional now, so it is escapable either way — but it should not
+    // happen.)
+    if (busy) {
+      askForGoodbyeRef.current();
+      return;
+    }
+    setMode("grow-review");
+    sendGrowRef.current(
+      "[The record is decided. Now the second question, and only this one: looking back over " +
+        "the WHOLE of today's conversation, what — if anything — should change about this " +
+        "goal? Call `propose_goal_change` for each one in this reply: an obstacle or an action " +
+        "that surfaced, a strategy option, something that deserves to be a target (the " +
+        "commitment, if there was one), a resource worth keeping, or a rewording of the goal " +
+        "itself now that they can say what they actually want. Judge each against THIS goal, " +
+        "not against the aim of the session, and use their words. If nothing from today " +
+        "belongs in the goal, proposing nothing is the right answer — say so in one line. No " +
+        "goodbye yet, and do not call end_session again.]",
+      { proposals: true },
+    );
   };
 
   /**
@@ -2518,9 +2631,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           ? "They saved the session record. "
           : "They chose not to save the session record. ") +
         `They accepted ${kept} and declined ${declined} of the changes you proposed. ` +
-        (endKindRef.current === "early"
-          ? "Remember they ended this session early, so keep it honest. "
-          : "") +
+        // There is no "they ended early" line any more: End leaves without the coach, so the
+        // only close that reaches a goodbye is one the coach ran itself.
         "Say your goodbye now, in the language we have been speaking: short, " +
         "human, and shaped by what they actually kept. Do not repeat the " +
         "summary, do not propose anything, do not call any tools, and do not " +
@@ -2529,8 +2641,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     );
   };
 
+  useEffect(() => {
+    askForGoodbyeRef.current = askForGoodbye;
+  });
+
   /** The session is over: leave GROW mode and note what became of it. */
   const leaveGrow = (opts?: { silent?: boolean }) => {
+    if (leaveGrowRef.current) return;
+    leaveGrowRef.current = true;
     setMode("chat");
     setSession(null);
     setMemoryDraft(null);
@@ -2538,10 +2656,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     clearPendingEnd(context.goalId);
     clearGrowSession(context.goalId);
     if (opts?.silent) {
-      setMsgs((p) => [
-        ...p,
-        { id: uid(), role: "system", content: "Session ended." },
-      ]);
+      postSessionNote("Session ended.");
       return;
     }
     const pending = sessionProposals;
@@ -2550,9 +2665,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         ? "Session memory saved."
         : "Session ended without saving memory.") +
       (pending > 0
-        ? ` ${pending} proposal${pending === 1 ? "" : "s"} from the session await your review.`
+        ? ` ${pending} proposal${pending === 1 ? " awaits" : "s await"} your review.`
         : "");
-    setMsgs((p) => [...p, { id: uid(), role: "system", content: note }]);
+    postSessionNote(note);
   };
 
   // ── Live session persistence & resume ─────────────────────────────────────
@@ -2574,14 +2689,51 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // Resume an interrupted session on mount / goal switch. If its time ran out
   // while the tab was closed, the restored zero on the clock triggers the
   // normal wrap-up → end-card flow instead of losing the result.
+  //
+  // **And from another device.** The local cache only knows about sessions started in this
+  // browser; the server copy is what makes one started on the phone resumable here (owner,
+  // 2026-09-08). Local wins when both exist — if this device has a session cached, this device
+  // is the one in it — so the fetch below only fills the gap where there is nothing local.
+  const resumeFromServer = (
+    stored: StoredGrowSession | null,
+    goalId: string | undefined,
+  ) => {
+    if (stored || !goalId) return;
+    // Asked once per goal per mount. `saveGrowSession` swallows a storage failure, so in a
+    // private window (or with site data blocked) the local cache stays empty however many times
+    // we adopt a session — and without this guard the re-run this schedules would fetch, save,
+    // and schedule itself again, forever.
+    if (resumeAskedRef.current.has(goalId)) return;
+    resumeAskedRef.current.add(goalId);
+    void fetchGrowSession(goalId).then((content) => {
+      if (!content) return;
+      try {
+        const remote = JSON.parse(content) as StoredGrowSession;
+        if (typeof remote.endsAt !== "number" || !Array.isArray(remote.msgs))
+          return;
+        // Straight back through the same door a local resume uses, so a session picked up on
+        // another device behaves exactly like one picked up in this tab.
+        saveGrowSession(goalId, remote);
+        setResumeTick((n) => n + 1);
+      } catch {
+        /* a payload we cannot read is one we do not resume */
+      }
+    });
+  };
+
   useEffect(() => {
     if (inGrow) return;
     if (loadPendingEnd(context.goalId)) return; // an undecided end card wins
     const stored = loadGrowSession(context.goalId);
-    if (!stored) return;
-    // Not clamped at zero: overrun is how the backstop measures itself, so a
-    // session resumed long after its time is immediately past the grace period
-    // instead of starting another ten-minute wait.
+    if (!stored) {
+      resumeFromServer(stored, context.goalId);
+      return;
+    }
+    // Not clamped at zero: the clock keeps the overrun it really has, so a resumed session
+    // shows the true elapsed time rather than pretending it has just run out. The BACKSTOP,
+    // though, starts fresh — `overtimeInactivityRef` is reset below — because its ten minutes
+    // measure silence in front of the user, and nobody was in front of it while the tab was
+    // shut.
     const remaining = Math.round((stored.endsAt - Date.now()) / 1000);
     const hasContent = stored.msgs.some(
       (m) => m.role === "assistant" && m.content.trim() && !m.error,
@@ -2593,11 +2745,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     }
     setGmsgs(stored.msgs);
     endedRef.current = false;
+    closeSessionRef.current = false;
+    leaveGrowRef.current = false;
     wrapUpRef.current = false;
+    overtimeInactivityRef.current = 0;
     setSession({ total: stored.total, remaining, mins: stored.mins });
     setMode("grow-active");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey]);
+  }, [scopeKey, resumeTick]);
 
   // ── GROW timer ────────────────────────────────────────────────────────────
 
@@ -2605,14 +2760,27 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (mode !== "grow-active" && mode !== "grow-closing") return;
     if (!session) return;
     const iv = setInterval(() => {
+      // **Counted here, not inside the updater.** React is free to run an updater more than
+      // once for one commit (it does in StrictMode), and a ref bumped in there counts the same
+      // second twice — which halves the backstop's ten minutes.
       setSession((s) => {
         if (!s) return s;
         // Allowed to go negative: the coach owns the ending, so overrun is
         // normal and is what the hard stop below measures.
-        return { ...s, remaining: s.remaining - 1 };
+        const nextRemaining = s.remaining - 1;
+        // Inactivity is measured only in overtime — `sendGrow` is what resets
+        // it on a real user turn, this only ever counts up.
+        overtimeInactivityRef.current =
+          nextRemaining < 0 ? overtimeInactivityRef.current + 1 : 0;
+        return { ...s, remaining: nextRemaining };
       });
     }, 1000);
     return () => clearInterval(iv);
+    // `session` itself is deliberately not a dependency: it changes every second (this very
+    // effect updates it), so including it would tear the interval down and recreate it every
+    // tick instead of running once per mount. `session?.total` is the one field that should
+    // restart it (a new session length).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, session?.total]);
 
   useEffect(() => {
@@ -2620,18 +2788,21 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     const frac = 1 - session.remaining / session.total;
     if (frac >= 0.8 && mode === "grow-active") setMode("grow-closing");
     // The clock no longer ends the session — the coach does, via `end_session`.
-    // This is only the backstop for a coach that never calls it: at
-    // OVERRUN_GRACE past the planned end it is TOLD to wrap up, so the ending
-    // is still analysed rather than fabricated by the UI.
+    // This is only the backstop for a coach that never calls it, or for a
+    // session the user has simply walked away from: once the user has gone
+    // quiet for OVERTIME_INACTIVITY_SECONDS *while in overtime*, it is TOLD to
+    // wrap up, so the ending is still analysed rather than fabricated by the
+    // UI. Keyed on inactivity rather than total overtime elapsed (see the
+    // constant's doc comment) — this effect re-runs every second as `session`
+    // ticks, so reading the ref directly (not as a dependency) is current.
     if (
-      session.remaining <= -OVERRUN_GRACE_SECONDS &&
+      overtimeInactivityRef.current >= OVERTIME_INACTIVITY_SECONDS &&
       !endedRef.current &&
       !wrapUpRef.current &&
       !busy &&
       (mode === "grow-active" || mode === "grow-closing")
     ) {
       wrapUpRef.current = true;
-      endKindRef.current = "overrun";
       sendGrowRef.current(WRAP_UP_INSTRUCTION, { wrapUp: true });
     }
   }, [session, mode, busy, WRAP_UP_INSTRUCTION]);
@@ -2895,11 +3066,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      {/* Closing banner */}
+      {/* **The app's one message card, not a fourth shape** (owner, 2026-09-08: the old strip
+          "выглядит очень плохо"). It used to be a bespoke `bg-white/10` band with 12.5px white
+          type — the only message in the app drawn as something other than `NoticeCard`, which is
+          exactly what CLAUDE.md → Notices exists to prevent. `ai` is its kind: this is the coach
+          saying something about itself, in the Intelligence violet its own surfaces use. It has
+          no X, because it is a state rather than an event — it stands until the session leaves
+          the closing stretch (see the rule about a notice the user cannot act on). */}
       {closing && (
-        <div className="mx-4 mb-2.5 px-3 py-2.5 rounded-[10px] bg-white/10 flex items-center gap-2 text-[12.5px] text-white">
-          <SproutArt size={14} />
-          The session is gently moving toward a close
+        <div className="px-3 pb-2.5 sm:px-4">
+          <NoticeCard kind="ai" onDismiss={null}>
+            The session is gently moving toward a close
+          </NoticeCard>
         </div>
       )}
 
@@ -3091,19 +3269,25 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                   the user's, mirrored (the squared corner is bottom-LEFT, so each turn leans to its
                   own side) and filled **Kale-200 #E0F2F5** — not white, which is the user's, and
                   not the gradient's own #F2FFFF, which at the foot of the chat IS the ground. */}
-                <div className="max-w-[94%] min-w-0 rounded-2xl rounded-bl-sm bg-[#E0F2F5] px-3.5 py-2.5 text-[14.5px] leading-[1.62] text-[#182928] break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
-                  {m.streaming && !m.content ? (
-                    // Waiting for the answer — the three-dot loader in the chat's own teal.
-                    <ThinkingDots />
-                  ) : (
-                    <>
-                      <Markdown text={m.content} />
-                      {m.streaming && (
-                        <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-[#0A8080] rounded-sm animate-pulse" />
-                      )}
-                    </>
-                  )}
-                </div>
+                {/* A settled turn with no words is a turn that only produced cards — the cards
+                    speak for it, and an empty capsule above them is just a hole in the
+                    conversation. It still lives in state, because it is what carries the
+                    proposals; it simply has no bubble. */}
+                {(m.streaming || m.content) && (
+                  <div className="max-w-[94%] min-w-0 rounded-2xl rounded-bl-sm bg-[#E0F2F5] px-3.5 py-2.5 text-[14.5px] leading-[1.62] text-[#182928] break-words [overflow-wrap:anywhere] select-text selection:bg-[#005961]/25 selection:text-[#003737]">
+                    {m.streaming && !m.content ? (
+                      // Waiting for the answer — the three-dot loader in the chat's own teal.
+                      <ThinkingDots />
+                    ) : (
+                      <>
+                        <Markdown text={m.content} />
+                        {m.streaming && (
+                          <span className="inline-block w-[7px] h-[15px] ml-0.5 align-text-bottom bg-[#0A8080] rounded-sm animate-pulse" />
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
                 {!m.streaming && m.content && (
                   <CopyButton text={m.content} tone="dark" />
                 )}
@@ -3291,7 +3475,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                           disabled={!canEndEarly}
                           className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
                         >
-                          <Ic path={PATHS.x} size={14} /> End session early
+                          <Ic path={PATHS.x} size={14} /> End
                         </button>
                       ) : goal ? (
                         <button
@@ -3334,15 +3518,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           remainingLabel={overtime ? "" : timerLabel}
           onConfirm={() => {
             setConfirmEnd(false);
-            if (busy) return;
-            endKindRef.current = "early";
-            wrapUpRef.current = true;
-            sendGrowRef.current(EARLY_END_INSTRUCTION, { wrapUp: true });
-          }}
-          onQuit={() => {
-            setConfirmEnd(false);
-            // Abandon any turn in flight, or it keeps streaming (and possibly
-            // persisting proposals) into a transcript nobody will see again.
+            // **Nothing here waits on the coach** (owner, 2026-09-08). End used to offer
+            // "close it properly", which asks the model for a record — so when the provider
+            // was rate-limiting, the way out of the session went through the thing that was
+            // broken. The graceful close still exists; it is what happens when the coach ends
+            // the session, not what the escape hatch depends on.
+            //
+            // Abandon any turn in flight, or it keeps streaming (and possibly persisting
+            // proposals) into a transcript nobody will see again.
             stopRef.current = true;
             setBusy(false);
             endedRef.current = true;
@@ -3525,6 +3708,8 @@ const PATHS = {
     "<path fill='currentColor' fill-rule='evenodd' d='M11.5 3.5h2a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5m-2.5 9a.5.5 0 0 0 .5-.5V7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5zm-4.5 0A.5.5 0 0 0 5 12v-2a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 .5.5zm-1 1.5h-1a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2h2q.26 0 .5.063V7a2 2 0 0 1 2-2h2q.26 0 .5.063V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z'/>",
   trash:
     "<path fill='currentColor' fill-rule='evenodd' d='M9 2H7a.5.5 0 0 0-.5.5V3h3v-.5A.5.5 0 0 0 9 2m2 1v-.5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2V3H2.251a.75.75 0 0 0 0 1.5h.312l.317 7.625A3 3 0 0 0 5.878 15h4.245a3 3 0 0 0 2.997-2.875l.318-7.625h.312a.75.75 0 0 0 0-1.5zm.936 1.5H4.064l.315 7.562A1.5 1.5 0 0 0 5.878 13.5h4.245a1.5 1.5 0 0 0 1.498-1.438zm-6.186 2v5a.75.75 0 0 0 1.5 0v-5a.75.75 0 0 0-1.5 0m3.75-.75a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5a.75.75 0 0 1 .75-.75'/>",
+  // Gravity `envelope` — the same glyph as `src/components/spira/icons.tsx`'s `Mail`.
+  mail: "<path fill='currentColor' fill-rule='evenodd' d='M3.5 4h9c.25 0 .485.06.692.169L8.75 7.5a1.25 1.25 0 0 1-1.5 0L2.808 4.169C3.015 4.06 3.251 4 3.5 4M2.001 5.438L2 5.5v5A1.5 1.5 0 0 0 3.5 12h9a1.5 1.5 0 0 0 1.5-1.5v-5l-.001-.062L9.65 8.7a2.75 2.75 0 0 1-3.3 0zM.5 5.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3z'/>",
 };
 
 /** Maps a suggestion's icon key to a Gravity UI glyph (the app's set — never emoji). Falls back
@@ -3722,7 +3907,7 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
   option: { icon: PATHS.sparkles, label: "Strategy option" },
   note: { icon: PATHS.pencil, label: "Resource note" },
   link: { icon: PATHS.sparkles, label: "New link" },
-  email: { icon: PATHS.sparkles, label: "New contact" },
+  email: { icon: PATHS.mail, label: "New email" },
   edit: { icon: PATHS.pencil, label: "Goal edit" },
   obstacle: { icon: PATHS.shield, label: "New obstacle" },
   action: { icon: PATHS.leaf, label: "Current action" },
@@ -3734,7 +3919,7 @@ const KIND_META: Record<string, { icon: string; label: string }> = {
   edit_action: { icon: PATHS.leaf, label: "Edit action" },
   edit_note: { icon: PATHS.pencil, label: "Edit note" },
   edit_link: { icon: PATHS.pencil, label: "Edit link" },
-  edit_email: { icon: PATHS.pencil, label: "Edit contact" },
+  edit_email: { icon: PATHS.pencil, label: "Edit email" },
   complete_target: { icon: PATHS.check, label: "Target status" },
   target_progress: { icon: PATHS.target, label: "Target progress" },
   select_option: { icon: PATHS.sparkles, label: "Select option" },
@@ -4319,6 +4504,11 @@ function SteppedProposalCard({
 }) {
   const [step, setStep] = useState(0);
   const [instructing, setInstructing] = useState(false);
+  // Dismissing discards every pending change in the review at once, non-undoably (BUG-075: a
+  // stray click on the corner ✕ — its natural "close this" position — silently threw away the
+  // coach's just-drafted proposals with no way back). Gated behind the same `ConfirmDialog` a
+  // goal/target delete uses, rather than acting on the raw click.
+  const [confirmDismissAll, setConfirmDismissAll] = useState(false);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [noActive, setNoActive] = useState<Set<string>>(new Set());
   // Per-step unticked optional fields, keyed "proposalId::aspectId".
@@ -4443,7 +4633,7 @@ function SteppedProposalCard({
           {idx + 1} / {total}
         </span>
         <button
-          onClick={dismissAll}
+          onClick={() => setConfirmDismissAll(true)}
           aria-label="Dismiss all"
           className="text-[#003737]/35 hover:text-red-600 transition-colors p-0.5 -mr-0.5"
         >
@@ -4596,7 +4786,7 @@ function SteppedProposalCard({
                 : `Save ${includedCount} of ${total}`}
             </button>
             <button
-              onClick={dismissAll}
+              onClick={() => setConfirmDismissAll(true)}
               className="text-[12.5px] text-[#003737]/45 hover:text-red-600 transition-colors py-1"
             >
               Dismiss all
@@ -4604,6 +4794,17 @@ function SteppedProposalCard({
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={confirmDismissAll}
+        onOpenChange={setConfirmDismissAll}
+        title={`Dismiss all ${total} change${total > 1 ? "s" : ""}?`}
+        description="None of what the coach proposed in this review will be saved. This can't be undone."
+        confirmLabel="Yes, dismiss all"
+        onConfirm={() => {
+          setConfirmDismissAll(false);
+          dismissAll();
+        }}
+      />
     </div>
   );
 }
@@ -5212,7 +5413,7 @@ function GrowStartOverlay({
 
 // ── GROW end card ──────────────────────────────────────────────────────────
 
-function GrowEndCard({
+export function GrowEndCard({
   proposals,
   memory,
   revising,
@@ -5234,6 +5435,14 @@ function GrowEndCard({
     onRevise(t);
     setReviseDraft("");
   };
+  // **An empty record is said plainly, and cannot be saved.** The coach writes nothing when the
+  // provider fails mid-close, or when End was pressed and the session ended locally with no AI
+  // involved at all. This card then offered "Save memory" over nothing at all — a button that
+  // promises to keep something there is nothing to keep, and pressing it wrote a blank memory
+  // over whatever the previous session had left. It also hid the revise field in exactly the
+  // case where asking for a record is the one useful thing left to do (owner, 2026-09-08).
+  const record = (memory ?? "").trim();
+  const hasRecord = record.length > 0;
 
   return (
     <div className="rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
@@ -5242,53 +5451,52 @@ function GrowEndCard({
         wrap-up
       </span>
       <p className="mt-2 text-[13.5px] leading-[1.5] text-[#003737]/60">
-        {memory
+        {hasRecord
           ? "This is what will be saved as the session memory — next time we'll continue from it."
-          : "Save what I learned about this goal? Next time we'll continue instead of starting from scratch."}
+          : "The coach wrote no record of this session. Ask for one below, or close without saving."}
       </p>
-      {memory && (
-        <div
-          className={cn(
-            "mt-2.5 rounded-[9px] border border-[#E5E5E5] bg-[#FFFAF2] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] text-[#003737]/85 whitespace-pre-wrap select-text",
-            revising && "opacity-50",
-          )}
-        >
-          {memory}
-        </div>
-      )}
-      {memory && (
-        <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#E5E5E5] bg-white px-3 py-1.5 focus-within:border-[#005961] transition-colors">
-          {revising ? (
-            <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
-          ) : (
-            <Ic
-              path={PATHS.pencil}
-              size={13}
-              className="shrink-0 text-[#003737]/40"
-            />
-          )}
-          <input
-            value={reviseDraft}
-            onChange={(e) => setReviseDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendRevise();
-            }}
-            disabled={revising}
-            placeholder={
-              revising ? "Revising…" : "Want changes? Tell the AI what to fix…"
-            }
-            className="flex-1 bg-transparent outline-none text-[13px] text-[#003737] placeholder:text-[#003737]/35 min-h-[30px] disabled:opacity-60"
+      <div
+        className={cn(
+          "mt-2.5 rounded-[9px] border border-[#E5E5E5] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] whitespace-pre-wrap select-text",
+          hasRecord
+            ? "bg-[#FFFAF2] text-[#003737]/85"
+            : "bg-[#FBFAFA] text-[#003737]/45 italic",
+          revising && "opacity-50",
+        )}
+      >
+        {hasRecord ? record : "No record was written."}
+      </div>
+      <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#E5E5E5] bg-white px-3 py-1.5 focus-within:border-[#005961] transition-colors">
+        {revising ? (
+          <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
+        ) : (
+          <Ic
+            path={PATHS.pencil}
+            size={13}
+            className="shrink-0 text-[#003737]/40"
           />
-          {reviseDraft.trim() && !revising && (
-            <button
-              onClick={sendRevise}
-              className="shrink-0 text-[12.5px] font-semibold text-[#005961] hover:text-[#003737] px-1"
-            >
-              Revise
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        <input
+          value={reviseDraft}
+          onChange={(e) => setReviseDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") sendRevise();
+          }}
+          disabled={revising}
+          placeholder={
+            revising ? "Revising…" : "Want changes? Tell the AI what to fix…"
+          }
+          className="flex-1 bg-transparent outline-none text-[13px] text-[#003737] placeholder:text-[#003737]/35 min-h-[30px] disabled:opacity-60"
+        />
+        {reviseDraft.trim() && !revising && (
+          <button
+            onClick={sendRevise}
+            className="shrink-0 text-[12.5px] font-semibold text-[#005961] hover:text-[#003737] px-1"
+          >
+            Revise
+          </button>
+        )}
+      </div>
       {proposals > 0 && (
         <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[9px] bg-[#E5F4F3] text-[#005961] text-[12.5px]">
           <Ic path={PATHS.target} size={12} /> {proposals} proposal
@@ -5298,8 +5506,8 @@ function GrowEndCard({
       <div className="mt-3.5 flex items-center gap-2">
         <button
           onClick={onSave}
-          disabled={revising}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors disabled:opacity-50"
+          disabled={revising || !hasRecord}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors disabled:opacity-50 disabled:hover:bg-[#005961]"
         >
           <Ic path={PATHS.check} size={14} /> Save memory
         </button>
@@ -5307,7 +5515,7 @@ function GrowEndCard({
           onClick={onDiscard}
           className="ml-auto text-[13px] text-[#003737]/50 hover:text-[#003737] transition-colors px-1.5"
         >
-          Don't save
+          {hasRecord ? "Don't save" : "Close"}
         </button>
       </div>
     </div>
@@ -5343,6 +5551,7 @@ function ProviderSheet({
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({});
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const loadModels = async (provId: string) => {
     if (modelLists[provId] || loadingModels === provId) return;
@@ -5369,32 +5578,54 @@ function ProviderSheet({
 
   return (
     <div
-      className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
+      className={cn(
+        "absolute inset-0 z-45 flex bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]",
+        isMobile ? "items-end" : "items-stretch justify-end",
+      )}
       onClick={onClose}
     >
-      {/* The app's sheet shape (BUG-061): a fixed Kale head, and only the body scrolls.
-          It used to be one `overflow-y-auto` container with a hand-drawn grab handle and a
-          white head, so the title, the close button and — the part with consequence — the
-          sentence saying what happens to a pasted API key all scrolled away as soon as the
-          user reached the provider they wanted. `max-h-[88%]` also made it the shortest
-          drawer in the app, since that 88% was of the panel rather than of the screen — the
-          owner's "он короче чем обычный drawer — думаю это неверно".
+      {/* The app's sheet shape (BUG-061): a fixed head, and only the body scrolls. It used to
+          be one `overflow-y-auto` container with a hand-drawn grab handle and a white head, so
+          the title, the close button and — the part with consequence — the sentence saying what
+          happens to a pasted API key all scrolled away as soon as the user reached the provider
+          they wanted.
 
-          `sheet-inset` is the owner's number (2026-08-28), measured against the SCREEN like
-          every other sheet. Note what that means here: this sheet is `absolute inset-0` inside
-          the 92 %-tall chat drawer, so 88 % of the screen covers all but ~36 px of it. That
-          thin teal strip is the whole of the coach that shows through, and it is meant to read
-          as one sheet stacked on another rather than as a gap. Making it 88 % of the DRAWER
-          instead would leave the coach's head visible, but it is also exactly the "too short"
-          this sheet was reported for. */}
+          **On a phone** this is a bottom drawer, sized like every other sheet stacked inside
+          another one — `sheet-inset` is the owner's number (2026-08-28), measured against the
+          SCREEN like every other sheet. Note what that means here: this sheet is `absolute
+          inset-0` inside the 92 %-tall chat drawer, so 88 % of the screen covers all but ~36 px
+          of it. That thin teal strip is the whole of the coach that shows through, and it is
+          meant to read as one sheet stacked on another rather than as a gap. Making it 88 % of
+          the DRAWER instead would leave the coach's head visible, but it is also exactly the
+          "too short" this sheet was reported for.
+
+          **On a laptop it is an ordinary side panel, not a drawer** (owner, 2026-09-03: "на вебе
+          это должна быть обычная боковая панель поверх панели чата" — "on web this should be an
+          ordinary side panel over the chat panel"). Every other sheet in the app already follows
+          exactly this split — bottom drawer on a phone, side panel from the right on a laptop
+          (CLAUDE.md → Sheets) — this one had been hard-coded to the phone shape at every width,
+          which is what made it read as a drawer stuck inside a page that has no other drawers.
+          It slides in over the FULL height of the coach panel — the coach is what it sits on top
+          of, not the whole screen — which is also why it stays nested here rather than becoming
+          a portalled `Sheet`: a `side="right"` `Sheet` would portal to the page and slide in
+          from the PAGE's edge, coincidentally lining up with the coach's edge only because the
+          coach itself docks flush right; nesting keeps that relationship explicit rather than
+          accidental. */}
       <div
-        className="sheet-inset flex w-full min-h-0 flex-col overflow-hidden bg-white text-[#003737] rounded-t-[22px]"
+        className={cn(
+          "flex min-h-0 flex-col overflow-hidden bg-white text-[#003737]",
+          isMobile
+            ? "sheet-inset w-full rounded-t-[22px]"
+            : "h-full w-full sm:max-w-md",
+        )}
         onClick={(e) => e.stopPropagation()}
         style={{
-          animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both",
+          animation: isMobile
+            ? "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both"
+            : "slideInRight 0.3s cubic-bezier(0.2,0.8,0.2,1) both",
         }}
       >
-        <SheetHead title="AI providers" onClose={onClose} />
+        <SheetHead title="AI providers" onClose={onClose} tone="auxiliary" />
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-5">
           <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
             Keys are stored encrypted on your account. Keep several connected
@@ -5675,7 +5906,10 @@ function ProviderSheet({
           </p>
         </div>
       </div>
-      <style>{`@keyframes slideUp { from { transform: translateY(34px); opacity: 0.25; } to { transform: translateY(0); opacity: 1; } }`}</style>
+      <style>{`
+        @keyframes slideUp { from { transform: translateY(34px); opacity: 0.25; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideInRight { from { transform: translateX(24px); opacity: 0.25; } to { transform: translateX(0); opacity: 1; } }
+      `}</style>
     </div>
   );
 }
@@ -5688,15 +5922,19 @@ function ProviderSheet({
  * (owner, 2026-08-22). So the wrap-up is offered, and quitting outright is a
  * peer of it rather than something hidden behind a cancel.
  */
+/**
+ * **End: leave now, without the coach.** One question, then out — no record, no memory, no
+ * farewell (owner, 2026-09-08). It used to lead with "Close it properly", which sends the coach a
+ * wrap-up instruction; that made the only way out of a session depend on the provider answering,
+ * and a rate-limited provider left no way out at all.
+ */
 function EndConfirmDialog({
   remainingLabel,
   onConfirm,
-  onQuit,
   onCancel,
 }: {
   remainingLabel: string;
   onConfirm: () => void;
-  onQuit: () => void;
   onCancel: () => void;
 }) {
   return (
@@ -5710,34 +5948,24 @@ function EndConfirmDialog({
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <h3 className="font-['Playfair_Display'] text-[22px] font-semibold leading-[1.18] mb-2">
-          End the session early?
+          End this session?
         </h3>
         <p className="text-[13.5px] text-[#003737]/60 leading-[1.5] mb-4">
-          {remainingLabel && `There's still ${remainingLabel} left. `}How would
-          you like to leave it?
+          {remainingLabel && `There's still ${remainingLabel} left. `}The
+          session closes now. Nothing from it is saved — no record, no memory.
         </p>
         <div className="flex flex-col gap-2">
           <button
             onClick={onConfirm}
             className="w-full py-3 rounded-xl bg-[#005961] text-white text-[14px] font-semibold hover:bg-[#003737] transition-colors"
           >
-            Close it properly
-          </button>
-          <p className="text-[12px] text-[#003737]/45 leading-[1.45] -mt-0.5 mb-1">
-            A short, honest close: what we did and didn&apos;t get to, and
-            whether to keep any of it.
-          </p>
-          <button
-            onClick={onQuit}
-            className="w-full py-3 rounded-xl border border-[#E5E5E5] text-[#003737] text-[14px] font-medium hover:border-[#005961]/40 transition-colors"
-          >
-            Just close, save nothing
+            Yes, end it
           </button>
           <button
             onClick={onCancel}
             className="w-full py-2.5 text-[13.5px] text-[#003737]/50 hover:text-[#003737] transition-colors"
           >
-            Keep going
+            No, keep going
           </button>
         </div>
       </div>
@@ -6215,6 +6443,11 @@ function Composer({
   const attachDisabled =
     busy || attachments.length + reading >= ATTACH_MAX_COUNT;
 
+  // Checked as the user types, so a long paste is caught while it can still be fixed — and
+  // worded by the app's shared helper, so it reads like every other over-length message.
+  const lengthProblem = lengthError(v, FIELD_LIMITS.chatMessage, "Message");
+  const tooLong = lengthProblem !== null;
+
   // Open the file dialog directly when there are no resources to choose from; otherwise offer the
   // two-source menu.
   const onPaperclip = () => {
@@ -6227,6 +6460,10 @@ function Composer({
     // Send when there is text OR at least one attachment — a photo or resource on its own is a
     // valid message (the server supplies a default prompt). Wait for any in-flight file reads.
     if ((!t && attachments.length === 0) || reading > 0) return;
+    // Too long to send: say so here rather than letting the server refuse it. The backend's
+    // `@Size` is the real boundary, and it answers with a 400 the user cannot act on — which is
+    // how a pasted job advert read as "no provider works" (owner, 2026-09-08).
+    if (tooLong) return;
     onSend(t, attachments.length ? attachments : undefined);
     setV("");
     resetAttachments();
@@ -6291,9 +6528,9 @@ function Composer({
             })}
           </div>
         )}
-        {attachError && (
+        {(attachError || lengthProblem) && (
           <p className="pb-1.5 text-[12px] text-[#EF523C]" role="alert">
-            {attachError}
+            {attachError || lengthProblem}
           </p>
         )}
         <textarea
@@ -6414,7 +6651,11 @@ function Composer({
           ) : (
             <button
               onClick={fire}
-              disabled={(!v.trim() && attachments.length === 0) || reading > 0}
+              disabled={
+                (!v.trim() && attachments.length === 0) ||
+                reading > 0 ||
+                tooLong
+              }
               className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-[#005961] text-white disabled:opacity-40 hover:bg-[#003737] transition-colors"
               title={reading > 0 ? "Waiting for attachments…" : "Send"}
             >

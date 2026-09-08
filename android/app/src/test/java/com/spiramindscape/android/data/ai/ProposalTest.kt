@@ -66,6 +66,52 @@ class ProposalTest {
         assertNull(createSummary(p))
     }
 
+    // BUG-078: an email/link create used to show only its headline, with `detail` set to a
+    // generic label ("New contact"/"New link") that duplicated the kind badge and was hidden
+    // by the card's own redundancy check — so the address/URL never appeared anywhere on the
+    // card. See the matching web test in proposal-logic.test.ts.
+    @Test
+    fun `shows the email address, role and phone in an email create's detail, not a generic label`() {
+        val p = proposalFromToolArgs(
+            args(
+                "kind" to "email",
+                "title" to "Support Team",
+                "value" to "support@example.com",
+                "role" to "Support",
+                "phone" to "555-0100",
+            ),
+        )!!
+        assertEquals("Support Team", p.title)
+        assertEquals("support@example.com · Support · 555-0100", p.detail)
+        assertEquals(
+            mapOf("name" to "Support Team", "email" to "support@example.com", "role" to "Support", "phone" to "555-0100"),
+            p.patch,
+        )
+    }
+
+    @Test
+    fun `falls back to the generic label only when an email create has nothing beyond a name`() {
+        val p = proposalFromToolArgs(args("kind" to "email", "title" to "Support Team"))!!
+        assertEquals("New email", p.detail)
+    }
+
+    @Test
+    fun `shows the URL in a link create's detail when a label was given`() {
+        val p = proposalFromToolArgs(
+            args("kind" to "link", "title" to "Docs", "value" to "https://example.com/docs"),
+        )!!
+        assertEquals("Docs", p.title)
+        assertEquals("https://example.com/docs", p.detail)
+    }
+
+    @Test
+    fun `shows the new email, role and phone in an edit_email's detail`() {
+        val p = proposalFromToolArgs(
+            args("kind" to "edit_email", "id" to "r1", "value" to "new@example.com", "role" to "Manager"),
+        )!!
+        assertEquals("new@example.com · Manager", p.detail)
+    }
+
     @Test
     fun `a goal-level operation carries the goal id, an item edit carries the item id`() {
         val goalOp = proposalFromToolArgs(args("kind" to "delete_goal", "id" to "42"))!!
