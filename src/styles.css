@@ -744,11 +744,32 @@
   .ai-panel-resize-handle::after {
     background: color-mix(in oklab, white 45%, transparent);
   }
-  .ai-panel-left-resize-handle {
+  /* The coach panel is docked on the LEFT of the page now, between `SideNav` and the main
+     content (owner, 2026-09-03, reverting the 2026-08-23 move to the right) — its resize handle
+     belongs at its own RIGHT edge, the boundary it shares with the page content, which is what a
+     user would actually grab to resize it.
+
+     This class briefly lived as `.ai-panel-left-resize-handle` set to `left: -4px` for the
+     right-docked layout that preceded this revert. Naming it after a direction turned out to be
+     exactly what caused BUG-078's desktop clipping in the first place: the class name and the
+     property it set silently stopped matching each other the first time the panel's side changed
+     and nobody went looking for a class called "left" to fix a right-edge problem. Renamed to
+     `.ai-panel-right-resize-handle` so the name and the property agree again — if the panel's
+     side ever changes once more, rename this too, don't just flip the value inside it.
+
+     Whichever edge this sits on, it must never coincide with the actual VIEWPORT edge: `-4px`
+     pushes half the 8px handle outside its parent, which is harmless against an interior boundary
+     (SideNav / main content, both present here) but is real horizontal page overflow — enough to
+     make Windows draw a native scrollbar that slices through whatever UI sits flush against the
+     bottom of the screen — when that parent edge IS the viewport's own edge, which is exactly
+     what BUG-078 was. */
+  .ai-panel-right-resize-handle {
     left: auto;
     right: -4px;
   }
-  .ai-panel-left-resize-handle::after {
+  /* The 8px handle straddles the panel's edge, so the base 3px inset would put 3 of the grip
+     bar's 4px outside it — a white-on-white bar over the page. Pull it back inside. */
+  .ai-panel-right-resize-handle::after {
     left: 1px;
   }
   .ai-panel-resize-handle:hover::after,

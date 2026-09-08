@@ -15,6 +15,7 @@
  *   - Resource.body (note)           → ResourceService.MAX_NOTE_BODY_LENGTH (50000)
  *   - Resource.url (link)            → ResourceService.MAX_LINK_URL_LENGTH (1000)
  *   - Resource.phone                 → ResourceService.MAX_CONTACT_PHONE_LENGTH (50)
+ *   - AI chat message                → ChatRequest.MAX_MESSAGE_CHARS (50000)
  *
  * If any server limit changes, change it here too.
  */
@@ -30,6 +31,10 @@ export const FIELD_LIMITS = {
   resourceUrl: 1000,
   resourceNoteBody: 50000,
   resourcePhone: 50,
+  // One message to the AI panel. The composer checks it BEFORE sending, because the server
+  // rejecting it is a 400 the user can do nothing with — which is exactly how a pasted job
+  // advert took the whole panel down on 2026-09-08.
+  chatMessage: 50000,
 } as const;
 
 export type FieldLimitKey = keyof typeof FIELD_LIMITS;

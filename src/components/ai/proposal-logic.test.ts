@@ -87,6 +87,60 @@ describe("proposalFromToolArgs — maps a tool call to a Proposal", () => {
     ]);
   });
 
+  // BUG-078: an email/link create used to show only its headline, with `detail` set to a
+  // generic label ("New contact"/"New link") that duplicated the kind badge and was hidden by
+  // ProposalBody's redundancy check — so the address/URL never appeared anywhere on the card.
+  it("shows the email address, role and phone in an email create's detail, not a generic label", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "email",
+        title: "Support Team",
+        value: "support@example.com",
+        role: "Support",
+        phone: "555-0100",
+      }),
+    )!;
+    expect(p.title).toBe("Support Team");
+    expect(p.detail).toBe("support@example.com · Support · 555-0100");
+    expect(p.patch).toEqual({
+      name: "Support Team",
+      email: "support@example.com",
+      role: "Support",
+      phone: "555-0100",
+    });
+  });
+
+  it("falls back to the generic label only when an email create has nothing beyond a name", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({ kind: "email", title: "Support Team" }),
+    )!;
+    expect(p.detail).toBe("New email");
+  });
+
+  it("shows the URL in a link create's detail when a label was given", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "link",
+        title: "Docs",
+        value: "https://example.com/docs",
+      }),
+    )!;
+    expect(p.title).toBe("Docs");
+    expect(p.detail).toBe("https://example.com/docs");
+  });
+
+  it("shows the new email/role/phone in an edit_email's detail", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "edit_email",
+        id: "r1",
+        value: "new@example.com",
+        role: "Manager",
+      }),
+    )!;
+    expect(p.detail).toBe("new@example.com · Manager");
+  });
+
   it("marks an option that should also be made active (done flag)", () => {
     const p = proposalFromToolArgs(
       JSON.stringify({ kind: "option", value: "Move to Berlin", done: "true" }),

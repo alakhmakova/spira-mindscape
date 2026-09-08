@@ -17,7 +17,8 @@ public record ChatRequest(
          * {@link #isNotEmpty()}. A blank-message-only request used to 400 with "must not be blank",
          * which is exactly what an attachment-only send from the phone hit (BUG-030 follow-up).
          */
-        @Size(max = 10_000)
+        @Size(max = MAX_MESSAGE_CHARS, message = "That message is too long — "
+                + "keep it under 50000 characters, or attach it as a file instead.")
         String message,
 
         /**
@@ -78,6 +79,25 @@ public record ChatRequest(
         @Size(max = 6, message = "At most 6 files can be attached to a message")
         java.util.List<Attachment> attachments
 ) {
+    /**
+     * How much text one message may carry.
+     *
+     * <p>Raised from 10 000 on 2026-09-08. Ten thousand characters is less than a pasted job
+     * advert plus a CV, which is an ordinary thing to bring to a goal about finding work — and
+     * the request died in validation before any provider saw it, so the panel reported it as
+     * "no provider works even with keys" (owner, same day). Fifty thousand matches the longest
+     * text the app already accepts anywhere, a note's body
+     * ({@code ResourceService.MAX_NOTE_BODY_LENGTH}), and mirrors {@code FIELD_LIMITS.chatMessage}
+     * on the web.
+     *
+     * <p>It stays bounded, and comfortably: 50 000 characters is roughly 12 500 tokens, a
+     * fraction of the smallest context window any supported provider offers (128 000), with the
+     * system prompt and replayed history still to fit beside it. It is also below the per-entry
+     * history cap ({@link MessageEntry#content()}), so a message that was accepted can still be
+     * replayed as history next turn rather than becoming a request the server would refuse.
+     */
+    public static final int MAX_MESSAGE_CHARS = 50_000;
+
     /**
      * A request must carry **something** — text, or at least one attachment. This replaces the old
      * {@code @NotBlank} on {@code message}, which rejected an attachment-only send (a photo with no

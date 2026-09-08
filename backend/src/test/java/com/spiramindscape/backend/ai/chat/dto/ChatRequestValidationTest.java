@@ -122,4 +122,32 @@ class ChatRequestValidationTest {
 
         assertThat(violatingPaths(req)).anyMatch(p -> p.contains("notEmpty"));
     }
+
+    /**
+     * A pasted job advert and a CV together run well past the old 10 000-character cap, and the
+     * refusal reached the user as a bare 400 (owner, 2026-09-08). The cap is now 50 000 — the
+     * longest text the app takes anywhere.
+     */
+    @Test
+    void acceptsALongPastedMessage() {
+        String pasted = "x".repeat(ChatRequest.MAX_MESSAGE_CHARS);
+        ChatRequest req = new ChatRequest(
+                1L, pasted, "ANTHROPIC", "chat", List.of(), null, null, null);
+
+        assertThat(validator.validate(req)).isEmpty();
+    }
+
+    @Test
+    void rejectsAMessageBeyondTheCapWithAReadableReason() {
+        String tooLong = "x".repeat(ChatRequest.MAX_MESSAGE_CHARS + 1);
+        ChatRequest req = new ChatRequest(
+                1L, tooLong, "ANTHROPIC", "chat", List.of(), null, null, null);
+
+        Set<ConstraintViolation<ChatRequest>> violations = validator.validate(req);
+        assertThat(violatingPaths(req)).contains("message");
+        // The message is what the panel now shows the user, so it has to say what to do — not
+        // "size must be between 0 and 50000".
+        assertThat(violations).allSatisfy(v ->
+                assertThat(v.getMessage()).contains("too long"));
+    }
 }

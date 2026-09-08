@@ -62,7 +62,13 @@ const DrawerOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/80", className)}
+    // `bg-foreground/80` (the app's near-black ink token), never raw `bg-black` — pure black is
+    // not in the palette (CLAUDE.md → Colour). On a sheet whose top edge sits below the viewport
+    // top (`.sheet-h`/`.sheet-max`, per the sheet spec), the gap above it renders this overlay
+    // directly, so an off-palette black there is not a subtle miss (BUG-071: the AI Coach drawer
+    // on mobile). Shared with `sheet.tsx` / `dialog.tsx` / `alert-dialog.tsx` — fix the token in
+    // one place if it ever needs to change again.
+    className={cn("fixed inset-0 z-50 bg-foreground/80", className)}
     {...props}
   />
 ));

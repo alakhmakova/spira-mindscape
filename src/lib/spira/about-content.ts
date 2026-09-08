@@ -231,7 +231,7 @@ export const ABOUT_SECTIONS: AboutSection[] = [
           {
             term: "Resources",
             text:
-              "Notes, links, files and contacts kept with the goal they belong to, so " +
+              "Notes, links, files and emails kept with the goal they belong to, so " +
               "the material is where the work is.",
           },
           {

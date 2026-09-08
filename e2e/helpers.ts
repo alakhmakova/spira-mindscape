@@ -1,4 +1,17 @@
 import { Page, Locator, expect } from "@playwright/test";
+import { appendFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Every goal `createGoal` makes gets its id appended here, one JSON line each. `global-teardown.ts`
+ * reads this file after the whole run and deletes exactly those goals — nothing is guessed from a
+ * goal's title (BUG-073: 13 of 14 goals in the local dev DB were leftover fixtures like "E2E img
+ * 1788185140243" that no run had ever cleaned up).
+ */
+const CREATED_GOALS_LOG = path.join(__dirname, ".created-goals.ndjson");
 
 /** Create a goal via the UI and land on its workspace page. Returns nothing. */
 export async function createGoal(page: Page, title: string) {
@@ -44,6 +57,10 @@ export async function createGoal(page: Page, title: string) {
   await card.click();
 
   await page.waitForURL(/\/goals\/(?!local-)/);
+  // Record the real id for teardown, before anything below can throw and skip it.
+  const id = page.url().match(/\/goals\/([^/?#]+)/)?.[1];
+  if (id)
+    appendFileSync(CREATED_GOALS_LOG, JSON.stringify({ id, title }) + "\n");
   // Clear the search so its results dropdown doesn't linger over the goal page.
   await page.getByPlaceholder("Search goals").first().fill("");
   // The Options section heading (exact) confirms we're on the goal workspace.

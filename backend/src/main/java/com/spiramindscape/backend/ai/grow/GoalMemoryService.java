@@ -63,9 +63,30 @@ public class GoalMemoryService {
         return goalRepository.findByIdAndUserId(goalId, currentUserId())
                 .map(Goal::getAiMemory)
                 .filter(m -> m != null && !m.isBlank())
-                .map(m -> "PREVIOUS GROW SESSIONS — memory the user chose to keep. Continue "
-                        + "from it: don't re-ask what it already answers; build on it naturally.\n"
-                        + m)
+                .map(m -> """
+                        PREVIOUS GROW SESSIONS — the records the user chose to keep, newest last.
+
+                        OPEN THIS SESSION ON IT. Your first turn still names how long the session
+                        is and asks what they want from it, but it does not start from nothing:
+
+                        • If the newest record names a COMMITMENT — something they said they
+                          would do — say what it was, in their own words, and ask whether it
+                          happened. Ask nothing else in that turn. Then, once they have answered,
+                          ask whether they want to carry on with that thread today or work on
+                          something else. Their answer is the outcome you contract for.
+                        • If it names no commitment, say briefly what the last session was about
+                          and ask whether they want to continue with it or bring something else
+                          today.
+
+                        Do it as a coach, not as a clerk: one short sentence of continuity, not a
+                        recital of the record. Never scold, however the answer comes back — "no,
+                        I didn't" is information about what is in the way, and it is very often
+                        the most useful thing the session will get.
+
+                        This memory is CONTEXT for coaching. It is never material for the record
+                        you write at the end: that record is of today's conversation only.
+
+                        %s""".formatted(m))
                 .orElse("");
     }
 

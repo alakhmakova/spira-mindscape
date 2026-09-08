@@ -269,11 +269,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [refreshGoals]);
 
   return (
-    // nav | content | AI. The navigation is the leftmost column and the coach moved to the
-    // right (owner, 2026-08-23): the AI panel used to be the left column, which left nowhere
-    // for standing navigation to sit without the two shoving each other.
+    // nav | AI | content. The coach is back on the LEFT (owner, 2026-09-03 — "ai chat слева, а
+    // не справа на десктопе"), sitting between the standing navigation and the page. It had
+    // moved right on 2026-08-23 because the nav had nowhere else to go while the coach held the
+    // left column; `SideNav` now solves that itself by collapsing to an icon-only rail whenever
+    // the coach is open, so the two no longer compete for the same edge.
     <div className="flex min-h-screen bg-background">
       <SideNav path={path} goalId={openGoalId} goalTitle={openGoalTitle} />
+      <AiPanel />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar — teal on every page (the goal-page colours), so the header reads the same
             across the app. */}
@@ -688,7 +691,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-      <AiPanel />
     </div>
   );
 }

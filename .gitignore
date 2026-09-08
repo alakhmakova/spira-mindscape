@@ -58,6 +58,7 @@ google-services.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+e2e/.created-goals.ndjson
 
 # Coaching source books — copyrighted third-party works.
 # They were removed from the repo (and must be purged from history); keep local

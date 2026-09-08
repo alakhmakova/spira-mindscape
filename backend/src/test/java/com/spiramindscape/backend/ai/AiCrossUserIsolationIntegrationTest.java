@@ -3,6 +3,7 @@ package com.spiramindscape.backend.ai;
 import com.spiramindscape.backend.ai.chat.GoalContextBuilder;
 import com.spiramindscape.backend.ai.chat.ResourceReadService;
 import com.spiramindscape.backend.ai.grow.GoalMemoryService;
+import com.spiramindscape.backend.ai.grow.session.GrowSessionService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.goal.Goal;
@@ -16,7 +17,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import org.springframework.web.server.ResponseStatusException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * **The AI sub-system's own cross-user boundary** (BUG-054), against a real database.
@@ -43,6 +47,7 @@ class AiCrossUserIsolationIntegrationTest extends BaseGraphQlIntegrationTest {
     @Autowired private ResourceReadService resourceReadService;
     @Autowired private AiProposalService proposalService;
     @Autowired private GoalMemoryService goalMemoryService;
+    @Autowired private GrowSessionService growSessionService;
     @Autowired private GoalService goalService;
     @Autowired private ResourceRepository resourceRepository;
     @Autowired private GoalRepository goals;
@@ -72,6 +77,49 @@ class AiCrossUserIsolationIntegrationTest extends BaseGraphQlIntegrationTest {
         userANote = resourceRepository.save(userANote);
 
         userB = createAdditionalUser("user-b-sub", "userB@example.com");
+    }
+
+    // ─── The live GROW session (2026-09-08) ──────────────────────────────────
+    //
+    // New surface, same rule: it takes a `goalId` from the client, so it gets the same
+    // boundary — and the same tests — as everything else that does.
+
+    @Test
+    @DisplayName("User B cannot read the session running inside user A's goal")
+    void growSessionReadIsOwnerScoped() {
+        growSessionService.save(userAGoal.getId(), "{\"msgs\":[\"" + SECRET_TITLE + "\"]}");
+        setCurrentUser(userB);
+
+        assertThatThrownBy(() -> growSessionService.get(userAGoal.getId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
+
+    @Test
+    @DisplayName("User B cannot write into user A's goal, nor delete their session")
+    void growSessionWritesAreOwnerScoped() {
+        growSessionService.save(userAGoal.getId(), "{\"mine\":true}");
+        setCurrentUser(userB);
+
+        assertThatThrownBy(() -> growSessionService.save(userAGoal.getId(), "{\"theirs\":true}"))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> growSessionService.clear(userAGoal.getId()))
+                .isInstanceOf(ResponseStatusException.class);
+
+        // And A's session is exactly as they left it.
+        setCurrentUser(testUser);
+        assertThat(growSessionService.get(userAGoal.getId()).content()).contains("mine");
+    }
+
+    @Test
+    @DisplayName("The owner's own session round-trips, and ends when it is cleared")
+    void growSessionRoundTripsForTheOwner() {
+        growSessionService.save(userAGoal.getId(), "{\"mins\":15}");
+        assertThat(growSessionService.get(userAGoal.getId()).content()).contains("15");
+
+        growSessionService.clear(userAGoal.getId());
+        // Nothing of a finished session outlives it.
+        assertThat(growSessionService.get(userAGoal.getId()).content()).isNull();
     }
 
     // ─── The system prompt's goal block ───────────────────────────────────────

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.spiramindscape.android.data.ai.AiApi
+import com.spiramindscape.android.ui.components.SheetHeadTone
 import com.spiramindscape.android.ui.components.SpiraSheetHead
 import com.spiramindscape.android.ui.components.SpiraNoticeCard
 import com.spiramindscape.android.ui.components.SpiraNoticeKind
@@ -121,7 +122,7 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
         // the close button and — the part with consequence — the sentence saying what happens to
         // a pasted API key all scrolled away as soon as the user reached the provider they
         // wanted. The head is the one thing on a sheet that must not move.
-        SpiraSheetHead("AI providers", onDismiss)
+        SpiraSheetHead("AI providers", onDismiss, tone = SheetHeadTone.Auxiliary)
 
         // ── body: the only thing that scrolls ───────────────────────────
         //
