@@ -7,17 +7,19 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { isNoteChanged } from "@/lib/spira/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SheetHead } from "@/components/spira/SheetHead";
-import { X, ArrowUp, Paperclip } from "@/components/spira/icons";
+import { ClearSearchWord } from "@/components/spira/ListToolbar";
+import { X, ArrowUp, Paperclip, Gear } from "@/components/spira/icons";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
@@ -27,6 +29,12 @@ import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { SproutArt } from "@/components/spira/SproutArt";
 import { ResourceAttachSheet } from "./ResourceAttachSheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NoticeCard } from "@/components/spira/Notice";
 import {
   clearComposerDraft,
@@ -41,6 +49,7 @@ import { type ExternalToast } from "sonner";
 import {
   streamChat,
   saveApiKey,
+  deleteApiKey,
   listApiKeys,
   updateKeyModel,
   fetchProviderModels,
@@ -59,8 +68,24 @@ import {
   fetchGrowSession,
   putGrowSession,
   deleteGrowSession,
+  createCvApplication,
+  deleteCvApplication,
+  DuplicateCvApplication,
+  fetchCvApplication,
+  fetchCvTranscript,
+  putCvTranscript,
+  adoptCvIntake,
+  fetchCvCardCopy,
+  type CvCardText,
+  type CvTranscriptSave,
+  fetchCvApplications,
+  bindCvNote,
+  type CvApplication,
 } from "./ai-api";
 import { resourceTypeMeta } from "@/components/spira/resource-meta";
+// The app's one "Save as PDF": the browser's print path, so the text stays selectable. The
+// Resources page offers the same function on any note — a CV must not get a second mechanism.
+import { printNotePdf } from "@/components/spira/note-export";
 import {
   type ProposalKind,
   type Proposal,
@@ -76,6 +101,8 @@ import {
   proposalContext,
   applyExcludedAspects,
   proposalFromToolArgs,
+  openCreatedPlan,
+  type NoteDiff,
 } from "./proposal-logic";
 
 // Chat toasts are positioned per device: on MOBILE the assistant is a bottom
@@ -145,6 +172,11 @@ const OVERTIME_INACTIVITY_SECONDS = 10 * 60;
  */
 type Mode =
   | "chat"
+  // The CV & cover letter writer. Deliberately only two states against GROW's five:
+  // it has no clock, so it has no closing stretch, no wrap-up and no farewell — it is
+  // paused and resumed, and it ends when the documents exist.
+  | "cv-start"
+  | "cv-active"
   | "grow-start"
   | "grow-active"
   | "grow-closing"
@@ -192,13 +224,19 @@ const PROVIDERS_DEFAULT: ProviderInfo[] = [
     context: "128 000 tokens",
     connected: false,
     keyPrefix: "",
-    activeModel: "mistral-large-latest",
+    // Matches the backend's own default (MistralProvider.DEFAULT_MODEL). It used to lead
+    // with mistral-large-latest, which the owner's key does not serve at all — GET
+    // /v1/models returns no mistral-large-* of any kind — and offered nothing between
+    // that and mistral-small. The models here have to be ones that can actually drive
+    // four tools against this app's system prompt: a 14B model cannot, and the owner's
+    // session looped and rambled partly for that reason (2026-09-09). This list is only
+    // what is shown before the live one loads from the provider.
+    activeModel: "mistral-medium-latest",
     models: [
-      "mistral-large-latest",
+      "mistral-medium-latest",
+      "magistral-medium-latest",
       "mistral-small-latest",
       "codestral-latest",
-      "open-mixtral-8x7b",
-      "open-mistral-7b",
     ],
   },
   {
@@ -347,6 +385,107 @@ function clearPendingEnd(goalId?: string) {
     window.localStorage.removeItem(growEndKey(goalId));
   } catch {
     /* ignore */
+  }
+}
+
+// ── Live CV session persistence ─────────────────────────────────────────────
+//
+// **Closing the panel unmounts it** (`if (!isOpen) return null`), which destroys `mode`,
+// `cvApp` and the transcript. GROW survives that because it caches itself below; the CV
+// writer cached nothing, so minimising the chat to glance at the goal's resources dropped
+// the user out of the session entirely — and starting again created ANOTHER application,
+// which is how three rows for one vacancy appeared (owner, 2026-09-09).
+//
+// Only two things need keeping: WHICH application is open, and the conversation. Everything
+// that matters — the phase, the requirement queue, what has been answered — is already on
+// the server and is re-read on entry.
+
+const CV_SESSION_PREFIX = "spira:ai:cv-session:";
+const cvSessionKey = (goalId?: string) =>
+  `${CV_SESSION_PREFIX}${goalId ?? "global"}`;
+
+type StoredCvSession = {
+  applicationId: number;
+  msgs: Msg[];
+  /** The server revision this copy was last in step with. */
+  revision?: number;
+};
+
+function loadCvSession(goalId?: string): StoredCvSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(cvSessionKey(goalId));
+    if (!raw) return null;
+    const s = JSON.parse(raw) as StoredCvSession;
+    if (typeof s.applicationId !== "number" || !Array.isArray(s.msgs))
+      return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function saveCvSession(goalId: string | undefined, data: StoredCvSession) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(cvSessionKey(goalId), JSON.stringify(data));
+  } catch {
+    /* quota / unavailable — the in-memory session still works */
+  }
+}
+
+function clearCvSession(goalId?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(cvSessionKey(goalId));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * How many messages of a CV sitting travel to the server.
+ *
+ * The server refuses an over-long transcript rather than truncating it — half a JSON
+ * document is not a conversation — so dropping the oldest messages is the CLIENT's job,
+ * because only the client knows where one message ends. A twenty-requirement interview
+ * runs to a few dozen turns; this is comfortably above that and comfortably under the
+ * server's character cap.
+ */
+const CV_TRANSCRIPT_MAX_MSGS = 200;
+
+/**
+ * The sitting, prepared for the server: the last N messages, with attachment BYTES left
+ * behind.
+ *
+ * A pasted CV or a photographed reference arrives as a data URL of several megabytes, and
+ * mirroring those on every settled turn would blow the size cap for no gain — what matters
+ * across devices is the conversation. The name and type stay, so a restored transcript
+ * still says a file was attached; the local copy keeps everything.
+ */
+function cvTranscriptForServer(msgs: Msg[]): string {
+  return JSON.stringify(
+    msgs.slice(-CV_TRANSCRIPT_MAX_MSGS).map((m) =>
+      m.attachments?.length
+        ? {
+            ...m,
+            attachments: m.attachments.map(
+              ({ dataUrl: _dropped, ...rest }) => rest,
+            ),
+          }
+        : m,
+    ),
+  );
+}
+
+/** Read back what {@link cvTranscriptForServer} wrote. Anything unexpected is no sitting. */
+function parseCvTranscript(raw: string | null): Msg[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Msg[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
   }
 }
 
@@ -592,6 +731,7 @@ function attachmentOpener(
 
 export function AiPanel() {
   const isOpen = useAi((s) => s.isOpen);
+  const minimized = useAi((s) => s.minimized);
   const close = useAi((s) => s.close);
   const setWide = useAi((s) => s.setWide);
   const isMobile = useIsMobile();
@@ -616,8 +756,10 @@ export function AiPanel() {
   }, [width]);
 
   useEffect(() => {
-    setWide(isOpen && !isMobile && width >= window.innerWidth / 2);
-  }, [isMobile, isOpen, setWide, width]);
+    setWide(
+      isOpen && !isMobile && !minimized && width >= window.innerWidth / 2,
+    );
+  }, [isMobile, isOpen, minimized, setWide, width]);
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -677,21 +819,34 @@ export function AiPanel() {
         // The coach sits on the LEFT of the page, between the standing navigation and the
         // content (owner, 2026-09-03, reverting the 2026-08-23 move to the right). Hence the
         // border and the shadow fall to the right, onto the page content beside it.
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        // **Under the app header**, like the navigation beside it (owner, 2026-09-17): the header
+        // runs the full width and carries the wordmark, so the coach starts at 64px.
+        "sticky top-16 z-40 h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)]",
+        minimized ? "hidden" : "hidden md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
       style={{ width: `${width}px` }}
       aria-label="spira ai coach"
     >
+      {/*
+       * **Folded away, never unmounted** (owner, 2026-09-18): while the menu has the column the
+       * coach is hidden and a glyph after "ai coach" in the header brings it back. The
+       * conversation stays mounted under `hidden`, so a CV session or a GROW timer carries on
+       * exactly where it was.
+       */}
       <div
-        ref={handleRef}
-        onPointerDown={startDrag}
-        className="resize-handle ai-panel-right-resize-handle ai-panel-resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize spira ai coach panel"
-      />
-      {Body}
+        className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}
+      >
+        <div
+          ref={handleRef}
+          onPointerDown={startDrag}
+          className="resize-handle ai-panel-right-resize-handle ai-panel-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize spira ai coach panel"
+        />
+        {Body}
+      </div>
     </aside>
   );
 }
@@ -783,6 +938,9 @@ function useKeyboardStickyBottom(ref: RefObject<HTMLElement | null>) {
 function PanelContent({ onClose }: { onClose: () => void }) {
   const { context } = useAi();
   const navigate = useNavigate();
+  // Whether a resource can open BESIDE this conversation, or has to replace it (see
+  // `onOpenCreated`).
+  const isMobile = useIsMobile();
   const goals = useSpira((s) => s.goals);
   const goal = useSpira((s) => s.goals.find((g) => g.id === context.goalId));
   const deleteGoal = useSpira((s) => s.deleteGoal);
@@ -815,6 +973,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const updateOption = useSpira((s) => s.updateOption);
   const updateReality = useSpira((s) => s.updateReality);
   const updateResource = useSpira((s) => s.updateResource);
+  const editNote = useSpira((s) => s.editNote);
   const selectOption = useSpira((s) => s.selectOption);
   const syncError = useSpira((s) => s.syncError);
 
@@ -831,7 +990,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   }, [syncError]);
 
   const applyProposal = useCallback(
-    (p: Proposal) => {
+    (p: Proposal, onResource?: (created: Resource) => void) => {
       // Creating a new goal works without a "current goal" — it's the primary
       // action of the global / All-Goals chat. Handle it before the guard below.
       if (p.kind === "new_goal") {
@@ -1002,11 +1161,25 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           chatToast.success("Action added");
           break;
         case "note":
-          addResource(goal.id, {
-            type: "note",
-            title: label(p.title),
-            body: p.body ?? "",
-          });
+          addResource(
+            goal.id,
+            {
+              type: "note",
+              title: label(p.title),
+              body: p.body ?? "",
+            },
+            // A note approved during a CV session is one of that application's own
+            // documents — the profile, the CV, the letter — and this is the only moment
+            // the real resource id exists. Which document it becomes is decided on the
+            // server from the application's CURRENT phase; `cvApp` here is a snapshot
+            // taken when the session opened and is stale by the time a CV is written.
+            (created) => {
+              onResource?.(created);
+              const appId = cvAppRef.current?.id;
+              if (appId)
+                void bindCvNote(appId, Number(created.id), p.cvDocument);
+            },
+          );
           chatToast.success("Note saved");
           break;
         case "link": {
@@ -1022,7 +1195,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           }
           // Empty title is intentional — the backend derives a label from the domain.
           const linkTitle = (p.patch?.title ?? "").trim().slice(0, 200);
-          addResource(goal.id, { type: "link", title: linkTitle, url });
+          addResource(
+            goal.id,
+            { type: "link", title: linkTitle, url },
+            onResource,
+          );
           chatToast.success("Link added");
           break;
         }
@@ -1030,13 +1207,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           const email = p.patch?.email?.trim();
           // Empty name is intentional — the backend derives it from the email address.
           const contactName = (p.patch?.name ?? "").trim().slice(0, 200);
-          addResource(goal.id, {
-            type: "email",
-            name: contactName,
-            ...(email ? { email } : {}),
-            ...(p.patch?.role ? { role: p.patch.role } : {}),
-            ...(p.patch?.phone ? { phone: p.patch.phone } : {}),
-          });
+          addResource(
+            goal.id,
+            {
+              type: "email",
+              name: contactName,
+              ...(email ? { email } : {}),
+              ...(p.patch?.role ? { role: p.patch.role } : {}),
+              ...(p.patch?.phone ? { phone: p.patch.phone } : {}),
+            },
+            onResource,
+          );
           chatToast.success("Email added");
           break;
         }
@@ -1089,11 +1270,28 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           break;
         case "edit_note":
           if (p.itemId) {
-            updateResource(goal.id, p.itemId, {
-              title: label(p.title),
-              body: p.body ?? "",
-            });
-            chatToast.success("Note updated");
+            // The server merges the edit into the note as it is NOW, so a hand edit made after
+            // the card appeared survives; a rewrite based on an older version is refused there.
+            const current = goal.resources.find((r) => r.id === p.itemId);
+            const title = label(p.title);
+            editNote(goal.id, p.itemId, {
+              mode: p.noteMode ?? "append",
+              section: p.noteSection,
+              content: p.body ?? "",
+              title:
+                title && current?.type === "note" && title !== current.title
+                  ? title
+                  : undefined,
+              expectedUpdatedAt: p.baseUpdatedAt,
+            })
+              .then(() => chatToast.success("Note updated"))
+              .catch((error) =>
+                chatToast.error(
+                  isNoteChanged(error)
+                    ? "This note changed after the suggestion was made, so nothing was saved. Ask again and I'll read it first."
+                    : "Couldn't save the change to the note. Please try again.",
+                ),
+              );
           }
           break;
         case "edit_link":
@@ -1237,6 +1435,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       updateOption,
       updateReality,
       updateResource,
+      editNote,
       selectOption,
       removeOption,
       removeReality,
@@ -1304,23 +1503,98 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     [addGoal, applyProposal, context.goalId],
   );
 
-  // Open just-created content: close the chat, go to the goal page, and scroll to the
-  // relevant section (targets → "Will do", resources → "Resources").
+  /**
+   * Open what was just made.
+   *
+   * **A resource opens AS ITSELF, beside the chat** (owner, 2026-09-23): the panel and the
+   * conversation fit side by side on a laptop or a tablet, and being thrown onto the goal's
+   * resource list to hunt for the thing you just made is not "open it". The chat only closes on
+   * a phone, where the resource panel is full screen and the two cannot share it.
+   *
+   * Without an id there is nothing to open, so it falls back to the list — which is what a goal
+   * or a target does anyway: those live on the page, and the chat steps aside for them.
+   */
   const onOpenCreated = useCallback(
-    (ref: { kind: "goal" | "target" | "resource"; goalId: string }) => {
-      onClose();
-      navigate({ to: "/goals/$goalId", params: { goalId: ref.goalId } });
-      if (ref.kind === "target") scrollToSection("targets-section");
-      else if (ref.kind === "resource") scrollToSection("resources-section");
+    (ref: {
+      kind: "goal" | "target" | "resource";
+      goalId: string;
+      id?: string;
+    }) => {
+      const plan = openCreatedPlan(ref, isMobile);
+      if (plan.closeChat) onClose();
+      navigate({
+        to: "/goals/$goalId",
+        params: { goalId: ref.goalId },
+        ...(plan.resourceId ? { search: { resource: plan.resourceId } } : {}),
+      });
+      if (plan.scrollTo) scrollToSection(plan.scrollTo);
     },
-    [onClose, navigate],
+    [isMobile, onClose, navigate],
   );
 
   const scopeKey = chatScopeKey(context.goalId);
 
   const [mode, setMode] = useState<Mode>("chat");
+  /**
+   * The application the CV writer is working on, or null.
+   *
+   * <p>A goal holds many — one per vacancy — so unlike a GROW session the goal id is
+   * not enough to say what is open. Every CV turn carries this id, and the server
+   * re-checks it belongs to the signed-in user before reading or writing through it.
+   */
+  const [cvApp, setCvApp] = useState<CvApplication | null>(null);
+  /** The words on the CV panel's own controls, in the conversation's own language — server-owned. */
+  const [cvCopy, setCvCopy] = useState<CvCardText | null>(null);
+  /** Applications already on this goal, offered on the start card so one can be resumed. */
+  const [cvResumable, setCvResumable] = useState<CvApplication[]>([]);
+  /**
+   * Which entry into a CV session is the current one.
+   *
+   * Bumped by every `enterCv`, by `pauseCv` and by a discard, so an async transcript fetch
+   * can tell whether the session it was fetched for is still the one on screen. Without it
+   * a late answer wrote another application's conversation into the open one.
+   */
+  const cvEntryRef = useRef(0);
+  /**
+   * A start that turned out to duplicate an existing application.
+   *
+   * <p>Held with the input that produced it, so "start a second one anyway" can go through
+   * without the user retyping the advert.
+   */
+  const [cvDuplicate, setCvDuplicate] = useState<{
+    existing: CvApplication;
+    input: { vacancyUrl: string; vacancyText: string };
+  } | null>(null);
+  /**
+   * The same application, reachable from a callback that outlives its render.
+   *
+   * <p>`applyProposal` is a `useCallback` and the store's `onCreated` fires after a server
+   * round-trip, so both would close over whatever `cvApp` was when they were built. A ref
+   * is read at call time, which is the only thing that is true here.
+   */
+  const cvAppRef = useRef<CvApplication | null>(null);
+  cvAppRef.current = cvApp;
   const [msgs, setMsgs] = useState<Msg[]>(() => loadTranscript(scopeKey));
   const [gmsgs, setGmsgs] = useState<Msg[]>([]);
+  /**
+   * The transcript that has already been persisted, by identity.
+   *
+   * <p>Saving a settled CV turn has to read the freshest transcript, and the only place
+   * that is available is inside a `setGmsgs` updater — a ref assigned during render holds
+   * the PREVIOUS render's value, which would drop the turn just added. But an updater may
+   * be called more than once (StrictMode always does), and a storage write and a PUT are
+   * side effects that must happen once. React passes the same array to both invocations,
+   * so comparing identity is exactly the right guard.
+   */
+  const persistedCvMsgsRef = useRef<Msg[] | null>(null);
+  /**
+   * The server revision of this CV conversation that the panel is in step with. Sent with every
+   * save, so a device that has not seen newer turns is refused rather than erasing them. Null
+   * until the server copy has been read — nothing is saved before that.
+   */
+  const cvRevisionRef = useRef<number | null>(null);
+  /** Set when the job analysis asks to be continued in the next request. */
+  const cvContinueRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [session, setSession] = useState<{
     total: number;
@@ -1329,6 +1603,8 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   } | null>(null);
   const [showProvider, setShowProvider] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  /** "New CV" was pressed — the dialog asks which of the two things to throw away. */
+  const [confirmNewCv, setConfirmNewCv] = useState(false);
   // What "Save memory" will persist — previewed and revisable on the end card.
   // Initialised from localStorage: an undecided session end survives reloads.
   const [memoryDraft, setMemoryDraft] = useState<string | null>(() =>
@@ -1415,7 +1691,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // while the seconds keep ticking past zero.
   const wrapUpRef = useRef(false);
   // Seconds of overtime with no message from the user — the GROW timer effect
-  // increments this once a second while `session.remaining < 0`; `sendGrow`
+  // increments this once a second while `session.remaining < 0`; `sendSessionTurn`
   // resets it to 0 on every real user turn. Read directly (never a dependency)
   // by the backstop effect below, which re-runs every second anyway as
   // `session` ticks.
@@ -1458,7 +1734,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     mode === "grow-end" ||
     mode === "grow-review" ||
     mode === "grow-farewell";
-  const list = inGrow ? gmsgs : msgs;
+  /** The CV writer is open. It shares the session transcript, and nothing else with GROW. */
+  const inCv = mode === "cv-active";
+  const inSession = inGrow || inCv;
+  const list = inSession ? gmsgs : msgs;
   // **Always live while a session is open, mid-stream included** (owner, 2026-09-08). It used to
   // be greyed out whenever a turn was in flight — which is exactly when someone wants out, and a
   // provider that will not answer then left the session with no exit at all. End no longer sends
@@ -1540,7 +1819,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     setMsgs(loadTranscript(scopeKey));
     // Each scope carries its own undecided session end (if any). Never clobber
     // a live session's draft — scope switches don't happen mid-grow.
-    if (!inGrow) setMemoryDraft(loadPendingEnd(context.goalId));
+    if (!inSession) setMemoryDraft(loadPendingEnd(context.goalId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
@@ -1550,7 +1829,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // it from this device's local history so another device can pick it up. GROW
   // is ephemeral and never synced.
   useEffect(() => {
-    if (inGrow) return;
+    if (inSession) return;
     const goalId = context.goalId;
     const scopeAtFetch = scopeKey;
     hydratingRef.current = true;
@@ -1595,7 +1874,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // Push to the server for cross-device sync — but not while hydrating (would
     // clobber a newer copy from another device) or right after "New chat"
     // deleted the server row (the resulting empty state must not re-create it).
-    if (inGrow || hydratingRef.current) return;
+    if (inSession || hydratingRef.current) return;
     if (skipServerPutRef.current) {
       skipServerPutRef.current = false;
       return;
@@ -1628,7 +1907,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     transcriptPollRef.current(),
   );
   useEffect(() => {
-    if (inGrow) return;
+    if (inSession) return;
     let cancelled = false;
     const poll = async () => {
       if (cancelled || busyRef.current || hydratingRef.current) return;
@@ -1675,7 +1954,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       window.clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, inGrow, isChatActive]);
+  }, [scopeKey, inSession, isChatActive]);
 
   // ── pending proposal restore ──────────────────────────────────────────────
   // A card can vanish from the UI while its proposal is still PENDING on the
@@ -1848,7 +2127,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         const content =
           accumulated.trim() ||
           (finalProposals.length
-            ? "" // the card speaks for itself — see the note in `sendGrow`'s onDone
+            ? "" // the card speaks for itself — see the note in `sendSessionTurn`'s onDone
             : // Safety net: the backend already streams a fallback, but never leave
               // an empty assistant bubble ("no response") if a turn returns nothing.
               "I didn't get a response that time — please try again.");
@@ -1918,7 +2197,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     if (busy) return;
     setBusy(true);
     stopRef.current = false;
-    const grow = inGrow;
+    // Which transcript the card lives in — `gmsgs` for EITHER session, `msgs` for the
+    // plain chat. Keyed on `inGrow` this wrote a CV revision into the invisible chat
+    // transcript: the "Revising…" state cleared and the card never changed.
+    const grow = inSession;
     const setList = grow ? setGmsgs : setMsgs;
     const curList = grow ? gmsgs : msgs;
 
@@ -2040,7 +2322,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         // transcript stays a real conversation (the model's own words when it wrote any).
         const reply =
           accumulated.trim() ||
-          `Updated «${proposalDisplay(replaced, goal).headline}».`;
+          `Revised the suggestion «${proposalDisplay(replaced, goal).headline}». Nothing is saved until you accept it.`;
         setList((ms) => [
           ...ms.map((m) => {
             if (m.id !== targetMsgId) return m;
@@ -2171,7 +2453,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       },
       onError: (err) => {
         setBusy(false);
-        setGmsgs((p) => p.filter((m) => m.id !== id));
+        // **Keep what was already written; drop only an empty bubble** (owner, 2026-09-23).
+        // The server streams the step announcement and then, if the provider refuses the key,
+        // reports that as the stream's error — so throwing the message away took a real part
+        // of the conversation with it. An error belongs in the notice, and nowhere else.
+        setGmsgs((p) =>
+          p.flatMap((m) =>
+            m.id !== id
+              ? [m]
+              : m.content.trim()
+                ? [{ ...m, streaming: false, status: undefined }]
+                : [],
+          ),
+        );
         if (err === "NO_KEY") {
           setShowProvider(true);
           return;
@@ -2182,30 +2476,471 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   };
 
   /**
-   * One GROW turn. `wrapUp` is the timer-driven closing turn: the instruction
-   * is sent to the model but never shown or kept as a user bubble, and once
-   * the coach's goodbye lands the end card follows.
+   * What opens a CV turn when the user has not typed anything.
+   *
+   * <p>The writer speaks first, and it never has to ask "where were we": the server
+   * sends it the application's phase and, during the interview, the single requirement
+   * this turn may ask about. So this says almost nothing on purpose — it is a nudge to
+   * begin, not a briefing, and a briefing here would compete with the state block.
+   *
+   * <p>Bracketed like the coach's control turns, and never shown as a user bubble.
    */
-  const sendGrow = (
+  const CV_CONTINUE_INSTRUCTION =
+    "[Carry on with the step this application is in now.]";
+
+  const CV_OPENING_INSTRUCTION =
+    "[Continue from wherever this application has got to. Do not greet me twice or " +
+    "recap what we have already covered — just do this phase's next step.]";
+
+  // ── The CV & cover letter writer ─────────────────────────────────────────
+
+  /**
+   * Open the start card, and load whatever unfinished applications this goal has.
+   *
+   * <p>A goal like "find a QA job" accumulates them, and an application is long-lived
+   * by design — twenty requirements are not answered in one sitting — so resuming is
+   * the common case rather than the exception.
+   */
+  const openCvStart = () => {
+    if (!context.goalId) return;
+    setMode("cv-start");
+    void fetchCvApplications(context.goalId).then(setCvResumable);
+  };
+
+  /**
+   * Start a new application from a job advert.
+   *
+   * <p>The row is created BEFORE the session opens, and a failure keeps the start card
+   * up. A session opened against an application that never saved would interview into
+   * nothing: the server holds the requirement queue, so with no row there is no queue,
+   * and every answer the user gave would be lost at the end.
+   */
+  const startCv = async (
+    input: { vacancyUrl: string; vacancyText: string },
+    force = false,
+  ) => {
+    if (!context.goalId) return;
+    let app: CvApplication;
+    try {
+      app = await createCvApplication({
+        goalId: context.goalId,
+        force,
+        vacancyUrl: input.vacancyUrl.trim() || undefined,
+        // Whichever the user gave. With only a link, the server fetches the page and
+        // fails HERE if it cannot read it — which is the whole reason it is fetched at
+        // creation rather than during the session.
+        vacancyText: input.vacancyText.trim() || undefined,
+      });
+    } catch (err) {
+      // Already applying to this advert. Say so and hand back the one that exists rather
+      // than making a second row nobody asked for — three of them is what happens
+      // otherwise (owner, 2026-09-09).
+      if (err instanceof DuplicateCvApplication) {
+        setCvDuplicate({ existing: err.existing, input });
+        return;
+      }
+      chatToast.error(
+        err instanceof Error
+          ? err.message
+          : "The application could not be started.",
+      );
+      return;
+    }
+    enterCv(app, true);
+  };
+
+  /**
+   * Re-read the application after a turn.
+   *
+   * <p>Both the interview counter and the phase live on the server and move as the writer
+   * works, so a copy taken when the session opened is stale within a turn — and the phase
+   * is what decides where the composer's draft is kept and what the next turn is allowed
+   * to do. One small GET per turn against a session that is otherwise several seconds of
+   * model time.
+   */
+  const refreshCvApp = async (id: number) => {
+    const fresh = await fetchCvApplication(id);
+    if (fresh) setCvApp(fresh);
+  };
+
+  /**
+   * Throw an application away.
+   *
+   * <p>The notes it produced are goal resources and are NOT touched — a finished CV
+   * outlives the working session that wrote it, and deleting somebody's CV because they
+   * tidied the list would be its own defect.
+   */
+  const discardCvApplication = async (id: number) => {
+    // The delete reports failure now, so the row only leaves the list when it has
+    // actually gone — otherwise it reappears on the next fetch and the user is left
+    // wondering which of the two they are looking at.
+    await deleteCvApplication(id);
+    setCvResumable((cur) => cur.filter((a) => a.id !== id));
+    if (cvApp?.id === id) {
+      cvEntryRef.current += 1;
+      setCvApp(null);
+      clearCvSession(context.goalId);
+    }
+  };
+
+  /** The same, for a caller that has nowhere to put an error — the Continue list. */
+  const discardCvApplicationSafely = (id: number) => {
+    void discardCvApplication(id).catch((e) =>
+      chatToast.error(
+        e instanceof Error
+          ? e.message
+          : "That application could not be deleted.",
+      ),
+    );
+  };
+
+  /** Pick up an application that was left part-way through. */
+  const resumeCv = async (id: number) => {
+    const app = await fetchCvApplication(id);
+    if (!app) {
+      chatToast.error("That application could not be opened.");
+      return;
+    }
+    enterCv(app, false);
+  };
+
+  /**
+   * Enter the session and let the writer speak first.
+   *
+   * <p>The writer opens rather than waiting to be prompted (owner's requirement), and
+   * it can: the server sends it the application's phase and — during the interview —
+   * the one requirement this turn may ask about, so it always knows where the work is.
+   */
+  const enterCv = (app: CvApplication, opening: boolean) => {
+    // Abandon anything the plain chat was still streaming — the user has just chosen to
+    // be somewhere else, and its tokens would otherwise keep arriving behind this.
+    stopRef.current = true;
+    setBusy(false);
+    setCvApp(app);
+    setGmsgs([]);
+    setMode("cv-active");
+    // **Only a NEW application opens with a turn.** Merely picking one up must not spend
+    // a request: the user is looking, not asking, and on a rate-limited free tier two
+    // curious taps in a row become an error about waiting thirty-seven seconds while
+    // nothing is actually wrong (owner, 2026-09-09). A resumed session shows where the
+    // work stands — the header carries the count — and waits to be spoken to.
+    saveCvSession(context.goalId, { applicationId: app.id, msgs: [] });
+    cvRevisionRef.current = opening ? (app.transcriptRevision ?? 0) : null;
+    if (!opening) {
+      // **Picking one up brings its conversation with it, from wherever it was last
+      // had.** The local cache only survives a closed panel on THIS device; an
+      // application started on the laptop used to open on the phone with every answer
+      // intact and no conversation at all, which reads as the work having been lost.
+      //
+      // The generation token is not optional. Without it a fetch that lands after the
+      // user has moved on writes into whatever is open now: Continue A then Continue B
+      // rendered A's transcript under B's header and re-cached the session as A's, and
+      // Continue-then-Pause re-wrote the cache `pauseCv` had just cleared, dropping the
+      // user back into the session they had left (both found in review, 2026-09-10).
+      const generation = ++cvEntryRef.current;
+      void fetchCvTranscript(app.id).then((remote) => {
+        if (cvEntryRef.current !== generation) return;
+        if (remote) cvRevisionRef.current = remote.revision;
+        const stored = parseCvTranscript(remote?.content ?? null);
+        if (!stored) return;
+        setGmsgs((cur) => {
+          // A turn taken while this was in flight wins — it is newer than the copy
+          // the server had when the request went out.
+          if (cur.length > 0) return cur;
+          return stored;
+        });
+        // Outside the updater: React may run an updater more than once, and a cache
+        // write is a side effect that must happen exactly once.
+        saveCvSession(context.goalId, {
+          applicationId: app.id,
+          msgs: stored,
+          revision: remote?.revision,
+        });
+      });
+      return;
+    }
+    // The id is passed explicitly: `setCvApp` above has not re-rendered yet, so the
+    // turn function's own `cvApp` is still null at this point.
+    sendTurnRef.current(CV_OPENING_INSTRUCTION, {
+      cv: true,
+      silent: true,
+      cvControl: "open",
+      cvApplicationId: app.id,
+      // Explicitly empty: `setGmsgs([])` above has not re-rendered, so the turn
+      // function's own transcript is still whatever was there before this one.
+      history: [],
+      // `setBusy(false)` above has not re-rendered either, so the guard would still
+      // see the abandoned turn and drop this one.
+      force: true,
+    });
+  };
+
+  /**
+   * What happened to a transcript save. A conflict means another device has newer turns: load
+   * them rather than keep writing over them. A failure is shown — the conversation is then only
+   * on this device, and the user should know.
+   */
+  const handleCvSave = (id: number, r: CvTranscriptSave) => {
+    if (r.ok) {
+      if (r.revision != null) cvRevisionRef.current = r.revision;
+      return;
+    }
+    if (!r.conflict) {
+      chatToast.error(
+        "This conversation couldn't be saved to your account — it's only on this device for now.",
+      );
+      return;
+    }
+    void fetchCvTranscript(id).then((remote) => {
+      if (!remote || cvAppRef.current?.id !== id) return;
+      cvRevisionRef.current = remote.revision;
+      const msgs = parseCvTranscript(remote.content);
+      if (!msgs) return;
+      persistedCvMsgsRef.current = msgs;
+      setGmsgs(msgs);
+      saveCvSession(context.goalId, {
+        applicationId: id,
+        msgs,
+        revision: remote.revision,
+      });
+      chatToast.success(
+        "This conversation continued on another device — showing the latest.",
+      );
+    });
+  };
+
+  /**
+   * The control copy, in the language this conversation runs in.
+   *
+   * <p>Every server-written line — the opening, each step announcement, the step pill — is
+   * localised, and the controls were once the one surface still written in English literals
+   * (owner's live run, 2026-09-16). The wording is NOT duplicated here as a fallback — a control
+   * is simply not drawn until its words have arrived, and she can answer in the composer either
+   * way. A second copy of the wording in the client is exactly how the intake-candidate rule
+   * drifted.
+   */
+  const cvAppId = cvApp?.id ?? null;
+  const cvLanguage = cvApp?.conversationLanguage ?? null;
+  useEffect(() => {
+    if (!cvAppId || mode !== "cv-active") {
+      setCvCopy(null);
+      return;
+    }
+    let live = true;
+    void fetchCvCardCopy(cvAppId).then((text) => {
+      if (live && text) setCvCopy(text);
+    });
+    return () => {
+      live = false;
+    };
+  }, [cvAppId, cvLanguage, mode]);
+
+  /** The vacancy map, opened as the page it is — she answers there, not in this panel. */
+  const openVacancyMap = (resourceId: number) => {
+    const app = cvAppRef.current;
+    if (!app) return;
+    navigate({
+      to: "/goals/$goalId",
+      params: { goalId: String(app.goalId) },
+      search: { resource: String(resourceId) },
+    });
+  };
+
+  /** "Use as my details": bind the note, then let the writer read and check it. */
+  const adoptIntakeNote = async (resourceId: string) => {
+    const app = cvAppRef.current;
+    if (!app || busy) return;
+    try {
+      const fresh = await adoptCvIntake(app.id, Number(resourceId));
+      setCvApp(fresh);
+      sendTurnRef.current(CV_CONTINUE_INSTRUCTION, {
+        cv: true,
+        silent: true,
+        cvControl: "continue",
+        cvApplicationId: app.id,
+      });
+    } catch (e) {
+      chatToast.error(
+        e instanceof Error
+          ? e.message
+          : "That note could not be used as your details.",
+      );
+    }
+  };
+
+  /**
+   * **Every change to a CV conversation is mirrored, not only a settled turn.** Approving a card
+   * changed React state alone, so reopening the chat brought the card back as pending (owner,
+   * 2026-09-15) — and approving it again would have made a second note. Nothing is written
+   * before the server copy has been read (`cvRevisionRef` is null until then).
+   */
+  useEffect(() => {
+    if (mode !== "cv-active" || !cvApp || busy) return;
+    if (cvRevisionRef.current === null) return;
+    if (persistedCvMsgsRef.current === gmsgs || gmsgs.length === 0) return;
+    if (gmsgs.some((m) => m.streaming)) return;
+    const id = cvApp.id;
+    const timer = setTimeout(() => {
+      persistedCvMsgsRef.current = gmsgs;
+      saveCvSession(context.goalId, {
+        applicationId: id,
+        msgs: gmsgs,
+        revision: cvRevisionRef.current ?? undefined,
+      });
+      void putCvTranscript(
+        id,
+        cvTranscriptForServer(gmsgs),
+        cvRevisionRef.current ?? undefined,
+      ).then((r) => handleCvSave(id, r));
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gmsgs, busy, mode, cvApp?.id]);
+
+  /**
+   * Throw away the conversation and start it again, keeping the application.
+   *
+   * <p>What "New CV" does when the user picks the first of its two answers. The
+   * requirements, the answers already given and the notes all stay on the server — this
+   * is a fresh sitting at the same piece of work, so the writer opens again at whatever
+   * phase the work is actually in.
+   */
+  const restartCvChat = () => {
+    if (!cvApp) return;
+    // **Clear the SERVER copy too, not just the local one.** The dialog promises the
+    // conversation cannot be recovered; the mirror is only overwritten by the first
+    // settled turn of the new sitting, so if that turn failed — no key, a rate limit, the
+    // panel closed — the discarded conversation was still there to be restored later
+    // (found in review, 2026-09-10).
+    void putCvTranscript(cvApp.id, "[]").then((r) => {
+      if (r.revision != null) cvRevisionRef.current = r.revision;
+    });
+    // `enterCv` does the rest: abandons a turn in flight, empties the transcript,
+    // re-caches the sitting, and lets the writer speak first.
+    enterCv(cvApp, true);
+  };
+
+  /** Throw away the whole application and go back to the start card. */
+  const discardCurrentCv = async () => {
+    if (!cvApp) return;
+    stopRef.current = true;
+    cvEntryRef.current += 1;
+    setBusy(false);
+    setGmsgs([]);
+    // Back to the card FIRST: the delete is a round trip, and leaving the user in a
+    // session whose application is being removed underneath them shows a header
+    // counting requirements that no longer exist.
+    setMode("cv-start");
+    try {
+      await discardCvApplication(cvApp.id);
+    } catch {
+      chatToast.error("That application could not be deleted.");
+    }
+  };
+
+  /**
+   * Leave the writer without ending anything.
+   *
+   * <p>There is no "End" here and that is the point: a GROW session is a finished
+   * conversation or an abandoned one, while an application is a piece of work that
+   * outlives the sitting. Everything answered is on the server; closing the panel
+   * loses nothing, and the application is offered again on the start card.
+   */
+  const pauseCv = () => {
+    stopRef.current = true;
+    // Any transcript fetch still in flight belongs to the session being left.
+    cvEntryRef.current += 1;
+    setBusy(false);
+    setCvApp(null);
+    setGmsgs([]);
+    setMode("chat");
+    // Pause is an explicit "not now", so the cache goes with it — otherwise reopening the
+    // panel would drop the user straight back into a session they just left. The
+    // application itself is untouched and is offered again under Continue.
+    clearCvSession(context.goalId);
+  };
+
+  /**
+   * One turn of a SESSION — a GROW turn, or a turn of the CV writer.
+   *
+   * <p>Both share this function because they share everything that is hard: the
+   * proposal pipeline (deletes opened, creates de-duplicated, superseded ones
+   * rejected server-side), the streaming placeholder, and the rule that an error
+   * removes the empty bubble rather than filling it in. Duplicating that for a
+   * second assistant is how the two would drift apart on the parts nobody looks at.
+   *
+   * <p>What is GROW-only is the CLOCK and everything hanging off it: `wrapUp` (the
+   * timer-driven closing turn, sent to the model but never shown as a user bubble),
+   * `goodbye`, `proposals`, and `end_session`. A CV turn passes none of them and the
+   * ending branches below are unreachable for it — it is paused and resumed, never
+   * wrapped up.
+   */
+  const sendSessionTurn = (
     text: string,
-    opts?: { wrapUp?: boolean; goodbye?: boolean; proposals?: boolean },
+    opts?: {
+      wrapUp?: boolean;
+      goodbye?: boolean;
+      proposals?: boolean;
+      /** The CV writer rather than the coach: no clock, and an application to work on. */
+      cv?: boolean;
+      /**
+       * The application this turn belongs to, when the caller cannot rely on `cvApp`.
+       *
+       * <p>Needed for the very first turn: `enterCv` calls `setCvApp` and sends in the
+       * same tick, so the state has not re-rendered yet and the closure here still reads
+       * `null`. The turn would go out with no application id and the writer would answer
+       * "there is no application open" as its opening line.
+       */
+      cvApplicationId?: number;
+      /**
+       * Send the text to the model but never show it as a user bubble. What `wrapUp`
+       * and `proposals` already do for the coach's control turns, named for the case
+       * that is not either of those: the CV writer's opening nudge.
+       */
+      silent?: boolean;
+      /**
+       * Replay this instead of the current transcript.
+       *
+       * <p>Needed for the same reason as `cvApplicationId`: `enterCv` clears the
+       * transcript and sends in the same tick, so the closure here still holds the
+       * PREVIOUS session's messages. `leaveGrow` deliberately does not clear them, so
+       * opening the CV writer after a coaching session sent the whole conversation to
+       * it as opening history — the user's coaching, replayed to a different assistant.
+       */
+      history?: HistoryEntry[];
+      /**
+       * Send even though another turn is in flight.
+       *
+       * <p>Only for opening a session. The assistants menu is reachable while the plain
+       * chat is still streaming, and without this the opening turn hit the busy guard and
+       * was dropped: the panel switched to an empty CV session with the composer still
+       * disabled by the other stream, and nothing ever arrived. Entering a session
+       * abandons whatever the chat was saying, which is what the user just chose.
+       */
+      force?: boolean;
+      attachments?: ChatAttachment[];
+      /** CV control turn — see `StreamChatParams.cvControl`. */
+      cvControl?: "open" | "continue";
+    },
   ) => {
     const wrapUp = opts?.wrapUp ?? false;
     const goodbye = opts?.goodbye ?? false;
     const proposalsTurn = opts?.proposals ?? false;
-    if (busy && !wrapUp) return;
+    const cv = opts?.cv ?? false;
+    const silent = opts?.silent ?? false;
+    if (busy && !wrapUp && !opts?.force) return;
     // A real user turn (not a wrap-up/goodbye/proposals control turn) — the user
     // just picked the session back up, so the overtime-inactivity clock restarts.
     if (!wrapUp && !goodbye && !proposalsTurn)
       overtimeInactivityRef.current = 0;
-    if (!wrapUp && !proposalsTurn) {
+    if (!wrapUp && !proposalsTurn && !silent) {
       const userMsg = { id: uid(), role: "user" as const, content: text };
       setGmsgs((p) => [...p, userMsg]);
     }
     setBusy(true);
     stopRef.current = false;
 
-    const history: HistoryEntry[] = buildHistory(gmsgs);
+    const history: HistoryEntry[] = opts?.history ?? buildHistory(gmsgs);
 
     const id = uid();
     setGmsgs((p) => [
@@ -2223,11 +2958,51 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       message: text,
       history,
       provider: activeProv,
-      sessionType: "grow",
-      sessionTotalMinutes: session?.mins,
+      sessionType: cv ? "cv" : "grow",
+      attachments: opts?.attachments,
+      // The CV writer has no clock at all — see the note on this function. Sending a
+      // timing block to it would be telling a piece of work it is running out of time.
+      sessionTotalMinutes: cv ? undefined : session?.mins,
       // A wrap-up turn reports zero whatever the clock says: the coach is being
       // asked to close, and "there is room to explore" would argue against it.
-      sessionRemainingSeconds: wrapUp ? 0 : Math.round(session?.remaining ?? 0),
+      sessionRemainingSeconds: cv
+        ? undefined
+        : wrapUp
+          ? 0
+          : Math.round(session?.remaining ?? 0),
+      cvApplicationId: cv ? (opts?.cvApplicationId ?? cvApp?.id) : undefined,
+      cvControl: cv ? opts?.cvControl : undefined,
+      language:
+        cv && typeof navigator !== "undefined" ? navigator.language : undefined,
+      onCvStep: (json) => {
+        if (stopRef.current) return;
+        try {
+          const s = JSON.parse(json) as {
+            step: number;
+            of: number;
+            title: string;
+            activity: string;
+            phase: string;
+          };
+          setCvApp((cur) =>
+            cur
+              ? {
+                  ...cur,
+                  step: s.step,
+                  steps: s.of,
+                  stepTitle: s.title,
+                  stepActivity: s.activity,
+                  phase: s.phase,
+                }
+              : cur,
+          );
+        } catch {
+          /* the pill is refreshed from the server when the turn ends anyway */
+        }
+      },
+      onCvContinue: () => {
+        cvContinueRef.current = true;
+      },
       onSessionEnd: (argsJson) => {
         try {
           const parsed = JSON.parse(argsJson) as { summary?: unknown };
@@ -2340,6 +3115,49 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               ),
         );
         setBusy(false);
+        // The turn may have recorded an answer or moved a phase; both live on the server.
+        if (cv) {
+          const id = opts?.cvApplicationId ?? cvApp?.id;
+          if (id) {
+            void refreshCvApp(id);
+            // And cache the sitting, so closing the panel does not end the session. The
+            // transcript is read out of state rather than the closure, which by here holds
+            // the value from before this turn's messages were added.
+            // The updater is the only place the turn just added is visible — but its
+            // body must run its side effects once, hence the identity guard.
+            setGmsgs((cur) => {
+              if (persistedCvMsgsRef.current !== cur) {
+                persistedCvMsgsRef.current = cur;
+                saveCvSession(context.goalId, { applicationId: id, msgs: cur });
+                // And mirror it, so the sitting belongs to the user rather than to this
+                // browser. Best-effort: the local copy is what makes the panel instant,
+                // and a failed mirror must not interrupt a conversation.
+                void putCvTranscript(
+                  id,
+                  cvTranscriptForServer(cur),
+                  cvRevisionRef.current ?? undefined,
+                ).then((r) => handleCvSave(id, r));
+              }
+              return cur;
+            });
+          }
+        }
+        // The job analysis stopped at the stream deadline: pick it straight back up.
+        if (cv && cvContinueRef.current) {
+          cvContinueRef.current = false;
+          const id = opts?.cvApplicationId ?? cvApp?.id;
+          setTimeout(
+            () =>
+              sendTurnRef.current(CV_CONTINUE_INSTRUCTION, {
+                cv: true,
+                silent: true,
+                cvControl: "continue",
+                cvApplicationId: id,
+                force: true,
+              }),
+            0,
+          );
+        }
         if (goodbye) {
           // Don't exit yet — leaving now would wipe the goodbye off the screen
           // the moment it arrived. The user closes when they've read it.
@@ -2487,12 +3305,12 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // what the coach writes when the *conversation* ends — reached by saying so, not by a button
   // that needs the provider to answer before it can let you out.
 
-  const sendGrowRef = useRef(sendGrow);
+  const sendTurnRef = useRef(sendSessionTurn);
   useEffect(() => {
-    sendGrowRef.current = sendGrow;
+    sendTurnRef.current = sendSessionTurn;
   });
 
-  // `sendGrow` runs before `askForGoodbye` is defined and has to be able to reach it — the
+  // `sendSessionTurn` runs before `askForGoodbye` is defined and has to be able to reach it — the
   // proposals turn hands straight over to the farewell when there is nothing to review.
   const askForGoodbyeRef = useRef<() => void>(() => {});
 
@@ -2542,7 +3360,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     clearPendingEnd(context.goalId); // the user decided — the card may rest
     // A card restored after a reload has no session behind it: there is nothing
     // left to propose and nobody to say goodbye. Decide the record and stop.
-    if (!inGrow) {
+    if (!inSession) {
       postSessionNote(
         saved
           ? "Session memory saved."
@@ -2584,7 +3402,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
    * the session was, then what the goal should carry.
    */
   const askForProposals = () => {
-    // The mode moves only once the turn is actually going: `sendGrow` bails while another is in
+    // The mode moves only once the turn is actually going: `sendSessionTurn` bails while another is in
     // flight, and `grow-review` with neither a card nor a request is the one state with nothing
     // to press. (End is unconditional now, so it is escapable either way — but it should not
     // happen.)
@@ -2593,7 +3411,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       return;
     }
     setMode("grow-review");
-    sendGrowRef.current(
+    sendTurnRef.current(
       "[The record is decided. Now the second question, and only this one: looking back over " +
         "the WHOLE of today's conversation, what — if anything — should change about this " +
         "goal? Call `propose_goal_change` for each one in this reply: an obstacle or an action " +
@@ -2625,7 +3443,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     );
     setMode("grow-farewell");
     goodbyeRef.current = true;
-    sendGrowRef.current(
+    sendTurnRef.current(
       "[The user has now decided what to keep from this session. " +
         (memorySavedRef.current
           ? "They saved the session record. "
@@ -2721,8 +3539,62 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     });
   };
 
+  /**
+   * Put the user back in the CV session the panel was closed on.
+   *
+   * <p>No model turn: the writer is not asked to say anything, because nothing has been
+   * asked of it. The transcript comes back as it was and the header shows where the work
+   * stands, so reopening the panel is continuous rather than a fresh start.
+   *
+   * <p>A stored GROW session wins if there somehow is one — that has a clock running.
+   */
   useEffect(() => {
-    if (inGrow) return;
+    if (inSession) return;
+    if (loadGrowSession(context.goalId)) return;
+    const stored = loadCvSession(context.goalId);
+    if (!stored) return;
+    let cancelled = false;
+    void fetchCvApplication(stored.applicationId).then((app) => {
+      if (cancelled) return;
+      if (!app) {
+        // Deleted on another device, or discarded. Nothing to go back to.
+        clearCvSession(context.goalId);
+        return;
+      }
+      setCvApp(app);
+      persistedCvMsgsRef.current = stored.msgs;
+      setGmsgs(stored.msgs);
+      setMode("cv-active");
+      // **The server copy wins when it is newer.** Only this device's cache was read here, so
+      // turns taken on the phone never showed on the laptop, even after a reload (owner,
+      // 2026-09-15).
+      const generation = ++cvEntryRef.current;
+      void fetchCvTranscript(app.id).then((remote) => {
+        if (cancelled || cvEntryRef.current !== generation || !remote) return;
+        cvRevisionRef.current = remote.revision;
+        if (remote.revision <= (stored.revision ?? -1)) return;
+        const msgs = parseCvTranscript(remote.content);
+        if (!msgs) return;
+        persistedCvMsgsRef.current = msgs;
+        setGmsgs(msgs);
+        saveCvSession(context.goalId, {
+          applicationId: app.id,
+          msgs,
+          revision: remote.revision,
+        });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context.goalId]);
+
+  useEffect(() => {
+    // `inSession`, not `inGrow`: `resumeFromServer` is async, so a stored GROW session
+    // resolving after the user had opened the CV writer replaced its transcript and mode
+    // while the CV stream was still writing into the same list.
+    if (inSession) return;
     if (loadPendingEnd(context.goalId)) return; // an undecided end card wins
     const stored = loadGrowSession(context.goalId);
     if (!stored) {
@@ -2768,7 +3640,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         // Allowed to go negative: the coach owns the ending, so overrun is
         // normal and is what the hard stop below measures.
         const nextRemaining = s.remaining - 1;
-        // Inactivity is measured only in overtime — `sendGrow` is what resets
+        // Inactivity is measured only in overtime — `sendSessionTurn` is what resets
         // it on a real user turn, this only ever counts up.
         overtimeInactivityRef.current =
           nextRemaining < 0 ? overtimeInactivityRef.current + 1 : 0;
@@ -2803,7 +3675,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       (mode === "grow-active" || mode === "grow-closing")
     ) {
       wrapUpRef.current = true;
-      sendGrowRef.current(WRAP_UP_INSTRUCTION, { wrapUp: true });
+      sendTurnRef.current(WRAP_UP_INSTRUCTION, { wrapUp: true });
     }
   }, [session, mode, busy, WRAP_UP_INSTRUCTION]);
 
@@ -2843,6 +3715,43 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     setActiveProv(id);
     saveActiveProvider(id);
     saveAiProvider(id); // sync the choice across devices
+  };
+
+  /**
+   * Take a key off the server.
+   *
+   * <p>Tavily is a key slot rather than a chat provider, so it is handled here too — the
+   * server knows both by the same provider name.
+   */
+  const handleDeleteKey = async (provId: string) => {
+    try {
+      await deleteApiKey(provId);
+      if (provId === "TAVILY") {
+        setTavily({ connected: false });
+      } else {
+        setProviders((ps) =>
+          ps.map((p) =>
+            p.id === provId
+              ? { ...p, connected: false, keyHint: undefined }
+              : p,
+          ),
+        );
+        // The server clears the stored preference when it named this provider; the
+        // local choice has to follow, or this surface still points at a key that is
+        // gone until the next reload.
+        if (activeProv === provId) {
+          const fallback = providers.find(
+            (p) => p.id !== provId && p.connected,
+          );
+          const next = fallback?.id ?? PROVIDERS_DEFAULT[0].id;
+          setActiveProv(next);
+          saveActiveProvider(next);
+        }
+      }
+      chatToast.success(`${provId} key removed`);
+    } catch (e) {
+      chatToast.error(e instanceof Error ? e.message : "Failed to remove key");
+    }
   };
 
   const handleSaveTavily = async (raw: string) => {
@@ -2900,7 +3809,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         // Opening a goal because the change can't be made here: carry the user's original
         // request into that goal's chat so a card appears on arrival, not an empty chat.
         if (pp.kind === "open_goal" && pp.goalId) {
-          const list = inGrow ? gmsgs : msgs;
+          const list = inSession ? gmsgs : msgs;
           const i = list.findIndex((x) => x.id === m.id);
           const userMsg =
             i >= 0
@@ -2909,10 +3818,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           const instr = pp.followup || userMsg?.content;
           if (instr) stashHandoff(pp.goalId, instr);
         }
-        applyProposal(pp);
+        // The created resource's id arrives through this callback and nowhere else, and it is
+        // what lets "Open" open THAT resource beside the chat (owner, 2026-09-23).
+        let createdId: string | undefined;
+        applyProposal(pp, (created) => {
+          createdId = created.id;
+        });
         if (RESOURCE_CREATE_KINDS.has(pp.kind) && context.goalId) {
           const gid = context.goalId;
-          (inGrow ? setGmsgs : setMsgs)((msgs) =>
+          (inSession ? setGmsgs : setMsgs)((msgs) =>
             msgs.map((msg) =>
               msg.id === m.id
                 ? {
@@ -2924,6 +3838,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                             createdRef: {
                               kind: "resource" as const,
                               goalId: gid,
+                              id: createdId,
                             },
                           }
                         : pr,
@@ -2937,7 +3852,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       onOpenCreated={onOpenCreated}
       onCreateProposal={(pp) =>
         onCreateProposal(pp, (ref) => {
-          (inGrow ? setGmsgs : setMsgs)((msgs) =>
+          (inSession ? setGmsgs : setMsgs)((msgs) =>
             msgs.map((msg) =>
               msg.id === m.id
                 ? {
@@ -2952,7 +3867,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         })
       }
       onResolveOne={(proposalId, status) => {
-        (inGrow ? setGmsgs : setMsgs)((msgs) =>
+        (inSession ? setGmsgs : setMsgs)((msgs) =>
           msgs.map((msg) =>
             msg.id === m.id
               ? {
@@ -2983,7 +3898,73 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     />
   );
 
+  /**
+   * "New chat" — or "New CV" in a CV session — **always shown** (owner, 2026-09-18). It used to
+   * appear only once the chat had messages, which left an empty corner and no visible way to
+   * start over.
+   *
+   * **In a CV session it asks before it wipes anything** (owner, 2026-09-09). It used to read
+   * "New chat" there and run `newChat` unguarded — which cleared the ORDINARY chat's transcript,
+   * invisibly, while the CV conversation stayed on screen. GROW never shows it (it shows the
+   * timer and End instead).
+   */
+  const newChatButton = inCv ? (
+    <button
+      onClick={() => setConfirmNewCv(true)}
+      className="inline-flex items-center gap-1.5 px-2.5 h-[34px] -ml-2.5 rounded-[4px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white md:text-[#0A8080] md:hover:bg-[#0A8080]/10 md:hover:text-[#005961] transition-colors"
+      title="Start this application's conversation again, or delete it"
+      aria-label="New CV"
+    >
+      <Ic path={PATHS.circlePlus} size={14} /> New CV
+    </button>
+  ) : (
+    <button
+      onClick={newChat}
+      disabled={busy}
+      className="inline-flex items-center gap-1.5 px-2.5 h-[34px] -ml-2.5 rounded-[4px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white md:text-[#0A8080] md:hover:bg-[#0A8080]/10 md:hover:text-[#005961] disabled:opacity-40 transition-colors"
+      title="Start a new chat — clears the history so context uses only this goal's data"
+      aria-label="New chat"
+    >
+      <Ic path={PATHS.circlePlus} size={14} /> New chat
+    </button>
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
+
+  /**
+   * What the current step offers, drawn at the end of the transcript.
+   *
+   * <p>The map step: the way to the map, and — when the server found a note that may hold her
+   * details — the offer to use it. The review step: the finished CV as a PDF, which she asked
+   * to be offered at that point and not before (owner, 2026-09-16).
+   */
+  const cvStepActions =
+    !inCv || !cvApp || busy ? null : cvApp.phase === "map" && cvCopy ? (
+      <CvMapActions
+        app={cvApp}
+        copy={cvCopy}
+        onOpenMap={openVacancyMap}
+        onAdopt={adoptIntakeNote}
+      />
+    ) : cvApp.phase === "cv_review" ? (
+      (() => {
+        const note = goal?.resources.find(
+          (r) => r.type === "note" && r.id === String(cvApp.cvNoteId ?? ""),
+        );
+        if (!note || note.type !== "note") return null;
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => printNotePdf(note.title, note.body)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-[4px] border border-[#005961] bg-white px-3.5 text-[13.5px] font-semibold text-[#005961] transition-colors hover:bg-[#005961]/5"
+            >
+              <Ic path={PATHS.fileText} size={14} /> Save as PDF
+            </button>
+          </div>
+        );
+      })()
+    ) : null;
 
   return (
     <div className="spira-ai-dark flex flex-col h-full min-h-0 relative">
@@ -2992,9 +3973,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           so the header reads as chrome over the chat. */}
       <div className="shrink-0 bg-[#0A8080]">
         {/* Header */}
-        <header className="h-[62px] shrink-0 flex items-center justify-between px-5">
+        {/* **On a laptop this row is WHITE** (owner, 2026-09-18): it sits right under the teal
+            app header now, and a second teal band read as one heavy block. Kale ink on it. A
+            phone has no app header above the drawer, so there it keeps the teal. */}
+        <header className="h-[62px] md:h-12 shrink-0 flex items-center justify-between px-5 md:border-b md:border-[#E5F4F3] md:bg-white">
+          {/* On a laptop the app header right above already says "spira ai coach", so the left
+              of this row is where "New chat" goes (owner, 2026-09-18) — it used to be empty. */}
           <div className="flex items-baseline gap-[7px]">
-            <Wordmark />
+            <span className="flex items-baseline gap-[7px] md:hidden">
+              <Wordmark />
+            </span>
+            {!inGrow && (
+              <span className="hidden md:inline">{newChatButton}</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {inGrow ? (
@@ -3007,27 +3998,40 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 <button
                   onClick={() => setConfirmEnd(true)}
                   disabled={!canEndEarly}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 md:border-[#0A8080]/40 md:text-[#0A8080] md:hover:bg-[#0A8080]/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
                 >
                   <Ic path={PATHS.x} size={12} /> End
+                </button>
+                {/* **Key and model live behind the gear** (owner, 2026-09-18): the strip that
+                    showed "Bring your own key" and the model name is gone; this opens the same
+                    providers sheet, in and out of a session alike. */}
+                <button
+                  onClick={() => setShowProvider(true)}
+                  className="w-[34px] h-[34px] grid place-items-center rounded-[4px] text-white/74 hover:bg-white/12 hover:text-white md:text-[#0A8080] md:hover:bg-[#0A8080]/10 md:hover:text-[#005961] transition-colors"
+                  title={`AI provider and key — ${activeLabel}`}
+                  aria-label="AI provider and key"
+                >
+                  <Gear className="h-4 w-4" />
                 </button>
               </>
             ) : (
               <>
-                {list.length > 0 && (
-                  <button
-                    onClick={newChat}
-                    disabled={busy}
-                    className="inline-flex items-center gap-1.5 px-2.5 h-[34px] rounded-[9px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white disabled:opacity-40 transition-colors"
-                    title="Start a new chat — clears the history so context uses only this goal's data"
-                    aria-label="New chat"
-                  >
-                    <Ic path={PATHS.circlePlus} size={14} /> New chat
-                  </button>
-                )}
+                {/* On a phone the wordmark holds the left, so "New chat" stays here. */}
+                <span className="md:hidden">{newChatButton}</span>
+                {/* **Key and model live behind the gear** (owner, 2026-09-18): the strip that
+                    showed "Bring your own key" and the model name is gone; this opens the same
+                    providers sheet, in and out of a session alike. */}
+                <button
+                  onClick={() => setShowProvider(true)}
+                  className="w-[34px] h-[34px] grid place-items-center rounded-[4px] text-white/74 hover:bg-white/12 hover:text-white md:text-[#0A8080] md:hover:bg-[#0A8080]/10 md:hover:text-[#005961] transition-colors"
+                  title={`AI provider and key — ${activeLabel}`}
+                  aria-label="AI provider and key"
+                >
+                  <Gear className="h-4 w-4" />
+                </button>
                 <button
                   onClick={onClose}
-                  className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-white/74 hover:bg-white/12 hover:text-white transition-colors"
+                  className="w-[34px] h-[34px] grid place-items-center rounded-[4px] text-white/74 hover:bg-white/12 hover:text-white md:text-[#0A8080] md:hover:bg-[#0A8080]/10 md:hover:text-[#005961] transition-colors"
                   aria-label="Close"
                 >
                   <X className="h-4 w-4" />
@@ -3036,34 +4040,6 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             )}
           </div>
         </header>
-
-        {/* Context / provider strip */}
-        {!inGrow && (
-          <div className="flex items-center justify-between gap-2 px-5 pb-3">
-            <button
-              onClick={() => setShowProvider(true)}
-              className="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hover:bg-white/10 rounded-lg px-2 py-1 -mx-2 transition-colors"
-            >
-              <Ic path={PATHS.key} size={12} />
-              Bring your own key
-              <Ic path={PATHS.chevron} size={12} className="opacity-60" />
-            </button>
-            <span className="inline-flex items-center gap-[6px] text-[12px] font-medium text-white shrink-0 font-mono">
-              <span
-                className={cn(
-                  "w-[7px] h-[7px] rounded-full",
-                  // The chat gradient's own two colours (owner, 2026-08-17): connected takes the
-                  // teal top-of-gradient step, a missing key the pale bottom step — the state still
-                  // reads and the dot ties back to the conversation's palette.
-                  activeProvider.connected
-                    ? "bg-[#83D2D2] shadow-[0_0_0_3px_rgba(131,210,210,0.25)]"
-                    : "bg-[#F2FFFF] shadow-[0_0_0_3px_rgba(242,255,255,0.3)]",
-                )}
-              />
-              {activeLabel}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* **The app's one message card, not a fourth shape** (owner, 2026-09-08: the old strip
@@ -3093,6 +4069,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         }}
         className="relative flex min-h-0 flex-1 flex-col"
       >
+        {inCv && cvApp && <CvStepPill app={cvApp} />}
         <div
           ref={scrollRef}
           data-vaul-no-drag
@@ -3106,10 +4083,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           // (owner, 2026-08-29), so the last message can be scrolled clear of the composer
           // instead of the composer eating the bottom of the panel. `footerH` is the footer's
           // measured height, so the padding is exactly the card the content disappears behind.
-          style={{ paddingBottom: footerH + 8 }}
+          style={{
+            paddingBottom: footerH + 8,
+            // Room for the floating step pill, so the first message is not under it.
+            paddingTop: inCv && cvApp ? 44 : undefined,
+          }}
         >
           {/* Empty state */}
-          {!inGrow && msgs.length === 0 && (
+          {!inSession && msgs.length === 0 && (
             <div className="pt-5 pb-2 text-center">
               {/* **The watering can and sprout** — the owner's illustration, the same artwork
                   Android draws (`SpiraArt.sprout`), and it is vector rather than a bitmap. It
@@ -3307,9 +4288,17 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             );
           })}
 
+          {/* **A step's actions belong to the conversation, not to the composer** (owner,
+            2026-09-22). They used to sit in the floating footer, which has no background of
+            its own, so the transcript scrolled UNDER them and the text behind a button could
+            not be read. Here they are the last thing in the transcript: they scroll with it,
+            and they take the scroller's own gutter rather than standing 16px left of every
+            card the way a bare row in the footer did. */}
+          {cvStepActions}
+
           {/* An undecided session end (restored after a reload): the card stays
             until the user explicitly saves or discards — never a silent loss. */}
-          {!inGrow && memoryDraft && (
+          {!inSession && memoryDraft && (
             <GrowEndCard
               proposals={0}
               memory={memoryDraft}
@@ -3363,7 +4352,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               <div className="px-3 pb-3 pt-1 shrink-0">
                 <button
                   onClick={() => !goodbyeRef.current && askForGoodbye()}
-                  className="w-full h-11 rounded-[14px] border border-[#005961]/30 bg-white text-[#005961] text-[13.5px] font-semibold hover:bg-[#005961]/5 transition-colors"
+                  className="w-full h-11 rounded-[4px] border border-[#005961]/30 bg-white text-[#005961] text-[13.5px] font-semibold hover:bg-[#005961]/5 transition-colors"
                 >
                   Finish session
                 </button>
@@ -3375,7 +4364,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
             {mode !== "grow-end" && revising && (
               <div className="px-3 pb-3 pt-1 shrink-0">
-                <div className="flex items-center gap-2.5 rounded-[14px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+                <div className="flex items-center gap-2.5 rounded-[4px] border border-black/10 bg-white px-4 py-3 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
                   <span className="h-4 w-4 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
                   <span className="flex-1 min-w-0 text-[13.5px] truncate">
                     Revising «{revising.label}»…
@@ -3415,13 +4404,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             )}
             {sessionClosed && (
               <div className="px-3 pb-3 pt-1 shrink-0">
-                <div className="rounded-[14px] border border-black/10 bg-white p-4 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+                <div className="rounded-[4px] border border-black/10 bg-white p-4 text-[#003737] shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
                   <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
                     <Ic path={PATHS.check} size={12} /> Session complete
                   </span>
                   <button
                     onClick={() => leaveGrow()}
-                    className="mt-3 h-10 w-full rounded-[9px] bg-[#0A8080] text-[13.5px] font-semibold text-white transition-colors hover:bg-[#005961]"
+                    className="mt-3 h-10 w-full rounded-[4px] bg-[#0A8080] text-[13.5px] font-semibold text-white transition-colors hover:bg-[#005961]"
                   >
                     Close
                   </button>
@@ -3435,11 +4424,30 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 <>
                   <Composer
                     onSend={(text, attachments) =>
-                      inGrow ? sendGrow(text) : sendChat(text, attachments)
+                      inGrow
+                        ? sendSessionTurn(text)
+                        : inCv
+                          ? // The writer takes attachments — an old CV, a diploma, a
+                            // reference letter are exactly the raw material it works from.
+                            sendSessionTurn(text, { cv: true, attachments })
+                          : sendChat(text, attachments)
                     }
                     allowAttachments={!inGrow}
                     // A GROW session is ephemeral by design, so nothing typed into one is kept.
-                    draftScope={inGrow ? undefined : scopeKey}
+                    // A GROW session is ephemeral, so nothing typed into one is kept. A CV
+                    // session is the opposite — it is paused and resumed — so its draft is
+                    // kept, under the APPLICATION's own key. It used to fall through to the
+                    // plain chat's key, so half an answer about a job left in the writer
+                    // reappeared in the ordinary chat composer.
+                    draftScope={
+                      inGrow
+                        ? undefined
+                        : inCv
+                          ? cvApp
+                            ? `${scopeKey}:cv:${cvApp.id}`
+                            : undefined
+                          : scopeKey
+                    }
                     attachResources={
                       !inGrow && goal
                         ? goal.resources.map((r) => ({
@@ -3458,7 +4466,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                     placeholder={
                       inGrow
                         ? "Answer in your own words…"
-                        : "Ask, plan, or request an action…"
+                        : inCv
+                          ? // Short enough to fit ONE line on a phone. This one read
+                            // "Picking up where we left off — say anything to carry on…",
+                            // which wrapped to a second line inside a one-line field and
+                            // was cut off mid-word (owner's screenshot, 2026-09-09).
+                            cvApp && gmsgs.length === 0
+                            ? "Pick up where you left off…"
+                            : "Tell me, in your own words…"
+                          : "Ask, plan, or request an action…"
                     }
                     busy={busy}
                     onStop={stopStream}
@@ -3477,14 +4493,41 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                         >
                           <Ic path={PATHS.x} size={14} /> End
                         </button>
-                      ) : goal ? (
+                      ) : inCv ? (
+                        // **Pause, not End.** A coaching session is finished or abandoned; an
+                        // application is a piece of work that outlives the sitting. Everything
+                        // answered is on the server, so leaving costs nothing and the
+                        // application is offered again on the start card.
                         <button
-                          onClick={() => setMode("grow-start")}
-                          className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors"
+                          onClick={pauseCv}
+                          className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#005961] text-[13px] font-medium hover:bg-[#005961]/10 transition-colors"
                         >
-                          <Ic path={PATHS.growSparkles} size={15} /> Start GROW
-                          session
+                          <Ic path={PATHS.x} size={14} /> Pause
                         </button>
+                      ) : goal ? (
+                        // One chip for every assistant. It used to name GROW directly, which
+                        // worked while there was one; with two, a chip that names the first
+                        // makes the second invisible.
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="inline-flex items-center gap-1.5 px-2 h-8 shrink-0 rounded-lg text-[#0A8080] text-[13px] font-medium hover:bg-[#0A8080]/10 transition-colors">
+                              <Ic path={PATHS.sparkles} size={15} /> AI
+                              assistants
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" side="top">
+                            <DropdownMenuItem
+                              onSelect={() => setMode("grow-start")}
+                            >
+                              <Ic path={PATHS.growSparkles} size={15} />
+                              GROW coaching session
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={openCvStart}>
+                              <Ic path={PATHS.fileText} size={15} />
+                              CV and cover letter
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       ) : undefined
                     }
                   />
@@ -3501,6 +4544,45 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           onCancel={() => setMode("chat")}
         />
       )}
+      {cvDuplicate && (
+        // **Asked, not refused.** Applying twice to the same posting after it was rewritten
+        // is a real thing, so this is a question — but it has to BE a question, or three
+        // rows for one vacancy is what a user ends up with (owner, 2026-09-09).
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => {
+            // Escape or a click outside decides nothing: the start card is still behind
+            // this, with the advert typed and the existing application in its own list.
+            if (!o) setCvDuplicate(null);
+          }}
+          title="You already have this vacancy"
+          description={`“${cvDuplicate.existing.title}” is already open — ${cvStageLabel(
+            cvDuplicate.existing,
+          ).toLowerCase()}. Continue that one, or start a second application for the same advert?`}
+          tone="primary"
+          confirmLabel="Start a second"
+          cancelLabel="Continue the existing"
+          onConfirm={() => {
+            const { input } = cvDuplicate;
+            setCvDuplicate(null);
+            void startCv(input, true);
+          }}
+          onCancel={() => {
+            const { existing } = cvDuplicate;
+            setCvDuplicate(null);
+            void resumeCv(existing.id);
+          }}
+        />
+      )}
+      {mode === "cv-start" && (
+        <CvStartOverlay
+          resumable={cvResumable}
+          onStart={startCv}
+          onResume={resumeCv}
+          onDelete={discardCvApplicationSafely}
+          onCancel={() => setMode("chat")}
+        />
+      )}
       {showProvider && (
         <ProviderSheet
           providers={providers}
@@ -3508,6 +4590,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           onActivate={handleActivateProvider}
           onSaveKey={handleSaveKey}
           onModelChange={handleModelChange}
+          onDeleteKey={handleDeleteKey}
           tavily={tavily}
           onSaveTavily={handleSaveTavily}
           onClose={() => setShowProvider(false)}
@@ -3532,6 +4615,20 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             leaveGrow({ silent: true });
           }}
           onCancel={() => setConfirmEnd(false)}
+        />
+      )}
+      {confirmNewCv && cvApp && (
+        <NewCvDialog
+          vacancy={cvApp.title}
+          onRestart={() => {
+            setConfirmNewCv(false);
+            restartCvChat();
+          }}
+          onDiscard={() => {
+            setConfirmNewCv(false);
+            void discardCurrentCv();
+          }}
+          onCancel={() => setConfirmNewCv(false)}
         />
       )}
 
@@ -3622,7 +4719,7 @@ function ContentModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#003737] rounded-[18px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
+        className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#003737] rounded-[4px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
         style={{ animation: "slideUp 0.25s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-[#F3F3F3]">
@@ -3677,6 +4774,10 @@ const PATHS = {
   check:
     "<path fill='currentColor' fill-rule='evenodd' d='M13.488 3.43a.75.75 0 0 1 .081 1.058l-6 7a.75.75 0 0 1-1.1.042l-3.5-3.5A.75.75 0 0 1 4.03 6.97l2.928 2.927l5.473-6.385a.75.75 0 0 1 1.057-.081'/>",
   x: "<path fill='currentColor' fill-rule='evenodd' d='M3.47 3.47a.75.75 0 0 1 1.06 0L8 6.94l3.47-3.47a.75.75 0 1 1 1.06 1.06L9.06 8l3.47 3.47a.75.75 0 1 1-1.06 1.06L8 9.06l-3.47 3.47a.75.75 0 0 1-1.06-1.06L6.94 8L3.47 4.53a.75.75 0 0 1 0-1.06'/>",
+  // Gravity `file-text` — the CV & cover letter item in the assistants menu. Same path
+  // as `FileText` in src/components/spira/icons.tsx, so the mark cannot drift between them.
+  fileText:
+    "<path fill='currentColor' fill-rule='evenodd' d='M5 13.5h6a1.5 1.5 0 0 0 1.5-1.5V7.243a1.5 1.5 0 0 0-.44-1.061L8.819 2.939a1.5 1.5 0 0 0-1.06-.439H5A1.5 1.5 0 0 0 3.5 4v8A1.5 1.5 0 0 0 5 13.5m9-6.257a3 3 0 0 0-.879-2.122L9.88 1.88A3 3 0 0 0 7.757 1H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3zM5 8.25a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 5 8.25m.75 2.25a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5z'/>",
   sparkles:
     "<path fill='currentColor' fill-rule='evenodd' d='M13 10a.75.75 0 0 1 .725.556a2.37 2.37 0 0 0 1.72 1.72a.75.75 0 0 1 0 1.449a2.37 2.37 0 0 0-1.72 1.72a.75.75 0 0 1-1.45 0a2.37 2.37 0 0 0-1.72-1.72a.75.75 0 0 1 0-1.45a2.37 2.37 0 0 0 1.72-1.72l.043-.117A.75.75 0 0 1 13 10M7 0a1.5 1.5 0 0 1 1.48 1.253c.242 1.455.696 2.364 1.3 2.968c.603.603 1.512 1.057 2.967 1.3a1.5 1.5 0 0 1 0 2.958c-1.455.243-2.364.697-2.968 1.3c-.603.604-1.057 1.513-1.3 2.968a1.5 1.5 0 0 1-2.958 0c-.243-1.455-.697-2.364-1.3-2.968c-.604-.603-1.513-1.057-2.968-1.3a1.5 1.5 0 0 1 0-2.958c1.455-.243 2.364-.697 2.968-1.3c.603-.604 1.057-1.513 1.3-2.968l.028-.133A1.5 1.5 0 0 1 7 0m0 1.5C6.45 4.8 4.8 6.45 1.5 7c3.3.55 4.95 2.2 5.5 5.5c.55-3.3 2.2-4.95 5.5-5.5C9.2 6.45 7.55 4.8 7 1.5'/>",
   growSparkles:
@@ -3695,6 +4796,11 @@ const PATHS = {
   target:
     "<path fill='currentColor' fill-rule='evenodd' d='M8 13.5a5.5 5.5 0 1 0 0-11a5.5 5.5 0 0 0 0 11M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14m0-4.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5M8 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8m0-3a1 1 0 1 0 0-2a1 1 0 0 0 0 2'/>",
   copy: "<path fill='currentColor' fill-rule='evenodd' d='M12 2.5H8A1.5 1.5 0 0 0 6.5 4v1H8a3 3 0 0 1 3 3v1.5h1A1.5 1.5 0 0 0 13.5 8V4A1.5 1.5 0 0 0 12 2.5M11 11h1a3 3 0 0 0 3-3V4a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v1H4a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3zM4 6.5h4A1.5 1.5 0 0 1 9.5 8v4A1.5 1.5 0 0 1 8 13.5H4A1.5 1.5 0 0 1 2.5 12V8A1.5 1.5 0 0 1 4 6.5'/>",
+  // Gravity `magnifier` — same path as `Search` in src/components/spira/icons.tsx, so the
+  // model-picker's search field (ProviderSheet) draws the same glyph as every other search
+  // field in the app.
+  search:
+    "<path fill='currentColor' fill-rule='evenodd' clip-rule='evenodd' d='M11.5 7a4.5 4.5 0 1 1-9 0a4.5 4.5 0 0 1 9 0m-.82 4.74a6 6 0 1 1 1.06-1.06l2.79 2.79a.75.75 0 1 1-1.06 1.06z'/>",
   expand:
     "<path fill='currentColor' fill-rule='evenodd' d='M7.754 2.004a.75.75 0 0 0 0 1.5h4.75v4.742a.75.75 0 0 0 1.5 0V2.754a.75.75 0 0 0-.75-.75zm.492 11.992a.75.75 0 0 0 0-1.5h-4.75V7.754a.75.75 0 0 0-1.5 0v5.492a.75.75 0 0 0 .75.75z'/>",
   zap: "<path fill='currentColor' fill-rule='evenodd' d='M9.262.498a.75.75 0 0 1 1.275.717L9.229 5.622h3.272c1.104 0 1.665 1.328.897 2.12l-7.542 7.779a.75.75 0 0 1-1.248-.764l1.602-4.723H3.445c-1.083-.001-1.653-1.286-.926-2.09zM4.01 8.534h3.246a.75.75 0 0 1 .711.99l-.869 2.56l4.813-4.962H8.224a.75.75 0 0 1-.719-.963l.656-2.21z'/>",
@@ -3739,7 +4845,24 @@ function Ic({
 
 // ── Markdown ───────────────────────────────────────────────────────────────
 
+/**
+ * Markdown for the chat, and for the resource preview.
+ *
+ * **Everything here is drawn for a LIGHT ground**, because both places that render it are
+ * light: the assistant's `#E0F2F5` bubble and the white preview panel. Four of these
+ * overrides used to be white-on-transparent — left over from when the assistant's prose
+ * sat directly on the teal gradient — so a link in a reply was **white text on pale
+ * blue**: present, underlined, and unreadable (owner, 2026-09-09). Inline code, code
+ * blocks, blockquotes and horizontal rules were all invisible the same way.
+ *
+ * Two rules keep it that way: colours come from the palette (`CLAUDE.md` → Colour), and
+ * anything that can inherit its ink does — `code` sets only a background, `blockquote`
+ * only its rule — so neither has to know which of the two grounds it is on. If a caller
+ * on teal is ever added it takes a `tone` prop; there is no such caller today, and an
+ * option nothing uses is an option nobody keeps correct.
+ */
 function Markdown({ text }: { text: string }) {
+  const router = useRouter();
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -3778,32 +4901,48 @@ function Markdown({ text }: { text: string }) {
         ),
         code: ({ children, className }) => {
           const isBlock = className?.includes("language-");
+          // Salt-300 behind, and the ink inherited — see the note on this component.
           return isBlock ? (
-            <pre className="bg-white/10 rounded-lg px-3 py-2 overflow-x-auto text-[13px] font-mono mb-2">
+            <pre className="bg-[#F4F4F3] rounded-lg px-3 py-2 overflow-x-auto text-[13px] font-mono mb-2">
               <code>{children}</code>
             </pre>
           ) : (
-            <code className="bg-white/15 rounded px-1 py-0.5 text-[13px] font-mono">
+            <code className="bg-[#F4F4F3] rounded px-1 py-0.5 text-[13px] font-mono">
               {children}
             </code>
           );
         },
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-white/40 pl-3 my-2 text-white/80">
+          <blockquote className="border-l-2 border-[#8DD3D4] pl-3 my-2">
             {children}
           </blockquote>
         ),
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2 text-white/90 hover:text-white"
-          >
-            {children}
-          </a>
-        ),
-        hr: () => <hr className="border-white/20 my-3" />,
+        a: ({ href, children }) => {
+          // **A link into the app stays in this tab** — the vacancy map the writer points at
+          // opens as a panel on the goal page beside this chat, and a new tab would have left the
+          // conversation behind. Only a path of our own; everything else is external.
+          const internal =
+            !!href && href.startsWith("/") && !href.startsWith("//");
+          return (
+            <a
+              href={href}
+              target={internal ? undefined : "_blank"}
+              rel={internal ? undefined : "noopener noreferrer"}
+              onClick={
+                internal
+                  ? (e) => {
+                      e.preventDefault();
+                      router.history.push(href);
+                    }
+                  : undefined
+              }
+              className="underline underline-offset-2 text-[#0A8080] hover:text-[#005961]"
+            >
+              {children}
+            </a>
+          );
+        },
+        hr: () => <hr className="border-[#DCDCDC] my-3" />,
       }}
     >
       {text}
@@ -3827,26 +4966,29 @@ function TimerPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 text-white font-sans",
-        closing && "text-[#FFDEA1]",
+        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 text-white font-sans md:bg-[#0A8080]/10 md:text-[#0A8080]",
+        // The closing stretch is yellow: the pale step on teal, the solid warning-500 on white.
+        closing && "text-[#FFDEA1] md:text-[#C99500]",
       )}
     >
       <Ic path={PATHS.clock} size={12} />
       <span
         className={cn(
           "text-[12.5px] font-semibold tabular-nums tracking-[0.02em]",
-          closing && "text-[#FFDEA1]",
+          closing && "text-[#FFDEA1] md:text-[#C99500]",
         )}
       >
         {label}
       </span>
-      <span className="w-[46px] h-1 rounded-full bg-white/26 overflow-hidden">
+      <span className="w-[46px] h-1 rounded-full bg-white/26 md:bg-[#0A8080]/20 overflow-hidden">
         <span
-          className="block h-full rounded-full transition-[width] duration-[900ms] linear"
-          style={{
-            width: `${frac * 100}%`,
-            background: closing ? "#FFDEA1" : "white",
-          }}
+          className={cn(
+            "block h-full rounded-full transition-[width] duration-[900ms] linear",
+            closing
+              ? "bg-[#FFDEA1] md:bg-[#C99500]"
+              : "bg-white md:bg-[#0A8080]",
+          )}
+          style={{ width: `${frac * 100}%` }}
         />
       </span>
     </span>
@@ -4142,6 +5284,9 @@ function ProposalBody({
           {detail}
         </p>
       )}
+      {p.kind === "edit_note" && p.noteDiff && (
+        <NoteDiffPreview diff={p.noteDiff} />
+      )}
 
       {body && body.trim() && (
         <button
@@ -4161,13 +5306,69 @@ function ProposalBody({
   );
 }
 
+/** How many lines of a note diff a card shows before "+N more". */
+const NOTE_DIFF_PREVIEW_LINES = 4;
+
+/**
+ * What approving a note edit adds and removes. A removal is shown first, struck through, so a
+ * rewrite of the user's own text can never be accepted without being seen.
+ */
+function NoteDiffPreview({ diff }: { diff: NoteDiff }) {
+  const box = (title: string, lines: string[], tone: "remove" | "add") => (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2 min-w-0",
+        tone === "remove"
+          ? "border-[#C53336] bg-[#FFFBFB]"
+          : "border-[#0A8080] bg-[#F9FDFC]",
+      )}
+    >
+      <div className="text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#003737]/60">
+        {title}
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {lines.slice(0, NOTE_DIFF_PREVIEW_LINES).map((line, i) => (
+          <li
+            key={i}
+            className={cn(
+              "text-[13px] leading-[1.45] break-words [overflow-wrap:anywhere]",
+              tone === "remove"
+                ? "line-through text-[#003737]/70"
+                : "text-[#003737]",
+            )}
+          >
+            {line}
+          </li>
+        ))}
+      </ul>
+      {lines.length > NOTE_DIFF_PREVIEW_LINES && (
+        <div className="mt-0.5 text-[12px] text-[#003737]/50">
+          +{lines.length - NOTE_DIFF_PREVIEW_LINES} more
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <div className="mt-2.5 space-y-1.5">
+      {diff.removed.length > 0 &&
+        box("Removes text you wrote", diff.removed, "remove")}
+      {diff.added.length > 0 && box("Adds", diff.added, "add")}
+    </div>
+  );
+}
+
 /** Inline "tell the AI how to change this" editor, shared by single + stepped cards. */
 function InstructBox({
   headline,
   onSend,
   onCancel,
 }: {
-  headline: string;
+  /**
+   * Optional, because the card's own content now stays on screen while this box is open — so a
+   * headline here would be the second copy of a line the user is already looking at. It is still
+   * passed by the cards that replace their body entirely.
+   */
+  headline?: string;
   onSend: (instruction: string) => void;
   onCancel: () => void;
 }) {
@@ -4189,9 +5390,11 @@ function InstructBox({
   }, []);
   return (
     <div className="flex flex-col gap-2">
-      <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">
-        {headline}
-      </div>
+      {headline && (
+        <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">
+          {headline}
+        </div>
+      )}
       <p className="text-[12px] text-[#003737]/55">
         Tell the AI how to change this — it will re-propose.
       </p>
@@ -4214,7 +5417,7 @@ function InstructBox({
         <button
           onClick={send}
           disabled={!instruction.trim()}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#003737] transition-colors"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold disabled:opacity-40 hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.sparkles} size={14} /> Send to AI
         </button>
@@ -4230,7 +5433,7 @@ function InstructBox({
 }
 
 const CARD_CLS =
-  "rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
+  "rounded-[4px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)] max-w-full";
 
 /**
  * **Every card's action row is sticky to the bottom of the scroller** (BUG-060).
@@ -4269,22 +5472,29 @@ function ProposalCard({
 }) {
   const [instructing, setInstructing] = useState(false);
   const settled = p.status !== "pending";
-  const { headline } = proposalDisplay(p, goal);
 
   return (
     <div className={CARD_CLS}>
+      {/*
+       * **The card's content stays on screen while the user types into "Edit"** (owner,
+       * 2026-09-16). The edit box used to REPLACE the body, so saying what to change meant
+       * losing sight of the very thing being changed — and on a proposal carrying a note's
+       * text there is no way to remember it. The box now sits underneath, and `InstructBox`
+       * drops its own headline so the card's is not shown twice.
+       */}
+      <ProposalBody p={p} goal={goal} onExpand={onExpand} />
       {instructing ? (
-        <InstructBox
-          headline={headline}
-          onSend={(t) => {
-            setInstructing(false);
-            onInstruct(t);
-          }}
-          onCancel={() => setInstructing(false)}
-        />
+        <div className="mt-3 border-t border-[#F3F3F3] pt-3">
+          <InstructBox
+            onSend={(t) => {
+              setInstructing(false);
+              onInstruct(t);
+            }}
+            onCancel={() => setInstructing(false)}
+          />
+        </div>
       ) : (
         <>
-          <ProposalBody p={p} goal={goal} onExpand={onExpand} />
           {settled ? (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <Badge tone={p.status === "approved" ? "success" : "neutral"}>
@@ -4293,7 +5503,7 @@ function ProposalCard({
               {p.status === "approved" && p.createdRef && (
                 <button
                   onClick={() => onOpen(p.createdRef!)}
-                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[4px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
                 >
                   <Ic path={PATHS.switch_} size={13} /> Open
                 </button>
@@ -4312,14 +5522,14 @@ function ProposalCard({
                   onResolve("approved");
                   onApprove(p);
                 }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
               >
                 <Ic path={PATHS.check} size={14} /> Accept
               </button>
               <button
                 onClick={() => setInstructing(true)}
                 title="Ask the AI to change this proposal"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[9px] border border-[#DCDCDC] text-[#003737] text-[13px] font-medium hover:border-[#005961]/40 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[4px] border border-[#DCDCDC] text-[#003737] text-[13px] font-medium hover:border-[#005961]/40 transition-colors"
               >
                 <Ic path={PATHS.pencil} size={13} /> Edit
               </button>
@@ -4345,7 +5555,7 @@ function CheckBox({ checked }: { checked: boolean }) {
     <span
       aria-hidden
       className={cn(
-        "mt-0.5 h-5 w-5 shrink-0 rounded-[6px] border grid place-items-center transition-colors",
+        "mt-0.5 h-5 w-5 shrink-0 rounded-[4px] border grid place-items-center transition-colors",
         checked
           ? "bg-[#005961] border-[#005961] text-white"
           : "border-[#D6D6D6] bg-white text-transparent",
@@ -4466,7 +5676,7 @@ function OptionAspectCard({
       >
         <button
           onClick={confirm}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.check} size={14} /> Confirm
         </button>
@@ -4778,7 +5988,7 @@ function SteppedProposalCard({
             <button
               onClick={saveAll}
               disabled={includedCount === 0}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-[10px] bg-[#005961] text-white text-[13.5px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-[4px] bg-[#005961] text-white text-[13.5px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
             >
               <Ic path={PATHS.check} size={15} />
               {includedCount === total
@@ -4925,7 +6135,7 @@ function CreateSettled({
       {p.status === "approved" && p.createdRef && (
         <button
           onClick={() => onOpen(p.createdRef!)}
-          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[4px] bg-[#005961] text-white text-[12.5px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.switch_} size={13} />{" "}
           {p.createdRef.kind === "goal" ? "Open goal" : "Open target"}
@@ -5096,7 +6306,7 @@ function CreateChecklistCard({
       <div className="mt-3.5 flex items-center gap-2 border-t border-[#F3F3F3] pt-3">
         <button
           onClick={confirm}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
         >
           <Ic path={PATHS.check} size={14} />{" "}
           {isGoal ? "Create goal" : "Add target"}
@@ -5166,7 +6376,7 @@ function CreateConfirmCard({
               onResolve("approved");
               onCreate(p);
             }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors"
           >
             <Ic path={PATHS.check} size={14} />{" "}
             {isGoal ? "Create goal" : "Add target"}
@@ -5266,6 +6476,7 @@ function ProposalGroup({
   onOpenCreated: (ref: {
     kind: "goal" | "target" | "resource";
     goalId: string;
+    id?: string;
   }) => void;
   onInstructOne: (p: Proposal, instruction: string) => void;
   onExpand: (content: { title: string; body: string; html?: boolean }) => void;
@@ -5357,7 +6568,7 @@ function GrowStartOverlay({
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-[rgba(0,55,55,0.4)] backdrop-blur-[2px]">
       <div
-        className="w-full bg-white text-[#003737] rounded-t-[22px] px-5 pt-6 pb-5"
+        className="w-full bg-white text-[#003737] rounded-t-[4px] px-5 pt-6 pb-5"
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
@@ -5411,6 +6622,281 @@ function GrowStartOverlay({
   );
 }
 
+/**
+ * Where an application stands, for the Continue list.
+ *
+ * <p>This used to print the PHASE NAME, so the row read "QA-testare … profile" — which
+ * looks like it is about the user's profile rather than about that vacancy (owner,
+ * 2026-09-09). Phase names are internal machinery and belong nowhere near a user.
+ */
+function cvStageLabel(app: CvApplication): string {
+  const open = app.openTopics > 0 ? ` · ${app.openTopics} open` : "";
+  return `Step ${app.step ?? 1} of ${app.steps ?? 6} · ${app.stepTitle ?? "In progress"}${open}`;
+}
+
+/**
+ * Where the CV work is, floating over the top of the chat: "Step 2 of 6 · Analyzing the job
+ * requirements". It used to sit in the header as "Reading" or "The advert", which told the owner
+ * nothing — and it said "The advert" while the writer was still on her profile (GRO-167).
+ */
+function CvStepPill({ app }: { app: CvApplication }) {
+  // The open count belongs to the step that is collecting, not to the whole map.
+  const open = app.openTopics > 0 ? ` · ${app.openTopics} open` : "";
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center px-4">
+      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-[#0A8080] bg-[#F9FDFC] px-3 py-1 text-[12px] font-semibold text-[#222525] shadow-[0_2px_8px_rgba(28,28,28,0.06)]">
+        <span className="shrink-0">
+          Step {app.step ?? 1} of {app.steps ?? 6}
+        </span>
+        <span aria-hidden className="text-[#003737]/40">
+          ·
+        </span>
+        <span className="truncate">
+          {app.stepActivity ?? "In progress"}
+          {open}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The map step's buttons, above the composer: the way to the map, and — when the server found a
+ * note that may hold her details — the offer to use it.
+ */
+export function CvMapActions({
+  app,
+  copy,
+  onOpenMap,
+  onAdopt,
+}: {
+  app: CvApplication;
+  copy: CvCardText;
+  onOpenMap: (resourceId: number) => void;
+  onAdopt: (resourceId: string) => void;
+}) {
+  const mapId = app.mapResourceId;
+  /*
+   * **The candidate comes from the server, which is the side that decided there was one.**
+   * This used to re-derive it with a regex of its own, and the two had drifted by one
+   * alternative: the server said `candidate` and the step message said "press Use as my
+   * details", while this found nothing and drew no button at all (owner's live run, 2026-09-16).
+   */
+  const candidate =
+    app.intakeStatus === "candidate" && app.intakeCandidateId != null;
+  if (mapId == null && !candidate) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {mapId != null && (
+        <button
+          type="button"
+          onClick={() => onOpenMap(mapId)}
+          className="inline-flex h-9 items-center gap-1.5 rounded-[4px] bg-[#005961] px-3.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#003737]"
+        >
+          <Ic path={PATHS.fileText} size={14} /> {copy.openMap}
+        </button>
+      )}
+      {candidate && (
+        <button
+          type="button"
+          onClick={() => onAdopt(String(app.intakeCandidateId))}
+          className="inline-flex h-9 min-w-0 max-w-full items-center gap-1.5 rounded-[4px] border border-[#005961] bg-white px-3.5 text-[13.5px] font-semibold text-[#005961] transition-colors hover:bg-[#005961]/5"
+        >
+          <span className="truncate">
+            {copy.useAsDetails.replace(
+              "{title}",
+              app.intakeCandidateTitle ?? "",
+            )}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── CV & cover letter start card ───────────────────────────────────────────
+
+/**
+ * Opening the CV writer: pick up an unfinished application, or start one from an advert.
+ *
+ * <p>Deliberately the twin of {@link GrowStartOverlay} — two assistants opened from one
+ * menu should be opened by cards that look like each other — with one difference that is
+ * the whole point: **no duration picker**. A coaching session is bought by the half hour;
+ * an application is a piece of work with a finish line, and putting a clock on it would
+ * be the wrong promise.
+ *
+ * <p>**The link and the text are alternatives, not both.** They were both required, which
+ * is nonsense on its face: someone who has pasted the link has already told us where the
+ * advert is (owner, 2026-09-09). When only a link comes, the server fetches the page —
+ * and if it cannot, it says so here, while the card is still open and pasting the text is
+ * one action away.
+ *
+ * <p>There is no "role and company" field either. A job advert opens with the role and the
+ * employer, so the application names itself from its first line; asking for something
+ * already on the page earns nothing.
+ */
+function CvStartOverlay({
+  resumable,
+  onStart,
+  onResume,
+  onDelete,
+  onCancel,
+}: {
+  resumable: CvApplication[];
+  onStart: (input: {
+    vacancyUrl: string;
+    vacancyText: string;
+  }) => Promise<void>;
+  onResume: (id: number) => void;
+  onDelete: (id: number) => void;
+  onCancel: () => void;
+}) {
+  /** Which row is asking "delete?" — a second tap, rather than a dialog over a dialog. */
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [vacancyUrl, setVacancyUrl] = useState("");
+  const [vacancyText, setVacancyText] = useState("");
+  /**
+   * A press is in flight.
+   *
+   * <p>Starting from a link now fetches the advert server-side, which takes SECONDS on a
+   * real job board — and the button used to stay live and silent throughout, so a second
+   * press created a second application. That is how two identical rows appeared in
+   * Continue (owner, 2026-09-09). The button says what is happening and refuses to be
+   * pressed again.
+   */
+  const [starting, setStarting] = useState(false);
+  const ready =
+    !starting &&
+    (vacancyUrl.trim().length > 0 || vacancyText.trim().length > 0);
+
+  const field =
+    "w-full px-3.5 py-3 border border-[#E5E5E5] rounded-xl text-[14px] bg-white text-[#003737] outline-none focus:border-[#005961] focus:ring-2 focus:ring-[#005961]/12 transition";
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-end bg-[rgba(0,55,55,0.4)] backdrop-blur-[2px]">
+      <div
+        className="w-full max-h-full overflow-y-auto bg-white text-[#003737] rounded-t-[4px] px-5 pt-6 pb-5"
+        style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
+      >
+        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
+          <Ic path={PATHS.fileText} size={15} /> CV and cover letter
+        </span>
+        <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
+          One vacancy at a time
+        </h3>
+        <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
+          I will read the advert, then ask you about one requirement at a time.
+          Your CV and covering letter will be built from what you tell me.
+        </p>
+
+        {resumable.length > 0 && (
+          <div className="mb-4">
+            <p className="text-[11px] uppercase tracking-[0.07em] font-bold text-[#003737]/50 mb-2">
+              Continue
+            </p>
+            <div className="flex flex-col gap-2">
+              {resumable.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center gap-1 rounded-xl border border-[#E5E5E5] hover:border-[#005961]/40 transition-colors"
+                >
+                  <button
+                    disabled={starting}
+                    onClick={() => onResume(a.id)}
+                    className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3.5 py-3 text-left"
+                  >
+                    <span className="w-full truncate text-[14px]">
+                      {a.title}
+                    </span>
+                    <span className="text-[12px] text-[#003737]/50">
+                      {cvStageLabel(a)}
+                    </span>
+                  </button>
+                  {/* Removing one has to be possible from here: without it a duplicate is
+                      permanent, and the only place a user meets these rows is this list. */}
+                  {confirmDelete === a.id ? (
+                    <span className="flex shrink-0 items-center gap-1 pr-2">
+                      <button
+                        onClick={() => onDelete(a.id)}
+                        className="rounded-lg px-2 py-1 text-[12px] font-semibold text-[#C53336] hover:bg-[#C53336]/10"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="rounded-lg px-2 py-1 text-[12px] text-[#003737]/50 hover:bg-[#003737]/5"
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(a.id)}
+                      aria-label={`Delete the application for ${a.title}`}
+                      className="mr-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#003737]/40 hover:bg-[#003737]/5 hover:text-[#003737]"
+                    >
+                      <Ic path={PATHS.x} size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2.5 mb-3.5">
+          <input
+            value={vacancyUrl}
+            onChange={(e) => setVacancyUrl(e.target.value)}
+            placeholder="Link to the advert"
+            className={field}
+          />
+          {/* "or", not a second required field. Some job boards cannot be read at all —
+              they render in the browser, or turn a fetch away — and for those the text is
+              the only way in. Either one is enough; both is allowed and harmless. */}
+          <div className="flex items-center gap-3 px-1">
+            <span className="h-px flex-1 bg-[#E5E5E5]" />
+            <span className="text-[12px] text-[#003737]/45">or</span>
+            <span className="h-px flex-1 bg-[#E5E5E5]" />
+          </div>
+          <textarea
+            value={vacancyText}
+            onChange={(e) => setVacancyText(e.target.value)}
+            placeholder="Paste the advert here"
+            rows={5}
+            className={cn(field, "resize-none")}
+          />
+        </div>
+
+        <button
+          onClick={async () => {
+            if (starting) return;
+            setStarting(true);
+            try {
+              await onStart({ vacancyUrl, vacancyText });
+            } finally {
+              // The card is unmounted on success; this matters on failure, where it has
+              // to become pressable again for the retry the error just asked for.
+              setStarting(false);
+            }
+          }}
+          disabled={!ready}
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#005961] text-white text-[14.5px] font-semibold hover:bg-[#003737] disabled:opacity-40 disabled:hover:bg-[#005961] transition-colors"
+        >
+          {starting ? "Reading the advert…" : "Start"}
+        </button>
+        <button
+          onClick={onCancel}
+          className="block mx-auto mt-2 text-[13px] text-[#003737]/50 hover:text-[#003737] transition-colors py-1.5"
+        >
+          Cancel
+        </button>
+      </div>
+      <style>{`@keyframes slideUp { from { transform: translateY(34px); opacity: 0.25; } to { transform: translateY(0); opacity: 1; } }`}</style>
+    </div>
+  );
+}
+
 // ── GROW end card ──────────────────────────────────────────────────────────
 
 export function GrowEndCard({
@@ -5445,7 +6931,7 @@ export function GrowEndCard({
   const hasRecord = record.length > 0;
 
   return (
-    <div className="rounded-[14px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
+    <div className="rounded-[4px] border border-white/20 bg-white text-[#003737] p-4 shadow-[0_6px_20px_-14px_rgba(0,0,0,0.4)]">
       <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.07em] font-semibold text-[#005961]">
         <Ic path={PATHS.brain} size={12} className="text-[#005961]" /> Session
         wrap-up
@@ -5457,7 +6943,7 @@ export function GrowEndCard({
       </p>
       <div
         className={cn(
-          "mt-2.5 rounded-[9px] border border-[#E5E5E5] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] whitespace-pre-wrap select-text",
+          "mt-2.5 rounded-[4px] border border-[#E5E5E5] px-3 py-2.5 max-h-44 overflow-y-auto text-[12.5px] leading-[1.55] whitespace-pre-wrap select-text",
           hasRecord
             ? "bg-[#FFFAF2] text-[#003737]/85"
             : "bg-[#FBFAFA] text-[#003737]/45 italic",
@@ -5466,7 +6952,7 @@ export function GrowEndCard({
       >
         {hasRecord ? record : "No record was written."}
       </div>
-      <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-[#E5E5E5] bg-white px-3 py-1.5 focus-within:border-[#005961] transition-colors">
+      <div className="mt-2 flex items-center gap-2 rounded-[4px] border border-[#E5E5E5] bg-white px-3 py-1.5 focus-within:border-[#005961] transition-colors">
         {revising ? (
           <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#005961]/30 border-t-[#005961] animate-spin" />
         ) : (
@@ -5498,7 +6984,7 @@ export function GrowEndCard({
         )}
       </div>
       {proposals > 0 && (
-        <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[9px] bg-[#E5F4F3] text-[#005961] text-[12.5px]">
+        <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[4px] bg-[#E5F4F3] text-[#005961] text-[12.5px]">
           <Ic path={PATHS.target} size={12} /> {proposals} proposal
           {proposals === 1 ? "" : "s"} still awaiting your decision
         </div>
@@ -5507,7 +6993,7 @@ export function GrowEndCard({
         <button
           onClick={onSave}
           disabled={revising || !hasRecord}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors disabled:opacity-50 disabled:hover:bg-[#005961]"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] transition-colors disabled:opacity-50 disabled:hover:bg-[#005961]"
         >
           <Ic path={PATHS.check} size={14} /> Save memory
         </button>
@@ -5530,6 +7016,7 @@ function ProviderSheet({
   onActivate,
   onSaveKey,
   onModelChange,
+  onDeleteKey,
   tavily,
   onSaveTavily,
   onClose,
@@ -5539,6 +7026,7 @@ function ProviderSheet({
   onActivate: (id: string) => void;
   onSaveKey: (id: string, key: string) => void;
   onModelChange: (id: string, model: string) => void;
+  onDeleteKey: (id: string) => void;
   tavily: { connected: boolean; hint?: string };
   onSaveTavily: (key: string) => void;
   onClose: () => void;
@@ -5548,9 +7036,20 @@ function ProviderSheet({
   const [showKey, setShowKey] = useState(false);
   const [tavilyVal, setTavilyVal] = useState("");
   const [editingTavily, setEditingTavily] = useState(false);
+  /**
+   * Which key is asking "remove?" — a second tap rather than a dialog.
+   *
+   * A modal over a sheet that is itself over the chat would be three layers deep, and the
+   * CV list already answers this question the same way. Holds a provider id, or "TAVILY".
+   */
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({});
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  // Only one dropdown is ever open at a time (see handleDropdownToggle), so one query is
+  // enough — cleared whenever a dropdown opens or closes rather than kept per provider,
+  // which would let a query typed for one provider silently filter a different one later.
+  const [modelQuery, setModelQuery] = useState("");
   const isMobile = useIsMobile();
 
   const loadModels = async (provId: string) => {
@@ -5568,6 +7067,7 @@ function ProviderSheet({
 
   const handleDropdownToggle = (provId: string, connected: boolean) => {
     if (!connected) return;
+    setModelQuery("");
     if (openDropdown === provId) {
       setOpenDropdown(null);
     } else {
@@ -5615,7 +7115,7 @@ function ProviderSheet({
         className={cn(
           "flex min-h-0 flex-col overflow-hidden bg-white text-[#003737]",
           isMobile
-            ? "sheet-inset w-full rounded-t-[22px]"
+            ? "sheet-inset w-full rounded-t-[4px]"
             : "h-full w-full sm:max-w-md",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -5697,59 +7197,141 @@ function ProviderSheet({
                         />
                       </button>
 
-                      {dropOpen && (
-                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#E5E5E5] rounded-xl shadow-lg overflow-hidden">
-                          {isLoadingMdl ? (
-                            <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
-                              Loading models…
-                            </div>
-                          ) : (fetchedModels ?? p.models).length === 0 ? (
-                            <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
-                              No models found
-                            </div>
-                          ) : (
-                            <div className="max-h-[200px] overflow-y-auto">
-                              {(fetchedModels ?? p.models).map((m) => (
-                                <button
-                                  key={m}
-                                  onClick={() => {
-                                    onModelChange(p.id, m);
-                                    setOpenDropdown(null);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-2.5 text-[13px] font-mono transition-colors",
-                                    m === p.activeModel
-                                      ? "bg-[#E5F4F3] text-[#005961] font-semibold"
-                                      : "text-[#003737] hover:bg-[#F4F4F3]",
+                      {dropOpen &&
+                        (() => {
+                          const allModels = fetchedModels ?? p.models;
+                          const trimmedQuery = modelQuery.trim().toLowerCase();
+                          const shownModels = trimmedQuery
+                            ? allModels.filter((m) =>
+                                m.toLowerCase().includes(trimmedQuery),
+                              )
+                            : allModels;
+                          return (
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-[#E5E5E5] rounded-xl shadow-lg overflow-hidden">
+                              {/* Only worth a search box once there is something to search —
+                                a provider's own list (100+ for some) is what this is for
+                                (owner, 2026-09-09: scrolling that list to find one model was
+                                the actual complaint). */}
+                              {!isLoadingMdl && allModels.length > 0 && (
+                                <div className="relative border-b border-[#E5E5E5]">
+                                  <Ic
+                                    path={PATHS.search}
+                                    size={13}
+                                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#003737]/40"
+                                  />
+                                  <input
+                                    value={modelQuery}
+                                    onChange={(e) =>
+                                      setModelQuery(e.target.value)
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                    placeholder="Search models…"
+                                    autoFocus
+                                    className="w-full pl-8 pr-14 py-2 text-[13px] font-mono bg-white text-[#003737] outline-none placeholder:text-[#003737]/40 placeholder:font-sans"
+                                  />
+                                  {/* The app's ONE clear control, not a copy of it
+                                      (CLAUDE.md → 3f: "Never hand-roll a clear control").
+                                      This was a hand-rolled twin with its own hex and its
+                                      own font size; the shared one is what keeps every
+                                      search field in the app emptying the same way. */}
+                                  {modelQuery && (
+                                    <ClearSearchWord
+                                      onClear={() => setModelQuery("")}
+                                      className="right-2.5"
+                                    />
                                   )}
-                                >
-                                  {m}
-                                </button>
-                              ))}
+                                </div>
+                              )}
+                              {isLoadingMdl ? (
+                                <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
+                                  Loading models…
+                                </div>
+                              ) : allModels.length === 0 ? (
+                                <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
+                                  No models found
+                                </div>
+                              ) : shownModels.length === 0 ? (
+                                <div className="px-3 py-3 text-[13px] text-[#003737]/50 text-center">
+                                  No models match “{modelQuery.trim()}”
+                                </div>
+                              ) : (
+                                <div className="max-h-[200px] overflow-y-auto">
+                                  {shownModels.map((m) => (
+                                    <button
+                                      key={m}
+                                      onClick={() => {
+                                        onModelChange(p.id, m);
+                                        setOpenDropdown(null);
+                                      }}
+                                      className={cn(
+                                        "w-full text-left px-3 py-2.5 text-[13px] font-mono transition-colors",
+                                        m === p.activeModel
+                                          ? "bg-[#E5F4F3] text-[#005961] font-semibold"
+                                          : "text-[#003737] hover:bg-[#F4F4F3]",
+                                      )}
+                                    >
+                                      {m}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      )}
+                          );
+                        })()}
                     </div>
                   )}
 
-                  {/* Key hint + replace */}
+                  {/* Key hint, replace, and remove */}
                   {p.connected && editing !== p.id && (
-                    <div className="flex items-center justify-between mt-2.5">
-                      <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
-                        <Ic path={PATHS.shield} size={12} /> {p.keyHint}
+                    <div className="flex items-center justify-between gap-2 mt-2.5">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
+                        <Ic path={PATHS.shield} size={12} />{" "}
+                        <span className="truncate">{p.keyHint}</span>
                       </span>
-                      <button
-                        onClick={() => {
-                          setEditing(p.id);
-                          setKeyVal("");
-                          setShowKey(false);
-                          setOpenDropdown(null);
-                        }}
-                        className="text-[12px] text-[#005961] hover:underline"
-                      >
-                        Replace key
-                      </button>
+                      {confirmRemove === p.id ? (
+                        <span className="flex shrink-0 items-center gap-2">
+                          <button
+                            onClick={() => {
+                              onDeleteKey(p.id);
+                              setConfirmRemove(null);
+                            }}
+                            className="text-[12px] font-semibold text-[#C53336] hover:underline"
+                          >
+                            Remove it
+                          </button>
+                          <button
+                            onClick={() => setConfirmRemove(null)}
+                            className="text-[12px] text-[#003737]/50 hover:text-[#003737]"
+                          >
+                            Keep
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="flex shrink-0 items-center gap-2.5">
+                          <button
+                            onClick={() => {
+                              setEditing(p.id);
+                              setKeyVal("");
+                              setShowKey(false);
+                              setOpenDropdown(null);
+                              setConfirmRemove(null);
+                            }}
+                            className="text-[12px] text-[#005961] hover:underline"
+                          >
+                            Replace key
+                          </button>
+                          {/* **Removing has to be possible, not only replacing** (owner,
+                              2026-09-09). The endpoint has been there since BYOK shipped;
+                              this sheet simply never offered it, so a key could be
+                              swapped but never taken off the server. */}
+                          <button
+                            onClick={() => setConfirmRemove(p.id)}
+                            className="text-[12px] text-[#C53336]/80 hover:text-[#C53336] hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -5795,7 +7377,7 @@ function ProviderSheet({
                             onSaveKey(p.id, keyVal.trim());
                             setEditing(null);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
                         >
                           <Ic path={PATHS.check} size={14} /> Save &amp;
                           activate
@@ -5836,20 +7418,53 @@ function ProviderSheet({
                 )}
               </div>
 
+              {/* The search key needs removing just as much as a chat key — it was the
+                  second place the affordance was missing. Same two-tap confirm, keyed on
+                  the provider name the server knows it by. */}
               {tavily.connected && !editingTavily && (
-                <div className="flex items-center justify-between mt-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
-                    <Ic path={PATHS.shield} size={12} /> {tavily.hint}
+                <div className="flex items-center justify-between gap-2 mt-2.5">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
+                    <Ic path={PATHS.shield} size={12} />{" "}
+                    <span className="truncate">{tavily.hint}</span>
                   </span>
-                  <button
-                    onClick={() => {
-                      setEditingTavily(true);
-                      setTavilyVal("");
-                    }}
-                    className="text-[12px] text-[#005961] hover:underline"
-                  >
-                    Replace key
-                  </button>
+                  {confirmRemove === "TAVILY" ? (
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => {
+                          onDeleteKey("TAVILY");
+                          setConfirmRemove(null);
+                        }}
+                        className="text-[12px] font-semibold text-[#C53336] hover:underline"
+                      >
+                        Remove it
+                      </button>
+                      <button
+                        onClick={() => setConfirmRemove(null)}
+                        className="text-[12px] text-[#003737]/50 hover:text-[#003737]"
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-2.5">
+                      <button
+                        onClick={() => {
+                          setEditingTavily(true);
+                          setTavilyVal("");
+                          setConfirmRemove(null);
+                        }}
+                        className="text-[12px] text-[#005961] hover:underline"
+                      >
+                        Replace key
+                      </button>
+                      <button
+                        onClick={() => setConfirmRemove("TAVILY")}
+                        className="text-[12px] text-[#C53336]/80 hover:text-[#C53336] hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -5884,7 +7499,7 @@ function ProviderSheet({
                         onSaveTavily(tavilyVal.trim());
                         setEditingTavily(false);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[4px] bg-[#005961] text-white text-[13px] font-semibold hover:bg-[#003737] disabled:opacity-40 transition-colors"
                     >
                       <Ic path={PATHS.check} size={14} /> Save
                     </button>
@@ -5943,7 +7558,7 @@ function EndConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className="w-full bg-white text-[#003737] rounded-t-[22px] px-5 pt-6 pb-5"
+        className="w-full bg-white text-[#003737] rounded-t-[4px] px-5 pt-6 pb-5"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
@@ -5966,6 +7581,77 @@ function EndConfirmDialog({
             className="w-full py-2.5 text-[13.5px] text-[#003737]/50 hover:text-[#003737] transition-colors"
           >
             No, keep going
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "New CV" — and the dialog is what asks WHICH thing to throw away.
+ *
+ * <p>The owner chose this shape over a single fixed meaning (2026-09-10): the two are
+ * genuinely different intentions and only the person pressing it knows which one they
+ * have. Starting the conversation again keeps the requirements, the answers already given
+ * and every note; deleting the application keeps only the notes.
+ *
+ * <p>**The notes survive both**, and the dialog says so, because that is the part a user
+ * would otherwise be afraid of: a finished CV is a resource on the goal and outlives the
+ * sitting that wrote it.
+ */
+function NewCvDialog({
+  vacancy,
+  onRestart,
+  onDiscard,
+  onCancel,
+}: {
+  vacancy: string;
+  onRestart: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full bg-white text-[#003737] rounded-t-[4px] px-5 pt-6 pb-5"
+        onClick={(e) => e.stopPropagation()}
+        style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
+      >
+        <h3 className="font-['Playfair_Display'] text-[22px] font-semibold leading-[1.18] mb-2">
+          Start again?
+        </h3>
+        <p className="text-[13.5px] text-[#003737]/60 leading-[1.5] mb-4">
+          This conversation about{" "}
+          <span className="font-semibold text-[#003737]/80">{vacancy}</span>{" "}
+          cannot be recovered once it goes. Anything already saved as a note — a
+          CV, a letter, your profile — stays on the goal either way.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onRestart}
+            className="w-full py-3 rounded-xl bg-[#005961] text-white text-[14px] font-semibold hover:bg-[#003737] transition-colors"
+          >
+            Start the conversation over
+          </button>
+          <button
+            onClick={onDiscard}
+            className="w-full py-3 rounded-xl border border-[#C53336]/40 text-[#C53336] text-[14px] font-semibold hover:bg-[#C53336]/8 transition-colors"
+          >
+            Delete the whole application
+          </button>
+          <p className="text-[12px] text-[#003737]/45 leading-[1.45] -mt-0.5 mb-1">
+            Deleting it also removes the requirements read from the advert and
+            the answers you have given so far.
+          </p>
+          <button
+            onClick={onCancel}
+            className="w-full py-2.5 text-[13.5px] text-[#003737]/50 hover:text-[#003737] transition-colors"
+          >
+            Cancel
           </button>
         </div>
       </div>
@@ -6327,7 +8013,15 @@ function Composer({
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 128) + "px";
+    const needed = el.scrollHeight;
+    el.style.height = Math.min(needed, 128) + "px";
+    // **The scrollbar appears only past the cap.** A textarea scrolls by default, and the
+    // height above is measured from the CONTENT — a placeholder contributes nothing to
+    // scrollHeight but still wraps and still overflows a one-line box, so an empty
+    // composer with a long placeholder showed scrollbar arrows beside a cut-off hint
+    // (owner's screenshot, 2026-09-09). The placeholders are short now; this makes the
+    // field honest whatever they say.
+    el.style.overflowY = needed > 128 ? "auto" : "hidden";
   }, [v]);
 
   // Restore what was half-composed here before the page went away (BUG-049). Anything the

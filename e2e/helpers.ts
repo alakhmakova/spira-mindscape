@@ -1,5 +1,5 @@
 import { Page, Locator, expect } from "@playwright/test";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * 1788185140243" that no run had ever cleaned up).
  */
 const CREATED_GOALS_LOG = path.join(__dirname, ".created-goals.ndjson");
+
+/**
+ * The goals THIS run has created — the only ones a spec may delete.
+ *
+ * <p>A local run is against the developer's own database, with her own goals in it. On
+ * 2026-09-24 a full suite run wiped every one of them, because the goal-cap spec began by
+ * deleting the account's whole list to get to a known state. Nothing warned, nothing backed
+ * anything up, and a vacancy map a morning had gone into was simply gone.
+ */
+export function goalsCreatedThisRun(): Set<string> {
+  if (!existsSync(CREATED_GOALS_LOG)) return new Set();
+  return new Set(
+    readFileSync(CREATED_GOALS_LOG, "utf-8")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          const id = (JSON.parse(line) as { id?: string }).id;
+          return id ? [id] : [];
+        } catch {
+          return [];
+        }
+      }),
+  );
+}
 
 /** Create a goal via the UI and land on its workspace page. Returns nothing. */
 export async function createGoal(page: Page, title: string) {

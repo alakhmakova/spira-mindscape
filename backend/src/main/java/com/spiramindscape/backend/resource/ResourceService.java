@@ -3,6 +3,7 @@ package com.spiramindscape.backend.resource;
 import com.spiramindscape.backend.goal.Goal;
 import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
+import com.spiramindscape.backend.graphql.input.MapPatchInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,9 @@ public class ResourceService {
     public static final int MAX_RESOURCE_LABEL_LENGTH = 200;
     public static final int MAX_LINK_URL_LENGTH = 1_000;
     public static final int MAX_CONTACT_PHONE_LENGTH = 50;
+    /** The whole vacancy-map document. Generous, because a map holds every answer the user gives
+     *  about one job, but bounded — nothing else guards a column written to by an agent. */
+    public static final int MAX_MAP_DATA_LENGTH = 200_000;
 
     private static final Set<String> ALLOWED_FILE_MIME_TYPES = Set.of("application/pdf");
     private static final Set<String> COMMON_CREATE_FIELDS = Set.of("type");
@@ -34,6 +38,9 @@ public class ResourceService {
     private static final Set<String> LINK_FIELDS = Set.of("title", "url");
     private static final Set<String> FILE_FIELDS = Set.of("title", "mime", "dataUrl");
     private static final Set<String> EMAIL_FIELDS = Set.of("name", "role", "email", "phone");
+    // A map is created with a title and filled through patchMap. `mapData` is accepted here only
+    // so a map can be DUPLICATED, where the whole document genuinely is the thing being copied.
+    private static final Set<String> VACANCY_FIELDS = Set.of("title", "mapData");
 
     private final ResourceRepository resourceRepository;
     private final GoalService goalService;
@@ -95,7 +102,8 @@ public class ResourceService {
         resource.setType(normalizeType(input.type()));
         validateAllowedFields(resource.getType(), rawInput, true);
         applyFields(resource, input.title(), input.body(), input.url(), input.mime(),
-                input.dataUrl(), input.name(), input.role(), input.email(), input.phone());
+                input.dataUrl(), input.name(), input.role(), input.email(), input.phone(),
+                input.mapData());
         validateResource(resource);
         return resourceRepository.save(resource);
     }
@@ -119,13 +127,87 @@ public class ResourceService {
         return resourceRepository.save(resource);
     }
 
+    /**
+     * Edits a note by section instead of replacing its body — see {@link NoteEdit}.
+     *
+     * <p>Owner-scoped. The modes that can remove existing text must name the {@code updatedAt}
+     * they were based on, and are refused with {@link NoteChangedException} when the note has
+     * changed since: applying them would undo whatever the user wrote in between. The adding
+     * modes need no such check — they are applied to the note as it is at this moment, which
+     * is exactly what keeps a hand edit made after the suggestion.
+     */
+    @Transactional
+    public Resource editNote(Long id, com.spiramindscape.backend.graphql.input.EditNoteInput input) {
+        Resource resource = findOwned(id);
+        if (!"note".equals(resource.getType())) {
+            throw new IllegalArgumentException("Only a note can be edited this way");
+        }
+        if (input == null || input.content() == null) {
+            throw new IllegalArgumentException("A note edit needs content");
+        }
+        NoteEdit.Mode mode = NoteEdit.Mode.parse(input.mode());
+        if (mode.rewritesExisting() && !sameInstant(input.expectedUpdatedAt(), resource.getUpdatedAt())) {
+            throw new NoteChangedException();
+        }
+        resource.setBody(NoteEdit.apply(resource.getBody(), mode, input.section(), input.content()));
+        if (input.title() != null && !input.title().isBlank()) {
+            resource.setTitle(input.title().trim());
+        }
+        validateNote(resource);
+        return resourceRepository.save(resource);
+    }
+
+    /** Millisecond comparison: the database keeps microseconds, a client may echo fewer digits. */
+    static boolean sameInstant(String expected, java.time.Instant actual) {
+        if (expected == null || expected.isBlank() || actual == null) return false;
+        try {
+            return java.time.Instant.parse(expected.trim()).toEpochMilli() == actual.toEpochMilli();
+        } catch (java.time.format.DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Writes named fields of a vacancy map, leaving every other field exactly as it was.
+     *
+     * <p>Owner-scoped. This is the ONLY way the map is meant to be written: two writers share it —
+     * the user typing into the page and the CV writer filling in what it read from the advert —
+     * and a whole-document write makes the later of them silently discard the other's work. That is
+     * precisely what the requirement-map note did, and why it is being replaced. See
+     * {@link VacancyMapPatch}.
+     *
+     * <p>Unlike {@code editNote}, no {@code expectedUpdatedAt} is needed: a patch names the one
+     * field it changes, so there is no window in which it could undo an edit it never saw.
+     */
+    @Transactional
+    public Resource patchMap(Long id, List<MapPatchInput> patches) {
+        Resource resource = findOwned(id);
+        if (!"vacancy".equals(resource.getType())) {
+            throw new IllegalArgumentException("Only a vacancy map can be patched this way");
+        }
+        if (patches == null || patches.isEmpty()) {
+            throw new IllegalArgumentException("A map patch needs at least one field");
+        }
+        String next = VacancyMapPatch.apply(resource.getMapData(), patches.stream()
+                .map(patch -> new VacancyMapPatch.Patch(patch.path(), patch.value()))
+                .toList());
+        if (next.length() > MAX_MAP_DATA_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Vacancy map must be " + MAX_MAP_DATA_LENGTH + " characters or fewer");
+        }
+        resource.setMapData(next);
+        return resourceRepository.save(resource);
+    }
+
     @Transactional
     public void delete(Long id) {
         resourceRepository.delete(findById(id));
     }
 
     private void applyFields(Resource r, String title, String body, String url, String mime,
-                              String dataUrl, String name, String role, String email, String phone) {
+                              String dataUrl, String name, String role, String email, String phone,
+                              String mapData) {
+        if (mapData != null) r.setMapData(mapData);
         if (title != null)   r.setTitle(title.trim());
         if (body != null)    r.setBody(body);
         if (url != null)     r.setUrl(url.trim());
@@ -140,7 +222,8 @@ public class ResourceService {
     private void applyUpdateFields(Resource r, UpdateResourceInput input, Map<String, Object> rawInput) {
         if (rawInput == null || rawInput.isEmpty()) {
             applyFields(r, input.title(), input.body(), input.url(), input.mime(),
-                    input.dataUrl(), input.name(), input.role(), input.email(), input.phone());
+                    input.dataUrl(), input.name(), input.role(), input.email(), input.phone(),
+                    input.mapData());
             return;
         }
 
@@ -153,6 +236,7 @@ public class ResourceService {
         if (rawInput.containsKey("role"))    r.setRole(trim(input.role()));
         if (rawInput.containsKey("email"))   r.setEmail(trim(input.email()));
         if (rawInput.containsKey("phone"))   r.setPhone(trim(input.phone()));
+        if (rawInput.containsKey("mapData")) r.setMapData(input.mapData());
     }
 
     private String trim(String value) {
@@ -180,7 +264,7 @@ public class ResourceService {
 
     private String normalizeType(String type) {
         String normalized = Objects.requireNonNull(type).toLowerCase(Locale.ROOT);
-        if (!List.of("note", "link", "file", "email").contains(normalized)) {
+        if (!List.of("note", "link", "file", "email", "vacancy").contains(normalized)) {
             throw new IllegalArgumentException("Unknown resource type: " + type);
         }
         return normalized;
@@ -209,6 +293,7 @@ public class ResourceService {
             case "link" -> LINK_FIELDS;
             case "file" -> FILE_FIELDS;
             case "email" -> EMAIL_FIELDS;
+            case "vacancy" -> VACANCY_FIELDS;
             default -> Set.of();
         };
     }
@@ -219,6 +304,7 @@ public class ResourceService {
             case "link" -> validateLink(resource);
             case "file" -> validateFile(resource);
             case "email" -> validateEmail(resource);
+            case "vacancy" -> validateVacancy(resource);
             default -> throw new IllegalArgumentException("Unknown resource type: " + resource.getType());
         }
     }
@@ -270,6 +356,20 @@ public class ResourceService {
             throw new IllegalArgumentException(
                     "Email resource phone must be " + MAX_CONTACT_PHONE_LENGTH + " characters or fewer");
         }
+    }
+
+    private void validateVacancy(Resource resource) {
+        requireText(resource.getTitle(), "Vacancy map requires title");
+        validateLabelLength(resource.getTitle(), "Vacancy map title");
+        // Applying NO patches parses the document and writes it back, which both rejects invalid
+        // JSON and normalises it — so a map that arrived whole (a duplicate) is stored in exactly
+        // the shape a patched one is, and the two can never be told apart afterwards.
+        String normalized = VacancyMapPatch.apply(resource.getMapData(), List.of());
+        if (normalized.length() > MAX_MAP_DATA_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Vacancy map must be " + MAX_MAP_DATA_LENGTH + " characters or fewer");
+        }
+        resource.setMapData(normalized);
     }
 
     private void requireText(String value, String message) {

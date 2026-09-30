@@ -1005,7 +1005,6 @@ Testing & tooling:
 - `docs/flyway-guide.md`
 - `docs/graphiql-guide.md`
 - `docs/linting-guide.md`
-- `docs/deploy-oracle-vm.md`
 - `docs/deploy-gcp-cloud-run.md`
 - `docs/google-drive-integration-guide.md`
 

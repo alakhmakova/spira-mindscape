@@ -63,6 +63,46 @@ export function Pill({
 }
 
 /**
+ * **A tag in a cloud you edit** — the one sanctioned variant of the pill (owner, 2026-09-18, the
+ * "Your business profile" reference: "Alaska ×", "Add +"). Where a `Pill` states something, this
+ * is a set the user builds, so it is heavier and its word takes the colour: a **2px outline**, a
+ * **white fill**, the **word in the outline's colour**, 14px semibold, a finger-sized 36px.
+ *
+ * - `teal` — chosen (a ticked quality), and the trailing **Add +**.
+ * - `ink` — not chosen: near-black outline and word (Salt-1000).
+ *
+ * Its children may be buttons (the tick, the ×, a chevron); the capsule itself is a plain span.
+ * The tick, the chevron and the "+" take the pill's own colour; the ACTIONS tucked inside it — a
+ * comment mark with its count, the bin — are near-black in every tone (owner, 2026-09-18). The
+ * caller colours those; this component does not.
+ * Used by the vacancy map's personal qualities. Don't grow a third tone — a state belongs in
+ * `Pill`.
+ */
+export function TagPill({
+  children,
+  tone,
+  className,
+}: {
+  children: React.ReactNode;
+  tone: "teal" | "ink";
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-9 items-center gap-1.5 rounded-full border-2 bg-white px-4 text-sm font-semibold",
+        tone === "teal"
+          ? "border-[#0A8080] text-[#0A8080]"
+          : "border-[#222525] text-[#222525]",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
  * A pill you can press — one answer of a one-line question (the goal status, the deadline
  * question). Chosen carries its tone; the rest are `neutral`, so the row reads as one family with
  * one member lit rather than as a row of coloured buttons.

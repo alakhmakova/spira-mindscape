@@ -25,6 +25,7 @@ import com.spiramindscape.android.graphql.UpdateGoalMutation
 import com.spiramindscape.android.graphql.UpdateOptionMutation
 import com.spiramindscape.android.graphql.UpdateRealityItemMutation
 import com.spiramindscape.android.graphql.UpdateResourceMutation
+import com.spiramindscape.android.graphql.EditNoteMutation
 import com.spiramindscape.android.graphql.UpdateTargetMutation
 import com.spiramindscape.android.graphql.type.ChecklistItemInput
 import com.spiramindscape.android.graphql.type.CreateGoalInput
@@ -33,6 +34,7 @@ import com.spiramindscape.android.graphql.type.CreateTargetInput
 import com.spiramindscape.android.graphql.type.UpdateGoalInput
 import com.spiramindscape.android.graphql.type.UpdateOptionInput
 import com.spiramindscape.android.graphql.type.UpdateResourceInput
+import com.spiramindscape.android.graphql.type.EditNoteInput
 import com.spiramindscape.android.graphql.type.UpdateTargetInput
 
 /** A goal as the dashboard cards need it — mapped from the GraphQL model, decoupled from Apollo. */
@@ -127,6 +129,10 @@ interface GoalsRepository {
     // Resources
     suspend fun createResource(goalId: String, input: CreateResourceInput)
     suspend fun updateResource(id: String, input: UpdateResourceInput)
+
+    /** A section-aware note edit, merged on the server into the note as it is now. */
+    suspend fun editNote(id: String, input: EditNoteInput): Unit =
+        throw UnsupportedOperationException("editNote")
     suspend fun removeResource(id: String)
 }
 
@@ -347,6 +353,10 @@ class ApolloGoalsRepository(private val apollo: ApolloClient) : GoalsRepository 
 
     override suspend fun removeResource(id: String) {
         apollo.mutation(DeleteResourceMutation(id)).executeOrThrow()
+    }
+
+    override suspend fun editNote(id: String, input: EditNoteInput) {
+        apollo.mutation(EditNoteMutation(id, input)).executeOrThrow()
     }
 
     private suspend fun updateTarget(targetId: String, input: UpdateTargetInput): TargetItem {

@@ -9,6 +9,7 @@ import {
   createSummary,
   applyExcludedAspects,
   buildHistory,
+  openCreatedPlan,
   HISTORY_MAX_CHARS,
   HISTORY_MAX_ENTRIES,
   editDisplay,
@@ -589,5 +590,43 @@ describe("fmtDeadline", () => {
     expect(fmtDeadline("2026-08-05")).toMatch(/2026/);
     expect(fmtDeadline("")).toBe("");
     expect(fmtDeadline("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("openCreatedPlan", () => {
+  const resource = { kind: "resource" as const, goalId: "g1", id: "r7" };
+
+  it("opens a resource beside the chat on a laptop, without closing it", () => {
+    // Being thrown onto the goal's resource list to hunt for the thing just made is not
+    // "open it" (owner, 2026-09-23).
+    expect(openCreatedPlan(resource, false)).toEqual({
+      closeChat: false,
+      resourceId: "r7",
+    });
+  });
+
+  it("closes the chat on a phone, where the panel is full screen", () => {
+    expect(openCreatedPlan(resource, true)).toEqual({
+      closeChat: true,
+      resourceId: "r7",
+    });
+  });
+
+  it("falls back to the list when there is no id to open", () => {
+    expect(openCreatedPlan({ kind: "resource", goalId: "g1" }, false)).toEqual({
+      closeChat: true,
+      scrollTo: "resources-section",
+    });
+  });
+
+  it("steps aside for a goal or a target, which live on the page", () => {
+    expect(openCreatedPlan({ kind: "target", goalId: "g1" }, false)).toEqual({
+      closeChat: true,
+      scrollTo: "targets-section",
+    });
+    expect(openCreatedPlan({ kind: "goal", goalId: "g1" }, false)).toEqual({
+      closeChat: true,
+      scrollTo: undefined,
+    });
   });
 });

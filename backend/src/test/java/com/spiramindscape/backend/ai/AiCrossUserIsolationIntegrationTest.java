@@ -1,6 +1,10 @@
 package com.spiramindscape.backend.ai;
 
 import com.spiramindscape.backend.ai.chat.GoalContextBuilder;
+import com.spiramindscape.backend.ai.cv.CvApplication;
+import com.spiramindscape.backend.ai.cv.CvApplicationService;
+import com.spiramindscape.backend.ai.cv.CvPhase;
+import com.spiramindscape.backend.ai.cv.CvRequirement;
 import com.spiramindscape.backend.ai.chat.ResourceReadService;
 import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.grow.session.GrowSessionService;
@@ -18,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +54,7 @@ class AiCrossUserIsolationIntegrationTest extends BaseGraphQlIntegrationTest {
     @Autowired private AiProposalService proposalService;
     @Autowired private GoalMemoryService goalMemoryService;
     @Autowired private GrowSessionService growSessionService;
+    @Autowired private CvApplicationService cvApplications;
     @Autowired private GoalService goalService;
     @Autowired private ResourceRepository resourceRepository;
     @Autowired private GoalRepository goals;
@@ -120,6 +127,133 @@ class AiCrossUserIsolationIntegrationTest extends BaseGraphQlIntegrationTest {
         growSessionService.clear(userAGoal.getId());
         // Nothing of a finished session outlives it.
         assertThat(growSessionService.get(userAGoal.getId()).content()).isNull();
+    }
+
+    // ─── CV applications ─────────────────────────────────────────────────────
+    //
+    // An application holds a person's employment history and the stories behind it,
+    // reached by an id the client supplies. It is the newest place in the AI surface
+    // where an unscoped query would leak somebody's working life, so it gets the same
+    // treatment as everything above.
+
+    @Test
+    @DisplayName("User B cannot read, delete or advance user A's application")
+    void cvApplicationsAreOwnerScoped() {
+        CvApplication mine = cvApplications.create(userAGoal.getId(), SECRET_TITLE,
+                null, "The advert text", "sv");
+        Long id = mine.getId();
+        setCurrentUser(userB);
+
+        assertThatThrownBy(() -> cvApplications.get(id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.getForClient(id))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> cvApplications.delete(id))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> cvApplications.advancePhase(id, CvPhase.MAP))
+                .isInstanceOf(ResponseStatusException.class);
+        // The process's own entry points are scoped the same way.
+        assertThatThrownBy(() -> cvApplications.useAsIntake(id, 1L))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.recordAnalysis(id, null, "done", List.of()))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.legacyRows(id))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.rereadVacancy(id))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.facts(id))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.sourceReads(id))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+
+        // And A's application is exactly as they left it.
+        setCurrentUser(testUser);
+        assertThat(cvApplications.get(id).getTitle()).isEqualTo(SECRET_TITLE);
+        assertThat(cvApplications.get(id).getPhase()).isEqualTo(CvPhase.ANALYSIS);
+    }
+
+    @Test
+    @DisplayName("User B cannot read or overwrite user A's CV conversation")
+    void cvTranscriptIsOwnerScoped() {
+        CvApplication mine = cvApplications.create(userAGoal.getId(), SECRET_TITLE,
+                null, "The advert text", "sv");
+        Long id = mine.getId();
+        cvApplications.saveTranscript(id, "[{\"role\":\"user\",\"content\":\"" + SECRET_TITLE + "\"}]");
+        setCurrentUser(userB);
+
+        // The conversation is somebody's employment history in their own words — the one
+        // part of an application that is pure private prose.
+        assertThatThrownBy(() -> cvApplications.transcript(id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+        assertThatThrownBy(() -> cvApplications.saveTranscript(id, "[]"))
+                .isInstanceOf(ResponseStatusException.class);
+
+        setCurrentUser(testUser);
+        assertThat(cvApplications.transcript(id)).contains(SECRET_TITLE);
+    }
+
+    @Test
+    @DisplayName("User B listing user A's goal sees nothing — not an error naming it, nothing")
+    void cvApplicationListIsOwnerScoped() {
+        cvApplications.create(userAGoal.getId(), SECRET_TITLE, null, "advert", "sv");
+        setCurrentUser(userB);
+
+        assertThatThrownBy(() -> cvApplications.list(userAGoal.getId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
+
+    @Test
+    @DisplayName("User B cannot start an application on user A's goal")
+    void cvApplicationCreationChecksTheGoal() {
+        setCurrentUser(userB);
+
+        assertThatThrownBy(() -> cvApplications.create(userAGoal.getId(), "theirs", null, "text", "sv"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
+
+    @Test
+    @DisplayName("User B cannot write into user A's vacancy map — through the coach or directly")
+    void aVacancyMapCannotBeWrittenAcrossUsers() throws Exception {
+        CvApplication a = cvApplications.create(userAGoal.getId(), "A", null, "advert A", "sv");
+        moveToMap(a.getId());
+        var map = cvMaps.ensure(a.getId(), userAGoal.getId()).orElseThrow();
+        var value = new com.fasterxml.jackson.databind.ObjectMapper().readTree("\"" + SECRET_TITLE + "\"");
+
+        setCurrentUser(userB);
+
+        // Through the coach's tool: the application itself is not B's.
+        assertThatThrownBy(() -> cvMaps.write(a.getId(), userAGoal.getId(), List.of(
+                new com.spiramindscape.backend.ai.cv.CvMapService.Write("/facts/location", value, true))))
+                .isInstanceOf(ResponseStatusException.class);
+        // And straight at the resource, by id: the map is on A's goal.
+        assertThatThrownBy(() -> resourceService.patchMap(map.getId(), List.of(
+                new com.spiramindscape.backend.graphql.input.MapPatchInput("/facts/location", "\"x\""))))
+                .isInstanceOf(RuntimeException.class);
+
+        setCurrentUser(testUser);
+        assertThat(cvApplications.mapDocument(cvApplications.get(a.getId()))
+                .path("facts").path("location").asText()).isEmpty();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.spiramindscape.backend.ai.cv.CvApplicationRepository cvApplicationRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.spiramindscape.backend.ai.cv.CvMapService cvMaps;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.spiramindscape.backend.resource.ResourceService resourceService;
+
+    /** The map step comes after the analysis; a test puts the application there directly. */
+    private void moveToMap(Long id) {
+        CvApplication app = cvApplicationRepository.findById(id).orElseThrow();
+        app.setPhase(CvPhase.MAP);
+        app.setAnalysisState("done");
+        cvApplicationRepository.save(app);
     }
 
     // ─── The system prompt's goal block ───────────────────────────────────────

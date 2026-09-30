@@ -344,13 +344,17 @@
  */
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* **One radius: 4px** (owner, 2026-09-17 — "почти квадратные", nearly square). Every step
+     of the scale resolves to it, so `rounded-md` and `rounded-2xl` can no longer drift apart;
+     only `rounded-full` (pills, avatars, the round + button) and `rounded-xs` differ. See
+     CLAUDE.md → Design → Components and chrome → 3g. */
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -413,7 +417,7 @@
 
 /* Spira light palette. */
 :root {
-  --radius: 0.5rem;
+  --radius: 0.25rem;
 
   /* **White is the canvas** (owner, 2026-08-21) — the brand's first colour rule, and the app was
      not obeying it. The page, every card and every panel were all `oklch(0.982 0 0)` = #F9F9F9, a
@@ -470,7 +474,8 @@
   --chart-4: oklch(0.61 0.205 27);
   --chart-5: oklch(0.51 0 0);
 
-  --sidebar: oklch(0.982 0 0);
+  /* neutral-150 — the side navigation's tint, a step off the white page (owner, 2026-09-17). */
+  --sidebar: #f6f6f6;
   --sidebar-foreground: oklch(0.321 0 0);
   --sidebar-primary: oklch(0.51 0.092 194);
   --sidebar-primary-foreground: oklch(0.99 0 0);
@@ -533,6 +538,44 @@
 }
 
 @layer utilities {
+  /* The vacancy map's one typeface — Montserrat, and nothing else, headings included (owner,
+     2026-09-18). It re-points the font TOKENS rather than setting a family on each element, so
+     `font-heading` / `font-display` inside the panel follow without a class of their own; the
+     family is bundled in public/fonts/ (declared above as a Settings → Fonts candidate). */
+  .vacancy-map {
+    --font-sans:
+      Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+      Arial, sans-serif;
+    --font-display: var(--font-sans);
+    --font-heading: var(--font-sans);
+    font-family: var(--font-sans);
+  }
+  /* `@theme inline` bakes the serif's NAME into the `font-heading` / `font-display` utilities
+     rather than reading the token, so the token swap above cannot reach them — the headings
+     stayed serif on the owner's phone. Inside the map they simply take the panel's face. */
+  .vacancy-map :is(.font-heading, .font-display, h1, h2, h3) {
+    font-family: inherit;
+  }
+  /* A thin scrollbar with a SQUARE thumb — the side navigation's (owner, 2026-09-17). Chromium
+     draws the ::-webkit parts. The standard `scrollbar-*` properties go only to browsers without
+     them: Chromium ignores every ::-webkit-scrollbar rule once `scrollbar-width` is set, and its
+     own thin bar has a rounded thumb. */
+  @supports not selector(::-webkit-scrollbar) {
+    .scrollbar-square {
+      scrollbar-width: thin;
+      scrollbar-color: #c8c8c8 transparent;
+    }
+  }
+  .scrollbar-square::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-square::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-square::-webkit-scrollbar-thumb {
+    background: #c8c8c8;
+    border-radius: 0;
+  }
   .surface-card {
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -649,7 +692,7 @@
   .tiptap-content :where(pre) {
     background: var(--color-secondary);
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 0.25rem;
     overflow-x: auto;
     margin: 0.75rem 0;
   }
@@ -712,10 +755,14 @@
   }
 
   /* Resizable side panel handle */
+  /* **Inside the panel's own edge, never outside it.** At `left: -4px` a panel dragged to the
+     full window width put its handle at x = -4, under the window's edge, and the only way back
+     to a narrower panel was a reload. Sitting inside, the handle is reachable at every width,
+     which is what lets the panel fill the screen at all (owner, 2026-09-22). */
   .resize-handle {
     position: absolute;
     top: 0;
-    left: -4px;
+    left: 0;
     width: 8px;
     height: 100%;
     cursor: col-resize;
@@ -1004,4 +1051,28 @@
     height: calc(100% - 36px);
     max-height: calc(100% - 36px);
   }
+}
+
+/* A resource's name, when it is wider than the head it sits in (see `MarqueeText`). It rests at
+   each end — the flat stretches either side of the move — so the name can actually be read;
+   `--marquee-shift` is the measured overflow, so it stops with the last letter at the edge. */
+@keyframes resource-title-marquee {
+  0%,
+  22% {
+    transform: translateX(0);
+  }
+  55%,
+  78% {
+    transform: translateX(var(--marquee-shift));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* A name being typed must hold still: the row is a live text field the moment it is tapped, and
+   a caret sliding under the finger is unusable. */
+.marquee:focus-within > span {
+  animation: none !important;
+  transform: none !important;
 }

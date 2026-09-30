@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,16 +32,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.spiramindscape.android.data.ai.Proposal
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.foundation.text.BasicTextField
 import com.spiramindscape.android.data.ai.CreateAspect
+import com.spiramindscape.android.data.ai.NoteDiff
+import com.spiramindscape.android.data.ai.Proposal
 import com.spiramindscape.android.data.ai.ProposalItem
 import com.spiramindscape.android.data.ai.ProposalKind
 import com.spiramindscape.android.data.ai.ProposalStatus
@@ -50,6 +52,7 @@ import com.spiramindscape.android.data.ai.createSummary
 import com.spiramindscape.android.data.ai.editDisplay
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Brand1100
+import com.spiramindscape.android.ui.theme.Kale500
 import com.spiramindscape.android.ui.theme.Kale600
 import com.spiramindscape.android.ui.theme.Salt300
 import com.spiramindscape.android.ui.theme.Salt500
@@ -135,6 +138,64 @@ private fun DetailLine(text: String, modifier: Modifier = Modifier) {
         color = Brand1100.copy(alpha = 0.60f),
         modifier = modifier,
     )
+}
+
+/** How many lines of a note diff a card shows before "+N more" — the web's constant. */
+private const val NOTE_DIFF_PREVIEW_LINES = 4
+
+/**
+ * What approving a note edit adds and removes — the web's `NoteDiffPreview`. A removal comes
+ * first, struck through, so a rewrite of the user's own text is never accepted unseen.
+ */
+@Composable
+private fun NoteDiffPreview(diff: NoteDiff) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (diff.removed.isNotEmpty()) {
+            DiffBox("Removes text you wrote", diff.removed, Color(0xFFC53336), Color(0xFFFFFBFB), struck = true)
+        }
+        if (diff.added.isNotEmpty()) {
+            DiffBox("Adds", diff.added, Kale500, Color(0xFFF9FDFC), struck = false)
+        }
+    }
+}
+
+@Composable
+private fun DiffBox(title: String, lines: List<String>, border: Color, fill: Color, struck: Boolean) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(fill)
+            .border(1.dp, border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.07.em,
+            color = Brand1100.copy(alpha = 0.60f),
+        )
+        lines.take(NOTE_DIFF_PREVIEW_LINES).forEach { line ->
+            Text(
+                line,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = if (struck) Brand1100.copy(alpha = 0.70f) else Brand1100,
+                textDecoration = if (struck) TextDecoration.LineThrough else null,
+            )
+        }
+        if (lines.size > NOTE_DIFF_PREVIEW_LINES) {
+            Text(
+                "+${lines.size - NOTE_DIFF_PREVIEW_LINES} more",
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp,
+                color = Brand1100.copy(alpha = 0.50f),
+            )
+        }
+    }
 }
 
 /** "Read full content" — 12.5px medium Kale-600 with the expand mark. */
@@ -589,6 +650,10 @@ private fun PlainProposalCard(
         if (!detail.isNullOrBlank() && !detail.equals(kindLabel(proposal.kind), ignoreCase = true)) {
             Spacer(Modifier.height(6.dp))
             DetailLine(detail)
+        }
+        proposal.noteDiff?.let { diff ->
+            Spacer(Modifier.height(10.dp))
+            NoteDiffPreview(diff)
         }
         if (!body.isNullOrBlank()) {
             Spacer(Modifier.height(10.dp))

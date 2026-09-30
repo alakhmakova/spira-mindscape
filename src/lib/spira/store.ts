@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { logger } from "../logger";
-import { SpiraApiError, spiraApi } from "./api";
+import { SpiraApiError, spiraApi, type EditNoteInput } from "./api";
 import { goalProgress, relockOnCompletion, targetProgress } from "./progress";
 import type {
   ChatMessage,
@@ -12,6 +12,7 @@ import type {
   ResourceInput,
   Target,
 } from "./types";
+import { duplicateTitle, type MapPatchOp } from "./vacancy-map";
 
 const localId = () => `local-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -74,6 +75,16 @@ type State = {
     onCreated?: (created: Resource) => void,
   ) => string;
   updateResource: (id: string, rId: string, patch: Partial<Resource>) => void;
+  /**
+   * Applies a note edit on the server and stores the note it returns. Deliberately NOT
+   * optimistic: the server merges the edit into the note as it is now, so only it knows the
+   * result. Rejects (without touching the store) when the edit could not be saved.
+   */
+  editNote: (
+    id: string,
+    rId: string,
+    input: EditNoteInput,
+  ) => Promise<Resource>;
   removeResource: (id: string, rId: string) => void;
   /**
    * Lazily load a file resource's contents (base64 dataUrl). The goals list omits file bodies
@@ -81,6 +92,28 @@ type State = {
    * Resolves to the dataUrl and caches it on the resource; a no-op if already loaded.
    */
   loadResourceFile: (id: string, rId: string) => Promise<string>;
+  /**
+   * The twin of `loadResourceFile` for a vacancy map's document, which list reads also omit.
+   * Resolves to the stored JSON and caches it on the resource; a no-op once loaded.
+   */
+  loadResourceMap: (id: string, rId: string) => Promise<string>;
+  /**
+   * Write named fields of a vacancy map. `ops` is what the server merges — one field each, so a
+   * write can never clobber a field it did not name — and `nextMapData` is that same change
+   * already applied locally, so the page updates without waiting for the round trip.
+   */
+  patchVacancyMap: (
+    id: string,
+    rId: string,
+    ops: MapPatchOp[],
+    nextMapData: string,
+  ) => void;
+  /** Copy a vacancy map, document and all, under a "… copy" title. */
+  duplicateResource: (
+    id: string,
+    rId: string,
+    onCreated?: (created: Resource) => void,
+  ) => Promise<void>;
   addChatMessage: (m: Omit<ChatMessage, "id" | "createdAt">) => void;
   resolveAction: (msgId: string, status: "approved" | "rejected") => void;
   clearChat: () => void;
@@ -106,6 +139,9 @@ let lastGoalsRevision: string | undefined;
 
 /** In-flight lazy file loads, keyed by resource id, so concurrent callers share one request. */
 const fileLoads = new Map<string, Promise<string>>();
+
+/** The same, for vacancy-map documents — the page and a duplicate can ask for one at once. */
+const mapLoads = new Map<string, Promise<string>>();
 
 function debounceRemote(key: string, task: () => Promise<void>) {
   const existing = syncTimers.get(key);
@@ -139,6 +175,52 @@ export function __clearPendingWritesForTests() {
   for (const timer of syncTimers.values()) clearTimeout(timer);
   syncTimers.clear();
   lastGoalsRevision = undefined;
+}
+
+/**
+ * Carry the lazily-loaded fields of the goals we already hold onto a freshly fetched list.
+ *
+ * <p><b>A list read does not select them.</b> `ResourceView` returns null for a file's `dataUrl`
+ * and a vacancy map's `mapData`, so every background refresh handed the store resources whose
+ * heavy fields were suddenly missing — and an OPEN panel reads exactly those. The map went
+ * back to "Loading the map\u2026", re-fetched, and re-rendered from scratch, which **threw the
+ * reader back to the top of the page every 45 seconds** (owner, 2026-09-23: "скачки страницы").
+ * Measured on the built bundle: the panel's scroller jumped 1022 \u2192 0 the instant the poll
+ * landed, and the poll fired a third request to fetch the document it had just discarded.
+ *
+ * <p>So the cached value wins over a `null` the server did not mean as "empty": these fields are
+ * only ever fetched on demand, by the panel that opens them, and the panel re-reads on open.
+ */
+function keepLazyFields(previous: Goal[], next: Goal[]): Goal[] {
+  const cached = new Map<string, Resource>();
+  for (const goal of previous) {
+    for (const resource of goal.resources) cached.set(resource.id, resource);
+  }
+  if (cached.size === 0) return next;
+  return next.map((goal) => ({
+    ...goal,
+    resources: goal.resources.map((resource) => {
+      const held = cached.get(resource.id);
+      if (!held || held.type !== resource.type) return resource;
+      if (
+        resource.type === "file" &&
+        !resource.dataUrl &&
+        held.type === "file" &&
+        held.dataUrl
+      ) {
+        return { ...resource, dataUrl: held.dataUrl };
+      }
+      if (
+        resource.type === "vacancy" &&
+        resource.mapData === undefined &&
+        held.type === "vacancy" &&
+        held.mapData !== undefined
+      ) {
+        return { ...resource, mapData: held.mapData };
+      }
+      return resource;
+    }),
+  }));
 }
 
 function replaceGoal(goals: Goal[], goalId: string, next: Goal) {
@@ -251,7 +333,7 @@ export const useSpira = create<State>()((set, get) => ({
       ]);
       lastGoalsRevision = revision;
       set({
-        goals,
+        goals: keepLazyFields(get().goals, goals),
         isLoading: false,
         hasLoaded: true,
         syncError: undefined,
@@ -289,7 +371,7 @@ export const useSpira = create<State>()((set, get) => ({
       ]);
       lastGoalsRevision = revision;
       set({
-        goals,
+        goals: keepLazyFields(get().goals, goals),
         isLoading: false,
         hasLoaded: true,
         syncError: undefined,
@@ -337,7 +419,7 @@ export const useSpira = create<State>()((set, get) => ({
       // re-checks next time rather than masking a real change.
       lastGoalsRevision = revision;
       set({
-        goals,
+        goals: keepLazyFields(latest.goals, goals),
         hasLoaded: true,
         syncError: undefined,
         syncErrorKind: undefined,
@@ -877,6 +959,21 @@ export const useSpira = create<State>()((set, get) => ({
     });
   },
 
+  editNote: async (id, resourceId, input) => {
+    const updated = await spiraApi.editNote(resourceId, input);
+    set((state) => ({
+      goals: updateGoalInList(state.goals, id, (goal) => ({
+        ...goal,
+        resources: goal.resources.map((resource) =>
+          resource.id === resourceId
+            ? ({ ...resource, ...updated } as Resource)
+            : resource,
+        ),
+      })),
+    }));
+    return updated;
+  },
+
   loadResourceFile: async (id, resourceId) => {
     const find = () =>
       get()
@@ -916,6 +1013,96 @@ export const useSpira = create<State>()((set, get) => ({
     })();
     fileLoads.set(resourceId, task);
     return task;
+  },
+
+  loadResourceMap: async (id, resourceId) => {
+    const find = () =>
+      get()
+        .goals.find((g) => g.id === id)
+        ?.resources.find((r) => r.id === resourceId);
+    const resource = find();
+    if (!resource || resource.type !== "vacancy") return "";
+    // `undefined` is "never fetched"; "" is a real document that happens to be empty. Collapsing
+    // the two would either re-fetch an empty map forever or never fetch a full one.
+    if (resource.mapData !== undefined) return resource.mapData;
+    if (resourceId.startsWith("local-")) return "";
+
+    const pending = mapLoads.get(resourceId);
+    if (pending) return pending;
+
+    const task = (async () => {
+      try {
+        const mapData = await spiraApi.fetchResourceMap(resourceId);
+        set((state) => ({
+          goals: updateGoalInList(state.goals, id, (goal) => ({
+            ...goal,
+            resources: goal.resources.map((item) =>
+              item.id === resourceId && item.type === "vacancy"
+                ? { ...item, mapData }
+                : item,
+            ),
+          })),
+        }));
+        return mapData;
+      } catch (error) {
+        setSyncError(set, error);
+        return "";
+      } finally {
+        mapLoads.delete(resourceId);
+      }
+    })();
+    mapLoads.set(resourceId, task);
+    return task;
+  },
+
+  patchVacancyMap: (id, resourceId, ops, nextMapData) => {
+    const previous = get().goals;
+    const writeMap = (mapData: string) =>
+      set((state) => ({
+        goals: updateGoalInList(state.goals, id, (goal) => ({
+          ...goal,
+          resources: goal.resources.map((item) =>
+            item.id === resourceId && item.type === "vacancy"
+              ? { ...item, mapData }
+              : item,
+          ),
+        })),
+      }));
+    writeMap(nextMapData);
+    set({ syncError: undefined });
+
+    if (id.startsWith("local-") || resourceId.startsWith("local-")) return;
+    void spiraApi
+      .patchVacancyMap(resourceId, ops)
+      .then((stored) => {
+        // Adopt the server's document only when nothing has been typed since. Fields commit on
+        // blur, so writes arrive one at a time — but a quick second commit must not be rolled
+        // back to the state this response was computed from.
+        const current = get()
+          .goals.find((g) => g.id === id)
+          ?.resources.find((r) => r.id === resourceId);
+        if (current?.type === "vacancy" && current.mapData === nextMapData) {
+          writeMap(stored);
+        }
+      })
+      .catch((error) => {
+        set({ goals: previous });
+        setSyncError(set, error);
+      });
+  },
+
+  duplicateResource: async (id, resourceId, onCreated) => {
+    const goal = get().goals.find((item) => item.id === id);
+    const resource = goal?.resources.find((item) => item.id === resourceId);
+    if (!goal || !resource || resource.type !== "vacancy") return;
+    // The document is lazy, so duplicating a map the user has not opened would copy its title and
+    // an empty map. This resolves immediately once the page has it.
+    const mapData = await get().loadResourceMap(id, resourceId);
+    const title = duplicateTitle(
+      resource.title,
+      goal.resources.map((item) => ("title" in item ? item.title : "")),
+    );
+    get().addResource(id, { type: "vacancy", title, mapData }, onCreated);
   },
 
   removeResource: (id, resourceId) => {

@@ -42,8 +42,12 @@ public final class VisionSupport {
      * worse than useless: the provider drops it, the turn still says an image was attached, and
      * the model answers as if it had seen it (BUG-027).
      *
-     * <p>The default is {@code mistral-medium-latest} now, which IS in this set — so the blank
-     * case below answers true, and a photo reaches the model rather than being dropped.
+     * <p>The default is {@code mistral-medium-latest} (BUG-068 — see
+     * {@code MistralProvider.DEFAULT_MODEL} for why Large isn't it: a live {@code GET
+     * /v1/models} on 2026-09-09 shows the account can no longer reach any {@code
+     * mistral-large-*} model at all, not merely that it would be blind), which IS in this
+     * set — so the blank case below answers true, and a photo reaches the model rather than
+     * being dropped.
      */
     private static final Set<String> MISTRAL_VISION_FAMILIES =
             Set.of("pixtral", "mistral-medium", "mistral-small", "magistral");

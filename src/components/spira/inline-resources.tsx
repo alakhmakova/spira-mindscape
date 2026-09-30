@@ -516,7 +516,7 @@ function ResourcePickerDialog({
                     <button
                       type="button"
                       onClick={() => onPick(resource.id)}
-                      className="flex w-full items-center gap-3 rounded-[10px] border border-border bg-surface px-3.5 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary-soft/40"
+                      className="flex w-full items-center gap-3 rounded-[4px] border border-border bg-surface px-3.5 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary-soft/40"
                     >
                       <Icon className="h-4 w-4 shrink-0 text-primary" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">

@@ -90,7 +90,20 @@ export type StreamChatParams = {
   message: string;
   history: HistoryEntry[];
   provider?: string;
-  sessionType?: "chat" | "grow";
+  sessionType?: "chat" | "grow" | "cv";
+  /** CV only: which application this turn belongs to. A goal holds many. */
+  cvApplicationId?: number;
+  /**
+   * CV only: a control turn with no user message — "open" for a new application (the server
+   * writes the opening itself), "continue" after a step button or when the analysis resumes.
+   */
+  cvControl?: "open" | "continue";
+  /** The UI language, for messages the server sends before the user has written anything. */
+  language?: string;
+  /** CV only: the work has entered a step — `{step, of, title, activity, phase}` as JSON. */
+  onCvStep?: (json: string) => void;
+  /** CV only: the job analysis ran out of time in this request and continues in the next. */
+  onCvContinue?: () => void;
   /** Files attached directly to this message (images/PDF/DOCX). */
   attachments?: ChatAttachment[];
   /** GROW only: session length the user picked, in minutes. */
@@ -116,6 +129,11 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
     history,
     provider = "ANTHROPIC",
     sessionType = "chat",
+    cvApplicationId,
+    cvControl,
+    language,
+    onCvStep,
+    onCvContinue,
     attachments,
     sessionTotalMinutes,
     sessionRemainingSeconds,
@@ -142,6 +160,9 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         attachments: attachments?.length ? attachments : null,
         sessionTotalMinutes: sessionTotalMinutes ?? null,
         sessionRemainingSeconds: sessionRemainingSeconds ?? null,
+        cvApplicationId: cvApplicationId ?? null,
+        cvControl: cvControl ?? null,
+        language: language ?? null,
       }),
     });
   } catch {
@@ -217,6 +238,12 @@ export async function streamChat(params: StreamChatParams): Promise<void> {
         return false;
       case "session_end":
         onSessionEnd?.(data.trim());
+        return false;
+      case "cv_step":
+        onCvStep?.(data.trim());
+        return false;
+      case "cv_continue":
+        onCvContinue?.();
         return false;
       case "done":
         onDone();
@@ -321,6 +348,33 @@ export async function fetchProviderModels(provider: string): Promise<string[]> {
     );
   }
   return res.json();
+}
+
+/**
+ * Remove a stored key altogether.
+ *
+ * The endpoint has existed and been tested since BYOK shipped; nothing ever called it,
+ * so a key could be replaced but never taken out (owner, 2026-09-09). Deleting is not the
+ * same as overwriting: it is how you stop a provider being used at all, and how you get a
+ * key off the server when you no longer want it there.
+ *
+ * The server also clears the active-provider preference when it names this provider, so
+ * the app does not go on pointing at a provider it has no key for.
+ */
+export async function deleteApiKey(provider: string): Promise<void> {
+  const res = await fetch(`${AI_BASE}/keys/${provider}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: mutationHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(
+      await friendlyError(
+        res,
+        `Couldn't remove the ${provider} key. Please try again.`,
+      ),
+    );
+  }
 }
 
 export async function updateKeyModel(provider: string, model: string) {
@@ -515,6 +569,323 @@ export async function deleteGrowSession(goalId: string): Promise<void> {
     });
   } catch {
     /* best-effort */
+  }
+}
+
+// ── CV applications ─────────────────────────────────────────────────────────
+//
+// One row per VACANCY: a goal like "find a QA job" holds many of them, each with its
+// own deconstructed advert and its own pair of notes. Unlike the GROW session helpers
+// above these are NOT best-effort — starting an application that silently failed to
+// save would leave the panel interviewing against a row that does not exist, and every
+// answer would be lost.
+
+export type CvApplication = {
+  id: number;
+  goalId: number;
+  title: string;
+  vacancyUrl: string | null;
+  vacancyLanguage: string | null;
+  contactName: string | null;
+  letterRequired: boolean | null;
+  phase: string;
+  profileNoteId: number | null;
+  storiesNoteId: number | null;
+  cvNoteId: number | null;
+  letterNoteId: number | null;
+  briefingNoteId: number | null;
+  /** How far the interview has got, counted in questions — a repeated demand is one. */
+  answered: number;
+  total: number;
+  /** The step the user sees: 1 of 4 … 4 of 4. `phase` is internal and never shown. */
+  step: number;
+  steps: number;
+  stepTitle: string;
+  /** A verb phrase for the pill: "Analyzing the job advert". */
+  stepActivity: string;
+  /** The intake form ("your details"): bound, a candidate note, or nothing yet. */
+  intakeStatus: "exists" | "candidate" | "none";
+  /**
+   * The note the SERVER meant by `candidate`. The client must not find it again for itself —
+   * it used to, with a regex that had drifted from the server's, so the step message told her
+   * to press a button that was never drawn.
+   */
+  intakeCandidateId: number | null;
+  intakeCandidateTitle: string | null;
+  intakeConfirmed: boolean;
+  analysisState: string;
+  /** The requirement-map note the analysis wrote. */
+  analysisNoteId: number | null;
+  /** Items of the CURRENT step still waiting for an answer. */
+  openTopics: number;
+  competences: number;
+  requirements: number;
+  traits: number;
+  transcriptRevision: number;
+  roleTitle: string | null;
+  companyName: string | null;
+  location: string | null;
+  /** What the advert is really about, in its own words. */
+  coreMessage: string | null;
+  /** The language the conversation runs in — what the card copy is fetched in. */
+  conversationLanguage: string | null;
+  /** The vacancy map the advert was read into; null until the analysis has built it. */
+  mapResourceId: number | null;
+};
+
+/**
+ * The words on the CV panel's own controls, in the language the conversation runs in —
+ * server-owned like every other word the process says. `{title}` is substituted here.
+ */
+export type CvCardText = {
+  useAsDetails: string;
+  openMap: string;
+};
+
+/** The applications on a goal, newest first. Empty on failure — the list is a convenience. */
+export async function fetchCvApplications(
+  goalId: string,
+): Promise<CvApplication[]> {
+  try {
+    const res = await fetch(
+      `${AI_BASE}/cv/applications?goalId=${encodeURIComponent(goalId)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as CvApplication[];
+  } catch {
+    return [];
+  }
+}
+
+/** One application, or null — what the panel reads when it resumes an unfinished one. */
+export async function fetchCvApplication(
+  id: number,
+): Promise<CvApplication | null> {
+  try {
+    const res = await fetch(`${AI_BASE}/cv/applications/${id}`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as CvApplication;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Start an application from a job advert.
+ *
+ * <p>Throws rather than returning null: the caller is about to open a session against
+ * this row, and a session with no application behind it interviews into nothing.
+ */
+/** Thrown when this goal already has an application for the same advert. */
+export class DuplicateCvApplication extends Error {
+  constructor(readonly existing: CvApplication) {
+    super("An application for this vacancy already exists.");
+    this.name = "DuplicateCvApplication";
+  }
+}
+
+export async function createCvApplication(params: {
+  goalId: string;
+  title?: string;
+  /** A link to the advert, or its text — one of the two, the user's choice. */
+  vacancyUrl?: string;
+  vacancyText?: string;
+  vacancyLanguage?: string;
+  /** Make a second application for an advert that already has one. */
+  force?: boolean;
+}): Promise<CvApplication> {
+  const res = await fetch(
+    `${AI_BASE}/cv/applications${params.force ? "?force=true" : ""}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        goalId: parseInt(params.goalId, 10),
+        title: params.title ?? null,
+        vacancyUrl: params.vacancyUrl ?? null,
+        vacancyText: params.vacancyText ?? null,
+        vacancyLanguage: params.vacancyLanguage ?? null,
+      }),
+    },
+  );
+  // The server answers 409 with the application that already covers this advert, so the
+  // caller can offer to continue it rather than silently making a third one.
+  if (res.status === 409) {
+    throw new DuplicateCvApplication((await res.json()) as CvApplication);
+  }
+  if (!res.ok) {
+    // A 400 here is usually "the link could not be read" and the server says which page
+    // and why. Repeating a generic sentence over that would throw away the one piece of
+    // information the user needs to know whether to paste the advert instead.
+    let detail = "";
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* the status is all we have */
+    }
+    throw new Error(
+      detail ||
+        (res.status === 400
+          ? "That vacancy could not be saved — give a link or paste the advert."
+          : "The application could not be started."),
+    );
+  }
+  return (await res.json()) as CvApplication;
+}
+
+/**
+ * Tell an application about a note the user has just approved.
+ *
+ * <p>Which document it becomes is decided server-side from the application's current
+ * phase — the client's copy of that phase is a snapshot and goes stale within a turn.
+ * Best-effort: the note itself is already saved, and an application that has not learned
+ * about it is a smaller problem than an approval that looks like it failed.
+ */
+export async function bindCvNote(
+  applicationId: number,
+  resourceId: number,
+  document?: string,
+): Promise<void> {
+  try {
+    await fetch(`${AI_BASE}/cv/applications/${applicationId}/note`, {
+      method: "POST",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ resourceId, document: document ?? null }),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+async function cvStepCall(
+  path: string,
+  body: unknown,
+  fallback: string,
+): Promise<CvApplication> {
+  const res = await fetch(`${AI_BASE}/cv/applications/${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: mutationHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) throw new Error(await friendlyError(res, fallback));
+  return (await res.json()) as CvApplication;
+}
+
+/** "Use as my details" — binds an existing note of the goal as the intake form. */
+export function adoptCvIntake(
+  id: number,
+  resourceId: number,
+): Promise<CvApplication> {
+  return cvStepCall(
+    `${id}/intake/use`,
+    { resourceId },
+    "That note could not be used as your details.",
+  );
+}
+
+/**
+ * The card copy for this application's conversation language. Null on failure — the cards fall
+ * back to their English defaults rather than rendering blank buttons.
+ */
+export async function fetchCvCardCopy(id: number): Promise<CvCardText | null> {
+  try {
+    const res = await fetch(`${AI_BASE}/cv/applications/${id}/copy`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as CvCardText;
+  } catch {
+    return null;
+  }
+}
+
+/** Discard an application. The notes it produced are goal resources and stay. */
+// ── The CV conversation, mirrored on the server ─────────────────────────────
+//
+// localStorage keeps the sitting through a closed panel; these keep it through a
+// changed DEVICE. Same split as GROW: local for an instant repaint, server for
+// "this is my work, not this browser's".
+
+/**
+ * The stored conversation for one application, or null when there is none.
+ *
+ * Best-effort by design: this runs while restoring a session, and a network blip must
+ * fall back to the local copy rather than losing the sitting.
+ */
+export type StoredCvTranscript = { content: string | null; revision: number };
+
+export async function fetchCvTranscript(
+  id: number,
+): Promise<StoredCvTranscript | null> {
+  try {
+    const res = await fetch(`${AI_BASE}/cv/applications/${id}/transcript`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      content?: string | null;
+      revision?: number;
+    };
+    return { content: body.content ?? null, revision: body.revision ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+/** Store the conversation after a settled turn. Best-effort for the same reason. */
+export type CvTranscriptSave = {
+  ok: boolean;
+  /** Another device saved a newer conversation; reload it instead of overwriting. */
+  conflict: boolean;
+  revision?: number;
+};
+
+export async function putCvTranscript(
+  id: number,
+  content: string,
+  baseRevision?: number,
+): Promise<CvTranscriptSave> {
+  try {
+    const res = await fetch(`${AI_BASE}/cv/applications/${id}/transcript`, {
+      method: "PUT",
+      credentials: "include",
+      headers: mutationHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ content, baseRevision: baseRevision ?? null }),
+    });
+    if (res.status === 409) return { ok: false, conflict: true };
+    if (!res.ok) return { ok: false, conflict: false };
+    const body = (await res.json()) as { revision?: number };
+    return { ok: true, conflict: false, revision: body.revision };
+  } catch {
+    return { ok: false, conflict: false };
+  }
+}
+
+/**
+ * Delete an application. **Reports failure** — it is not best-effort.
+ *
+ * It used to swallow everything, including a non-ok response, so a delete that the server
+ * refused looked identical to one that worked: the row vanished from Continue, the caller's
+ * error toast was unreachable, and the application came back on the next list fetch. The
+ * user's own words for that class of bug were "нет возможности удалить сессию".
+ */
+export async function deleteCvApplication(id: number): Promise<void> {
+  const res = await fetch(`${AI_BASE}/cv/applications/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: mutationHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(
+      await friendlyError(res, "That application could not be deleted."),
+    );
   }
 }
 

@@ -1,0 +1,32 @@
+-- ── The CV writer's conversation, on the server ──────────────────────────────
+-- The sitting used to live ONLY in the browser's localStorage. That fixed the
+-- session vanishing when the panel was closed (owner, 2026-09-09), but only on
+-- the device it was typed on: an application begun on the laptop opened on the
+-- phone with its requirements, its phase and its answers intact and no
+-- conversation at all — which reads as the work having been lost.
+--
+-- A column on the application rather than its own table, unlike `ai_grow_session`:
+--   * a GROW session is created and destroyed on its own schedule, so it needs a
+--     row of its own; a CV conversation cannot outlive its application and cannot
+--     exist without one, so it is an attribute of that row and dies with it
+--     (ON DELETE CASCADE comes free);
+--   * nothing ever queries inside it. It is the client's own JSON — the messages,
+--     in whichever shape both surfaces agree on — and the server never reads it,
+--     the same contract `ai_grow_session.content` has.
+--
+-- Nullable: every application that exists today has no stored conversation, and
+-- "not started here yet" is a real state rather than an empty one.
+ALTER TABLE cv_application ADD COLUMN transcript TEXT;
+
+-- ── Which story in the bank answers this requirement ─────────────────────────
+-- The story bank is a note the user owns and edits; the requirement table points
+-- INTO it rather than holding a second copy of the same story (spec §13.5). A
+-- short handle the writer coins ("kafka-migration") is that pointer.
+--
+-- Why a column and not a convention inside `gist`: reuse has to be VISIBLE. One
+-- story pressed into service for three unrelated demands is the owner's original
+-- complaint about blind reuse, and with a handle the evidence block shows it at a
+-- glance — where the same prose appearing twice in two free-text fields does not.
+-- Nullable: a requirement recorded before this existed has no handle, and
+-- `no_evidence` rows never will.
+ALTER TABLE cv_requirement ADD COLUMN story_handle VARCHAR(64);

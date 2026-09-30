@@ -102,6 +102,8 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
     // Which card has its key form open, which has its dropdown open, and the models fetched so far.
     var editing by remember { mutableStateOf<String?>(null) }
     var openDropdown by remember { mutableStateOf<String?>(null) }
+    /** Which key is asking "remove?" — a second tap, not a dialog stacked on a sheet. */
+    var confirmRemove by remember { mutableStateOf<String?>(null) }
     var modelLists by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     var loadingModels by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -167,11 +169,20 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
                         openDropdown = null
                         viewModel.chooseModel(info.id, model)
                     },
-                    onStartEditing = { editing = info.id; openDropdown = null; message = null },
+                    onStartEditing = {
+                        editing = info.id; openDropdown = null; message = null; confirmRemove = null
+                    },
                     onCancelEditing = { editing = null },
                     onSaveKey = { key ->
                         editing = null
                         viewModel.saveKey(info.id, key, null) { error -> message = error }
+                    },
+                    confirmRemove = confirmRemove == info.id,
+                    onStartRemove = { confirmRemove = info.id; message = null },
+                    onCancelRemove = { confirmRemove = null },
+                    onDeleteKey = {
+                        confirmRemove = null
+                        viewModel.deleteKey(info.id) { error -> message = error }
                     },
                 )
                 Spacer(Modifier.height(12.dp))
@@ -205,11 +216,20 @@ internal fun ProviderSheetContent(viewModel: AiChatViewModel, onDismiss: () -> U
                 onActivate = {},
                 onToggleDropdown = {},
                 onPickModel = {},
-                onStartEditing = { editing = TAVILY.id; message = null },
+                onStartEditing = { editing = TAVILY.id; message = null; confirmRemove = null },
                 onCancelEditing = { editing = null },
                 onSaveKey = { key ->
                     editing = null
                     viewModel.saveKey(TAVILY.id, key, null) { error -> message = error }
+                },
+                // The search key needs removing just as much as a chat key — it was the
+                // second place the affordance was missing, on both surfaces.
+                confirmRemove = confirmRemove == TAVILY.id,
+                onStartRemove = { confirmRemove = TAVILY.id; message = null },
+                onCancelRemove = { confirmRemove = null },
+                onDeleteKey = {
+                    confirmRemove = null
+                    viewModel.deleteKey(TAVILY.id) { error -> message = error }
                 },
             )
 
@@ -271,6 +291,10 @@ private fun ProviderCard(
     onStartEditing: () -> Unit,
     onCancelEditing: () -> Unit,
     onSaveKey: (String) -> Unit,
+    confirmRemove: Boolean,
+    onStartRemove: () -> Unit,
+    onCancelRemove: () -> Unit,
+    onDeleteKey: () -> Unit,
     connectedOnly: Boolean = false,
 ) {
     val connected = saved != null
@@ -405,7 +429,7 @@ private fun ProviderCard(
             }
         }
 
-        // ── the stored key's hint, and how to replace it ───────────────────
+        // ── the stored key's hint, and how to replace or remove it ─────────
         if (connected && !editing) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -423,12 +447,40 @@ private fun ProviderCard(
                     color = Salt1000.copy(alpha = 0.5f),
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    "Replace key",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Kale500,
-                    modifier = Modifier.clickable(onClick = onStartEditing),
-                )
+                // **Removing, not only replacing** (owner, 2026-09-09). `AiApi.deleteKey` has
+                // existed all along with nothing calling it, on this surface as on the web.
+                // A second tap rather than a dialog: this card is already inside a sheet, and
+                // the web answers the same question the same way.
+                if (confirmRemove) {
+                    Text(
+                        "Remove it",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.clickable(onClick = onDeleteKey),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        "Keep",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Salt1000.copy(alpha = 0.5f),
+                        modifier = Modifier.clickable(onClick = onCancelRemove),
+                    )
+                } else {
+                    Text(
+                        "Replace key",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Kale500,
+                        modifier = Modifier.clickable(onClick = onStartEditing),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        "Remove",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                        modifier = Modifier.clickable(onClick = onStartRemove),
+                    )
+                }
             }
         }
 
@@ -596,13 +648,18 @@ internal val CHAT_PROVIDERS = listOf(
         vendor = "Mistral",
         context = "128 000 tokens",
         keyPrefix = "",
-        defaultModel = "mistral-large-latest",
+        // Matches the backend default (MistralProvider.DEFAULT_MODEL) and the web's list.
+        // It led with mistral-large-latest, which the account does not serve at all — GET
+        // /v1/models returns no mistral-large-* of any kind — and offered nothing between
+        // that and mistral-small. A model here has to be able to drive four tools against
+        // this app's system prompt; a small one cannot, and the owner's session rambled and
+        // looped partly for that reason (2026-09-09). The live list replaces this on open.
+        defaultModel = "mistral-medium-latest",
         models = listOf(
-            "mistral-large-latest",
+            "mistral-medium-latest",
+            "magistral-medium-latest",
             "mistral-small-latest",
             "codestral-latest",
-            "open-mixtral-8x7b",
-            "open-mistral-7b",
         ),
     ),
     ProviderInfo(

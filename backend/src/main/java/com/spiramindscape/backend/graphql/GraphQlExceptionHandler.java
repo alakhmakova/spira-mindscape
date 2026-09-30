@@ -23,6 +23,15 @@ public class GraphQlExceptionHandler extends DataFetcherExceptionResolverAdapter
 
     @Override
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
+        if (ex instanceof com.spiramindscape.backend.resource.NoteChangedException) {
+            return GraphQLError.newError()
+                    .message(ex.getMessage())
+                    .errorType(SpiraErrorType.NOTE_CHANGED)
+                    .extensions(Map.of("classification", SpiraErrorType.NOTE_CHANGED.toString()))
+                    .location(env.getField().getSourceLocation())
+                    .path(env.getExecutionStepInfo().getPath())
+                    .build();
+        }
         if (ex instanceof IllegalArgumentException) {
             String message = ex.getMessage() != null ? ex.getMessage() : "Invalid argument";
             ErrorClassification classification = message.toLowerCase(Locale.ROOT).contains("not found")
@@ -103,6 +112,8 @@ public class GraphQlExceptionHandler extends DataFetcherExceptionResolverAdapter
     }
 
     private enum SpiraErrorType implements ErrorClassification {
-        NOT_FOUND
+        NOT_FOUND,
+        /** A rewrite based on an older version of a note — see {@code ResourceService.editNote}. */
+        NOTE_CHANGED
     }
 }

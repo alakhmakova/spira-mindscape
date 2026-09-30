@@ -67,6 +67,13 @@ export type Proposal = {
   unit?: string; // numeric unit
   items?: { text: string; done?: boolean; deadline?: string }[]; // checklist items
   patch?: Record<string, string>; // resource fields to update (edit_link / edit_email)
+  // edit_note: how the edit changes the note — append | append_to_section | merge_sections |
+  // replace_section | replace_all. Every field below is stamped by the server, never the model.
+  noteMode?: string;
+  noteSection?: string; // edit_note: the heading a *_section mode targets
+  baseUpdatedAt?: string; // edit_note: the note version the edit was checked against
+  noteDiff?: NoteDiff; // edit_note: what approving it adds and removes
+  cvDocument?: string; // CV session: which document a note is (profile | cv | letter | briefing | story_bank)
   goalId?: string; // target goal id for goal-level ops from All-Goals (edit_goal/open_goal/delete_goal)
   goalTitle?: string; // resolved name of that goal, so the card shows WHICH goal is changing
   openSubject?: string; // open_goal: the concrete thing that can't be edited here (e.g. "the description")
@@ -74,10 +81,52 @@ export type Proposal = {
   confidence?: number; // for new_goal: initial confidence 1-10 the AI extracted
   // Set once a create proposal is applied — persisted in the transcript so the
   // "Open …" shortcut survives closing/reopening the chat.
-  createdRef?: { kind: "goal" | "target" | "resource"; goalId: string };
+  /**
+   * What an approved proposal made, for the "Open \u2026" shortcut. `id` is the resource's own id
+   * where there is one, so the shortcut opens THAT resource rather than the goal's resource
+   * list (owner, 2026-09-23).
+   */
+  createdRef?: {
+    kind: "goal" | "target" | "resource";
+    goalId: string;
+    id?: string;
+  };
 };
 
+export type NoteDiff = { added: string[]; removed: string[] };
+
 export const uid = () => Math.random().toString(36).slice(2, 9);
+
+/**
+ * The card's detail line for a note edit: whether it ADDS or REWRITES, and where. Mirrors
+ * `noteEditDetail` in Android's `Proposal.kt` word for word.
+ */
+export function noteEditDetail(mode?: string, section?: string): string {
+  switch (mode) {
+    case "append_to_section":
+      return section ? `Adds to «${section}»` : "Adds to the note";
+    case "merge_sections":
+      return "Adds to several sections";
+    case "replace_section":
+      return section ? `Rewrites «${section}»` : "Rewrites part of the note";
+    case "replace_all":
+      return "Rewrites the whole note";
+    default:
+      return "Adds to the end of the note";
+  }
+}
+
+/** The server's block diff for an edit_note, or undefined when it carries nothing to show. */
+export function parseNoteDiff(raw: unknown): NoteDiff | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const list = (v: unknown) =>
+    Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === "string" && !!x.trim())
+      : [];
+  const r = raw as { added?: unknown; removed?: unknown };
+  const diff = { added: list(r.added), removed: list(r.removed) };
+  return diff.added.length || diff.removed.length ? diff : undefined;
+}
 
 // Plain-text snippet from (possibly) HTML note content, for one-line card previews.
 export const stripHtml = (s: string) =>
@@ -143,6 +192,8 @@ export function proposalContext(p: Proposal): string {
   // The whole value, never clipped — this is the text being revised.
   add(p.kind === "edit" && p.field ? `new ${p.field}` : "title", p.title);
   add("description", p.body);
+  add("mode", p.noteMode);
+  add("section", p.noteSection);
   add("deadline", p.deadline);
   if (p.done != null) add("done", String(p.done));
   if (p.targetType) add("target type", p.targetType);
@@ -403,6 +454,8 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
     let detail: string | undefined;
     let body: string | undefined;
     let patch: Record<string, string> | undefined;
+    let noteMode: string | undefined;
+    let noteSection: string | undefined;
 
     switch (kind) {
       case "new_goal":
@@ -519,7 +572,9 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
       case "edit_note":
         title = name || "Note";
         body = value;
-        detail = "Edit note";
+        noteMode = data.mode || "append";
+        noteSection = data.section || undefined;
+        detail = noteEditDetail(noteMode, noteSection);
         break;
       case "edit_link": {
         // value = new URL, title = new label (either or both)
@@ -645,10 +700,61 @@ export function proposalFromToolArgs(argsJson: string): Proposal | undefined {
           ? Math.min(10, Math.max(1, parseInt(data.confidence) || 0)) ||
             undefined
           : undefined,
+      noteMode,
+      noteSection,
+      cvDocument:
+        typeof data.cv_document === "string" ? data.cv_document : undefined,
+      baseUpdatedAt:
+        kind === "edit_note" && typeof data.baseUpdatedAt === "string"
+          ? data.baseUpdatedAt
+          : undefined,
+      noteDiff:
+        kind === "edit_note"
+          ? parseNoteDiff((data as unknown as { diff?: unknown }).diff)
+          : undefined,
       serverId:
         typeof data.proposalId === "number" ? data.proposalId : undefined,
     };
   } catch {
     return undefined;
   }
+}
+
+/** What a just-created thing's "Open" shortcut should do. */
+export type OpenCreatedPlan = {
+  /** Whether the conversation has to stand aside for it. */
+  closeChat: boolean;
+  /** The resource to open as itself, beside the chat. */
+  resourceId?: string;
+  /** The section to scroll to instead, when there is nothing to open on its own. */
+  scrollTo?: "targets-section" | "resources-section";
+};
+
+/**
+ * Where "Open" goes, and whether the chat closes on the way (owner, 2026-09-23).
+ *
+ * A **resource opens as itself**: the panel and the conversation fit side by side on a laptop or
+ * a tablet, and being dropped onto the goal's resource list to hunt for the thing you just made
+ * is not "open it". Only a phone closes the chat, because there the resource panel is full
+ * screen and the two cannot share it.
+ *
+ * A goal or a target lives on the page, so the chat steps aside for those — and so does a
+ * resource with no id, where there is nothing to open.
+ */
+export function openCreatedPlan(
+  ref: { kind: "goal" | "target" | "resource"; goalId: string; id?: string },
+  isMobile: boolean,
+): OpenCreatedPlan {
+  if (ref.kind === "resource" && ref.id) {
+    return { closeChat: isMobile, resourceId: ref.id };
+  }
+  return {
+    closeChat: true,
+    scrollTo:
+      ref.kind === "target"
+        ? "targets-section"
+        : ref.kind === "resource"
+          ? "resources-section"
+          : undefined,
+  };
 }

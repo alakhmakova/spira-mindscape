@@ -78,6 +78,7 @@ class AiChatServiceGoalScopeTest {
     @Mock private MistralOcrService mistralOcr;
     @Mock private CohereVisionReader cohereVision;
     @Mock private GoalService goalService;
+    @Mock private com.spiramindscape.backend.ai.cv.CvApplicationService cvApplications;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -86,7 +87,7 @@ class AiChatServiceGoalScopeTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService, cvApplications);
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
         lenient().when(goalContextBuilder.build(any())).thenReturn("");

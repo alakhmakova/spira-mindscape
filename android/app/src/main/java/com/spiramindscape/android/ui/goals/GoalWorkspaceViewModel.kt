@@ -19,6 +19,7 @@ import com.spiramindscape.android.graphql.type.ChecklistItemInput
 import com.spiramindscape.android.graphql.type.CreateResourceInput
 import com.spiramindscape.android.graphql.type.CreateTargetInput
 import com.spiramindscape.android.graphql.type.UpdateResourceInput
+import com.spiramindscape.android.graphql.type.EditNoteInput
 import com.spiramindscape.android.ui.util.DetachPatch
 import com.spiramindscape.android.ui.util.deadlineInfo
 import com.spiramindscape.android.ui.util.isProgressLocked
@@ -447,6 +448,47 @@ class GoalWorkspaceViewModel(
                 },
             )
         }) { repository.updateResource(id, input) }
+    }
+
+    /**
+     * Applies an AI note edit on the server, then refetches the goal.
+     *
+     * Not optimistic, unlike [updateResource]: the server merges the edit into the note as it is
+     * NOW, so a hand edit made after the suggestion survives, and only the server knows the
+     * result. A rewrite based on an older version of the note is refused there; the user is told.
+     */
+    fun editNote(
+        id: String,
+        mode: String,
+        section: String?,
+        content: String,
+        title: String?,
+        expectedUpdatedAt: String?,
+    ) {
+        val input = EditNoteInput(
+            mode = Optional.present(mode),
+            section = Optional.presentIfNotNull(section),
+            content = content,
+            title = Optional.presentIfNotNull(title),
+            expectedUpdatedAt = Optional.presentIfNotNull(expectedUpdatedAt),
+        )
+        viewModelScope.launch {
+            try {
+                repository.editNote(id, input)
+            } catch (e: Exception) {
+                // Shown, so not logged: the banner is how the user learns nothing was saved.
+                _actionError.value = if (e.message?.contains("changed after", ignoreCase = true) == true) {
+                    "This note changed after the suggestion was made, so nothing was saved. Ask again."
+                } else {
+                    "Couldn't save the change to the note. Please try again."
+                }
+            }
+            try {
+                setContent(repository.getGoal(goalId))
+            } catch (e: Exception) {
+                // Keep the current content; the next load resyncs it.
+            }
+        }
     }
 
     /**

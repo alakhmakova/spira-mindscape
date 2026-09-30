@@ -77,7 +77,29 @@ public record ChatRequest(
          */
         @Valid
         @Size(max = 6, message = "At most 6 files can be attached to a message")
-        java.util.List<Attachment> attachments
+        java.util.List<Attachment> attachments,
+
+        /**
+         * CV sessions only: which application this turn belongs to.
+         *
+         * <p>A goal holds many applications — one per vacancy — so unlike a GROW session
+         * the goal id is not enough to say what is being worked on. The id is
+         * client-supplied and untrusted; the server re-checks it belongs to the requesting
+         * user before reading or writing anything through it.
+         */
+        Long cvApplicationId,
+
+        /**
+         * CV only: a control turn the client sends without a user message — {@code open} (a new
+         * application: the server writes the opening itself) or {@code continue} (after the user
+         * pressed a step button, or the analysis asked to be resumed).
+         */
+        @Pattern(regexp = "open|continue")
+        String cvControl,
+
+        /** The client's UI language (navigator.language), for messages sent before the user has written anything. */
+        @Size(max = 16)
+        String language
 ) {
     /**
      * How much text one message may carry.
@@ -120,7 +142,35 @@ public record ChatRequest(
             Integer sessionTotalMinutes,
             Integer sessionRemainingSeconds) {
         this(goalId, message, provider, sessionType, history,
-                sessionTotalMinutes, sessionRemainingSeconds, null);
+                sessionTotalMinutes, sessionRemainingSeconds, null, null);
+    }
+
+    /** Backwards-compatible constructor for callers/tests that predate CV sessions. */
+    public ChatRequest(
+            Long goalId,
+            String message,
+            String provider,
+            String sessionType,
+            java.util.List<MessageEntry> history,
+            Integer sessionTotalMinutes,
+            Integer sessionRemainingSeconds,
+            java.util.List<Attachment> attachments,
+            Long cvApplicationId) {
+        this(goalId, message, provider, sessionType, history,
+                sessionTotalMinutes, sessionRemainingSeconds, attachments, cvApplicationId, null, null);
+    }
+
+    public ChatRequest(
+            Long goalId,
+            String message,
+            String provider,
+            String sessionType,
+            java.util.List<MessageEntry> history,
+            Integer sessionTotalMinutes,
+            Integer sessionRemainingSeconds,
+            java.util.List<Attachment> attachments) {
+        this(goalId, message, provider, sessionType, history,
+                sessionTotalMinutes, sessionRemainingSeconds, attachments, null);
     }
 
     /**

@@ -18,10 +18,17 @@ test.describe("Resources — image zoom", () => {
     await dialog.locator('input[type="file"]').setInputFiles(SAMPLE_PNG);
     await dialog.getByRole("button", { name: "Add resource" }).click();
 
-    await page.getByText("sample.png").click();
-    await expect(
-      page.getByRole("button", { name: "Close preview" }),
-    ).toBeVisible();
+    // The card, not its words — the name is drawn twice (see the hover copy in Resources.tsx).
+    await page
+      .getByRole("button", {
+        name: "sample.png",
+        // `exact`, or the card's own "Actions for sample.png" button matches too.
+        exact: true,
+      })
+      .click();
+    // Over a page the way out is the X at the end of the action group; the chevron and its
+    // "Back" belong to the full-screen state alone (CLAUDE.md -> 3i).
+    await expect(page.getByRole("button", { name: "Close" })).toBeVisible();
 
     // Open the fullscreen viewer (force past the hover-hint overlay). Retry the whole open
     // step: a background goals refresh can re-render and detach the inline <img> mid-click.

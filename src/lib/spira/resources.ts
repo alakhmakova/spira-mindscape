@@ -18,6 +18,9 @@ export function resourceDisplayName(resource: Resource): string {
   if (resource.type === "link")
     return resource.title.trim() || titleFromUrl(resource.url);
   if (resource.type === "file") return resource.title.trim() || "Untitled file";
+  // A map's title IS the vacancy's name, so it is never generated from anything else.
+  if (resource.type === "vacancy")
+    return resource.title.trim() || "Untitled vacancy";
   return resource.name?.trim() || resource.email?.trim() || "Email";
 }
 

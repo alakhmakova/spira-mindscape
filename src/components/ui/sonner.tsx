@@ -91,7 +91,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         },
       }}
       // The radius is sonner's own container variable — inline, so no layer can outrank it.
-      style={{ "--border-radius": "8px" } as React.CSSProperties}
+      style={{ "--border-radius": "4px" } as React.CSSProperties}
       {...props}
     />
   );

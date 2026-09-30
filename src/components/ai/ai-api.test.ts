@@ -2,8 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   approveProposal,
+  createCvApplication,
+  deleteApiKey,
+  fetchCvApplications,
+  fetchCvTranscript,
   getTranscriptRevision,
   listApiKeys,
+  putCvTranscript,
   saveApiKey,
   streamChat,
 } from "./ai-api";
@@ -53,6 +58,37 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
     expect(init.credentials).toBe("include");
     expect(init.headers?.["X-XSRF-TOKEN"]).toBe("test-csrf-token");
     expect(init.headers?.["Content-Type"]).toBe("application/json");
+  });
+
+  it("deleteApiKey DELETEs the provider's key with credentials and the CSRF header", async () => {
+    // The endpoint shipped with BYOK and nothing ever called it, so a key could be
+    // replaced but never removed (owner, 2026-09-09).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, text: async () => "" })),
+    );
+
+    await deleteApiKey("MISTRAL");
+
+    const [url, init] = firstCall();
+    expect(url).toBe("/api/ai/keys/MISTRAL");
+    expect(init.method).toBe("DELETE");
+    expect(init.credentials).toBe("include");
+    expect(init.headers?.["X-XSRF-TOKEN"]).toBe("test-csrf-token");
+  });
+
+  it("deleteApiKey reports a failure rather than pretending the key is gone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 400,
+        text: async () => JSON.stringify({ detail: "Unknown provider" }),
+        json: async () => ({ detail: "Unknown provider" }),
+      })),
+    );
+
+    await expect(deleteApiKey("MISTRALL")).rejects.toThrow();
   });
 
   it("approveProposal POSTs with credentials and the CSRF header", async () => {
@@ -276,5 +312,215 @@ describe("getTranscriptRevision (the cheap poll target)", () => {
     // Undefined must not be mistaken for "unchanged" — that would freeze the panel on a
     // stale conversation for as long as the network stayed flaky.
     expect(await getTranscriptRevision("7")).toBeUndefined();
+  });
+});
+
+describe("CV applications", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("createCvApplication POSTs the advert with credentials and the CSRF header", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ id: 12, title: "QA-testare" })),
+    );
+
+    await createCvApplication({
+      goalId: "7",
+      title: "QA-testare — iFacts",
+      vacancyUrl: "https://example.com/job",
+      vacancyText: "Vi söker en QA-testare",
+    });
+
+    const [url, init] = firstCall();
+    expect(url).toBe("/api/ai/cv/applications");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(init.headers?.["X-XSRF-TOKEN"]).toBe("test-csrf-token");
+    const body = JSON.parse(
+      (init as unknown as { body: string }).body,
+    ) as Record<string, unknown>;
+    expect(body.goalId).toBe(7);
+    expect(body.vacancyText).toBe("Vi söker en QA-testare");
+  });
+
+  it("createCvApplication THROWS on failure rather than returning null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 400, json: async () => ({}) })),
+    );
+
+    // The caller is about to open a session against this row. A silent null would
+    // interview the user against an application that does not exist — the server holds
+    // the requirement queue, so with no row there is no queue and every answer is lost.
+    await expect(
+      createCvApplication({ goalId: "7", vacancyText: "advert" }),
+    ).rejects.toThrow();
+  });
+
+  it("fetchCvApplications returns an empty list when the call fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+
+    // The list is a convenience on the start card; failing it must not block starting
+    // a new application, which is the other half of that card.
+    expect(await fetchCvApplications("7")).toEqual([]);
+  });
+
+  it("a CV turn sends its session type and the application it belongs to", async () => {
+    vi.stubGlobal(
+      "fetch",
+      // An SSE response that ends immediately: streamChat reads the body, so a null
+      // one throws before the assertion is ever reached.
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        body: {
+          getReader: () => ({
+            read: async () => ({ done: true, value: undefined }),
+            cancel: async () => {},
+          }),
+        },
+        json: async () => ({}),
+        text: async () => "",
+      })),
+    );
+
+    await streamChat({
+      goalId: "7",
+      message: "Here is the vacancy",
+      history: [],
+      sessionType: "cv",
+      cvApplicationId: 12,
+      onToken: () => {},
+      onDone: () => {},
+      onError: () => {},
+    });
+
+    const [, init] = firstCall();
+    const body = JSON.parse(
+      (init as unknown as { body: string }).body,
+    ) as Record<string, unknown>;
+    expect(body.sessionType).toBe("cv");
+    expect(body.cvApplicationId).toBe(12);
+    // A CV session has no clock at all — sending timing would tell a piece of work it
+    // is running out of time.
+    expect(body.sessionTotalMinutes).toBeNull();
+    expect(body.sessionRemainingSeconds).toBeNull();
+  });
+});
+
+describe("the guided CV writer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function sse(text: string) {
+    const bytes = new TextEncoder().encode(text);
+    let sent = false;
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (sent) return { done: true, value: undefined };
+            sent = true;
+            return { done: false, value: bytes };
+          },
+          cancel: async () => {},
+        }),
+      },
+      json: async () => ({}),
+      text: async () => "",
+    };
+  }
+
+  it("a control turn says which, with the UI language, and step events reach their handlers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sse(
+          [
+            "event: cv_step",
+            'data: {"step":2,"of":6,"title":"Job analysis","activity":"Analyzing the job requirements","phase":"analysis"}',
+            "",
+            "event: cv_continue",
+            "data: ",
+            "",
+            "event: done",
+            "data: ",
+            "",
+            "",
+          ].join("\n"),
+        ),
+      ),
+    );
+    const steps: string[] = [];
+    let continued = false;
+
+    await streamChat({
+      goalId: "7",
+      message: "[Carry on]",
+      history: [],
+      sessionType: "cv",
+      cvApplicationId: 12,
+      cvControl: "continue",
+      language: "ru-RU",
+      onCvStep: (json) => steps.push(json),
+      onCvContinue: () => {
+        continued = true;
+      },
+      onToken: () => {},
+      onDone: () => {},
+      onError: () => {},
+    });
+
+    const [, init] = firstCall();
+    const body = JSON.parse(
+      (init as unknown as { body: string }).body,
+    ) as Record<string, unknown>;
+    expect(body.cvControl).toBe("continue");
+    expect(body.language).toBe("ru-RU");
+    expect(JSON.parse(steps[0]).activity).toBe(
+      "Analyzing the job requirements",
+    );
+    expect(continued).toBe(true);
+  });
+
+  it("a transcript save names the revision it is based on, and a 409 is reported as a conflict", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+        text: async () => "",
+      })),
+    );
+
+    const result = await putCvTranscript(12, "[]", 4);
+
+    const [, init] = firstCall();
+    expect(
+      JSON.parse((init as unknown as { body: string }).body).baseRevision,
+    ).toBe(4);
+    expect(result).toEqual({ ok: false, conflict: true });
+  });
+
+  it("the stored conversation comes back with its revision", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        okJson({ applicationId: 12, content: "[]", revision: 7 }),
+      ),
+    );
+
+    expect(await fetchCvTranscript(12)).toEqual({ content: "[]", revision: 7 });
   });
 });

@@ -2,7 +2,7 @@
 
 A practical, beginner-friendly runbook for deploying Spira **for free** on Google
 Cloud Run (backend container, scales to zero) with a Neon serverless PostgreSQL.
-This is the cloud alternative to [`deploy-oracle-vm.md`](./deploy-oracle-vm.md).
+This is how Spira is deployed, and the only way it is deployed.
 
 > **Live deployment:** https://spira-952567559986.europe-west1.run.app
 > (project `project-10702811-5962-4bf3-877`, region `europe-west1`). Redeploy with
@@ -100,8 +100,8 @@ Already at the repo root — three files:
 - [`.gcloudignore`](../.gcloudignore) — keeps the **Cloud Build upload** small for
   `gcloud run deploy --source .` (so `node_modules`/`target` aren't uploaded).
 
-> Note: the existing `backend/Dockerfile` and `Dockerfile.frontend` are the **Oracle
-> two-container** setup (arm64) — Cloud Run uses the root `Dockerfile` (amd64) instead.
+> Note: the root `Dockerfile` is the **only** image the project builds, and Cloud Run is the
+> only place Spira is deployed.
 
 ---
 
@@ -415,5 +415,5 @@ GitHub Actions job deliberately omits them so a deploy never clobbers `FRONTEND_
 
 ---
 
-*Pre-deploy gate (same as the Oracle runbook): run `npm test`, `npm run build`,
+*Pre-deploy gate: run `npm test`, `npm run build`,
 and `cd backend && ./mvnw test` — deploy only if all pass.*

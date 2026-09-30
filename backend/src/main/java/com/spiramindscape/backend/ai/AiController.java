@@ -5,6 +5,9 @@ import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
 import com.spiramindscape.backend.ai.chat.transcript.AiChatTranscriptService;
 import com.spiramindscape.backend.ai.chat.transcript.dto.SaveTranscriptRequest;
 import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptDto;
+import com.spiramindscape.backend.ai.cv.CvApplicationService;
+import com.spiramindscape.backend.ai.cv.dto.CreateCvApplicationRequest;
+import com.spiramindscape.backend.ai.cv.dto.CvApplicationDto;
 import com.spiramindscape.backend.ai.grow.session.GrowSessionService;
 import com.spiramindscape.backend.ai.grow.session.dto.GrowSessionDto;
 import com.spiramindscape.backend.ai.grow.session.dto.SaveGrowSessionRequest;
@@ -18,6 +21,7 @@ import com.spiramindscape.backend.ai.preference.AiPreferenceService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.proposal.dto.ProposalDto;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -55,6 +59,7 @@ public class AiController {
     private final AiKeyService keyService;
     private final AiChatService chatService;
     private final GrowSessionService growSessionService;
+    private final CvApplicationService cvApplicationService;
     private final AiModelService modelService;
     private final AiProposalService proposalService;
     private final GoalMemoryService goalMemoryService;
@@ -65,6 +70,7 @@ public class AiController {
             AiKeyService keyService,
             AiChatService chatService,
             GrowSessionService growSessionService,
+            CvApplicationService cvApplicationService,
             AiModelService modelService,
             AiProposalService proposalService,
             GoalMemoryService goalMemoryService,
@@ -73,6 +79,7 @@ public class AiController {
         this.keyService = keyService;
         this.chatService = chatService;
         this.growSessionService = growSessionService;
+        this.cvApplicationService = cvApplicationService;
         this.modelService = modelService;
         this.proposalService = proposalService;
         this.goalMemoryService = goalMemoryService;
@@ -263,6 +270,147 @@ public class AiController {
     public ResponseEntity<Map<String, String>> clearGrowSession(@RequestParam Long goalId) {
         growSessionService.clear(goalId);
         return ResponseEntity.ok(Map.of("status", "cleared"));
+    }
+
+    // ── CV applications ──────────────────────────────────────────────────────
+    //
+    // One row per VACANCY, not per goal: "find a QA job" holds many applications, so
+    // unlike a GROW session the goal id is not enough to say what is being worked on.
+    // Every method is owner-scoped inside the service — an id from the client is not a
+    // permission, and this one addresses somebody's employment history.
+
+    /** The applications on a goal, newest first, with how far each interview has got. */
+    @GetMapping("/cv/applications")
+    public List<CvApplicationDto> cvApplications(@RequestParam Long goalId) {
+        return cvApplicationService.listForClient(goalId);
+    }
+
+    /**
+     * Start an application from a job advert.
+     *
+     * <p><b>409 with the EXISTING application</b> when this goal already has one for the
+     * same advert, unless {@code force} says to make a second anyway. Three rows for one
+     * vacancy is what happens without this (owner, 2026-09-09) — and a plain refusal would
+     * be wrong too, because applying twice to the same posting after a rewrite is a real
+     * thing. The user is asked; the body is what they are asked about.
+     */
+    @PostMapping("/cv/applications")
+    public ResponseEntity<CvApplicationDto> createCvApplication(
+            @RequestBody @Valid CreateCvApplicationRequest request,
+            @RequestParam(defaultValue = "false") boolean force) {
+        if (!force) {
+            String title = com.spiramindscape.backend.ai.cv.CvApplicationService.titleFor(
+                    request.title(), request.vacancyText(), request.vacancyUrl());
+            var existing = cvApplicationService.findDuplicate(
+                    request.goalId(), request.vacancyUrl(), title);
+            if (existing.isPresent()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(cvApplicationService.getForClient(existing.get().getId()));
+            }
+        }
+        var created = cvApplicationService.create(request.goalId(), request.title(),
+                request.vacancyUrl(), request.vacancyText(), request.vacancyLanguage());
+        return ResponseEntity.ok(cvApplicationService.getForClient(created.getId()));
+    }
+
+    /** One application — what the panel reads when it resumes an unfinished one. */
+    @GetMapping("/cv/applications/{id}")
+    public CvApplicationDto cvApplication(@PathVariable Long id) {
+        return cvApplicationService.getForClient(id);
+    }
+
+    /** What the client sends when the user approves a note the writer proposed. */
+    public record BindCvNoteRequest(
+            @jakarta.validation.constraints.NotNull Long resourceId,
+            @jakarta.validation.constraints.Size(max = 16) String document) {}
+
+    /**
+     * Tell an application which note it just produced.
+     *
+     * <p>The PHASE is the server's own — the client holds whatever it loaded the
+     * application with, and a session that has moved on since would file the finished CV
+     * as the profile. Best-effort from the caller's point of view: the note exists either
+     * way, and an application that does not know about it is a smaller problem than an
+     * approval that appears to fail.
+     */
+    @PostMapping("/cv/applications/{id}/note")
+    public CvApplicationDto bindCvNote(
+            @PathVariable Long id, @RequestBody @Valid BindCvNoteRequest request) {
+        cvApplicationService.bindApprovedNote(id, request.resourceId(), request.document());
+        return cvApplicationService.getForClient(id);
+    }
+
+    /** What "Use as my details" sends: an existing note of the goal. */
+    public record UseCvIntakeRequest(@jakarta.validation.constraints.NotNull Long resourceId) {}
+
+    @PostMapping("/cv/applications/{id}/intake/use")
+    public CvApplicationDto useCvIntake(
+            @PathVariable Long id, @RequestBody @Valid UseCvIntakeRequest request) {
+        cvApplicationService.useAsIntake(id, request.resourceId());
+        return cvApplicationService.getForClient(id);
+    }
+
+    /**
+     * The words on the panel's own CV controls, in the language this conversation runs in.
+     *
+     * <p>Copy belongs to the server like every other word the process says: a control carrying an
+     * English literal under a localised announcement read as two different applications (owner's
+     * live run, 2026-09-16).
+     */
+    @GetMapping("/cv/applications/{id}/copy")
+    public com.spiramindscape.backend.ai.cv.CvCardText cvCardText(@PathVariable Long id) {
+        return com.spiramindscape.backend.ai.cv.CvCardText.of(
+                cvApplicationService.get(id).getConversationLanguage());
+    }
+
+    /** Fetch the advert again (only while the application has no map yet) and redo the analysis. */
+    @PostMapping("/cv/applications/{id}/vacancy/reread")
+    public CvApplicationDto rereadCvVacancy(@PathVariable Long id) {
+        cvApplicationService.rereadVacancy(id);
+        return cvApplicationService.getForClient(id);
+    }
+
+    /** One application's stored conversation ({@code content} null when there is none). */
+    public record CvTranscriptDto(Long applicationId, String content, long revision) {}
+
+    /** The body of a transcript save. */
+    public record SaveCvTranscriptRequest(String content, Long baseRevision) {}
+
+    /**
+     * The conversation for one application.
+     *
+     * <p>Its own endpoint rather than a field on {@link CvApplicationDto}: that DTO is
+     * what the Continue list is built from, and shipping every application's whole
+     * conversation to draw a list of titles would be absurd.
+     */
+    @GetMapping("/cv/applications/{id}/transcript")
+    public CvTranscriptDto cvTranscript(@PathVariable Long id) {
+        return new CvTranscriptDto(id, cvApplicationService.transcript(id),
+                cvApplicationService.get(id).getTranscriptRevision());
+    }
+
+    /**
+     * Store the conversation after a settled turn. 409 when {@code baseRevision} is older
+     * than the stored one — another device has saved since, and the client reloads.
+     */
+    @PutMapping("/cv/applications/{id}/transcript")
+    public CvTranscriptDto saveCvTranscript(
+            @PathVariable Long id, @RequestBody SaveCvTranscriptRequest request) {
+        var saved = cvApplicationService.saveTranscript(id, request.content(), request.baseRevision());
+        return new CvTranscriptDto(id, saved.getTranscript(), saved.getTranscriptRevision());
+    }
+
+    /**
+     * Discard an application and everything extracted from its advert.
+     *
+     * <p>The notes it produced are goal resources and are deliberately NOT touched:
+     * a finished CV outlives the working session that wrote it, and deleting a
+     * person's CV because they tidied away the application would be its own defect.
+     */
+    @DeleteMapping("/cv/applications/{id}")
+    public ResponseEntity<Map<String, String>> deleteCvApplication(@PathVariable Long id) {
+        cvApplicationService.delete(id);
+        return ResponseEntity.ok(Map.of("status", "deleted"));
     }
 
     // ── Preferences (cross-device) ────────────────────────────────────────────

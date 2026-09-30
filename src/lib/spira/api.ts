@@ -8,6 +8,7 @@ import type {
   ResourceInput,
   Target,
 } from "./types";
+import type { MapPatchOp } from "./vacancy-map";
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? "/graphql";
 
@@ -30,6 +31,15 @@ const DEFAULT_API_ERROR_MESSAGE =
 const BACKEND_UNAVAILABLE_MESSAGE =
   "We couldn't reach the backend. Check that it is running, then retry.";
 const VALIDATION_ERROR_CLASSIFICATION = "ValidationError";
+
+/** A section-aware note edit — see `ResourceService.editNote` on the server. */
+export type EditNoteInput = {
+  mode?: string;
+  section?: string;
+  content: string;
+  title?: string;
+  expectedUpdatedAt?: string;
+};
 
 export class SpiraApiError extends Error {
   readonly details?: string;
@@ -121,6 +131,7 @@ type GraphqlResource = {
   email?: string | null;
   phone?: string | null;
   driveWebViewLink?: string | null;
+  mapData?: string | null;
 };
 
 type GraphqlGoal = {
@@ -256,6 +267,7 @@ const RESOURCE_META_FIELDS = `
   role
   email
   phone
+  mapData
 `;
 
 const REALITY_FIELDS = `
@@ -421,6 +433,18 @@ function toResource(resource: GraphqlResource): Resource {
     };
   }
 
+  if (resource.type === "vacancy") {
+    return {
+      id: resource.id,
+      type: "vacancy",
+      title: resource.title ?? "",
+      // null means NOT LOADED (every list read omits the document — see ResourceView on the
+      // server), which is why this stays undefined rather than collapsing to "". An empty string
+      // would read as "loaded and empty" and stop `loadResourceMap` ever fetching it.
+      mapData: resource.mapData ?? undefined,
+    };
+  }
+
   return {
     id: resource.id,
     type: "note",
@@ -487,6 +511,16 @@ function resourceInput(
     role: "role" in resource ? resource.role : undefined,
     email: "email" in resource ? resource.email : undefined,
     phone: "phone" in resource ? resource.phone : undefined,
+    // ONLY on create (`includeType`), never on update. A map is written field by field through
+    // patchVacancyMap so the user and the CV writer cannot overwrite each other; sending the whole
+    // document from an ordinary update — renaming the resource, say — would reintroduce exactly
+    // the clobber that patch exists to prevent, and would blank the map outright when the document
+    // has not been lazily loaded yet. Create is the one case where the whole document is the
+    // point: duplicating a map.
+    mapData:
+      includeType && "mapData" in resource && resource.mapData
+        ? resource.mapData
+        : undefined,
   });
 }
 
@@ -846,6 +880,24 @@ export const spiraApi = {
   },
 
   /**
+   * Edits a note on the server, which merges the change into the note as it is NOW. A rewrite
+   * based on an older version fails with classification NOTE_CHANGED — see `isNoteChanged`.
+   */
+  async editNote(id: string, input: EditNoteInput): Promise<Resource> {
+    const data = await graphql<{ editNote: GraphqlResource }>(
+      `
+        mutation EditNote($id: ID!, $input: EditNoteInput!) {
+          editNote(id: $id, input: $input) {
+            ${RESOURCE_META_FIELDS}
+          }
+        }
+      `,
+      { id, input: cleanInput(input) },
+    );
+    return toResource(data.editNote);
+  },
+
+  /**
    * Fetch just the file contents (base64 data URL) of one resource. File bodies are excluded
    * from the goals list (see GOAL_FIELDS) so the list stays small; this pulls the bytes on
    * demand when the user opens/downloads/copies a specific file.
@@ -867,6 +919,52 @@ export const spiraApi = {
     return data.resourceById?.dataUrl ?? "";
   },
 
+  /**
+   * Fetch just the map document of one vacancy resource. Like a file's bytes it is left out of
+   * every list read (see `ResourceView` on the server), so the page pulls it when it opens.
+   */
+  async fetchResourceMap(id: string): Promise<string> {
+    const data = await graphql<{
+      resourceById: { mapData?: string | null } | null;
+    }>(
+      `
+        query ResourceMap($id: ID!) {
+          resourceById(id: $id) {
+            id
+            mapData
+          }
+        }
+      `,
+      { id },
+    );
+    return data.resourceById?.mapData ?? "";
+  },
+
+  /**
+   * Writes named fields of a vacancy map and returns the stored document.
+   *
+   * The map is never sent whole: each op names ONE field by JSON Pointer and the server merges it
+   * into the document as it stands. That is what lets the user and the CV writer fill in different
+   * parts of the same map without either silently discarding the other's work — the defect that
+   * made the requirement-map note unusable. See `vacancy-map.ts`.
+   */
+  async patchVacancyMap(id: string, patches: MapPatchOp[]): Promise<string> {
+    const data = await graphql<{
+      patchVacancyMap: { mapData?: string | null };
+    }>(
+      `
+        mutation PatchVacancyMap($id: ID!, $patches: [MapPatchInput!]!) {
+          patchVacancyMap(id: $id, patches: $patches) {
+            id
+            mapData
+          }
+        }
+      `,
+      { id, patches },
+    );
+    return data.patchVacancyMap.mapData ?? "";
+  },
+
   async deleteResource(id: string): Promise<void> {
     await graphql<{ deleteResource: boolean }>(
       `
@@ -878,3 +976,11 @@ export const spiraApi = {
     );
   },
 };
+
+/** True when a note edit was refused because the note changed after the suggestion was made. */
+export function isNoteChanged(error: unknown): boolean {
+  return (
+    error instanceof SpiraApiError &&
+    !!error.errors?.some((e) => e.extensions?.classification === "NOTE_CHANGED")
+  );
+}

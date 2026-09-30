@@ -10,3 +10,8 @@ mutation UpdateResource($id: ID!, $input: UpdateResourceInput!) {
 mutation DeleteResource($id: ID!) {
   deleteResource(id: $id)
 }
+
+# Section-aware note edit: the server merges it into the note as it is now (AI proposals).
+mutation EditNote($id: ID!, $input: EditNoteInput!) {
+  editNote(id: $id, input: $input) { id }
+}

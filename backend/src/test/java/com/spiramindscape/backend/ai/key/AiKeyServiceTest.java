@@ -3,6 +3,7 @@ package com.spiramindscape.backend.ai.key;
 import com.spiramindscape.backend.ai.crypto.EncryptionService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
+import com.spiramindscape.backend.ai.preference.AiPreferenceService;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.auth.AppUser;
 import com.spiramindscape.backend.auth.CurrentUserProvider;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +41,7 @@ class AiKeyServiceTest {
     @Mock private AiApiKeyRepository repo;
     @Mock private EncryptionService encryption;
     @Mock private CurrentUserProvider currentUserProvider;
+    @Mock private AiPreferenceService preferences;
     @InjectMocks private AiKeyService service;
 
     @BeforeEach
@@ -135,6 +138,66 @@ class AiKeyServiceTest {
     void deleteKeyScoped() {
         service.deleteKey("mistral");
         verify(repo).deleteByAppUserIdAndProvider(USER_ID, "MISTRAL");
+    }
+
+    @Test
+    @DisplayName("deleting the ACTIVE provider's key stops the app pointing at it")
+    void deleteKeyClearsTheActiveProvider() {
+        when(preferences.getProvider()).thenReturn("MISTRAL");
+
+        service.deleteKey("mistral");
+
+        // Otherwise every surface keeps selecting a provider with no key, and the failure
+        // arrives at the first message with nothing explaining it.
+        verify(preferences).setProvider(null);
+    }
+
+    @Test
+    @DisplayName("a lowercase stored preference is still recognised and cleared")
+    void deleteKeyClearsALowercasePreference() {
+        // The preferences endpoint accepts a lowercase name, and string equality against
+        // the normalised "MISTRAL" would silently never match.
+        when(preferences.getProvider()).thenReturn("mistral");
+
+        service.deleteKey("MISTRAL");
+
+        verify(preferences).setProvider(null);
+    }
+
+    @Test
+    @DisplayName("an unparseable stored preference names nothing, and is left alone")
+    void deleteKeyIgnoresAnUnparseablePreference() {
+        when(preferences.getProvider()).thenReturn("ollama");
+
+        service.deleteKey("MISTRAL");
+
+        verify(preferences, never()).setProvider(any());
+    }
+
+    @Test
+    @DisplayName("deleting some OTHER provider's key leaves the active one alone")
+    void deleteKeyKeepsAnUnrelatedActiveProvider() {
+        when(preferences.getProvider()).thenReturn("ANTHROPIC");
+
+        service.deleteKey("mistral");
+
+        verify(preferences, never()).setProvider(any());
+    }
+
+    @Test
+    @DisplayName("an unknown provider is a 400, not a 500 — on every key operation")
+    void unknownProviderIsABadRequest() {
+        assertThatThrownBy(() -> service.deleteKey("mistrall"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400")
+                .hasMessageContaining("MISTRAL");
+        assertThatThrownBy(() -> service.updateModel("gpt", "gpt-4o"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+        assertThatThrownBy(() -> service.saveKey(
+                new SaveKeyRequest("not-a-provider", "sk-123456789", "m")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
     }
 
     @Test

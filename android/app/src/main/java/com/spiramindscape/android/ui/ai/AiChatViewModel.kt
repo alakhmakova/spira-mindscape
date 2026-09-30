@@ -364,6 +364,37 @@ class AiChatViewModel(
         }
     }
 
+    /**
+     * Take a key off the server.
+     *
+     * <p>The endpoint and [AiChat.deleteKey] have existed since BYOK shipped and nothing
+     * ever reached them, so a key could be replaced but never removed (owner, 2026-09-09).
+     * The server also clears the active-provider preference when it named this provider;
+     * re-reading both here is what makes this surface agree with it.
+     */
+    fun deleteKey(provider: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            val error = runCatching { api.deleteKey(provider) }.exceptionOrNull()
+            if (error == null) {
+                refreshKeys()
+                // **The chat must not go on pointing at a provider with no key**, and
+                // re-reading the preference is not enough on its own: the server sets it to
+                // NULL when it named the deleted provider, so `getProvider()` answers null
+                // and a `?.let` simply skipped — leaving the deleted provider selected until
+                // the next message failed (found in review, 2026-09-10). Pick the fallback
+                // here, the way the web panel does.
+                if (_provider.value.equals(provider, ignoreCase = true)) {
+                    val next = _keys.value.firstOrNull { !it.provider.equals(provider, true) }
+                        ?.provider
+                        ?: runCatching { api.getProvider() }.getOrNull()
+                        ?: DEFAULT_PROVIDER
+                    chooseProvider(next)
+                }
+            }
+            onResult(error?.message)
+        }
+    }
+
     fun loadModels(provider: String, onResult: (List<String>, String?) -> Unit) {
         viewModelScope.launch {
             runCatching { api.listProviderModels(provider) }
@@ -1391,6 +1422,8 @@ interface AiChat {
     suspend fun saveKey(provider: String, apiKey: String, model: String?): AiApi.KeyInfo
     suspend fun listProviderModels(provider: String): List<String>
     suspend fun updateKeyModel(provider: String, model: String)
+    /** Defaulted so the test fakes, none of which care about keys, need not implement it. */
+    suspend fun deleteKey(provider: String) = Unit
     suspend fun getProvider(): String?
     suspend fun saveProvider(provider: String)
     suspend fun getTranscript(goalId: String?): AiApi.StoredTranscript?
@@ -1431,6 +1464,7 @@ object LiveAiChat : AiChat {
     override suspend fun listProviderModels(provider: String) = AiApi.listProviderModels(provider)
     override suspend fun updateKeyModel(provider: String, model: String) =
         AiApi.updateKeyModel(provider, model)
+    override suspend fun deleteKey(provider: String) = AiApi.deleteKey(provider)
     override suspend fun getProvider() = AiApi.getProvider()
     override suspend fun saveProvider(provider: String) = AiApi.saveProvider(provider)
     override suspend fun getTranscript(goalId: String?) = AiApi.getTranscript(goalId)

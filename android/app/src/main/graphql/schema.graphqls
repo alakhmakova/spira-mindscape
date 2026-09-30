@@ -46,6 +46,12 @@ type Mutation {
 
     createResource(goalId: ID!, input: CreateResourceInput!): Resource!
     updateResource(id: ID!, input: UpdateResourceInput!): Resource!
+    """
+    Edits a note by section without replacing what is already there. mode is append (default),
+    append_to_section, merge_sections, replace_section or replace_all; the two replace modes need
+    expectedUpdatedAt and fail with classification NOTE_CHANGED when the note changed since.
+    """
+    editNote(id: ID!, input: EditNoteInput!): Resource!
     deleteResource(id: ID!): Boolean!
 }
 
@@ -210,6 +216,14 @@ input CreateResourceInput {
     role: String
     email: String
     phone: String
+}
+
+input EditNoteInput {
+    mode: String
+    section: String
+    content: String!
+    title: String
+    expectedUpdatedAt: String
 }
 
 input UpdateResourceInput {

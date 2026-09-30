@@ -69,11 +69,12 @@ class ProviderErrorMessageTest {
     @Mock private MistralOcrService mistralOcr;
     @Mock private CohereVisionReader cohereVision;
     @Mock private GoalService goalService;
+    @Mock private com.spiramindscape.backend.ai.cv.CvApplicationService cvApplications;
 
     private AiChatService service() {
         return new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService, cvApplications);
     }
 
     @Test
@@ -85,7 +86,12 @@ class ProviderErrorMessageTest {
         // difference between "something went wrong" and "switch model or enable billing".
         assertThat(shown).contains("limit: 20");
         assertThat(shown).contains("gemini-3.5-flash");
-        assertThat(shown).contains("57.8");
+        // The retry delay still survives the truncation, which is what this line has always
+        // been for — but it now arrives ROUNDED. The provider sends nine decimal places and
+        // a user cannot read "57.827332745s" as a decision about whether to wait (owner,
+        // 2026-09-09). The seconds are the information; the fraction never was.
+        assertThat(shown).contains("57s");
+        assertThat(shown).doesNotContain("57.8");
     }
 
     @Test
@@ -152,5 +158,27 @@ class ProviderErrorMessageTest {
                 .contains("API key");
         assertThat(service().friendlyError(new RuntimeException("boom")))
                 .isEqualTo("AI service error. Please try again.");
+    }
+
+    @Test
+    @DisplayName("a provider's retry delay is rounded — nine decimal places is not information")
+    void retryDelayIsRounded() {
+        // Gemini reports one as "37.415929266s". A user cannot tell at a glance whether
+        // that means wait or go and do something else (owner, 2026-09-09).
+        assertThat(AiChatService.roundSeconds("Please retry in 37.415929266s."))
+                .isEqualTo("Please retry in 37s.");
+        assertThat(AiChatService.roundSeconds("retryDelay: 5.0s"))
+                .isEqualTo("retryDelay: 5s");
+    }
+
+    @Test
+    @DisplayName("rounding leaves everything else in the message alone")
+    void roundingIsNarrow() {
+        // Version numbers, model names and prices all contain a dot and a digit; only a
+        // decimal immediately followed by "s" is a duration.
+        assertThat(AiChatService.roundSeconds("gemini-2.5-flash quota 1.5 per minute"))
+                .isEqualTo("gemini-2.5-flash quota 1.5 per minute");
+        assertThat(AiChatService.roundSeconds("wait 42s")).isEqualTo("wait 42s");
+        assertThat(AiChatService.roundSeconds(null)).isNull();
     }
 }

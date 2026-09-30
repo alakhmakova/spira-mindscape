@@ -202,6 +202,11 @@ data class GoalWorkspaceActions(
         mime: String?, dataUrl: String?,
     ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
     val onRemoveResource: (id: String) -> Unit = {},
+    /** Apply an AI note edit on the server — see `GoalWorkspaceViewModel.editNote`. */
+    val onEditNote: (
+        id: String, mode: String, section: String?, content: String,
+        title: String?, expectedUpdatedAt: String?,
+    ) -> Unit = { _, _, _, _, _, _ -> },
     /** Ask for a file resource's bytes (omitted from the goal query — see `GetGoal.graphql`). */
     val onLoadResourceFile: (id: String) -> Unit = {},
 )
@@ -273,6 +278,7 @@ fun GoalWorkspaceRoute(
             viewModel.updateResource(id, title, body, url, name, email, role, phone, mime, dataUrl)
         },
         onRemoveResource = viewModel::removeResource,
+        onEditNote = viewModel::editNote,
         onLoadResourceFile = viewModel::loadResourceFile,
     )
 

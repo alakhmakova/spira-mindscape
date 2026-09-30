@@ -1,5 +1,10 @@
 import type { ComponentType } from "react";
-import { FileText, Paperclip, Mail } from "@/components/spira/icons";
+import {
+  ChartTreemap,
+  FileText,
+  Paperclip,
+  Mail,
+} from "@/components/spira/icons";
 import { Link } from "@/components/spira/icons";
 import type { Resource } from "@/lib/spira/types";
 
@@ -15,4 +20,6 @@ export const resourceTypeMeta: Record<
   link: { icon: Link, label: "Link" },
   file: { icon: Paperclip, label: "File" },
   email: { icon: Mail, label: "Email" },
+  // Gravity's chart-treemap — the owner's pick for the map (2026-09-18).
+  vacancy: { icon: ChartTreemap, label: "Vacancy map" },
 };

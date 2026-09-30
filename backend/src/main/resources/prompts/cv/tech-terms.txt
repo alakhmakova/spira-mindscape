@@ -1,0 +1,198 @@
+# Technology names checked by CvTermGate. One per line; # starts a comment.
+# Only names that are unambiguous as ordinary words belong here: "Go", "REST", "Express",
+# "Swift" or "Unity" would flag everyday prose, so they are left out on purpose.
+
+# Languages and runtimes
+Java
+Kotlin
+Scala
+Groovy
+Python
+JavaScript
+TypeScript
+Golang
+Rust
+C#
+C++
+.NET
+PHP
+Ruby
+Objective-C
+Dart
+Node.js
+Deno
+
+# Frameworks and libraries
+Spring Boot
+Spring Security
+Spring Cloud
+Spring
+Hibernate
+JPA
+Quarkus
+Micronaut
+Jakarta EE
+Django
+Flask
+FastAPI
+Laravel
+React
+React Native
+Angular
+Vue
+Svelte
+Next.js
+Nuxt
+NestJS
+Flutter
+Jetpack Compose
+SwiftUI
+Redux
+Zustand
+MobX
+RxJS
+Tailwind
+Bootstrap
+Material UI
+Storybook
+Apollo
+Apollo Client
+Apollo Kotlin
+TensorFlow
+PyTorch
+scikit-learn
+Pandas
+NumPy
+LangChain
+
+# APIs and security
+GraphQL
+gRPC
+SOAP
+OpenAPI
+Swagger
+WebSocket
+JWT
+OAuth
+OAuth2
+OpenID Connect
+SAML
+Keycloak
+Auth0
+
+# Data
+PostgreSQL
+MySQL
+MariaDB
+Oracle Database
+SQL Server
+MongoDB
+Redis
+Cassandra
+DynamoDB
+Elasticsearch
+OpenSearch
+Neo4j
+SQLite
+Flyway
+Liquibase
+Kafka
+RabbitMQ
+ActiveMQ
+Spark
+Hadoop
+Flink
+Airflow
+Snowflake
+BigQuery
+Databricks
+
+# Infrastructure and delivery
+Docker
+Kubernetes
+Helm
+OpenShift
+Terraform
+Ansible
+Pulumi
+AWS
+Azure
+GCP
+Google Cloud
+Cloud Run
+Firebase
+Heroku
+Vercel
+Netlify
+Cloudflare
+Istio
+Jenkins
+GitHub Actions
+GitLab CI
+Azure DevOps
+CircleCI
+TeamCity
+Bamboo
+Argo CD
+Maven
+Gradle
+Webpack
+Vite
+Nginx
+Tomcat
+WildFly
+
+# Testing and quality
+JUnit
+TestNG
+Mockito
+AssertJ
+Testcontainers
+Selenium
+Playwright
+Cypress
+Puppeteer
+Jest
+Vitest
+Mocha
+Jasmine
+Cucumber
+Robot Framework
+Postman
+Insomnia
+SoapUI
+JMeter
+Gatling
+Appium
+Espresso
+Robolectric
+Allure
+SonarQube
+ISTQB
+
+# Observability
+Grafana
+Prometheus
+Kibana
+Datadog
+Splunk
+New Relic
+Sentry
+OpenTelemetry
+Jaeger
+
+# Tools and platforms
+Linux
+Bash
+PowerShell
+Git
+Jira
+Confluence
+Figma
+Salesforce
+SAP
+Power BI
+Tableau
+Camunda
+MuleSoft
+Microservices

@@ -19,7 +19,12 @@ import java.util.Optional;
 @Service
 public class ResourceReadService {
 
-    private static final int NOTE_MAX_CHARS = 8000;
+    /**
+     * A note is read whole. It used to be cut at 8,000 characters, and an AI edit written from
+     * the cut copy then dropped everything past the cut — a CV profile is longer than that.
+     */
+    private static final int NOTE_MAX_CHARS =
+            com.spiramindscape.backend.resource.ResourceService.MAX_NOTE_BODY_LENGTH;
     private static final int PDF_MAX_CHARS = 12000;
 
     private final ResourceRepository resourceRepository;
@@ -129,13 +134,46 @@ public class ResourceReadService {
                 // existing formatting and preserve it when asked to edit the note —
                 // stripping it here is why edits used to come back as plain text.
                 String html = r.getBody() == null ? "" : r.getBody();
-                yield html.isBlank() ? "(empty note)" : truncate(html, NOTE_MAX_CHARS);
+                yield noteHeader(r) + (html.isBlank() ? "(empty note)" : truncate(html, NOTE_MAX_CHARS));
             }
             case "link"  -> r.getUrl() == null ? "(no URL)" : "URL: " + r.getUrl();
             case "email" -> contactDetails(r);
             case "file"  -> readFile(r);
             default -> "(nothing to read)";
         };
+    }
+
+    /**
+     * The first line of a note read: which note, which version, and its sections. The version
+     * is what a later rewrite of the note is checked against, and the section names are what an
+     * edit that adds to one section has to use.
+     */
+    static String noteHeader(Resource r) {
+        String body = r.getBody() == null ? "" : r.getBody();
+        java.util.List<String> sections = com.spiramindscape.backend.resource.NoteEdit.sections(body);
+        return "[note id=" + r.getId()
+                + " updatedAt=" + r.getUpdatedAt()
+                + " chars=" + body.length()
+                + (sections.isEmpty() ? "" : " sections: " + String.join(" | ", sections))
+                + "]\n";
+    }
+
+    /** A note on this goal, owned by the current user: the facts an AI edit of it is checked against. */
+    public record OwnedNote(Long id, String title, String body, java.time.Instant updatedAt) {
+    }
+
+    /**
+     * The note {@code resourceId} when it is a note on {@code goalId} and that goal belongs to the
+     * current user — the same boundary as {@link #read}. Empty otherwise.
+     */
+    @Transactional(readOnly = true)
+    public Optional<OwnedNote> ownedNote(Long goalId, Long resourceId) {
+        if (goalId == null || resourceId == null) return Optional.empty();
+        return resourceRepository.findById(resourceId)
+                .filter(r -> belongsToCurrentUsersGoal(r, goalId))
+                .filter(r -> "note".equals(r.getType()))
+                .map(r -> new OwnedNote(r.getId(), r.getTitle(),
+                        r.getBody() == null ? "" : r.getBody(), r.getUpdatedAt()));
     }
 
     private String readFile(Resource r) {

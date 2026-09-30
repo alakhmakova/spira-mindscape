@@ -11,6 +11,16 @@ import java.util.List;
 public interface ResourceRepository extends JpaRepository<Resource, Long> {
 
     /**
+     * Which of these resource ids still exist on this goal.
+     *
+     * <p>For pointers held outside the resource table — a CV application naming the notes
+     * it produced — where the user may delete the note at any time and nothing tells the
+     * holder. Scoped by goal so an id from elsewhere cannot be confirmed through it.
+     */
+    @Query("SELECT r.id FROM Resource r WHERE r.goal.id = :goalId AND r.id IN :ids")
+    List<Long> findExistingIds(@Param("goalId") Long goalId, @Param("ids") List<Long> ids);
+
+    /**
      * Metadata for one goal's resources, without the {@code data_url} bytes — see
      * {@link ResourceView}. Used by the {@code resourcesByGoal} query.
      */

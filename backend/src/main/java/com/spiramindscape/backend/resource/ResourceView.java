@@ -41,4 +41,14 @@ public record ResourceView(
     public String dataUrl() {
         return null;
     }
+
+    /**
+     * Always {@code null}, for the same reason as {@link #dataUrl()} — a vacancy map's document is
+     * loaded on demand through {@code resourceById} when its page opens, never on a list read. A
+     * list shows a map by its title alone, so selecting the document here would put every map on
+     * every goals fetch to buy nothing.
+     */
+    public String mapData() {
+        return null;
+    }
 }

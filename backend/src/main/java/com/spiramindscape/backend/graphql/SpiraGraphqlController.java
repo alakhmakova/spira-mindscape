@@ -9,8 +9,10 @@ import com.spiramindscape.backend.goal.ConfidenceHistory;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
+import com.spiramindscape.backend.graphql.input.EditNoteInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
+import com.spiramindscape.backend.graphql.input.MapPatchInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
 import com.spiramindscape.backend.graphql.input.UpdateTargetInput;
 import com.spiramindscape.backend.graphql.model.RealityPayload;
@@ -201,6 +203,17 @@ public class SpiraGraphqlController {
                                    DataFetchingEnvironment environment) {
         Map<String, Object> rawInput = environment.getArgument("input");
         return resourceService.update(id, input, rawInput);
+    }
+
+    @MutationMapping
+    public Resource editNote(@Argument Long id, @Argument EditNoteInput input) {
+        return resourceService.editNote(id, input);
+    }
+
+    /** Writes named fields of a vacancy map — see {@code ResourceService.patchMap}. */
+    @MutationMapping
+    public Resource patchVacancyMap(@Argument Long id, @Argument List<MapPatchInput> patches) {
+        return resourceService.patchMap(id, patches);
     }
 
     @MutationMapping

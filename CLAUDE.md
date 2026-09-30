@@ -327,6 +327,9 @@ both unless it names a surface.
 | **Sheet heights** — a constant top edge, never a percentage | Components and chrome → 3e-bis |
 | **What a headless host cannot see** — dialog width, the keyboard | Components and chrome → 3e-quater |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
+| **Corner radius** — 4px; pills and the round + button stay round | Components and chrome → 3g |
+| **Modals on a phone** — a 16px margin, buttons inside, bottom right | Components and chrome → 3h |
+| **A resource's head** — the chevron out, the kebab, the scrolling name | Components and chrome → 3i |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
 | Dropdown / kebab menu anatomy | Components and chrome → 6 |
@@ -489,6 +492,13 @@ one-line filter question** — it is the app's one pill shape, and nothing else:
 The components are **`ui/components/SpiraBadge.kt`** (Android) and **`src/components/spira/Pill.tsx`**
 (web). Use them; don't hand-roll a capsule.
 
+**One sanctioned variant: `TagPill`, for a tag cloud the user builds** (owner, 2026-09-18 — the
+vacancy map's personal qualities, after the "Your business profile" reference). A **2px outline,
+white fill, the word in the outline's colour**, 14px semibold, 36px tall: `teal` when chosen,
+`ink` (Salt-1000) when not, and the cloud ends in its own **"Add +"** tag rather than a button in
+the card's head. It is heavier than a `Pill` on purpose — it is something being edited, not a
+state being reported. Don't use it for a status, and don't add a third tone.
+
 Two rules that are the whole point:
 
 - **The outline carries the meaning, not the fill and not the type.** A row of pills then reads as
@@ -505,8 +515,8 @@ same card on both surfaces: web `src/components/spira/Notice.tsx` (`NoticeCard`,
 `src/components/ui/sonner.tsx` reads the same table), Android `ui/components/SpiraNotice.kt`
 (`SpiraNoticeCard`, drawn by `SpiraToast` and `SpiraInlineBanner`).
 
-- a **1px border in the kind's colour** over a **very pale tint from the same family**, an **8px
-  radius**, and the shadow `0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)`;
+- a **1px border in the kind's colour** over a **very pale tint from the same family**, a **4px
+  radius** (3g; it was 8px), and the shadow `0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)`;
 - a **filled semantic glyph** on the left **in the border's colour**, aligned to the message's
   **first line** (not centred against a message that wraps):
 
@@ -597,7 +607,7 @@ The parts, and what each is made of:
 
 | Part | Web | Android |
 |---|---|---|
-| **Bottom drawer** | `DrawerContent` (`src/components/ui/drawer.tsx`): pinned to the bottom edge, full width, top corners **`rounded-t-xl` (12px)**, white, `overflow-hidden`, **no border**, **no grab handle**. Height is the caller's: `92vh` for the create forms, `max-h-[92vh]` for the filter panel, `100svh` + `rounded-none` for the full-screen note editor | `ModalBottomSheet`: `containerColor = Color.White`, **`dragHandle = null`**, `shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg)` (**12dp**), `skipPartiallyExpanded = true` |
+| **Bottom drawer** | `DrawerContent` (`src/components/ui/drawer.tsx`): pinned to the bottom edge, full width, top corners **`rounded-t-xl` (4px since 3g; was 12px)**, white, `overflow-hidden`, **no border**, **no grab handle**. Height is the caller's: `92vh` for the create forms, `max-h-[92vh]` for the filter panel, `100svh` + `rounded-none` for the full-screen note editor | `ModalBottomSheet`: `containerColor = Color.White`, **`dragHandle = null`**, `shape = RoundedCornerShape(topStart = SpiraRadii.lg, topEnd = SpiraRadii.lg)` (**12dp**), `skipPartiallyExpanded = true` |
 | **Side panel** | `SheetContent side="right"` — `p-0 flex flex-col bg-white`, **`closeButton={false}`**, `sm:max-w-[420px]` for the filter panel, `sm:max-w-lg` / `xl` for the forms | — (phone only) |
 | **Head** | `SheetHead` (`src/components/spira/SheetHead.tsx`) | `SpiraSheetHead` (`ui/components/SpiraSheetHead.kt`) |
 | **Body** | its own scroller — `px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0` | its own `verticalScroll` — `padding(horizontal = 20.dp, vertical = 16.dp)`, `spacedBy(16.dp)` |
@@ -987,6 +997,97 @@ more.** They used to be one — `installDebug -PspiraApiBaseUrl=…` — and the
 `BuildConfig` at assemble time, so distributing after a local run sent the owner a build pointing
 at `10.0.2.2`. `distributeDebug` now **fails** if that flag is set at all.
 
+#### 3g. Corner radius — 4px, nearly square (hard standard, owner 2026-09-17)
+
+**Buttons and containers — cards, sheets, dialogs, menus, notices, toasts, inputs, chips — have a
+4px radius.** The app had drifted into generously rounded corners (6, 8, 9, 10, 12, 14, 18, 22px
+side by side) and the owner's references are nearly square: "почти квадратные".
+
+**What stays round, and must never be squared:** anything that is `rounded-full` — **pills**
+(see 3c, including the vacancy map's Cover letter / Profile tags and its personal-qualities
+cloud), avatars, status dots, and the **round + button** (the dashboard's FAB).
+
+- **Web — the scale is one value.** `src/styles.css` sets `--radius: 0.25rem` and resolves every
+  step, `--radius-sm` to `--radius-4xl`, to it, so `rounded-md` and `rounded-2xl` cannot drift
+  apart again. Write `rounded-md` (or any step) for a container; a hardcoded `rounded-[Npx]` above
+  4 is a defect. Only `rounded-full` and `rounded-xs` differ.
+- **Android — not swept yet.** `SpiraRadii` still carries the old 8/12dp values. When Android is
+  next touched for design work, it moves to the same 4dp; until then, the measurements quoted
+  for Android elsewhere in this section are what it has, not what it should have.
+- The older specs in this section that quote a web radius (sheets' `rounded-t-xl`, the menu's
+  `rounded-md`, the notice's 8px, the proposal cards' `rounded-[14px]`) now all render at 4px.
+
+#### 3h. A modal is never the width of a phone (hard standard, owner 2026-09-18)
+
+**A centred modal — a confirm, a comment thread, any `Dialog` / `AlertDialog` — keeps a 16px margin
+to the screen on both sides on a phone, and its buttons never leave the card.** This was shipped
+wrong more than once: the vacancy map's comment modal ran edge to edge, and "Yes, save as a
+resource" ran past the right edge of its card. The reference is the delete-goal / delete-target
+confirm (`ConfirmDialog.tsx`).
+
+| | Value |
+|---|---|
+| Width | `w-[calc(100%-2rem)]` — 16px each side — up to the modal's own `max-w-*` |
+| Corners / fill | 4px (3g), white, no hairline, a soft shadow |
+| Head | the title on the **left**, the X top right |
+| Fields | a 13px semibold label over each; the field is a warm pale-grey well (Salt-300 `#F4F4F3`) with **no frame, only a hairline under it** (neutral-700 `#ABABAB`, Kale while focused), 13px type, near-square corners, two lines tall at rest — the comment modal's `FIELD` |
+| Foot | the buttons **bottom right**: quiet outline first, filled Kale (or red for a delete) last |
+| Long labels | each button may shrink and wrap its own words (`min-w-0 whitespace-normal h-auto`); on a phone the two share the row equally |
+
+- **The base components enforce the width**: `src/components/ui/dialog.tsx` and `alert-dialog.tsx`
+  default to `w-[calc(100%-2rem)]`, not `w-full`. Don't pass `w-full` over it.
+- **A sheet is not a modal.** A bottom drawer (3e) is full width on purpose; this rule is for the
+  centred card.
+
+#### 3i. A resource opens under ONE head (hard spec, owner 2026-09-20 — the controls revised 2026-09-24)
+
+Every resource — a note, a link, a file, an email, a vacancy map — opens under the same band, on
+both surfaces. The web has one component for it, **`src/components/spira/ResourceHead.tsx`**
+(`ResourceHead`), which is the twin of Android's **`ResourceTopBar`** (`GoalWorkspaceChrome.kt`);
+when they disagree the fix goes in whichever has drifted, never in a fourth copy.
+
+| Part | What it is |
+|---|---|
+| Left | a **chevron in a solid white disc**, 36px, teal glyph — the Android `HeaderCircleButton`. **Only when the panel fills the screen**; over a page there is nothing on the left at all |
+| Middle | the resource's name, edited in place where it is editable, **on one line, scrolling if it does not fit** |
+| Right | **on a laptop, one segmented control** holding every action and, last, the **X that closes the panel**; **on a phone, one kebab in a white disc** holding the actions, worded — and no X, because the chevron is already there |
+
+- **The disc on the left is the full-screen state's alone** (owner, 2026-09-24). It used to be
+  drawn at every width, as a chevron full screen and **a cross in a circle over a page** — and a
+  cross in a circle says nothing about where it leads. Full screen the chevron has something to
+  promise (back to the goal); over a page it has not, so the way out moves to the right with the
+  actions. The two therefore appear together only in the full-screen state, where they say
+  different things: "back to what is behind this" and "shut this".
+- **The right-hand actions are ONE segmented control, not loose glyphs on the teal** (owner,
+  2026-09-24, from her reference):
+
+  | | Value |
+  |---|---|
+  | Group | white, 4px radius (3g), a **1px `#ABABAB`** border, the buttons divided by that same hairline |
+  | Button at rest | white fill, **`#6C6C72`** mark |
+  | Hover / focus | **filled Kale-500, white mark** — hovering previews what choosing looks like |
+
+  The border colour is the one measurement in it: it has to show against **both** the Kale band
+  outside the group and the white buttons inside, so it is `neutral-700`. A lighter grey vanished
+  into the buttons; a darker one drew a black frame on the band.
+- **The X is not one of the caller's actions.** `ResourceHead` adds it itself, always last, so no
+  resource can forget to offer a way out or word it differently. Its accessible name is
+  **"Close"**, and the chevron's is **"Back"**.
+- (The fullscreen image overlay's corner X is not this head and stays.)
+- **One action, described once, rendered twice.** A `ResourceHeadAction` carries its label, glyph
+  and handler, and the head draws it as a button or as a menu row — so the phone and the laptop
+  cannot end up offering different things. An action with `items` is a menu on both.
+- **A name too long for the head scrolls, it is never simply cut.** `MarqueeText` measures the
+  overflow and walks the text exactly that far and back, resting at each end (the
+  `resource-title-marquee` keyframes in `src/styles.css`). Two things it must keep:
+  - it holds the text and **everything inside it** to one line (`[&_*]:whitespace-nowrap`) —
+    `InlineText` sets `whitespace-pre-wrap` on its own display span, so without that a long name
+    just wrapped to three lines and there was nothing left to scroll;
+  - it **stops while the field has the caret** (`.marquee:focus-within`) — a name sliding under
+    the finger cannot be edited.
+- `e2e/image.spec.ts` and `e2e/pdf.spec.ts` press the way out by its accessible name: **"Close"**
+  at panel width and **"Back"** full screen (it was "Close preview", then "Back" at both).
+
 #### 4. Verify UI changes visually before shipping
 
 Existence-only assertions lie: a drawer once rendered with half its content pushed off-screen
@@ -1038,7 +1139,7 @@ The measurements, taken from the web component:
 
 | | Value | Web equivalent |
 |---|---|---|
-| Corner radius | **8dp** | `rounded-md` (6px) |
+| Corner radius | **8dp** (to become 4dp — see 3g) | `rounded-md` (4px since 3g) |
 | Container padding | **4dp** | `p-1` |
 | Row padding | **10dp** horizontal, **9dp** vertical | `px-2 py-1.5` |
 | Row corner (hover/press) | **6dp** | `rounded-sm` |
@@ -1478,7 +1579,7 @@ of them read to the owner as a redesign nobody asked for (2026-08-14):
   field), with a rule above the footer.
 
 The web's class values are copied into the Kotlin as the measurements to match — card
-`rounded-[14px] p-4`, buttons `rounded-[9px]`, headline 17sp serif, detail 13.5sp at 60% ink. Read
+`rounded-[4px] p-4`, buttons `rounded-[4px]` (both 14px / 9px before 3g), headline 17sp serif, detail 13.5sp at 60% ink. Read
 them from `AiPanel.tsx` before changing anything here.
 
 **Two rules about ending a session, because both were learned by losing whole sessions** (owner,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
   FileWarning,
@@ -11,6 +11,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -33,7 +34,7 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
  * RELATIVE to the container (so they always fill it — never a thin strip when the mobile
  * drawer hasn't finished laying out) and can be zoomed with the toolbar.
  */
-export function PdfViewer({
+function PdfCanvasViewer({
   dataUrl,
   title,
 }: {
@@ -212,5 +213,71 @@ export function PdfViewer({
         aria-label={title}
       />
     </div>
+  );
+}
+
+/**
+ * The browser's own PDF viewer, on a blob URL: search, text selection, page thumbnails, page
+ * jump, print, rotate and links. This is what the web preview was until 2026-07-25, when it was
+ * replaced everywhere by the PDF.js canvas above to fix blank previews on phones — which left the
+ * laptop with nothing but zoom (owner, 2026-09-15). Phones still cannot embed a PDF in an iframe,
+ * so they keep the canvas; this is for everything wider.
+ */
+function PdfFrameViewer({
+  dataUrl,
+  title,
+}: {
+  dataUrl: string;
+  title: string;
+}) {
+  const blobUrl = useMemo(() => {
+    try {
+      const bytes = dataUrlToUint8Array(dataUrl);
+      const buffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buffer).set(bytes);
+      return URL.createObjectURL(
+        new Blob([buffer], { type: "application/pdf" }),
+      );
+    } catch {
+      return null;
+    }
+  }, [dataUrl]);
+
+  useEffect(
+    () => () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    },
+    [blobUrl],
+  );
+
+  // A PDF whose bytes cannot be decoded still gets the canvas viewer's error state.
+  if (!blobUrl) return <PdfCanvasViewer dataUrl={dataUrl} title={title} />;
+  return (
+    <div className="relative min-h-[60vh] flex-1">
+      <iframe
+        src={blobUrl}
+        title={title}
+        className="absolute inset-0 h-full w-full border-0 bg-white"
+      />
+    </div>
+  );
+}
+
+/**
+ * A PDF resource's preview: the browser's full viewer where it can embed one (laptops and
+ * tablets), the PDF.js canvas where it cannot (phones).
+ */
+export function PdfViewer({
+  dataUrl,
+  title,
+}: {
+  dataUrl: string;
+  title: string;
+}) {
+  const isMobile = useIsMobile();
+  return isMobile ? (
+    <PdfCanvasViewer dataUrl={dataUrl} title={title} />
+  ) : (
+    <PdfFrameViewer dataUrl={dataUrl} title={title} />
   );
 }

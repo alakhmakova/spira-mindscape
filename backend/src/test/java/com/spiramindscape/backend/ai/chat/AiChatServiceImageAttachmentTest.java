@@ -42,8 +42,8 @@ import static org.mockito.Mockito.when;
 /**
  * An attached image must never reach the model as a silent gap (BUG-027).
  *
- * <p>Most Mistral chat models — including the default {@code mistral-large-latest} — are
- * text-only. The provider drops the picture, the turn still says one was attached, and the
+ * <p>Most Mistral chat models — {@code mistral-large-latest} among them — are text-only. The
+ * provider drops the picture, the turn still says one was attached, and the
  * model answers as if it had looked at it. So: a blind model gets the OCR text, or an explicit
  * note that it was shown nothing; it never gets the image.
  */
@@ -65,6 +65,7 @@ class AiChatServiceImageAttachmentTest {
     @Mock private MistralOcrService mistralOcr;
     @Mock private CohereVisionReader cohereVision;
     @Mock private GoalService goalService;
+    @Mock private com.spiramindscape.backend.ai.cv.CvApplicationService cvApplications;
     @Mock private LlmProvider provider;
 
     private AiChatService service;
@@ -73,7 +74,7 @@ class AiChatServiceImageAttachmentTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService, cvApplications);
         lenient().when(safety.classify(anyString())).thenReturn(SafetyVerdict.ALLOWED);
         lenient().when(safety.referInstruction(any())).thenReturn("");
         // The chat resolves the request's goalId to an OWNED id before using it

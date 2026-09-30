@@ -42,6 +42,20 @@ type Mutation {
 
     createResource(goalId: ID!, input: CreateResourceInput!): Resource!
     updateResource(id: ID!, input: UpdateResourceInput!): Resource!
+    """
+    Edits a note by section without replacing what is already there. mode is append (default),
+    append_to_section, merge_sections, replace_section or replace_all; the two replace modes need
+    expectedUpdatedAt and fail with classification NOTE_CHANGED when the note changed since.
+    """
+    editNote(id: ID!, input: EditNoteInput!): Resource!
+    """
+    Writes named fields of a vacancy map, leaving every other field as it was. Each patch carries a
+    JSON Pointer path (/facts/location, /skills/-, /requirements/2/important) and the new value as
+    JSON; a null value removes the field. This is how a map is written — never by sending the whole
+    document — so the user and the CV writer can fill in different fields without either losing the
+    other's work.
+    """
+    patchVacancyMap(id: ID!, patches: [MapPatchInput!]!): Resource!
     deleteResource(id: ID!): Boolean!
 }
 
@@ -135,6 +149,10 @@ type Resource {
     email: String
     phone: String
     driveWebViewLink: String
+    # vacancy only: the map document as JSON. Null on every LIST read (resourcesByGoal, the goals
+    # graph) — like dataUrl it is fetched on demand through resourceById when its page opens, so a
+    # goals fetch never carries every map. See ResourceView.
+    mapData: String
     createdAt: String!
     updatedAt: String!
 }
@@ -206,6 +224,24 @@ input CreateResourceInput {
     role: String
     email: String
     phone: String
+    # vacancy only. Normally omitted — a map is created empty and filled through patchVacancyMap.
+    # Sent whole only when a map is DUPLICATED, where the document is the thing being copied.
+    mapData: String
+}
+
+input MapPatchInput {
+    "JSON Pointer to the field: /facts/location, /skills/-, /requirements/2/companies/0/text"
+    path: String!
+    "The new value as JSON. Null REMOVES the field — how a skill or requirement is deleted."
+    value: String
+}
+
+input EditNoteInput {
+    mode: String
+    section: String
+    content: String!
+    title: String
+    expectedUpdatedAt: String
 }
 
 input UpdateResourceInput {
@@ -218,5 +254,7 @@ input UpdateResourceInput {
     role: String
     email: String
     phone: String
+    # vacancy only, and rarely — replacing a map wholesale is what patchVacancyMap exists to avoid.
+    mapData: String
 }
 

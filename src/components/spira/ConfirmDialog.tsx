@@ -31,6 +31,7 @@ export function ConfirmDialog({
   cancelLabel = "No, go back",
   tone = "destructive",
   onConfirm,
+  onCancel,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -42,6 +43,15 @@ export function ConfirmDialog({
   /** "destructive" (default) = red confirm; "primary" = teal, for a constructive action. */
   tone?: "destructive" | "primary";
   onConfirm: () => void;
+  /**
+   * The cancel button did something other than close.
+   *
+   * <p>Optional, and normally absent — for most dialogs "no" means "nothing happens", and
+   * `onOpenChange(false)` is the whole of it. It exists for the case where BOTH answers are
+   * actions: "continue the application you already have" against "start a second one".
+   * Without it a cancel label can promise something the button does not do.
+   */
+  onCancel?: () => void;
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -63,13 +73,19 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
+        {/* **The buttons never leave the card** (owner, 2026-09-18): on a phone two long labels
+            ("Yes, save as a resource") ran past the right edge. Each button may shrink and wrap
+            its own words; on a phone they share the row equally. */}
         <AlertDialogFooter className="mt-6 gap-3 sm:gap-3 flex-row justify-end">
-          <AlertDialogCancel className="mt-0 h-10 px-5 rounded-md border border-border/80 bg-surface text-foreground font-semibold hover:bg-secondary">
+          <AlertDialogCancel
+            onClick={onCancel}
+            className="mt-0 h-auto min-h-10 min-w-0 flex-1 whitespace-normal px-4 py-2 sm:flex-none sm:px-5 rounded-md border border-border/80 bg-surface text-foreground font-semibold hover:bg-secondary"
+          >
             {cancelLabel}
           </AlertDialogCancel>
           <AlertDialogAction
             className={cn(
-              "h-10 px-5 rounded-md text-white font-semibold",
+              "h-auto min-h-10 min-w-0 flex-1 whitespace-normal px-4 py-2 sm:flex-none sm:px-5 rounded-md text-white font-semibold",
               tone === "primary"
                 ? "bg-primary hover:bg-primary/90"
                 : "bg-[#C53336] hover:bg-[#A31821]",

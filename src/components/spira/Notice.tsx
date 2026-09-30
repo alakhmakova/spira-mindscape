@@ -57,7 +57,7 @@ export const NOTICE_KINDS = {
 >;
 
 /** The shape's radius and shadow, shared with the toast. */
-export const NOTICE_RADIUS = "8px";
+export const NOTICE_RADIUS = "4px";
 export const NOTICE_SHADOW =
   "0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)";
 

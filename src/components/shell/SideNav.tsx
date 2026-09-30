@@ -37,14 +37,12 @@ import { cn } from "@/lib/utils";
  * view tab) and **Knowledge** (Android's is an unwired placeholder, and copying dead rows onto
  * a second surface would just double the dead ends).
  *
- * **Collapses to an icon-only rail while the coach is open** (owner, 2026-09-03, reverting the
- * coach to the LEFT column: "боковое меню сворачивается до полосы с иконками" — "the side menu
- * collapses to a strip of icons"). This is what the 2026-08-23 move to the right was avoiding —
- * "the AI panel used to be the left column, which left nowhere for standing navigation to sit
- * without the two shoving each other" (`AppShell.tsx`) — solved properly this time instead of by
- * relocating the panel: the destinations stay exactly the same, sub-item lists (which need room
- * for text) fold into their parent row, and every row keeps a `title` tooltip so nothing is lost,
- * only narrowed.
+ * **Hidden while the coach is open — no icon rail** (owner, 2026-09-18). The coach sits in the
+ * left column beside it (owner, 2026-09-03), and the two cannot both be wide. The narrow icon
+ * rail that used to stand in for the menu was too wide to be worth its room, so the menu now
+ * disappears entirely and a menu glyph appears in the header, right of the wordmark
+ * (`AppShell`). Pressing it brings the menu back and folds the coach away to a glyph of its own
+ * right of "ai coach"; that glyph swaps them back. Nothing overlays anything.
  */
 export function SideNav({
   path,
@@ -59,21 +57,31 @@ export function SideNav({
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
   const navigate = useNavigate();
-  // The coach sits directly to this rail's right (owner, 2026-09-03) — the two would otherwise
-  // fight for the same edge of the screen, so the rail narrows to icons while it's open instead.
-  const collapsed = useAi((s) => s.isOpen);
+  // Open beside the coach only when the coach is folded away — see the doc comment above.
+  const aiOpen = useAi((s) => s.isOpen);
+  const aiMinimized = useAi((s) => s.minimized);
+  const hidden = aiOpen && !aiMinimized;
   const goToAbout = () =>
     void navigate({ to: "/settings", search: { tab: "about" } });
+
+  if (hidden) return null;
 
   return (
     <aside
       aria-label="Main"
       className={cn(
-        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r hairline bg-card transition-[width] duration-150 lg:flex",
-        collapsed ? "w-[64px]" : "w-[244px]",
+        // z-[36]: above the resource preview's backdrop (z-[35]), below the chat (z-40) and the
+        // preview itself (z-50) — so the menu stays usable while a note is open (owner, 2026-09-15).
+        // **Under the header, not beside it** (owner, 2026-09-17): the 64px header runs the full
+        // width, so the menu starts below it and fills the rest of the viewport.
+        // **A tint of its own** — neutral-150, a step off the white page, so the menu reads as
+        // chrome beside the content rather than as a column of it.
+        "sticky top-16 z-[36] hidden h-[calc(100vh-4rem)] w-[244px] shrink-0 flex-col border-r hairline bg-sidebar lg:flex",
       )}
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4">
+      {/* The scroller stops at the account block: Sign out is never scrolled under, and the
+          scrollbar is square like the rest of the chrome (`scrollbar-square`). */}
+      <div className="scrollbar-square flex min-h-0 flex-1 flex-col overflow-y-auto py-4">
         <nav>
           {/* Home is the All-goals page: it is only "where you are" when no goal is open. */}
           <NavRow
@@ -81,56 +89,39 @@ export function SideNav({
             icon={<Home className="h-[18px] w-[18px]" />}
             label="Home"
             active={path === "/" && !goalId}
-            collapsed={collapsed}
           />
+          {/* Home stands apart from what follows: it is the way out, the rest are places. */}
+          <div aria-hidden="true" className="h-4" />
 
-          {goalId &&
-            goalTitle &&
-            (collapsed ? (
-              // The rubric itself has no click target on Android either (see the doc comment
-              // above) — a heading over the goal's places, not a place you can stand in.
-              <CollapsedRow
-                icon={<Trophy className="h-[18px] w-[18px]" />}
-                title={goalTitle}
-              />
-            ) : (
-              <NavSection
-                title={goalTitle}
-                icon={<Trophy className="h-[18px] w-[18px]" />}
-                items={GOAL_SECTIONS.map((s) => ({
-                  label: s.label,
-                  onClick: () => {
-                    const el = document.getElementById(s.id);
-                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  },
-                }))}
-              />
-            ))}
-
-          {collapsed ? (
-            // Both rows lead to the same page, so the collapsed rail just needs the one icon.
-            <CollapsedRow
-              icon={<CircleQuestion className="h-[18px] w-[18px]" />}
-              title="About Spira"
-              onClick={goToAbout}
-            />
-          ) : (
+          {goalId && goalTitle && (
             <NavSection
-              title="About Spira"
-              icon={<CircleQuestion className="h-[18px] w-[18px]" />}
-              // Both rows lead to the same page — they are two of its sections, not two
-              // destinations. Android's drawer offers exactly this pair.
-              items={["How to use", "What is GROW"].map((label) => ({
-                label,
-                onClick: goToAbout,
+              title={goalTitle}
+              icon={<Trophy className="h-[18px] w-[18px]" />}
+              items={GOAL_SECTIONS.map((s) => ({
+                label: s.label,
+                onClick: () => {
+                  const el = document.getElementById(s.id);
+                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                },
               }))}
             />
           )}
+
+          <NavSection
+            title="About Spira"
+            icon={<CircleQuestion className="h-[18px] w-[18px]" />}
+            // Both rows lead to the same page — they are two of its sections, not two
+            // destinations. Android's drawer offers exactly this pair.
+            items={["How to use", "What is GROW"].map((label) => ({
+              label,
+              onClick: goToAbout,
+            }))}
+          />
         </nav>
       </div>
 
       <div className="border-t hairline py-3">
-        {!collapsed && user?.email && (
+        {user?.email && (
           <p className="truncate px-5 pb-1 text-xs text-muted-foreground">
             {user.email}
           </p>
@@ -141,14 +132,10 @@ export function SideNav({
             await logout();
             void navigate({ to: "/login" });
           }}
-          title="Sign out"
-          className={cn(
-            "flex w-full items-center text-left text-sm text-foreground transition-colors hover:bg-muted",
-            collapsed ? "justify-center py-2.5" : "gap-3 px-5 py-2.5",
-          )}
+          className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
         >
           <LogOut className="h-[18px] w-[18px] shrink-0" />
-          {!collapsed && "Sign out"}
+          Sign out
         </button>
       </div>
     </aside>
@@ -168,35 +155,6 @@ const GOAL_SECTIONS = [
   { id: "options-section", label: "Options" },
   { id: "targets-section", label: "Will do" },
 ];
-
-/** A single icon-only row for the collapsed rail — a rubric (no `onClick`) or a merged
- *  destination (one `onClick` standing in for a whole `NavSection`'s worth of sub-items). */
-function CollapsedRow({
-  icon,
-  title,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  onClick?: () => void;
-}) {
-  const shared =
-    "flex w-full items-center justify-center px-0 py-2.5 text-foreground";
-  return onClick ? (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(shared, "transition-colors hover:bg-muted")}
-    >
-      {icon}
-    </button>
-  ) : (
-    <div title={title} className={shared}>
-      {icon}
-    </div>
-  );
-}
 
 function NavSection({
   title,
@@ -249,13 +207,11 @@ function NavRow({
   icon,
   label,
   active,
-  collapsed,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
-  collapsed?: boolean;
 }) {
   return (
     <Link to={to} className="relative flex items-center" title={label}>
@@ -268,15 +224,14 @@ function NavRow({
       )}
       <span
         className={cn(
-          "flex w-full items-center text-sm transition-colors",
-          collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-5 py-2.5",
+          "flex w-full items-center gap-3 px-5 py-2.5 text-sm transition-colors",
           active
             ? "font-semibold text-primary"
             : "text-foreground hover:bg-muted",
         )}
       >
         <span className="shrink-0">{icon}</span>
-        {!collapsed && label}
+        {label}
       </span>
     </Link>
   );

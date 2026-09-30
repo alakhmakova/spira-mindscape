@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Trash2,
+  CopyPlus,
   Download,
   Copy,
   Check,
@@ -27,6 +28,10 @@ import {
   ToolbarSheet,
 } from "@/components/spira/ListToolbar";
 import { Section } from "@/components/spira/Section";
+import {
+  ResourceFullScreen,
+  ResourceHead,
+} from "@/components/spira/ResourceHead";
 import {
   useListActive,
   useListLocked,
@@ -77,6 +82,7 @@ import {
   syncGoogleDoc,
 } from "@/components/spira/note-export";
 import { toast } from "sonner";
+import { VacancyMapPanel } from "@/components/spira/VacancyMapPage";
 
 const typeMeta = resourceTypeMeta;
 
@@ -430,6 +436,7 @@ export function ResourcesList({
   typeFilter?: ResType;
 }) {
   const removeResource = useSpira((s) => s.removeResource);
+  const duplicateResource = useSpira((s) => s.duplicateResource);
   const loadResourceFile = useSpira((s) => s.loadResourceFile);
   const [previewId, setPreviewId] = useState<string | null>(null);
   // A resource that is attached inside other elements can't just vanish — confirm first, then
@@ -488,6 +495,12 @@ export function ResourcesList({
               // Always ask. Deleting an UNATTACHED resource used to happen on the spot, with no
               // confirmation at all — the one case where the loss is silent and irreversible.
               onRemove={() => setPendingDelete(r)}
+              onEdit={r.type === "link" ? () => setPreviewId(r.id) : undefined}
+              onDuplicate={
+                r.type === "vacancy"
+                  ? () => void duplicateResource(goal.id, r.id)
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -497,6 +510,7 @@ export function ResourcesList({
         goalId={goal.id}
         resourceId={previewId}
         onClose={() => setPreviewId(null)}
+        onOpenResource={setPreviewId}
       />
 
       <ConfirmDialog
@@ -634,6 +648,7 @@ export function InlineResourcesProvider({
         goalId={goal.id}
         resourceId={previewId}
         onClose={() => setPreviewId(null)}
+        onOpenResource={setPreviewId}
       />
     </InlineResourcesContextProvider>
   );
@@ -645,11 +660,17 @@ function ResourceCard({
   resource: r,
   onOpen,
   onRemove,
+  onDuplicate,
+  onEdit,
   loadFile,
 }: {
   resource: Resource;
   onOpen: () => void;
   onRemove: () => void;
+  /** A link opens its address on click, so editing it needs a button of its own. */
+  onEdit?: () => void;
+  /** Only the vacancy map offers it — "copy" of a map she has filled is a starting point. */
+  onDuplicate?: () => void;
   loadFile: () => Promise<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -723,6 +744,14 @@ function ResourceCard({
       border: "border-[#E6DFF9]",
       icon: "text-[#6E56CF]",
     },
+    // Neutral grey (neutral-200 under neutral-1400) — the owner's pick (2026-09-18) after the
+    // warning ramp's light steps turned out to be the file's own cream. No other type is grey.
+    vacancy: {
+      bg: "bg-[#F3F3F3]",
+      text: "text-[#535353]",
+      border: "border-[#E5E5E5]",
+      icon: "text-[#535353]",
+    },
   };
 
   const colors = typeColors[r.type] || typeColors.note;
@@ -730,7 +759,9 @@ function ResourceCard({
   return (
     <div
       className={cn(
-        "group inline-flex items-center rounded-lg border bg-white transition-all duration-200 overflow-hidden",
+        // `relative` + a raised z on hover: the full name is drawn OVER the neighbours rather
+        // than pushing them, so nothing reflows — see the name below.
+        "group relative inline-flex items-center rounded-lg border bg-white transition-all duration-200 hover:z-20",
         expanded
           ? "border-border/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)]"
           : "border-border/40 hover:border-border/60 hover:shadow-[0_1px_6px_-1px_rgba(0,0,0,0.04)]",
@@ -748,8 +779,29 @@ function ResourceCard({
         >
           <Icon className={cn("h-3 w-3", colors.icon)} />
         </div>
-        <span className="text-sm font-medium text-foreground whitespace-nowrap max-w-[140px] truncate">
-          {resourceDisplayName(r)}
+        {/* **On hover the whole name shows** (owner, 2026-09-18) rather than a tooltip — but it
+            is drawn OVER the row, not laid out in it (owner, 2026-09-23).
+
+            Growing the card in flow pushed the cards after it along, and in a wrapping row that
+            moved the hovered card itself onto another line: the pointer came off it, the card
+            shrank back, the pointer was over it again — a loop that made the row shake and ate
+            the click, so the resource could not be opened at all. A long name (a CV note the
+            chat had just written) made it certain.
+
+            So the truncated name keeps its place in the layout, and the full one is a second
+            copy laid over it: same type, same background, starting at the same x. */}
+        <span className="relative">
+          <span className="block max-w-[140px] truncate whitespace-nowrap text-sm font-medium text-foreground">
+            {resourceDisplayName(r)}
+          </span>
+          {/* The copy is decoration: the name is already in the row above it, and without this
+              the card announces itself twice and every query for the name matches two nodes. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 hidden max-w-[480px] items-center truncate whitespace-nowrap rounded-r-md bg-white pr-1 text-sm font-medium text-foreground group-hover:flex"
+          >
+            {resourceDisplayName(r)}
+          </span>
         </span>
       </button>
 
@@ -759,6 +811,11 @@ function ResourceCard({
             e.stopPropagation();
             setExpanded(true);
           }}
+          // An icon-only button has no words of its own, so it needs a name given to it: axe
+          // reported this one as `button-name`, critical, on every screen that lists resources
+          // (BUG-023). The name says what it reveals, not what it looks like.
+          aria-label={`Actions for ${resourceDisplayName(r)}`}
+          title="Actions"
           className="flex h-full items-center justify-center px-1.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground hover:bg-secondary/30"
         >
           <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
@@ -770,6 +827,8 @@ function ResourceCard({
               e.stopPropagation();
               setExpanded(false);
             }}
+            aria-label="Hide the actions"
+            title="Hide the actions"
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-secondary/50"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
@@ -790,6 +849,19 @@ function ResourceCard({
             </button>
           ) : (
             <>
+              {onEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
+                  title="Edit"
+                  aria-label="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
               {canCopy && (
                 <button
                   onClick={handleCopy}
@@ -815,6 +887,19 @@ function ResourceCard({
             </>
           )}
 
+          {onDuplicate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
+              className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:bg-secondary/50 hover:text-primary transition-colors"
+              title="Duplicate"
+              aria-label="Duplicate"
+            >
+              <CopyPlus className="h-3 w-3" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -894,6 +979,7 @@ function PreviewBody({
   title,
   isMobile,
   onClose,
+  onOpenResource,
 }: {
   resource: Resource;
   goalId: string;
@@ -905,6 +991,7 @@ function PreviewBody({
   title: string;
   isMobile: boolean;
   onClose: () => void;
+  onOpenResource?: (id: string) => void;
 }) {
   const { copied, run } = useCopied();
   const [isEditingEmail, setIsEditingEmail] = useState(false);
@@ -927,6 +1014,18 @@ function PreviewBody({
         goalId={goalId}
         initialResource={resource}
         onDone={() => setIsEditingEmail(false)}
+      />
+    );
+  }
+
+  // A vacancy map draws its own head and body — it is the same side panel, with more in it.
+  if (resource.type === "vacancy") {
+    return (
+      <VacancyMapPanel
+        goalId={goalId}
+        resourceId={resource.id}
+        onClose={onClose}
+        onOpenResource={onOpenResource}
       />
     );
   }
@@ -974,168 +1073,155 @@ function PreviewBody({
 
   return (
     <>
-      <div className="px-7 py-5 flex items-center justify-between sticky top-0 z-10 bg-primary text-white">
-        <div className="flex-1 min-w-0 pr-2">
-          {resource.type === "note" ? (
-            <AutoTextarea
-              required
-              requiredMessage="Note title is required"
-              maxLength={FIELD_LIMITS.resourceLabel}
-              maxLengthLabel="Note title"
-              value={resource.title}
-              onChange={(v) =>
-                updateResource(goalId, resource.id, { title: v })
-              }
-              className="font-display text-2xl w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/50"
-              placeholder="Note title"
-            />
-          ) : (
-            <h2
-              className="font-sans font-bold text-lg truncate pr-4 !text-white"
-              style={{ color: "white" }}
-            >
-              {title}
-            </h2>
-          )}
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {canCopy && (
-            <button
-              onClick={handleCopy}
-              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-              aria-label="Copy"
-              title={copied ? "Copied!" : copyLabel}
-            >
-              {copied ? (
-                <Check className="h-4 w-4 text-green-300" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </button>
-          )}
-          {resource.type === "note" ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-                  aria-label="Download"
-                  title="Download as…"
-                >
-                  <Download className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => downloadNoteTxt(resource.title, resource.body)}
-                >
-                  Plain text (.txt)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => downloadNoteDoc(resource.title, resource.body)}
-                >
-                  Word (.doc)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => printNotePdf(resource.title, resource.body)}
-                >
-                  PDF (Save as PDF)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={async () => {
-                    try {
-                      const link = await openInGoogleDocs(
-                        resource.id,
-                        resource.body,
-                        resource.title,
-                      );
-                      // Reflect the link locally so the menu immediately offers "Open" +
-                      // "Update" (the backend has stored it; this avoids a reload).
-                      if (link && link !== resource.driveWebViewLink) {
-                        updateResource(goalId, resource.id, {
-                          driveWebViewLink: link,
-                        });
-                      }
-                      toast.success(
-                        resource.driveWebViewLink
-                          ? "Opening in Google Docs"
-                          : "Created in Google Docs — opening it now",
-                      );
-                    } catch (e) {
-                      toast.error(
-                        e instanceof Error
-                          ? e.message
-                          : "Couldn't open the Google Doc",
-                      );
-                    }
-                  }}
-                >
-                  {resource.driveWebViewLink
-                    ? "Open in Google Docs"
-                    : "Create in Google Docs"}
-                </DropdownMenuItem>
-                {resource.driveWebViewLink && (
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        await syncGoogleDoc(
-                          resource.id,
-                          resource.body,
-                          resource.title,
-                        );
-                        toast.success("Google Doc updated from this note");
-                      } catch (e) {
-                        toast.error(
-                          e instanceof Error
-                            ? e.message
-                            : "Couldn't update the Google Doc",
-                        );
-                      }
-                    }}
-                  >
-                    Update Google Doc from note
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            canDownload && (
-              <button
-                onClick={handleDownload}
-                className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-                aria-label="Download"
-                title="Download"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )
-          )}
-          {resource.type === "email" && (
-            <button
-              onClick={() => setIsEditingEmail(true)}
-              className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-              aria-label="Edit"
-              title="Edit email"
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
-          )}
-          <div className="w-px h-4 bg-white/30 mx-1" />
-          <button
-            onClick={onClose}
-            className="h-8 w-8 grid place-items-center rounded-md text-white/90 hover:bg-white/20 hover:text-white transition-colors"
-            aria-label="Close preview"
-            title="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {/* One head for every resource (owner, 2026-09-20): the chevron replaces the close cross,
+          and the actions are icons on a laptop, a kebab on a phone. See `ResourceHead`. */}
+      <ResourceHead
+        title={title}
+        onBack={onClose}
+        backLabel="Back"
+        actions={[
+          {
+            key: "copy",
+            label: copied ? "Copied!" : copyLabel,
+            icon: copied ? (
+              <Check className="h-4 w-4 text-green-300" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            ),
+            onClick: canCopy ? handleCopy : undefined,
+          },
+          {
+            key: "download",
+            label: resource.type === "note" ? "Download as\u2026" : "Download",
+            icon: <Download className="h-4 w-4" />,
+            onClick:
+              resource.type !== "note" && canDownload
+                ? handleDownload
+                : undefined,
+            items:
+              resource.type === "note"
+                ? [
+                    {
+                      label: "Plain text (.txt)",
+                      onClick: () =>
+                        downloadNoteTxt(resource.title, resource.body),
+                    },
+                    {
+                      label: "Word (.doc)",
+                      onClick: () =>
+                        downloadNoteDoc(resource.title, resource.body),
+                    },
+                    {
+                      label: "PDF (Save as PDF)",
+                      onClick: () =>
+                        printNotePdf(resource.title, resource.body),
+                    },
+                    {
+                      label: resource.driveWebViewLink
+                        ? "Open in Google Docs"
+                        : "Create in Google Docs",
+                      onClick: () => {
+                        void (async () => {
+                          try {
+                            const link = await openInGoogleDocs(
+                              resource.id,
+                              resource.body,
+                              resource.title,
+                            );
+                            // Reflect the link locally so the menu immediately offers "Open" +
+                            // "Update" (the backend has stored it; this avoids a reload).
+                            if (link && link !== resource.driveWebViewLink) {
+                              updateResource(goalId, resource.id, {
+                                driveWebViewLink: link,
+                              });
+                            }
+                            toast.success(
+                              resource.driveWebViewLink
+                                ? "Opening in Google Docs"
+                                : "Created in Google Docs \u2014 opening it now",
+                            );
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : "Couldn't open the Google Doc",
+                            );
+                          }
+                        })();
+                      },
+                    },
+                    ...(resource.driveWebViewLink
+                      ? [
+                          {
+                            label: "Update Google Doc from note",
+                            onClick: () => {
+                              void (async () => {
+                                try {
+                                  await syncGoogleDoc(
+                                    resource.id,
+                                    resource.body,
+                                    resource.title,
+                                  );
+                                  toast.success(
+                                    "Google Doc updated from this note",
+                                  );
+                                } catch (e) {
+                                  toast.error(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "Couldn't update the Google Doc",
+                                  );
+                                }
+                              })();
+                            },
+                          },
+                        ]
+                      : []),
+                  ]
+                : undefined,
+          },
+          {
+            key: "edit",
+            label: "Edit email",
+            icon: <Pencil className="h-4 w-4" />,
+            onClick:
+              resource.type === "email"
+                ? () => setIsEditingEmail(true)
+                : undefined,
+          },
+        ]}
+      >
+        {resource.type === "link" ? (
+          // A link's name is optional — blank falls back to the address, as on its card.
+          <AutoTextarea
+            maxLength={FIELD_LIMITS.resourceLabel}
+            maxLengthLabel="Link title"
+            value={resource.title}
+            onChange={(v) => updateResource(goalId, resource.id, { title: v })}
+            className="font-sans text-lg font-bold w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/50"
+            placeholder={title}
+          />
+        ) : resource.type === "note" ? (
+          <AutoTextarea
+            required
+            requiredMessage="Note title is required"
+            maxLength={FIELD_LIMITS.resourceLabel}
+            maxLengthLabel="Note title"
+            value={resource.title}
+            onChange={(v) => updateResource(goalId, resource.id, { title: v })}
+            className="font-sans text-lg font-bold w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/50"
+            placeholder="Note title"
+          />
+        ) : undefined}
+      </ResourceHead>
       <div
         className={cn(
-          "px-7 py-6 overflow-y-auto flex-1 min-h-0",
+          "overflow-y-auto flex-1 min-h-0",
+          // A PDF's viewer fills the panel edge to edge — no white frame round the browser's
+          // own dark viewer (owner, 2026-09-18).
           resource.type === "file" && resource.mime === "application/pdf"
-            ? "flex flex-col gap-3 overflow-hidden"
-            : "flex flex-col",
+            ? "flex flex-col overflow-hidden"
+            : "px-7 py-6 flex flex-col",
         )}
       >
         {resource.type === "note" && (
@@ -1150,15 +1236,10 @@ function PreviewBody({
           </div>
         )}
         {resource.type === "link" && (
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 link-action text-sm font-semibold"
-          >
-            <OpenNewWindow className="h-4 w-4" />
-            {resource.url}
-          </a>
+          <LinkUrlEditor
+            url={resource.url}
+            onCommit={(url) => updateResource(goalId, resource.id, { url })}
+          />
         )}
         {resource.type === "file" && (
           <>
@@ -1205,6 +1286,72 @@ function PreviewBody({
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * A link's address, editable in place (owner, 2026-09-18 — a saved link could not be corrected at
+ * all). Commits on blur and Enter, only an http(s) address is accepted, and Escape or an invalid
+ * address goes back to what was saved.
+ */
+function LinkUrlEditor({
+  url,
+  onCommit,
+}: {
+  url: string;
+  onCommit: (url: string) => void;
+}) {
+  const [draft, setDraft] = useState(url);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setDraft(url), [url]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next === url) return setError(null);
+    if (!validResourceUrl(next)) {
+      setError("Enter a valid http or https URL.");
+      return;
+    }
+    setError(null);
+    onCommit(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        URL
+      </label>
+      <Input
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setError(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setDraft(url);
+            setError(null);
+          }
+        }}
+        inputMode="url"
+        aria-label="Link URL"
+        aria-invalid={!!error}
+      />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {isSafeHttpUrl(url) && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 link-action text-sm font-semibold"
+        >
+          <OpenNewWindow className="h-4 w-4" />
+          Open link
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -1343,14 +1490,17 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
 
 /* ── Preview panel ──────────────────────────────────── */
 
-function ResourcePreview({
+export function ResourcePreview({
   goalId,
   resourceId,
   onClose,
+  onOpenResource,
 }: {
   goalId: string;
   resourceId: string | null;
   onClose: () => void;
+  /** Switch the open panel to another resource of the goal (a map's Duplicate). */
+  onOpenResource?: (id: string) => void;
 }) {
   const updateResource = useSpira((s) => s.updateResource);
   const resource = useSpira((s) =>
@@ -1373,10 +1523,21 @@ function ResourcePreview({
       title={title}
       isMobile={isMobile}
       onClose={onClose}
+      onOpenResource={onOpenResource}
     />
   );
 
   if (isMobile) {
+    // A map is a working surface, not a glance — full screen on a phone, like a note.
+    if (resource?.type === "vacancy") {
+      return (
+        <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
+          <DrawerContent className="mt-0 flex h-[100dvh] max-h-[100dvh] flex-col rounded-none border-0 bg-surface px-0">
+            {Body}
+          </DrawerContent>
+        </Drawer>
+      );
+    }
     if (resource?.type === "note") {
       return (
         <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
@@ -1434,6 +1595,11 @@ function ResourcePreview({
         <SheetContent
           side="right"
           overlay={false}
+          // The head is the only way out of a resource (CLAUDE.md -> 3i), and a side panel never
+          // keeps the corner X besides (-> 3e). Radix draws one by default: invisible under the
+          // teal band, sitting on top of Delete and Duplicate, and named "Close" like the head's
+          // own control -- which is how an end-to-end test came to press it instead.
+          closeButton={false}
           onInteractOutside={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
           className="w-full sm:max-w-md p-0 flex flex-col bg-surface border-l hairline shadow-2xl"
@@ -1477,50 +1643,46 @@ function MobileNoteBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* A Kale header band, like the Android note editor's teal top bar — so the drawer isn't a
-          single white sheet. Everything on the band is white (brand rule: white copy on teal). */}
-      <div className="shrink-0 bg-primary px-5 pt-5 pb-3 text-white">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
-            Note
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-              aria-label="Copy as plain text"
-              title={copied ? "Copied!" : "Copy as plain text"}
-            >
-              {copied ? (
-                <Check className="h-4.5 w-4.5 text-white" />
-              ) : (
-                <Copy className="h-4.5 w-4.5" />
-              )}
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-                  aria-label="Download as…"
-                  title="Download as…"
-                >
-                  <Download className="h-4.5 w-4.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadNoteTxt(title, body)}>
-                  Plain text (.txt)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadNoteDoc(title, body)}>
-                  Word (.doc)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => printNotePdf(title, body)}>
-                  PDF (Save as PDF)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={async () => {
+      {/* The same head every other resource wears (owner, 2026-09-20) — a phone's note used to
+          have a band of its own, with a "Note" kicker and a close cross. */}
+      <ResourceHead
+        title={title}
+        onBack={onClose}
+        backLabel="Back"
+        actions={[
+          {
+            key: "copy",
+            label: copied ? "Copied!" : "Copy as plain text",
+            icon: copied ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            ),
+            onClick: handleCopy,
+          },
+          {
+            key: "download",
+            label: "Download as\u2026",
+            icon: <Download className="h-4 w-4" />,
+            items: [
+              {
+                label: "Plain text (.txt)",
+                onClick: () => downloadNoteTxt(title, body),
+              },
+              {
+                label: "Word (.doc)",
+                onClick: () => downloadNoteDoc(title, body),
+              },
+              {
+                label: "PDF (Save as PDF)",
+                onClick: () => printNotePdf(title, body),
+              },
+              {
+                label: driveWebViewLink
+                  ? "Open in Google Docs"
+                  : "Create in Google Docs",
+                onClick: () => {
+                  void (async () => {
                     try {
                       const link = await openInGoogleDocs(
                         resourceId,
@@ -1531,7 +1693,7 @@ function MobileNoteBody({
                       toast.success(
                         driveWebViewLink
                           ? "Opening in Google Docs"
-                          : "Created in Google Docs — opening it now",
+                          : "Created in Google Docs \u2014 opening it now",
                       );
                     } catch (e) {
                       toast.error(
@@ -1540,52 +1702,43 @@ function MobileNoteBody({
                           : "Couldn't open the Google Doc",
                       );
                     }
-                  }}
-                >
-                  {driveWebViewLink
-                    ? "Open in Google Docs"
-                    : "Create in Google Docs"}
-                </DropdownMenuItem>
-                {driveWebViewLink && (
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        await syncGoogleDoc(resourceId, body, title);
-                        toast.success("Google Doc updated from this note");
-                      } catch (e) {
-                        toast.error(
-                          e instanceof Error
-                            ? e.message
-                            : "Couldn't update the Google Doc",
-                        );
-                      }
-                    }}
-                  >
-                    Update Google Doc from note
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-              aria-label="Close note"
-              title="Close note"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+                  })();
+                },
+              },
+              ...(driveWebViewLink
+                ? [
+                    {
+                      label: "Update Google Doc from note",
+                      onClick: () => {
+                        void (async () => {
+                          try {
+                            await syncGoogleDoc(resourceId, body, title);
+                            toast.success("Google Doc updated from this note");
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error
+                                ? e.message
+                                : "Couldn't update the Google Doc",
+                            );
+                          }
+                        })();
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ]}
+      >
         <AutoTextarea
           value={title}
           onChange={onTitleChange}
           maxLength={FIELD_LIMITS.resourceLabel}
           maxLengthLabel="Note title"
-          className="font-display text-2xl w-full text-white placeholder:text-white/60 caret-white"
+          className="font-sans text-lg font-bold w-full bg-transparent border-none focus:outline-none resize-none p-0 !text-white placeholder:text-white/60 caret-white"
           placeholder="Note title"
         />
-      </div>
+      </ResourceHead>
       <div className="min-h-0 flex flex-1 flex-col px-5 pt-2">
         <RichTextEditor
           value={body}
@@ -1598,14 +1751,40 @@ function MobileNoteBody({
 }
 
 const MIN_PANEL_WIDTH = 420;
+/**
+ * **A resource may fill the screen** (owner, 2026-09-22): a strip of page showing down the left
+ * of a panel dragged as wide as it goes read as a mistake, and the chevron out is enough on its
+ * own. The 48px this used to keep was there to hold the resize handle on screen; the handle now
+ * sits inside the panel's edge instead (see `.resize-handle`), so nothing is left outside.
+ */
+const maxPanelWidth = () => Math.max(MIN_PANEL_WIDTH, window.innerWidth);
 const RESIZE_KEY = "spira:resource-panel-width";
 
 /**
  * Partial backdrop for the resource panel: blocks the goal page while leaving
- * the AI chat (z-40) and the resource panel (z-50) interactive. Rendered at the
+ * the AI chat (z-40), the resource panel (z-50), and the app header and side
+ * navigation (z-[36]) interactive — navigating away is always one click. Rendered at the
  * document root (portal) so no ancestor transform/blur can trap its stacking.
  */
 function ResourceBackdrop({ onClose }: { onClose: () => void }) {
+  // **The page under the backdrop does not scroll** (owner, 2026-09-18). The sheet is
+  // `modal={false}` so the chat beside it stays usable, which also left the window's own
+  // scrollbar live beside the panel — scrolling a goal page nobody could see or touch. The
+  // scrollbar's width is kept as padding so the page does not shift sideways.
+  useEffect(() => {
+    const root = document.documentElement;
+    const gap = window.innerWidth - root.clientWidth;
+    const prev = {
+      overflow: root.style.overflow,
+      pad: root.style.paddingRight,
+    };
+    root.style.overflow = "hidden";
+    if (gap > 0) root.style.paddingRight = `${gap}px`;
+    return () => {
+      root.style.overflow = prev.overflow;
+      root.style.paddingRight = prev.pad;
+    };
+  }, []);
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
@@ -1629,7 +1808,8 @@ export function ResizableSheet({
   const [width, setWidth] = useState<number>(() => {
     if (typeof window === "undefined") return 720;
     const stored = Number(window.localStorage.getItem(RESIZE_KEY));
-    if (stored && stored >= MIN_PANEL_WIDTH) return stored;
+    if (stored && stored >= MIN_PANEL_WIDTH)
+      return Math.min(stored, maxPanelWidth());
     return Math.min(720, window.innerWidth - 80);
   });
   const draggingRef = useRef(false);
@@ -1638,7 +1818,7 @@ export function ResizableSheet({
 
   useEffect(() => {
     const onResize = () => {
-      setWidth((w) => Math.min(w, window.innerWidth));
+      setWidth((w) => Math.min(w, maxPanelWidth()));
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -1656,7 +1836,7 @@ export function ResizableSheet({
       if (!draggingRef.current) return;
       const next = Math.max(
         MIN_PANEL_WIDTH,
-        Math.min(window.innerWidth, window.innerWidth - ev.clientX),
+        Math.min(maxPanelWidth(), window.innerWidth - ev.clientX),
       );
       setWidth(next);
     };
@@ -1674,6 +1854,9 @@ export function ResizableSheet({
     window.addEventListener("pointerup", onUp);
   };
 
+  const atFullWidth =
+    typeof window !== "undefined" && width >= window.innerWidth - 1;
+
   // Persist width whenever it changes (after release)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1689,6 +1872,11 @@ export function ResizableSheet({
         <SheetContent
           side="right"
           overlay={false}
+          // The head is the only way out of a resource (CLAUDE.md -> 3i), and a side panel never
+          // keeps the corner X besides (-> 3e). Radix draws one by default: invisible under the
+          // teal band, sitting on top of Delete and Duplicate, and named "Close" like the head's
+          // own control -- which is how an end-to-end test came to press it instead.
+          closeButton={false}
           // We supply our own partial backdrop above. radix must not auto-close
           // on outside interaction (clicking the chat should keep it open).
           onInteractOutside={(e) => e.preventDefault()}
@@ -1707,7 +1895,13 @@ export function ResizableSheet({
             aria-orientation="vertical"
             aria-label="Resize panel"
           />
-          {children}
+          {/* Dragged to the full window width, the panel IS the screen — so its head shows a
+              chevron rather than a cross (owner, 2026-09-22). A pixel of slack: the width is
+              clamped to `innerWidth`, but a scrollbar or a fractional device pixel can leave the
+              two a hair apart. */}
+          <ResourceFullScreen.Provider value={atFullWidth}>
+            {children}
+          </ResourceFullScreen.Provider>
         </SheetContent>
       </Sheet>
     </>
@@ -1873,7 +2067,9 @@ function Form({
         ? !!trimmedUrl && !linkError
         : type === "file"
           ? !!fileData && !fileError
-          : !!trimmedEmail && !emailError && !roleError && !phoneError;
+          : type === "vacancy"
+            ? !!title.trim()
+            : !!trimmedEmail && !emailError && !roleError && !phoneError;
 
   const submit = () => {
     if (submittedRef.current) return;
@@ -1900,6 +2096,11 @@ function Form({
         // file) — otherwise omit it so the stored file is left untouched rather than blanked.
         ...(fileData.dataUrl ? { dataUrl: fileData.dataUrl } : {}),
       };
+    } else if (type === "vacancy") {
+      if (!title.trim()) return;
+      // A map is created with its name alone and filled in on its own page — by the user, or by
+      // the CV writer, a field at a time. There is nothing else to ask for here.
+      payload = { type: "vacancy", title: title.trim() };
     } else {
       if (!email.trim()) return;
       const cleanEmail = email.trim();
@@ -1938,24 +2139,26 @@ function Form({
               Type <span className="text-destructive">*</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {(["note", "link", "file", "email"] as const).map((t) => {
-                const Icon = typeMeta[t].icon;
-                return (
-                  <button
-                    key={t}
-                    onClick={() => setType(t)}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left",
-                      type === t
-                        ? "bg-primary-soft border-primary text-primary"
-                        : "bg-surface border-border hover:border-border-strong",
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {typeMeta[t].label}
-                  </button>
-                );
-              })}
+              {(["note", "link", "file", "email", "vacancy"] as const).map(
+                (t) => {
+                  const Icon = typeMeta[t].icon;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setType(t)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-3 rounded-md border-2 text-sm font-semibold capitalize transition-colors text-left",
+                        type === t
+                          ? "bg-primary-soft border-primary text-primary"
+                          : "bg-surface border-border hover:border-border-strong",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {typeMeta[t].label}
+                    </button>
+                  );
+                },
+              )}
             </div>
           </div>
         )}
@@ -1963,7 +2166,9 @@ function Form({
           <div>
             <label className="text-sm font-semibold block mb-1.5">
               Title{" "}
-              {type === "note" && <span className="text-destructive">*</span>}
+              {(type === "note" || type === "vacancy") && (
+                <span className="text-destructive">*</span>
+              )}
             </label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
             {labelError && (

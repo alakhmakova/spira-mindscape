@@ -305,7 +305,11 @@ object AiApi {
 
     suspend fun deleteKey(provider: String): Unit = io {
         val request = Request.Builder().url(url("/keys/$provider")).delete().build()
-        Network.okHttp.newCall(request).execute().use { }
+        Network.okHttp.newCall(request).execute().use { res ->
+            // It used to discard the response entirely, so a refused delete looked exactly
+            // like a successful one and the UI would have said the key was gone.
+            if (!res.isSuccessful) throw AiException(friendlyError(res.code, res.body?.string()))
+        }
     }
 
     // ── Provider preference (follows the user across devices) ───────────────

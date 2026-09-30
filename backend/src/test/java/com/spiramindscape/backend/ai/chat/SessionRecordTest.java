@@ -49,6 +49,7 @@ class SessionRecordTest {
     @Mock private MistralOcrService mistralOcr;
     @Mock private CohereVisionReader cohereVision;
     @Mock private GoalService goalService;
+    @Mock private com.spiramindscape.backend.ai.cv.CvApplicationService cvApplications;
 
     private AiChatService service;
 
@@ -56,7 +57,7 @@ class SessionRecordTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService, cvApplications);
     }
 
     @Test

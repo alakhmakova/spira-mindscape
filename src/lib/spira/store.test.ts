@@ -518,6 +518,59 @@ describe("useSpira refreshGoalsIfIdle (cross-device freshness)", () => {
     expect(useSpira.getState().isLoading).toBe(false);
   });
 
+  it("keeps a loaded map and file across a refresh, so an open panel is not torn down", async () => {
+    // **The 45-second poll used to throw the reader back to the top of the page.** A list read
+    // does not select a vacancy map's document or a file's bytes, so every refresh handed the
+    // store resources whose heavy fields were suddenly missing; the open panel fell back to
+    // "Loading the map…", re-fetched, and re-rendered from scratch — measured on the built
+    // bundle as the panel's scroller jumping 1022 → 0 (owner, 2026-09-23).
+    const loaded: Goal = {
+      ...goalFixture(),
+      resources: [
+        { id: "r1", type: "vacancy", title: "Advania", mapData: '{"v":1}' },
+        {
+          id: "r2",
+          type: "file",
+          title: "cv.pdf",
+          mime: "application/pdf",
+          dataUrl: "data:application/pdf;base64,AAA",
+        },
+      ],
+    };
+    useSpira.setState({ goals: [loaded] });
+
+    // What the server actually returns for a list: the heavy fields left out.
+    const fromList: Goal = {
+      ...loaded,
+      title: "Renamed elsewhere",
+      resources: [
+        { id: "r1", type: "vacancy", title: "Advania" },
+        {
+          id: "r2",
+          type: "file",
+          title: "cv.pdf",
+          mime: "application/pdf",
+          dataUrl: "",
+        },
+      ],
+    };
+    vi.spyOn(spiraApi, "fetchGoalsRevision").mockResolvedValue("rev-new");
+    vi.spyOn(spiraApi, "fetchGoals").mockResolvedValue([fromList]);
+
+    await useSpira.getState().refreshGoalsIfIdle();
+
+    const after = useSpira.getState().goals[0];
+    // The refresh still does its job …
+    expect(after.title).toBe("Renamed elsewhere");
+    // … without discarding what only the open panel had fetched.
+    const map = after.resources.find((r) => r.id === "r1");
+    const file = after.resources.find((r) => r.id === "r2");
+    expect(map?.type === "vacancy" && map.mapData).toBe('{"v":1}');
+    expect(file?.type === "file" && file.dataUrl).toBe(
+      "data:application/pdf;base64,AAA",
+    );
+  });
+
   it("skips the full goals fetch when the revision is unchanged (the egress cut)", async () => {
     const fetchRevision = vi
       .spyOn(spiraApi, "fetchGoalsRevision")

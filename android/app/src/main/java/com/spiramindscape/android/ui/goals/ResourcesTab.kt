@@ -85,6 +85,7 @@ private fun typeIcon(kind: String): ImageVector = when (kind) {
     "note" -> SpiraIcons.FileText
     "link" -> SpiraIcons.Link
     "email" -> SpiraIcons.Mail
+    "vacancy" -> SpiraIcons.ListChecks
     else -> SpiraIcons.File
 }
 
@@ -92,6 +93,7 @@ private fun typeLabel(kind: String): String = when (kind) {
     "note" -> "Note"
     "link" -> "Link"
     "email" -> "Contact"
+    "vacancy" -> "Vacancy map"
     else -> "File"
 }
 
@@ -319,6 +321,7 @@ private fun ResourceCard(
                         "note" -> NoteBody(res, actions)
                         "link" -> LinkBody(res, actions)
                         "email" -> EmailBody(res, actions)
+                        "vacancy" -> VacancyBody(res, actions)
                         else -> FileBody(res, actions, onOpenFull)
                     }
                 }
@@ -377,6 +380,38 @@ private fun LinkBody(res: ResourceItem, actions: GoalWorkspaceActions) {
             copyLink.fire()
         }
         ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) { actions.onRemoveResource(res.id) }
+    }
+}
+
+/**
+ * A vacancy map on the phone: its name, and the plain fact that it is edited on the web.
+ *
+ * Web-only is deliberate for now (owner, 2026-09-17) — a map is long-form editing work that suits a
+ * laptop. What is NOT acceptable is what happened without this branch: every `when` here falls back
+ * to the FILE case, so a map was listed as "File", drawn with a file glyph and rendered through
+ * [FileBody], which reads a mime and bytes it has not got. Saying less is fine; saying something
+ * untrue is not.
+ */
+@Composable
+private fun VacancyBody(res: ResourceItem, actions: GoalWorkspaceActions) {
+    BoxedField("Title", res.title ?: "", "Name of the vacancy") {
+        commitResource(actions, res, title = it.ifBlank { null })
+    }
+    Spacer(Modifier.height(13.dp))
+    Text(
+        "This vacancy map opens on the web.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.spiraExtras.mutedForeground,
+    )
+    Spacer(Modifier.height(15.dp))
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ResourceIconButton(SpiraIcons.Trash, "Delete resource", danger = true) {
+            actions.onRemoveResource(res.id)
+        }
     }
 }
 

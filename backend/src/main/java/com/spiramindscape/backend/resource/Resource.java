@@ -20,7 +20,7 @@ public class Resource {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Pattern(regexp = "note|link|file|email")
+    @Pattern(regexp = "note|link|file|email|vacancy")
     @Column(nullable = false, length = 20)
     private String type;
 
@@ -61,6 +61,13 @@ public class Resource {
     @Size(max = 50)
     @Column(length = 50)
     private String phone;
+
+    // The vacancy map's document, as JSON — see VacancyMapPatch for its shape and why it is
+    // written one field at a time. Like data_url above, it is loaded ON DEMAND only and is never
+    // selected by the list projections (see ResourceView), so a goals fetch does not carry every
+    // map. Size is enforced in ResourceService; no @Size here, for the same reason as data_url.
+    @Column(name = "map_data", columnDefinition = "TEXT")
+    private String mapData;
 
     /** Drive file id of the Google Doc created from this note (null until exported). */
     @Column(name = "drive_file_id", columnDefinition = "TEXT")

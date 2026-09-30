@@ -86,7 +86,23 @@ fun applyProposalToGoal(
         ProposalKind.EDIT_ACTION ->
             actions.onUpdateReality("actions", p.itemId ?: return MISSING_ITEM, p.title)
 
-        ProposalKind.EDIT_NOTE, ProposalKind.EDIT_LINK, ProposalKind.EDIT_EMAIL -> {
+        ProposalKind.EDIT_NOTE -> {
+            val id = p.itemId ?: return "I couldn't tell which note that was."
+            val existing = goal.resources.firstOrNull { it.id == id }
+                ?: return "That note isn't on this goal any more."
+            // Never the whole body: the server merges the edit into the note as it is now, so a
+            // hand edit made after the suggestion survives (web parity: AiPanel's edit_note).
+            actions.onEditNote(
+                id,
+                p.noteMode ?: "append",
+                p.noteSection,
+                p.body.orEmpty(),
+                p.title.takeIf { it.isNotBlank() && it != existing.title },
+                p.baseUpdatedAt,
+            )
+        }
+
+        ProposalKind.EDIT_LINK, ProposalKind.EDIT_EMAIL -> {
             val id = p.itemId ?: return "I couldn't tell which resource that was."
             val existing = goal.resources.firstOrNull { it.id == id }
                 ?: return "That resource isn't on this goal any more."
@@ -94,8 +110,8 @@ fun applyProposalToGoal(
             // current value rather than being cleared.
             actions.onUpdateResource(
                 id,
-                p.patch?.get("title") ?: if (p.kind == ProposalKind.EDIT_NOTE) p.title else existing.title,
-                if (p.kind == ProposalKind.EDIT_NOTE) p.body else existing.body,
+                p.patch?.get("title") ?: existing.title,
+                existing.body,
                 p.patch?.get("url") ?: existing.url,
                 p.patch?.get("name") ?: existing.name,
                 p.patch?.get("email") ?: existing.email,

@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+} from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import {
   ArrowDown,
@@ -47,6 +52,7 @@ import {
   ResourcesSection,
   NewResourceSheet,
   InlineResourcesProvider,
+  ResourcePreview,
 } from "@/components/spira/Resources";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
@@ -62,6 +68,12 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/goals/$goalId")({
+  // `?resource=<id>` opens that resource's panel on arrival — how the CV writer's link to a
+  // vacancy map lands (the map is a panel on this page, not a page of its own).
+  validateSearch: (search: Record<string, unknown>): { resource?: string } =>
+    typeof search.resource === "string" || typeof search.resource === "number"
+      ? { resource: String(search.resource) }
+      : {},
   head: ({ params }) => ({
     meta: [
       { title: "Goal workspace — Spira" },
@@ -76,6 +88,9 @@ export const Route = createFileRoute("/goals/$goalId")({
 
 function GoalWorkspace() {
   const { goalId } = Route.useParams();
+  // `?resource=` is a panel to open on arrival — the CV writer's link to a vacancy map.
+  const { resource: linkedResourceId } = Route.useSearch();
+  const navigate = useNavigate();
   const router = useRouter();
   const goal = useSpira((s) => s.goals.find((g) => g.id === goalId));
   const {
@@ -346,6 +361,26 @@ function GoalWorkspace() {
           goalId={goal.id}
           open={newResource}
           onOpenChange={setNewResource}
+        />
+        <ResourcePreview
+          goalId={goal.id}
+          resourceId={linkedResourceId ?? null}
+          onClose={() =>
+            void navigate({
+              to: "/goals/$goalId",
+              params: { goalId },
+              search: {},
+              replace: true,
+            })
+          }
+          onOpenResource={(id) =>
+            void navigate({
+              to: "/goals/$goalId",
+              params: { goalId },
+              search: { resource: id },
+              replace: true,
+            })
+          }
         />
 
         <ConfidenceHistorySheet
@@ -819,16 +854,26 @@ function GoalNav() {
   return (
     <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/**
+         * **The current section is bolder and a darker Guava** (owner, 2026-09-30).
+         *
+         * It used to differ by colour alone, which is WCAG 1.4.1 (Use of Color, level A). The
+         * colour stays in the Guava family — it is the brand's accent for "where you are" — and
+         * moves to `reserved-800 #D34533`, the warmest step of that ramp that reaches AA on
+         * white at this size. Measured across the whole ramp: 500 `#F45D48` 3.23:1 · 700
+         * `#E4523E` 3.77:1 · **800 `#D34533` 4.50:1** · 900 `#C23928` 5.37:1. The 900 step reads
+         * red rather than coral, so 800 is where the brand and the standard meet.
+         */}
         <div className="flex items-center justify-center gap-8 h-12">
           {items.map((item) => (
             <button
               key={item.id}
               onClick={() => scrollTo(item.id, item.label)}
               className={cn(
-                "text-[13px] font-medium transition-colors",
+                "text-[13px] transition-colors",
                 active === item.label
-                  ? "text-[#F45D48]"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "font-medium text-[#D34533]"
+                  : "font-normal text-muted-foreground hover:text-foreground",
               )}
             >
               {item.label}

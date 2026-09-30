@@ -44,20 +44,44 @@ public class MistralProvider implements LlmProvider {
     private static final String ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
 
     /**
-     * **`mistral-medium-latest`, not Large** (owner, 2026-08-29, asking which Mistral model this
-     * app should be on).
+     * **`mistral-medium-latest`** (BUG-068, corrected again 2026-09-09 — see below).
      *
-     * Large is still listed by the API — the owner's key returns `mistral-large-latest` among 54
-     * models — but it is the wrong default here for a reason that has nothing to do with
-     * availability: it is **text-only**. Every image in the chat has to detour through
-     * {@code MistralOcrService}, and `VisionSupport` has to keep an allow-list precisely because
-     * this default cannot see (BUG-027). Medium 3.x is Mistral's current general model, it does
-     * function calling, and it takes image parts — so a photo in the chat is answered by the
-     * model that is already in the conversation.
+     * <p>This was briefly reverted to {@code mistral-large-latest} the same day, reasoning
+     * from the account's Limits page alone: medium sat at 20,000 tokens/minute and 1.00
+     * request/second, against a {@code mistral-large-2512} row showing 250,000 TPM. That row
+     * is stale. A live call to {@code GET /v1/models} with the owner's key (2026-09-09) — the
+     * same call {@code AiModelService.fetchMistralModels} makes to build the model picker —
+     * returns no {@code mistral-large-*} of any kind; the Limits page still lists a quota for
+     * a model the account can no longer call. Large was reachable as recently as 29 Aug
+     * (see the history below); some time since, Mistral withdrew it from this line-up
+     * entirely — the {@code mistral-medium-3}/{@code -3-5}/{@code -3.5} entries the same call
+     * returns read like where its capacity went. Sending a request to a model the key cannot
+     * see would have failed every single time, unconditionally — worse than the rate limit
+     * this swap was meant to fix, not better.
      *
-     * `-latest` on purpose: naming a dated build is how BUG-059 happened. Documents still go to
-     * {@code mistral-ocr-latest}, which is a different product ({@code POST /v1/ocr}) and better
-     * at a scanned page than any chat model.
+     * <p>So the account's actual constraint on its strongest reachable general model is still
+     * medium's 20K TPM / 1 RPS, and two things now hold it up rather than one: the prompt/goal
+     * context was already cut hard on 2026-08-30 (see {@code GoalContextBuilder}, the
+     * {@code CHAT_CORE}/{@code CHAT_OVERVIEW}/{@code CHAT_IN_GOAL} split in
+     * {@code AiChatService}) to fit the 20K TPM side of it, and
+     * {@code AiChatService.MISTRAL_MIN_CALL_GAP} (added the same day as this comment) paces
+     * the agentic loop's own calls to Mistral at least ~1.1s apart so two iterations of one
+     * turn can no longer trip the 1 RPS side on their own. Revisit the model choice if either
+     * still isn't enough — not by reaching for Large again without checking
+     * {@code GET /v1/models} first.
+     *
+     * <hr>
+     *
+     * <p>Medium was first made the default on 2026-08-29 so a photo in the chat could be
+     * answered by the model already in the conversation, rather than detouring through
+     * {@code MistralOcrService}. Large being blind is not a regression either way: a blind
+     * model already has a fully supported path —
+     * {@link com.spiramindscape.backend.ai.chat.AiChatService#buildUserMessage} feeds it the
+     * OCR'd text of an image instead of the picture itself (BUG-027).
+     *
+     * <p>`-latest` on purpose: naming a dated build is how BUG-059 happened. Documents still go
+     * to {@code mistral-ocr-latest}, which is a different product ({@code POST /v1/ocr}) and
+     * better at a scanned page than any chat model.
      */
     public static final String DEFAULT_MODEL = "mistral-medium-latest";
     private static final int MAX_TOKENS = 8192;

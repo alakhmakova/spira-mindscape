@@ -105,7 +105,38 @@ data class Proposal(
     val openSubject: String? = null,
     /** new_goal: the initial confidence 1-10 the model extracted. */
     val confidence: Int? = null,
+    /** edit_note: append | append_to_section | merge_sections | replace_section | replace_all. */
+    val noteMode: String? = null,
+    /** edit_note: the heading a section mode targets. */
+    val noteSection: String? = null,
+    /** edit_note: the note version the server checked the edit against. */
+    val baseUpdatedAt: String? = null,
+    /** edit_note: what approving it adds and removes — computed by the server, never the model. */
+    val noteDiff: NoteDiff? = null,
 )
+
+/** What an AI note edit adds and removes, one plain-text entry per block. */
+data class NoteDiff(val added: List<String>, val removed: List<String>)
+
+/**
+ * The card's detail line for a note edit: whether it ADDS or REWRITES, and where. Mirrors the
+ * web's `noteEditDetail` word for word.
+ */
+fun noteEditDetail(mode: String?, section: String?): String = when (mode) {
+    "append_to_section" -> section?.let { "Adds to «$it»" } ?: "Adds to the note"
+    "merge_sections" -> "Adds to several sections"
+    "replace_section" -> section?.let { "Rewrites «$it»" } ?: "Rewrites part of the note"
+    "replace_all" -> "Rewrites the whole note"
+    else -> "Adds to the end of the note"
+}
+
+private fun parseNoteDiff(o: JSONObject): NoteDiff? {
+    fun list(key: String): List<String> = o.optJSONArray(key)?.let { arr ->
+        (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotBlank() } }
+    }.orEmpty()
+    val diff = NoteDiff(list("added"), list("removed"))
+    return diff.takeIf { it.added.isNotEmpty() || it.removed.isNotEmpty() }
+}
 
 /** Plain-text snippet from (possibly) HTML note content, for one-line card previews. */
 fun stripHtml(s: String): String =
@@ -151,6 +182,8 @@ fun proposalContext(p: Proposal): String {
     // The whole value, never clipped — this is the text being revised.
     add(if (p.kind == ProposalKind.EDIT && p.field != null) "new ${p.field}" else "title", p.title)
     add("description", p.body)
+    add("mode", p.noteMode)
+    add("section", p.noteSection)
     add("deadline", p.deadline)
     p.done?.let { add("done", it.toString()) }
     p.targetType?.let { add("target type", it.name.lowercase()) }
@@ -485,7 +518,7 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
         ProposalKind.EDIT_NOTE -> {
             title = name.ifEmpty { "Note" }
             body = value
-            detail = "Edit note"
+            detail = noteEditDetail(data.optStringOrNull("mode"), data.optStringOrNull("section"))
         }
         ProposalKind.EDIT_LINK -> {
             patch = buildMap {
@@ -602,6 +635,10 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
         } else {
             null
         },
+        noteMode = if (kind == ProposalKind.EDIT_NOTE) data.optStringOrNull("mode") ?: "append" else null,
+        noteSection = if (kind == ProposalKind.EDIT_NOTE) data.optStringOrNull("section") else null,
+        baseUpdatedAt = if (kind == ProposalKind.EDIT_NOTE) data.optStringOrNull("baseUpdatedAt") else null,
+        noteDiff = if (kind == ProposalKind.EDIT_NOTE) data.optJSONObject("diff")?.let(::parseNoteDiff) else null,
         serverId = if (data.has("proposalId") && !data.isNull("proposalId")) {
             data.optLong("proposalId")
         } else {

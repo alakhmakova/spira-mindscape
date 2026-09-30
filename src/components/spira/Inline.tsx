@@ -259,6 +259,8 @@ export function InlineText({
   clampLines,
   forceCollapsed = false,
   readOnly = false,
+  trailing,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -279,10 +281,26 @@ export function InlineText({
   forceCollapsed?: boolean;
   /** When true, the field is display-only: clicking/focusing never enters edit mode. */
   readOnly?: boolean;
+  /**
+   * A mark rendered INSIDE the read view's text flow, after the last word — not beside the
+   * block. The vacancy map's pencil is the one user: set beside the box, it landed at the end of
+   * the FIRST line of a wrapped answer, which is not "the end of the text" (owner, 2026-09-22).
+   * It is dropped while the field is being edited, where a caret marks the spot instead.
+   */
+  trailing?: React.ReactNode;
+  /**
+   * Open with the caret already in the field. For a line the page reveals in answer to a tap —
+   * the vacancy map's comment icon — where the tap that revealed it already said "I want to
+   * write here", and a second tap on a blank line would be asking twice.
+   *
+   * <p>It is the field's STARTING state, not a property of every render: once the user leaves
+   * the line, nothing drags the caret back into it.
+   */
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const displayRef = useRef<HTMLSpanElement>(null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoFocus && !readOnly);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -581,7 +599,13 @@ export function InlineText({
           )}
         >
           {isEmpty ? (
-            <span className="text-muted-foreground/75">{placeholder}</span>
+            // **The mark LEADS an empty line** (owner, 2026-09-23): after the placeholder it sat
+            // in the middle of a sentence that is not the user's, and read as belonging to
+            // neither end of the row.
+            <>
+              {trailing}
+              <span className="text-muted-foreground/75">{placeholder}</span>
+            </>
           ) : (
             <>
               {segments.map((seg, i) =>
@@ -593,6 +617,9 @@ export function InlineText({
                   <ResourceLink key={i} id={seg.id} />
                 ),
               )}
+              {/* Only a line that HAS words carries the mark here; a blank one shows its
+                  placeholder, and its caller marks that instead. */}
+              {trailing}
             </>
           )}
         </span>

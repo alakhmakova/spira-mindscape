@@ -42,22 +42,24 @@ class VisionSupportTest {
      * it, and the model then answers as if it had seen it — a confident, fabricated reading.
      */
     @Test
-    void mistralVisionIsAnAllowListAndTheDefaultNowSees() {
+    void mistralVisionIsAnAllowListAndTheDefaultSees() {
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "pixtral-large-latest")).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-medium-latest")).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-small-latest")).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "magistral-medium-latest")).isTrue();
 
-        // Still an allow-list: much of the Mistral line is text-only, Large among it — which is
-        // why it stopped being this app's default (2026-08-29).
+        // Still an allow-list: much of the Mistral line is text-only. Large used to be the
+        // sharpest example, but as of 2026-09-09 a live GET /v1/models on this account returns
+        // no mistral-large-* at all — it isn't merely blind any more, it isn't reachable —
+        // which is why medium is this app's default again (BUG-068).
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "mistral-large-latest")).isFalse();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "codestral-latest")).isFalse();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "ministral-8b-latest")).isFalse();
 
-        // **No model stored is the provider's default, and that default now sees.** This pair
-        // has to move with `MistralProvider.DEFAULT_MODEL`: it read `false` while the default was
-        // `mistral-large-latest`, and leaving it there would drop every photo sent by a user who
-        // has never opened the model picker — the exact shape of BUG-027.
+        // **No model stored is the provider's default, and that default sees.** This pair has
+        // to move with `MistralProvider.DEFAULT_MODEL` — see
+        // theBlankCaseAgreesWithTheProviderDefault, which checks the two against each other so a
+        // future default swap can't silently desync them.
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, null)).isTrue();
         assertThat(VisionSupport.modelCanSeeImages(ProviderType.MISTRAL, "  ")).isTrue();
     }

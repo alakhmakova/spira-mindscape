@@ -65,6 +65,18 @@ export type Resource =
       role?: string;
       email?: string;
       phone?: string;
+    }
+  | {
+      id: string;
+      type: "vacancy";
+      title: string;
+      /**
+       * The map document as JSON — see `vacancy-map.ts`. Undefined means NOT LOADED YET, not
+       * empty: like a file's `dataUrl`, it is left out of every list read and fetched when the
+       * page opens (`loadResourceMap`). Read it with `parseVacancyMap`, which treats both
+       * undefined and a half-written document as empty.
+       */
+      mapData?: string;
     };
 
 /**
@@ -79,7 +91,8 @@ export type ResourceInput =
   | Omit<Extract<Resource, { type: "note" }>, "id">
   | Omit<Extract<Resource, { type: "link" }>, "id">
   | Omit<Extract<Resource, { type: "file" }>, "id">
-  | Omit<Extract<Resource, { type: "email" }>, "id">;
+  | Omit<Extract<Resource, { type: "email" }>, "id">
+  | Omit<Extract<Resource, { type: "vacancy" }>, "id">;
 
 // Mutually-exclusive option status. "active" mirrors the legacy `selected` boolean.
 export type OptionStatus = "none" | "active" | "good_idea" | "didnt_work";

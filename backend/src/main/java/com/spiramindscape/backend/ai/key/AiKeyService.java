@@ -3,6 +3,7 @@ package com.spiramindscape.backend.ai.key;
 import com.spiramindscape.backend.ai.crypto.EncryptionService;
 import com.spiramindscape.backend.ai.key.dto.KeyInfoResponse;
 import com.spiramindscape.backend.ai.key.dto.SaveKeyRequest;
+import com.spiramindscape.backend.ai.preference.AiPreferenceService;
 import com.spiramindscape.backend.ai.provider.ProviderType;
 import com.spiramindscape.backend.auth.CurrentUserProvider;
 import jakarta.transaction.Transactional;
@@ -30,12 +31,15 @@ public class AiKeyService {
     private final AiApiKeyRepository repo;
     private final EncryptionService encryption;
     private final CurrentUserProvider currentUserProvider;
+    private final AiPreferenceService preferences;
 
     public AiKeyService(AiApiKeyRepository repo, EncryptionService encryption,
-                        CurrentUserProvider currentUserProvider) {
+                        CurrentUserProvider currentUserProvider,
+                        AiPreferenceService preferences) {
         this.repo = repo;
         this.encryption = encryption;
         this.currentUserProvider = currentUserProvider;
+        this.preferences = preferences;
     }
 
     /** Save or update the API key for a provider. Existing key is overwritten. */
@@ -81,6 +85,27 @@ public class AiKeyService {
     public void deleteKey(String provider) {
         String normalized = ProviderType.fromString(provider).name();
         repo.deleteByAppUserIdAndProvider(currentUserId(), normalized);
+        // **And stop pointing at it.** The active provider is a per-user preference that
+        // syncs across devices, so deleting the key it names left every surface selecting
+        // a provider with no key — which fails at the first message, on the phone as well
+        // as the laptop, with nothing to say why. Clearing it makes the next surface fall
+        // back to its default instead.
+        // Compared through the enum, not by string equality: `PUT /api/ai/preferences`
+        // accepts a lowercase provider name, so a stored "mistral" would never have matched
+        // the normalised "MISTRAL" and the app would go on pointing at a key that is gone.
+        if (namesTheSameProvider(preferences.getProvider(), normalized)) {
+            preferences.setProvider(null);
+        }
+    }
+
+    private static boolean namesTheSameProvider(String stored, String normalized) {
+        if (stored == null || stored.isBlank()) return false;
+        try {
+            return ProviderType.fromString(stored).name().equals(normalized);
+        } catch (RuntimeException e) {
+            // A preference we cannot parse names no provider we could be deleting.
+            return false;
+        }
     }
 
     /**

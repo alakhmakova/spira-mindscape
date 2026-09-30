@@ -6,6 +6,7 @@ import com.spiramindscape.backend.ai.provider.google.GeminiProvider;
 import com.spiramindscape.backend.ai.provider.mistral.MistralProvider;
 import com.spiramindscape.backend.ai.provider.openai.OpenAiProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,8 +58,16 @@ class LlmProviderFactoryTest {
     @Test
     void ollamaIsNoLongerAKnownProvider() {
         // Ollama was removed in favor of Gemini — the enum value must not resolve.
+        //
+        // It is a 400 rather than an IllegalArgumentException as of 2026-09-10: a bare
+        // `valueOf` surfaced through the key endpoints as a 500, so a typed provider name
+        // read as "the server is broken" (see ProviderType.fromString). The rule under
+        // test is unchanged — the name must not resolve — and the message now says what
+        // would have.
         assertThatThrownBy(() -> ProviderType.fromString("OLLAMA"))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400")
+                .hasMessageContaining("Unknown provider");
     }
 
     @Test
