@@ -254,6 +254,47 @@ keyless (GitHub → GCP via Workload Identity Federation — no long-lived secre
 
 ---
 
+## 11a. Secrets in the repository — three layers, none of them enough alone
+
+**Threat:** a credential reaches a commit — and this repository is **public**, so a commit is
+publication. Rotation is then the only real remedy; removing the line is not.
+
+**How Spira does it.** Three layers, deliberately overlapping, because each one has a hole the
+next covers:
+
+| Layer | What it catches | What it misses |
+|---|---|---|
+| **`.gitignore`** — `.env`, `.env.*`, `*.local`, `.dev.vars`, `google-services.json` | a secret in a file with a known NAME | a secret pasted into source, a test, a script or a Markdown note; `git add -f` |
+| **`.githooks/pre-commit`** — gitleaks over the staged diff | most secrets, before the commit exists at all | a machine that has not run `npm run setup:hooks`; `--no-verify`; no gitleaks installed |
+| **CI `secret-scan`** — gitleaks over the whole HISTORY, blocking, and `deploy` needs it | everything the rules know, on every push, unskippably | nothing, once it is red — but by then the secret is already pushed |
+
+**GitHub's own scanning runs alongside them**: secret scanning and **push protection** are on, so
+a known provider's key is refused at push time by GitHub itself. It recognises *provider* formats
+only, which is exactly why the rules below exist.
+
+**The rules are in `.gitleaks.toml`, and one file serves both the hook and CI** so the two cannot
+disagree about what a secret is. Beyond gitleaks' defaults it knows this project's own shapes: a
+Postgres/JDBC URL with a password in it, a **Neon** hostname, `AI_ENCRYPTION_KEY`,
+`GOOGLE_CLIENT_SECRET`, `DATABASE_PASSWORD`, and `google-services.json` by path.
+
+Two things about it that are easy to get wrong:
+
+- **Write rules with non-capturing groups.** Gitleaks takes the first capture group as *the
+  secret*, so `(aws|azure|gcp)` in the Neon rule made the word "aws" the finding — the report
+  redacted three harmless characters and no allowlist entry for the hostname could ever match.
+- **The allowlist is for things that are provably not secrets**, each with a reason on the line:
+  test fixtures, the published dev-only default key, Secret Manager *references* (a name, not a
+  value). A real finding is rotated and removed — never quietly allowlisted.
+
+**Running it by hand:** `npm run scan:secrets`. **After cloning:** `npm install` points git at
+`.githooks` on its own (`scripts/install-git-hooks.mjs`); `npm run setup:hooks` does it directly.
+
+**If something does leak:** rotate first — it is public from the moment it is pushed — then
+remove it. Removing it from history is a rewrite, and the rules for that are in CLAUDE.md under
+"The one carve-out: history surgery".
+
+---
+
 ## 12. What's intentionally still on the list
 
 Honesty matters in security. These are known and planned, not done:
@@ -284,4 +325,6 @@ The full plan, the OWASP Top 10 2025 mapping, and the validation checklist are i
 | REST error handling | `web/RestExceptionHandler.java` |
 | CORS prod lockdown | `config/CorsConfig.java` |
 | CI scanning | `.github/workflows/ci.yml` |
+| Secret scanning (rules) | `.gitleaks.toml` |
+| Secret scanning (local) | `.githooks/pre-commit`, `scripts/install-git-hooks.mjs` |
 | Acceptable-use policy | `docs/ai-acceptable-use.md` |

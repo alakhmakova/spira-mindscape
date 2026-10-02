@@ -94,6 +94,7 @@ export function ResourceAttachSheet({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-8">
         <div className="relative">
           <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}

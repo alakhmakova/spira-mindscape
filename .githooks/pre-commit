@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# Refuse a commit that carries a secret (BUG-095).
+#
+# The layer that costs nothing: GitHub's push protection only sees a secret once it has been
+# committed, and a rejected push leaves the secret sitting in the local history, where removing
+# it means rewriting commits. This one runs before the commit exists at all.
+#
+# Enable it (per clone — git does not ship hooks in the repository):
+#
+#   npm run setup:hooks          # or: git config core.hooksPath .githooks
+#
+# It scans ONLY what is staged, so it costs milliseconds. Without gitleaks installed it says so
+# and lets the commit through: a hook that blocks work because a tool is missing gets disabled,
+# and then nothing is checked at all. CI is the backstop that cannot be skipped.
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  printf '\033[33m! gitleaks is not installed — the staged changes were NOT scanned for secrets.\033[0m\n' >&2
+  printf '  Install: https://github.com/gitleaks/gitleaks/releases (or: winget install gitleaks)\n' >&2
+  printf '  CI still scans every push.\n' >&2
+  exit 0
+fi
+
+# `git` mode reads the staged diff; --staged is the pre-commit form.
+if ! gitleaks protect --staged --redact --config .gitleaks.toml --no-banner; then
+  cat >&2 <<'MESSAGE'
+
+  ✗ A secret was found in what you are about to commit, and the commit was stopped.
+
+  The value itself is redacted above — look at the file and the rule it matched.
+
+  If it is a real secret:   take it out of the file, and rotate it. It is already on
+                            your disk and may be in an editor's history.
+  If it is a false positive: add it to the allowlist in .gitleaks.toml, with a line
+                            saying why. Do NOT reach for --no-verify.
+
+MESSAGE
+  exit 1
+fi

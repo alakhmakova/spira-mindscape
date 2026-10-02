@@ -1,0 +1,128 @@
+# What must never reach a commit.
+#
+# Gitleaks' own rules already cover the well-known shapes — an OpenAI or Anthropic key, a Google
+# API key, a GitHub token, an AWS pair, a private key block. `useDefault` keeps all of them, and
+# everything below is what is specific to THIS project and to nothing else, which is precisely
+# the class GitHub's push protection does not recognise: it matches known providers, so a Neon
+# connection string or this app's own encryption key would go through it untouched.
+#
+# Used by the `secret-scan` CI job and by `.githooks/pre-commit`.
+
+title = "Spira"
+
+[extend]
+useDefault = true
+
+# ── The database ─────────────────────────────────────────────────────────────────────
+# Production is Neon. A connection string carries the password inside it, so one pasted into a
+# script, a test or a Markdown note is a full credential leak (BUG-095).
+[[rules]]
+id = "spira-postgres-url-with-password"
+description = "A Postgres/JDBC URL carrying a password"
+# Non-capturing groups throughout: gitleaks treats the FIRST capture group as the secret, so
+# `(aws|azure|gcp)` quietly made the word "aws" the finding — which no allowlist entry for the
+# hostname could ever match, and which redacted the wrong three characters in the report.
+# `<` and `>` are excluded from both halves so an angle-bracket placeholder
+# (`postgresql://<user>:<password>@<host>`) is not a finding: a real password in a URL cannot
+# contain them unencoded, and documentation that spells the shape out is not a leak.
+regex = '''(?i)(?:postgres(?:ql)?|jdbc:postgresql)://[^\s:/@'"<>]+:[^\s:/@'"<>]{6,}@'''
+keywords = ["postgres", "postgresql", "jdbc"]
+
+[[rules]]
+id = "spira-neon-host"
+description = "A Neon database host"
+regex = '''[a-z0-9-]+\.[a-z0-9-]+\.(?:aws|azure|gcp)\.neon\.tech'''
+keywords = ["neon.tech"]
+
+# ── The app's own secrets ────────────────────────────────────────────────────────────
+# `AI_ENCRYPTION_KEY` decrypts every stored provider key; `GOOGLE_CLIENT_SECRET` is the OAuth
+# client. Both are read from the environment (`application.properties`), so a literal value
+# beside the name is always a mistake.
+[[rules]]
+id = "spira-encryption-key"
+description = "The AI-key encryption secret, written out"
+regex = '''(?i)(?:AI_ENCRYPTION_KEY|ai\.encryption\.key)\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{24,}'''
+keywords = ["ai_encryption_key", "ai.encryption.key"]
+
+[[rules]]
+id = "spira-google-client-secret"
+description = "A Google OAuth client secret"
+regex = '''(?i)(?:GOOGLE_CLIENT_SECRET|client-secret)\s*[:=]\s*['"]?(?:GOCSPX-[A-Za-z0-9_-]{10,}|[A-Za-z0-9_-]{20,})'''
+keywords = ["google_client_secret", "client-secret", "gocspx"]
+
+[[rules]]
+id = "spira-database-password"
+description = "A database password, written out"
+regex = '''(?i)(?:DATABASE_PASSWORD|spring\.datasource\.password)\s*[:=]\s*['"]?[^\s'"$#{<][^\s'"]{7,}'''
+keywords = ["database_password", "datasource.password"]
+
+# ── Firebase / Android ───────────────────────────────────────────────────────────────
+[[rules]]
+id = "spira-google-services-json"
+description = "google-services.json, which carries an API key"
+path = '''(^|/)google-services\.json$'''
+
+[allowlist]
+description = "What is deliberately in the repository, and is not a secret"
+
+paths = [
+  # Placeholders by definition — and the local Docker Postgres really is spira/spira.
+  '''(^|/)\.env\.example$''',
+  '''(^|/)backend/\.env\.example$''',
+  # The default in `application.properties` is a published dev-only key, marked as such, and the
+  # whole point of it is that production must override it. Flagging it would train people to
+  # pass `--no-verify`, which is worse than the line itself.
+  '''(^|/)backend/src/main/resources/application\.properties$''',
+  # The repository's own rules quote the shapes they forbid; a scanner reading its own
+  # description is a false positive with no upside.
+  '''(^|/)\.gitleaks\.toml$''',
+  '''(^|/)\.githooks/''',
+  '''(^|/)docs/security-model\.md$''',
+  '''(^|/)docs/deploy-gcp-cloud-run\.md$''',
+  '''(^|/)docs/database-backup-and-restore\.md$''',
+  '''(^|/)backlog/.*\.md$''',
+
+  # Test fixtures. A test that encrypts a key needs a key-shaped string, and these are nobody's
+  # — they are checked in on purpose so the suite runs with no configuration at all.
+  '''(^|/)backend/src/test/resources/application-test\.properties$''',
+  '''(^|/)backend/src/test/java/.*(EncryptionServiceTest|AiKeySecurityIntegrationTest)\.java$''',
+
+  # This one documents the dev-only default key by printing it, which is the point: the reader
+  # has to recognise it to know their production override is missing.
+  '''(^|/)docs/ai-integration\.md$''',
+
+  # Deleted on 2026-09-30 (an always-on-VM runbook that was never used), but gitleaks reads the
+  # HISTORY, so its `DATABASE_PASSWORD=change-me` placeholder is still found in commit 5c3d6a9.
+  # Removing a file does not remove it from the commits that carried it.
+  '''(^|/)docs/deploy-oracle-vm\.md$''',
+
+  # Not source: build output, installed packages and test artefacts. Git mode never sees them
+  # (they are all ignored); this keeps an ad-hoc `--no-git` scan of the working tree readable.
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)backend/target/''',
+  '''(^|/)android/app/build/''',
+  '''(^|/)test-results/''',
+  '''(^|/)playwright-report/''',
+]
+
+regexes = [
+  # Fixtures. A test that encrypts a key needs a key-shaped string, and this one is nobody's.
+  '''sk-ant-api03-super-secret-key-1234''',
+  '''(?i)(example|placeholder|changeme|your-|dummy|fake|test)[-_a-z0-9]*(secret|key|password|token)''',
+  '''spira-dev-only-key''',
+  # The published dev and test defaults, base64 of "spira-dev-only-key-32bytes-xyzz!" and
+  # "spira-test-encryption-key-32byt!". Production must override them; that is what they are for.
+  '''c3BpcmEtZGV2LW9ubHkta2V5LTMyYnl0ZXMteHl6eiE=''',
+  '''c3BpcmEtdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dCE=''',
+  # A Secret Manager REFERENCE, not a value: `deploy.ps1` passes the name and Cloud Run resolves
+  # it at deploy time. The password itself has never been in the repository.
+  '''spira-db-password:latest''',
+  # **A known disclosure, not a false positive** (BUG-095): `deploy.ps1` carries the production
+  # Neon hostname in the clear, and has since 2026-06-04. It is not a credential — only the
+  # password opens the database, and that one is in Secret Manager — but it does tell the world
+  # exactly which host to try. Allowlisted so the scan stays useful for NEW leaks; the decision
+  # about this one (move the host into a secret, or accept it) is the owner's and is recorded in
+  # the bug. Remove this line when it is made.
+  '''ep-lingering-sky-a2pgvtf4\.eu-central-1\.aws\.neon\.tech''',
+]

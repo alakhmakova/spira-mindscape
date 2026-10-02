@@ -1,7 +1,5 @@
 package com.spiramindscape.backend.security;
 
-import io.github.bucket4j.Bandwidth;
-import io.github.bucket4j.Bucket;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,26 +13,31 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-process, per-caller rate limiting (OWASP A06/A07 — abuse, cost, and DoS).
+ * Per-caller rate limiting (OWASP A06/A07 — abuse, cost, and DoS).
  *
  * <p>Token buckets keyed by authenticated user id, or by client IP when
  * anonymous. The expensive/abusable endpoints get tighter limits than ordinary
  * reads. Over-limit requests get {@code 429} + {@code Retry-After}.
  *
- * <p>Single-instance design: a {@link ConcurrentHashMap} of buckets is enough
- * for this app's scale (Cloud Run rarely runs more than one instance). If it
- * ever scales out, swap to a shared store — the keying stays the same.
+ * <p><b>The counters are shared, not per-instance</b> ({@link SharedRateLimitStore}, BUG-057).
+ * They used to be a {@code ConcurrentHashMap} in each instance, which made the real limit
+ * "N per minute times however many instances Cloud Run is running" — a number that rises with
+ * load, so the guard weakened exactly as it started to matter — and reset every counter each
+ * time an instance was recycled. This class now decides only <i>which</i> limit applies and
+ * <i>who</i> the caller is; the counting lives behind {@link RateLimitStore}.
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger("security.ratelimit");
 
-    private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final RateLimitStore store;
+
+    public RateLimitFilter(RateLimitStore store) {
+        this.store = store;
+    }
 
     /** Off in the e2e/test profiles, where a black-box suite fires hundreds of
      *  requests from one IP and would otherwise be throttled. On in prod/dev. */
@@ -66,8 +69,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         String key = limit.name() + ":" + callerKey(request);
-        Bucket bucket = buckets.computeIfAbsent(key, k -> newBucket(limit.perMinute()));
-        if (bucket.tryConsume(1)) {
+        if (store.tryConsume(key, limit.perMinute())) {
             chain.doFilter(request, response);
         } else {
             // Throttling used to be completely invisible: a user hitting a limit saw a 429
@@ -118,15 +120,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         // ForwardedHeaderFilter (server.forward-headers-strategy=framework) makes
         // getRemoteAddr reflect the real client behind Cloud Run's proxy.
         return "ip:" + request.getRemoteAddr();
-    }
-
-    private Bucket newBucket(int perMinute) {
-        return Bucket.builder()
-                .addLimit(Bandwidth.builder()
-                        .capacity(perMinute)
-                        .refillGreedy(perMinute, Duration.ofMinutes(1))
-                        .build())
-                .build();
     }
 
     private record Limit(String name, int perMinute) {}

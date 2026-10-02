@@ -16,6 +16,8 @@ const e2eAuthEmail = process.env.SPIRA_E2E_AUTH;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Deletes every goal `createGoal` made this run (BUG-073) — see `e2e/global-teardown.ts`.
+  globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false,
   workers: 1,
   // The app runs a background goals-refresh poll that can re-render and detach elements

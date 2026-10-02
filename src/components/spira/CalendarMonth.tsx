@@ -95,19 +95,26 @@ export function CalendarMonth() {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          {/* Named, because a chevron alone announces itself as "button" and nothing else — axe
+              caught both of these on the Calendar page (BUG-023). */}
           <button
+            type="button"
+            aria-label="Previous month"
             onClick={() => setCursor((c) => addMonths(c, -1))}
             className="h-10 w-10 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
+            type="button"
             onClick={() => setCursor(new Date())}
             className="px-4 h-10 rounded-md border-2 border-border text-sm font-semibold hover:border-primary hover:text-primary"
           >
             Today
           </button>
           <button
+            type="button"
+            aria-label="Next month"
             onClick={() => setCursor((c) => addMonths(c, 1))}
             className="h-10 w-10 grid place-items-center rounded-md border-2 border-border hover:border-primary hover:text-primary"
           >

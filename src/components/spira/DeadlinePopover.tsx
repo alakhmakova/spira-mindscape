@@ -315,7 +315,12 @@ export function DeadlinePopover({
                       setMonth(new Date(parseInt(y), month.getMonth(), 1))
                     }
                   >
-                    <SelectTrigger className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2">
+                    {/* Named: the value inside it is not the control's name, and axe read this
+                        combobox as having none at all (BUG-023). */}
+                    <SelectTrigger
+                      aria-label="Year"
+                      className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-56 min-w-[5rem]">

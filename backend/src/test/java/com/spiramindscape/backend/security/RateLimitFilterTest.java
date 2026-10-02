@@ -11,18 +11,46 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+/**
+ * The filter's own job: which paths are limited, how a caller is identified, and what a blocked
+ * request looks like.
+ *
+ * <p>It runs against a <b>fake</b> store, because the counting moved out of this class when the
+ * counters became shared (BUG-057). The bucket arithmetic — refill over time, one limit across
+ * several instances, eviction of idle rows — is checked against a real database in
+ * {@code SharedRateLimitStoreIntegrationTest}, which is the only place it can be checked
+ * honestly. Splitting them is the point: these questions used to be answerable only in-process,
+ * which is why "the limit multiplies by the instance count" never showed up in a test.
+ */
 class RateLimitFilterTest {
 
     private RateLimitFilter filter;
 
+    /**
+     * A whole-number token bucket with no refill — enough for "the Nth request is blocked",
+     * and deliberately not a second implementation of the real one.
+     */
+    private static final class CountingStore implements RateLimitStore {
+        private final Map<String, Integer> used = new HashMap<>();
+
+        @Override
+        public boolean tryConsume(String key, int perMinute) {
+            int spent = used.merge(key, 1, Integer::sum);
+            return spent <= perMinute;
+        }
+    }
+
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter();
+        filter = new RateLimitFilter(new CountingStore());
         // Tiny limits so the test is fast and deterministic.
         filter.configure(2, 2, 2, 2, 2);
     }
@@ -81,7 +109,7 @@ class RateLimitFilterTest {
     @Test
     @DisplayName("when disabled (e2e/test profile), nothing is throttled")
     void disabledPassesEverything() throws Exception {
-        RateLimitFilter disabled = new RateLimitFilter(); // enabled defaults to false
+        RateLimitFilter disabled = new RateLimitFilter(new CountingStore()); // enabled defaults to false
         FilterChain chain = mock(FilterChain.class);
         for (int i = 0; i < 50; i++) {
             MockHttpServletResponse res = new MockHttpServletResponse();

@@ -168,6 +168,48 @@ jobs:
           path: android/app/build/reports/tests
           if-no-files-found: warn
 
+  # Secrets (OWASP A02). The detective layer: .gitignore only keeps a file out by NAME, and a
+  # secret pasted into a source file, a test or a Markdown note walks straight past it. GitHub's
+  # push protection catches the well-known provider formats, but not this project's own -- a Neon
+  # connection string, AI_ENCRYPTION_KEY, the OAuth client secret. Those rules live in
+  # `.gitleaks.toml`, and the same file backs the pre-commit hook, so the two layers cannot
+  # disagree about what counts as a secret. BUG-095.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # gitleaks reads the git HISTORY, not just the working tree: a secret removed in a
+          # later commit is still a leak, and a shallow clone would report the repository clean.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          # Pinned: an unpinned "latest" turns a new rule upstream into a red build on a commit
+          # that changed nothing. Bump it deliberately.
+          version=8.28.0
+          curl -sSfL -o gitleaks.tar.gz             "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # --redact so a finding never prints the secret itself into a public build log, which
+      # would leak it a second time to everyone reading the failure.
+      - name: Scan the history for secrets
+        run: gitleaks detect --redact --config .gitleaks.toml --no-banner --exit-code 1
+
+      - name: What to do about a finding
+        if: failure()
+        run: |
+          echo "::error::A secret was found in this repository's history."
+          echo "Treat it as leaked: ROTATE it first, then remove it."
+          echo "Removing it from history is a rewrite -- see CLAUDE.md, 'The one carve-out: history surgery'."
+          echo "A false positive belongs in .gitleaks.toml's allowlist, with a reason."
+
   # Supply-chain scan (OWASP A03): filesystem scan of backend + frontend deps.
   # Installed via the official script (stable, no action-version drift). Policy
   # matches npm audit: BLOCK on CRITICAL, REPORT HIGH. Unfixed advisories are
@@ -572,7 +614,8 @@ jobs:
   # One-time GCP setup: deploy/setup-github-cd.ps1 (see docs/deploy-gcp-cloud-run.md §11).
   deploy:
     name: Deploy to Cloud Run
-    needs: [frontend, backend, e2e]
+    # `secret-scan` too: a leak must stop the release, not ride out with it (BUG-095).
+    needs: [frontend, backend, e2e, secret-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     # `gcloud run deploy --source` builds the image on Cloud Build, so this one is genuinely

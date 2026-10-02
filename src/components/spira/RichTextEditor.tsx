@@ -10,7 +10,14 @@ import {
   FontSize,
   LineHeight,
 } from "@tiptap/extension-text-style";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
@@ -72,11 +79,16 @@ export function RichTextEditor({
   value,
   onChange,
   placeholder,
+  ariaLabel,
   embedded = false,
 }: {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  // The editable area's accessible name. A `<label>` cannot reach it — the control is a
+  // contenteditable element TipTap renders — so a caller that shows a heading over the editor
+  // passes the same word here, or a screen reader announces an unnamed text box (BUG-023).
+  ariaLabel?: string;
   // `embedded`: rendered as a bordered field inside a form (e.g. the create sheet)
   // rather than a full-screen editor — keeps the toolbar inside the box.
   embedded?: boolean;
@@ -112,6 +124,16 @@ export function RichTextEditor({
               : "min-h-[40vh]",
         ),
         "data-placeholder": placeholder ?? "",
+        // `role`/`aria-multiline` come with the name, not instead of it: a name on a bare
+        // contenteditable `<div>` is an `aria-prohibited-attr` violation, because a generic
+        // element may not carry one. The role is what the element actually is.
+        ...(ariaLabel
+          ? {
+              "aria-label": ariaLabel,
+              role: "textbox",
+              "aria-multiline": "true",
+            }
+          : {}),
       },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -524,6 +546,7 @@ function Toolbar({
         <option value="1.5">1.5</option>
         <option value="2">2.0</option>
       </select>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- mouse-down only keeps the editor's selection alive; every control in this bar is a real button */}
       <label
         title="Text color"
         onMouseDown={(e) => e.stopPropagation()}
@@ -546,6 +569,7 @@ function Toolbar({
           className="absolute inset-0 cursor-pointer opacity-0"
         />
       </label>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- mouse-down only keeps the editor's selection alive; every control in this bar is a real button */}
       <label
         title="Highlight color"
         onMouseDown={(e) => e.stopPropagation()}
@@ -661,6 +685,7 @@ function Toolbar({
         {embedded ? (
           // CREATE form: collapse the formatting behind a "Format" toggle so the
           // bottom sheet isn't crowded.
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- mouse-down only keeps the editor's selection alive; every control in this bar is a real button
           <div
             onMouseDown={(e) => e.preventDefault()}
             className="shrink-0 border-t hairline bg-surface"
@@ -710,6 +735,7 @@ function Toolbar({
           </div>
         ) : (
           // OPEN / edit a note: the full formatting bar (all icons, scrollable).
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- mouse-down only keeps the editor's selection alive; every control in this bar is a real button
           <div
             onMouseDown={(e) => e.preventDefault()}
             className="-mx-7 mt-4 flex shrink-0 items-center gap-0.5 overflow-x-auto border border-x-0 border-b-0 hairline bg-surface px-2 py-1.5 hide-scrollbar"
@@ -739,6 +765,7 @@ function Toolbar({
 
   return (
     <>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- mouse-down only keeps the editor's selection alive; every control in this bar is a real button */}
       <div
         onMouseDown={(e) => e.preventDefault()}
         className="sticky top-0 z-20 flex items-center gap-2 rounded-md border hairline bg-surface px-2 py-1"
@@ -808,6 +835,7 @@ function LinkDialog({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const fieldId = useId();
   const body = (
     <>
       <div className="px-7 pt-6 pb-2 flex items-center justify-between sticky top-0 bg-surface z-10">
@@ -827,8 +855,14 @@ function LinkDialog({
         }}
       >
         <div>
-          <label className="text-sm font-semibold block mb-1.5">Text</label>
+          <label
+            htmlFor={`${fieldId}-text`}
+            className="text-sm font-semibold block mb-1.5"
+          >
+            Text
+          </label>
           <Input
+            id={`${fieldId}-text`}
             value={text}
             onChange={(e) => onTextChange(e.target.value)}
             placeholder="Link text"
@@ -836,13 +870,18 @@ function LinkDialog({
         </div>
 
         <div>
-          <label className="text-sm font-semibold block mb-1.5">
+          <label
+            htmlFor={`${fieldId}-url`}
+            className="text-sm font-semibold block mb-1.5"
+          >
             URL <span className="text-destructive">*</span>
           </label>
           <Input
+            id={`${fieldId}-url`}
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             placeholder="https://"
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
             autoFocus
           />
         </div>
