@@ -42,6 +42,10 @@ backend/.mvn/wrapper/*.zip
 android/app/google-services.json
 google-services.json
 
+# Anything this agent writes for the owner personally — CV drafts, letters. They are hers, not
+# the project's, and this repository is PUBLIC.
+Claude outputs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
