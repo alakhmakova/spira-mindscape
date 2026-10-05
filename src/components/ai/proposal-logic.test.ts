@@ -9,6 +9,8 @@ import {
   createSummary,
   applyExcludedAspects,
   buildHistory,
+  HISTORY_MAX_CHARS,
+  HISTORY_MAX_ENTRIES,
   editDisplay,
   fmtDeadline,
   proposalContext,
@@ -83,6 +85,60 @@ describe("proposalFromToolArgs — maps a tool call to a Proposal", () => {
       { text: "Buy tickets", done: false, deadline: undefined },
       { text: "Shop presents", done: true, deadline: undefined },
     ]);
+  });
+
+  // BUG-078: an email/link create used to show only its headline, with `detail` set to a
+  // generic label ("New contact"/"New link") that duplicated the kind badge and was hidden by
+  // ProposalBody's redundancy check — so the address/URL never appeared anywhere on the card.
+  it("shows the email address, role and phone in an email create's detail, not a generic label", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "email",
+        title: "Support Team",
+        value: "support@example.com",
+        role: "Support",
+        phone: "555-0100",
+      }),
+    )!;
+    expect(p.title).toBe("Support Team");
+    expect(p.detail).toBe("support@example.com · Support · 555-0100");
+    expect(p.patch).toEqual({
+      name: "Support Team",
+      email: "support@example.com",
+      role: "Support",
+      phone: "555-0100",
+    });
+  });
+
+  it("falls back to the generic label only when an email create has nothing beyond a name", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({ kind: "email", title: "Support Team" }),
+    )!;
+    expect(p.detail).toBe("New email");
+  });
+
+  it("shows the URL in a link create's detail when a label was given", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "link",
+        title: "Docs",
+        value: "https://example.com/docs",
+      }),
+    )!;
+    expect(p.title).toBe("Docs");
+    expect(p.detail).toBe("https://example.com/docs");
+  });
+
+  it("shows the new email/role/phone in an edit_email's detail", () => {
+    const p = proposalFromToolArgs(
+      JSON.stringify({
+        kind: "edit_email",
+        id: "r1",
+        value: "new@example.com",
+        role: "Manager",
+      }),
+    )!;
+    expect(p.detail).toBe("new@example.com · Manager");
   });
 
   it("marks an option that should also be made active (done flag)", () => {
@@ -353,6 +409,114 @@ describe("buildHistory — the transcript as the model sees it", () => {
     ).toEqual([
       { role: "user", content: "extend the description" },
       { role: "assistant", content: "here it is" },
+      { role: "user", content: "make it shorter\n\nand in English" },
+    ]);
+  });
+
+  // -- The bound (BUG-056) ---------------------------------------------------
+  //
+  // Nothing used to apply one. The panel stores a hundred messages and every send replayed
+  // all of them, so a chat cost more the longer it lived: production logs show one
+  // conversation re-posting 270 KB a turn until the user started a new chat and the next
+  // request was 3.7 KB. The same two numbers are enforced by `ChatHistory` on the server
+  // and by `trimHistory` in Android's `Proposal.kt`.
+
+  const turns = (n: number, chars = 10) =>
+    Array.from({ length: n }, (_, i) =>
+      msg(i % 2 === 0 ? "user" : "assistant", "x".repeat(chars) + i),
+    );
+
+  it("keeps the newest turns and drops the oldest once past the count limit", () => {
+    const history = buildHistory(turns(HISTORY_MAX_ENTRIES * 2));
+
+    expect(history.length).toBeLessThanOrEqual(HISTORY_MAX_ENTRIES);
+    // The turn the answer depends on is always the last one.
+    expect(history[history.length - 1].content).toContain(
+      String(HISTORY_MAX_ENTRIES * 2 - 1),
+    );
+    // ...and the opening of a long conversation is what goes.
+    expect(history.some((h) => h.content === "x".repeat(10) + "0")).toBe(false);
+  });
+
+  it("stays inside the character budget when the turns are long", () => {
+    // Ten turns of 5k against a 30k budget. Counting messages alone would let this
+    // through, which is why there are two limits rather than one.
+    const history = buildHistory(
+      Array.from({ length: 10 }, (_, i) =>
+        msg(i % 2 === 0 ? "user" : "assistant", "y".repeat(5000)),
+      ),
+    );
+
+    const total = history.reduce((n, h) => n + h.content.length, 0);
+    expect(total).toBeLessThanOrEqual(HISTORY_MAX_CHARS);
+    expect(history.length).toBeGreaterThan(0);
+  });
+
+  it("truncates a single over-budget turn rather than dropping it", () => {
+    // Dropping it would have the model answer a question it was never shown.
+    const pasted = "z".repeat(HISTORY_MAX_CHARS) + " so what do I do?";
+
+    const history = buildHistory([msg("user", pasted)]);
+
+    expect(history).toHaveLength(1);
+    expect(history[0].content).toHaveLength(HISTORY_MAX_CHARS);
+    // The END is kept - that is where the question is.
+    expect(history[0].content.endsWith(" so what do I do?")).toBe(true);
+  });
+
+  it("never hands back a history that starts on an assistant turn", () => {
+    // Anthropic rejects a conversation whose first message is not the user's, so a trim
+    // that landed on a reply would turn a long chat into a 400.
+    const history = buildHistory(turns(400, 400));
+
+    expect(history.length).toBeGreaterThan(0);
+    expect(history[0].role).toBe("user");
+  });
+
+  it("empties a conversation that holds no user turn at all", () => {
+    expect(
+      buildHistory([msg("assistant", "a"), msg("assistant", "b")]),
+    ).toEqual([]);
+  });
+
+  it("does not erase the whole history when a long reply crowds out the user turn", () => {
+    // The sharp edge in the strip, and not a hypothetical one: the newest entry is
+    // normally the assistant's reply, so a single long one leaves no budget for the user
+    // turn before it, the window holds one assistant entry, and stripping it used to
+    // return NOTHING - the model silently lost every bit of context.
+    const nearlyWholeBudget = "y".repeat(HISTORY_MAX_CHARS - 100);
+    const history = buildHistory([
+      msg("user", "we talked about this before"),
+      msg("assistant", nearlyWholeBudget),
+      msg("user", "so what should I do?"),
+      msg("assistant", nearlyWholeBudget),
+    ]);
+
+    expect(history.length).toBeGreaterThan(0);
+    expect(history[0].role).toBe("user");
+    expect(history[0].content).toContain("so what should I do?");
+  });
+
+  it("truncates the fall-back turn to the budget like any other", () => {
+    const history = buildHistory([
+      msg("user", "z".repeat(HISTORY_MAX_CHARS * 2)),
+      msg("assistant", "y".repeat(HISTORY_MAX_CHARS - 100)),
+    ]);
+
+    expect(history).toHaveLength(1);
+    expect(history[0].role).toBe("user");
+    expect(history[0].content).toHaveLength(HISTORY_MAX_CHARS);
+  });
+
+  it("trims after merging, so the budget is spent on whole turns", () => {
+    // Two user messages in a row are one turn to the model. Trimming first would count
+    // them as two and could cut between them, leaving half an instruction.
+    const history = buildHistory([
+      msg("user", "make it shorter"),
+      msg("user", "and in English"),
+    ]);
+
+    expect(history).toEqual([
       { role: "user", content: "make it shorter\n\nand in English" },
     ]);
   });

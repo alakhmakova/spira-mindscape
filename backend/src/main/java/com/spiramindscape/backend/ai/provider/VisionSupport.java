@@ -37,13 +37,26 @@ public final class VisionSupport {
 
     /**
      * Mistral chat models that can actually LOOK at an image. Unlike Anthropic, OpenAI and
-     * Gemini — whose current chat line-ups are multimodal throughout — most Mistral models are
-     * text-only, including the default {@code mistral-large-latest}. Sending a picture to one
-     * of those is worse than useless: the provider drops it, the turn still says an image was
-     * attached, and the model answers as if it had seen it (BUG-027).
+     * Gemini — whose current chat line-ups are multimodal throughout — much of the Mistral line
+     * is text-only, {@code mistral-large-latest} among it. Sending a picture to one of those is
+     * worse than useless: the provider drops it, the turn still says an image was attached, and
+     * the model answers as if it had seen it (BUG-027).
+     *
+     * <p>The default is {@code mistral-medium-latest} now, which IS in this set — so the blank
+     * case below answers true, and a photo reaches the model rather than being dropped.
      */
     private static final Set<String> MISTRAL_VISION_FAMILIES =
             Set.of("pixtral", "mistral-medium", "mistral-small", "magistral");
+
+    /**
+     * Cohere models that can actually look at an image — an allow-list for the same reason
+     * Mistral has one: most of the Command line is text-only, and the default
+     * ({@code command-a-03-2025}) is among them. Only the vision variants take image parts —
+     * {@code command-a-vision-*} and the Aya Vision models — and every one of them says so in
+     * its name, so one substring covers the family without naming a version that will be
+     * retired (the lesson of BUG-059).
+     */
+    private static final Set<String> COHERE_VISION_FAMILIES = Set.of("vision");
 
     /** Model families that are not chat models at all (or predate vision) — never send images. */
     private static final Set<String> BLIND_FAMILIES =
@@ -60,10 +73,15 @@ public final class VisionSupport {
     public static boolean modelCanSeeImages(ProviderType provider, String model) {
         String m = (model == null ? "" : model.trim().toLowerCase());
         if (provider == ProviderType.MISTRAL) {
-            if (m.isBlank()) return false; // default is mistral-large-latest — text-only
+            // A blank model is the provider default, `mistral-medium-latest`, which sees.
+            if (m.isBlank()) return true;
             return MISTRAL_VISION_FAMILIES.stream().anyMatch(m::contains);
         }
         if (provider == ProviderType.TAVILY) return false;
+        if (provider == ProviderType.COHERE) {
+            if (m.isBlank()) return false; // the default is Command A — text-only
+            return COHERE_VISION_FAMILIES.stream().anyMatch(m::contains);
+        }
         return BLIND_FAMILIES.stream().noneMatch(m::contains);
     }
 
@@ -113,7 +131,7 @@ public final class VisionSupport {
      * {@code image_url} parts plus a short text note. Sent as a follow-up to the
      * {@code tool} result, since the {@code tool} role cannot hold image parts.
      */
-    public static Map<String, Object> openAiImageUserMessage(List<LlmImage> images) {
+    public static Map<String, Object> imageUrlUserMessage(List<LlmImage> images) {
         List<Map<String, Object>> parts = new ArrayList<>();
         for (LlmImage img : images) {
             parts.add(Map.of(

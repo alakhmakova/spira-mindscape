@@ -5,6 +5,9 @@ import com.spiramindscape.backend.ai.chat.dto.ChatRequest;
 import com.spiramindscape.backend.ai.chat.transcript.AiChatTranscriptService;
 import com.spiramindscape.backend.ai.chat.transcript.dto.SaveTranscriptRequest;
 import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptDto;
+import com.spiramindscape.backend.ai.grow.session.GrowSessionService;
+import com.spiramindscape.backend.ai.grow.session.dto.GrowSessionDto;
+import com.spiramindscape.backend.ai.grow.session.dto.SaveGrowSessionRequest;
 import com.spiramindscape.backend.ai.chat.transcript.dto.TranscriptRevisionDto;
 import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
@@ -51,6 +54,7 @@ public class AiController {
 
     private final AiKeyService keyService;
     private final AiChatService chatService;
+    private final GrowSessionService growSessionService;
     private final AiModelService modelService;
     private final AiProposalService proposalService;
     private final GoalMemoryService goalMemoryService;
@@ -60,6 +64,7 @@ public class AiController {
     public AiController(
             AiKeyService keyService,
             AiChatService chatService,
+            GrowSessionService growSessionService,
             AiModelService modelService,
             AiProposalService proposalService,
             GoalMemoryService goalMemoryService,
@@ -67,6 +72,7 @@ public class AiController {
             AiPreferenceService preferenceService) {
         this.keyService = keyService;
         this.chatService = chatService;
+        this.growSessionService = growSessionService;
         this.modelService = modelService;
         this.proposalService = proposalService;
         this.goalMemoryService = goalMemoryService;
@@ -233,13 +239,40 @@ public class AiController {
         return ResponseEntity.ok(Map.of("status", "cleared"));
     }
 
+    // ── The live GROW session (cross-device) ─────────────────────────────────
+    //
+    // The transcript has synced since BUG-018; the session running inside it did not, so one
+    // begun on the phone did not exist on the laptop (owner, 2026-09-08). Same three verbs, and
+    // the same "last write wins" rule — except that a session is DELETED when it ends, because
+    // what outlives it is the record the user keeps and whatever they approved into the goal.
+
+    /** The current user's live session for a goal ({@code content} null when there is none). */
+    @GetMapping("/grow/session")
+    public GrowSessionDto growSession(@RequestParam Long goalId) {
+        return growSessionService.get(goalId);
+    }
+
+    /** Store the live session after a settled turn. */
+    @PutMapping("/grow/session")
+    public GrowSessionDto saveGrowSession(@RequestBody @Valid SaveGrowSessionRequest request) {
+        return growSessionService.save(request.goalId(), request.content());
+    }
+
+    /** The session ended — drop it. */
+    @DeleteMapping("/grow/session")
+    public ResponseEntity<Map<String, String>> clearGrowSession(@RequestParam Long goalId) {
+        growSessionService.clear(goalId);
+        return ResponseEntity.ok(Map.of("status", "cleared"));
+    }
+
     // ── Preferences (cross-device) ────────────────────────────────────────────
 
     public record AiPreferencesDto(String provider) {}
 
     public record SavePreferencesRequest(
             @jakarta.validation.constraints.Pattern(
-                    regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|anthropic|openai|mistral|gemini")
+                    regexp = "ANTHROPIC|OPENAI|MISTRAL|GEMINI|COHERE"
+                            + "|anthropic|openai|mistral|gemini|cohere")
             String provider) {}
 
     /** The current user's saved chat provider (null if none chosen yet). */

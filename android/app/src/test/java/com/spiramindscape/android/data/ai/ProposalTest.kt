@@ -66,6 +66,52 @@ class ProposalTest {
         assertNull(createSummary(p))
     }
 
+    // BUG-078: an email/link create used to show only its headline, with `detail` set to a
+    // generic label ("New contact"/"New link") that duplicated the kind badge and was hidden
+    // by the card's own redundancy check — so the address/URL never appeared anywhere on the
+    // card. See the matching web test in proposal-logic.test.ts.
+    @Test
+    fun `shows the email address, role and phone in an email create's detail, not a generic label`() {
+        val p = proposalFromToolArgs(
+            args(
+                "kind" to "email",
+                "title" to "Support Team",
+                "value" to "support@example.com",
+                "role" to "Support",
+                "phone" to "555-0100",
+            ),
+        )!!
+        assertEquals("Support Team", p.title)
+        assertEquals("support@example.com · Support · 555-0100", p.detail)
+        assertEquals(
+            mapOf("name" to "Support Team", "email" to "support@example.com", "role" to "Support", "phone" to "555-0100"),
+            p.patch,
+        )
+    }
+
+    @Test
+    fun `falls back to the generic label only when an email create has nothing beyond a name`() {
+        val p = proposalFromToolArgs(args("kind" to "email", "title" to "Support Team"))!!
+        assertEquals("New email", p.detail)
+    }
+
+    @Test
+    fun `shows the URL in a link create's detail when a label was given`() {
+        val p = proposalFromToolArgs(
+            args("kind" to "link", "title" to "Docs", "value" to "https://example.com/docs"),
+        )!!
+        assertEquals("Docs", p.title)
+        assertEquals("https://example.com/docs", p.detail)
+    }
+
+    @Test
+    fun `shows the new email, role and phone in an edit_email's detail`() {
+        val p = proposalFromToolArgs(
+            args("kind" to "edit_email", "id" to "r1", "value" to "new@example.com", "role" to "Manager"),
+        )!!
+        assertEquals("new@example.com · Manager", p.detail)
+    }
+
     @Test
     fun `a goal-level operation carries the goal id, an item edit carries the item id`() {
         val goalOp = proposalFromToolArgs(args("kind" to "delete_goal", "id" to "42"))!!
@@ -176,5 +222,134 @@ class ProposalTest {
         assertEquals("user", history[0].role)
         assertEquals("first\n\nsecond", history[0].content)
         assertEquals("reply", history[1].content)
+    }
+
+    // -- the bound (BUG-056) -------------------------------------------------
+    //
+    // Nothing used to apply one: every send replayed the whole stored transcript, so a chat
+    // cost more the longer it lived and the phone paid for it on mobile data. The same two
+    // numbers are enforced by `ChatHistory` on the server and by `trimHistory` in the web's
+    // `proposal-logic.ts`; the three have to agree.
+
+    private fun turns(n: Int, chars: Int = 10): List<ChatMessage> =
+        (0 until n).map { i ->
+            ChatMessage(
+                id = i.toString(),
+                role = if (i % 2 == 0) ChatRole.USER else ChatRole.ASSISTANT,
+                content = "x".repeat(chars) + i,
+            )
+        }
+
+    @Test
+    fun `history keeps the newest turns once past the count limit`() {
+        val history = buildHistory(turns(HISTORY_MAX_ENTRIES * 2))
+
+        assertTrue(history.size <= HISTORY_MAX_ENTRIES)
+        // The turn the answer depends on is always the last one.
+        assertTrue(history.last().content.endsWith((HISTORY_MAX_ENTRIES * 2 - 1).toString()))
+        // ...and the opening of a long conversation is what goes.
+        assertTrue(history.none { it.content == "x".repeat(10) + "0" })
+    }
+
+    @Test
+    fun `history stays inside the character budget when the turns are long`() {
+        // Ten turns of 5k against a 30k budget. Counting messages alone would let this
+        // through, which is why there are two limits rather than one.
+        val history = buildHistory(
+            (0 until 10).map { i ->
+                ChatMessage(
+                    id = i.toString(),
+                    role = if (i % 2 == 0) ChatRole.USER else ChatRole.ASSISTANT,
+                    content = "y".repeat(5000),
+                )
+            },
+        )
+
+        assertTrue(history.sumOf { it.content.length } <= HISTORY_MAX_CHARS)
+        assertTrue(history.isNotEmpty())
+    }
+
+    @Test
+    fun `a single over-budget turn is truncated to its tail, never dropped`() {
+        // Dropping it would have the model answer a question it was never shown, and the
+        // question is at the END of a long paste.
+        val pasted = "z".repeat(HISTORY_MAX_CHARS) + " so what do I do?"
+
+        val history = buildHistory(listOf(ChatMessage("1", ChatRole.USER, pasted)))
+
+        assertEquals(1, history.size)
+        assertEquals(HISTORY_MAX_CHARS, history[0].content.length)
+        assertTrue(history[0].content.endsWith(" so what do I do?"))
+    }
+
+    @Test
+    fun `history never starts on an assistant turn`() {
+        // Anthropic rejects a conversation whose first message is not the user's, so a trim
+        // that landed on a reply would turn a long chat into a 400.
+        val history = buildHistory(turns(400, 400))
+
+        assertTrue(history.isNotEmpty())
+        assertEquals("user", history[0].role)
+    }
+
+    @Test
+    fun `a conversation with no user turn at all drops to nothing`() {
+        val history = buildHistory(
+            listOf(
+                ChatMessage("1", ChatRole.ASSISTANT, "a"),
+                ChatMessage("2", ChatRole.ASSISTANT, "b"),
+            ),
+        )
+
+        assertTrue(history.isEmpty())
+    }
+
+    @Test
+    fun `a long reply that crowds out the user turn does not erase the whole history`() {
+        // The sharp edge in the strip, and not a hypothetical one: the newest entry is normally
+        // the assistant's reply, so a single long one leaves no budget for the user turn before
+        // it, the window holds one assistant entry, and stripping it used to return NOTHING.
+        val nearlyWholeBudget = "y".repeat(HISTORY_MAX_CHARS - 100)
+        val history = buildHistory(
+            listOf(
+                ChatMessage("1", ChatRole.USER, "we talked about this before"),
+                ChatMessage("2", ChatRole.ASSISTANT, nearlyWholeBudget),
+                ChatMessage("3", ChatRole.USER, "so what should I do?"),
+                ChatMessage("4", ChatRole.ASSISTANT, nearlyWholeBudget),
+            ),
+        )
+
+        assertTrue(history.isNotEmpty())
+        assertEquals("user", history[0].role)
+        assertTrue(history[0].content.contains("so what should I do?"))
+    }
+
+    @Test
+    fun `the fall-back turn is truncated to the budget like any other`() {
+        val history = buildHistory(
+            listOf(
+                ChatMessage("1", ChatRole.USER, "z".repeat(HISTORY_MAX_CHARS * 2)),
+                ChatMessage("2", ChatRole.ASSISTANT, "y".repeat(HISTORY_MAX_CHARS - 100)),
+            ),
+        )
+
+        assertEquals(1, history.size)
+        assertEquals("user", history[0].role)
+        assertEquals(HISTORY_MAX_CHARS, history[0].content.length)
+    }
+
+    @Test
+    fun `history trims after merging, so the budget is spent on whole turns`() {
+        // Two user messages in a row are one turn to the model. Trimming first would count
+        // them as two and could cut between them, leaving half an instruction.
+        val history = buildHistory(
+            listOf(
+                ChatMessage("1", ChatRole.USER, "make it shorter"),
+                ChatMessage("2", ChatRole.USER, "and in English"),
+            ),
+        )
+
+        assertEquals(1, history.size)
+        assertEquals("make it shorter\n\nand in English", history[0].content)
     }
 }

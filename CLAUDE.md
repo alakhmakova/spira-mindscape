@@ -18,11 +18,54 @@ contributors — human or agent — should read this top-to-bottom, then `README
   `gh pr merge`.
 - ✅ Read-only git is fine: `git status`, `git diff`, `git log`, `git show`, `git branch`
   (listing).
-- ⚠️ There is **no `.claude/settings.json` in this repository**, so nothing enforces this but
-  the rule itself. (An earlier version of this file claimed a `PreToolUse` hook blocked
-  committing; it does not exist. Corrected 2026-08-23.)
+- ⚠️ **A hook enforces this on the owner's machine, and only there** (corrected 2026-08-30).
+  `.claude/settings.json` registers a `PreToolUse` hook on Bash — `.claude/hooks/block-git-write.js`
+  — which exits 2 on every writing form listed above. It fired for real on 2026-08-30.
+  - **But `.claude/` is gitignored** (`.gitignore` line 26) and none of it is committed, so a
+    fresh clone or another machine has **no** hook and nothing but this rule. The rule is the
+    authority; the hook is a safety net that may not be there.
+  - This entry has now been wrong in both directions: it once claimed a hook that did not exist,
+    and was then "corrected" to deny the one that does. The fact that reconciles them is that
+    the file lives **on disk and not in git** — run `ls .claude/` before believing either claim.
+  - **It matches the raw command text, not the intent**, and scans the whole string so
+    `cd x; <write command>` is caught too. That also means a heredoc *quoting* one of those
+    commands is blocked — editing this very section from Bash fails. Use Edit/Write for it.
+  - The same untracked `settings.json` runs the `Stop` hooks named below, so if lint and the
+    unit tests never seem to run at the end of a turn, this is why.
 
 When work is ready, summarize what changed and let the user commit.
+
+### Cutting a release (hard order, owner 2026-08-30)
+
+**A GitHub release is a tag, and the hook does not catch it.** `gh release create` publishes a new
+tag on the remote — the thing the ❌ list forbids — but it is not one of the patterns
+`block-git-write.js` matches, so nothing stops it. Only this rule does: **the owner asks for the
+release and picks the ref and the version.** Never cut one unprompted.
+
+**The order below is not a preference. Done out of order it costs a deleted, re-published tag**,
+which is what happened on 2026-08-30: `v0.3.0-alpha` went up first, its tree still said
+`versionName 0.2.7`, and the whole release had to be destroyed and recreated an hour later.
+
+1. **Agree the version with the owner**, and the ref. Read the existing tags first —
+   `git for-each-ref --sort=-creatordate refs/tags` — because `gh release list` shows **nothing**
+   when tags were pushed without releases attached, which is how this repo's first four look.
+2. **Bump the version in the code and let the owner commit it.** The number lives in exactly
+   **one** place: `versionName` / `versionCode` in `android/app/build.gradle.kts`. Not
+   `backend/pom.xml` (permanently `0.0.1-SNAPSHOT`) and not `package.json` (no `version` field at
+   all). `versionName` is the tag without its `v` and `-alpha`; `versionCode` only ever goes up.
+3. **Wait for that commit to reach `main`** — every tag in this repo sits on a `mobile → main`
+   merge commit — and **wait for its CI to go green**. `gh run list --branch main --limit 3`.
+   A release pointing at a red or a not-yet-merged commit is worse than a late one.
+4. **Only then create the release**, from the full 40-character SHA. A short SHA is rejected with
+   `HTTP 422 … Release.target_commitish is invalid`; a branch name works but records whatever the
+   tip is at that instant, which is not the same promise.
+5. **Write the notes from the range, never from memory** — `git log <prev-tag>..origin/main`,
+   `git diff --name-status <prev-tag>..origin/main -- backlog` for the bugs actually closed (and
+   which are still `🐞 Open`), and the added files for what is genuinely new.
+
+**If it is already published at the wrong commit**, the target cannot be edited: GitHub ignores
+`target_commitish` once the tag exists. It has to be `gh release delete <tag> --cleanup-tag --yes`
+and then created again — a public artefact deleted and re-announced. Get step 2 right instead.
 
 ### The one carve-out: history surgery (owner, 2026-08-23)
 
@@ -55,7 +98,8 @@ Follow this sequence for any code change, small or large:
 4. **Verify** — run the fast checks and fix any failure:
    - Frontend: `npm run lint`, `npx tsc --noEmit`, `npm test`
    - Backend (if touched): `cd backend && .\mvnw.cmd test`
-   - The `Stop` hooks also run lint/typecheck + fast unit tests and will surface failures.
+   - The `Stop` hooks also run lint/typecheck + fast unit tests and will surface failures — when
+     they are installed. They live in the **untracked** `.claude/`; see the commit policy above.
    - **A green `curl` is not proof the browser works.** curl sends no `Origin`, runs no JavaScript,
      keeps no cookies and obeys no CSP. A phone on a tunnel once got **403 on every GraphQL call**
      while `curl` and the page load both answered `200` — the screen said "We couldn't sync with the
@@ -278,7 +322,10 @@ both unless it names a surface.
 | The target card's numeric row | Components and chrome → 3b |
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
-| **Sheets** — the drawer, the side panel, the Kale head | Components and chrome → 3e |
+| **Sheets** — the drawer, the side panel, the two head types (Kale / white) | Components and chrome → 3e |
+| **Dates** — a modal on a phone, a popover on a laptop; ISO weeks | Components and chrome → 3e-ter |
+| **Sheet heights** — a constant top edge, never a percentage | Components and chrome → 3e-bis |
+| **What a headless host cannot see** — dialog width, the keyboard | Components and chrome → 3e-quater |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
@@ -539,7 +586,7 @@ the outer one still said "an empty page" while the inner one said the opposite. 
 the empty state's invitation; the filtered case replaces it rather than sitting inside it (web:
 `src/routes/index.tsx`; Android already drew it this way).
 
-#### 3e. Sheets — one shape and one head, on both surfaces (hard spec, 2026-08-22)
+#### 3e. Sheets — one shape, two heads, on both surfaces (hard spec, 2026-08-22 — heads revised 2026-09-03)
 
 A **sheet** is how the app asks for something without leaving the page — Filter & Sort, New goal,
 New target, Add a resource, Attach a resource. It is a **drawer from the bottom on a phone** and a
@@ -556,16 +603,50 @@ The parts, and what each is made of:
 | **Body** | its own scroller — `px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0` | its own `verticalScroll` — `padding(horizontal = 20.dp, vertical = 16.dp)`, `spacedBy(16.dp)` |
 | **Foot** | a pinned row of two: quiet outline left, filled Kale right, each `h-12 rounded-md flex-1`; `px-5 pt-3`, bottom `max(env(safe-area-inset-bottom), 12px)` | a `Row` of two `SpiraButton`s, Ghost then filled, `spacedBy(12.dp)`, 20dp sides, 24dp bottom |
 
-**The head is the same band everywhere**, and one component per surface draws it — neither may grow
-a variant:
+**A sheet wears one of exactly two heads, and one component per surface draws both — neither may
+grow a third** (owner, 2026-09-03, on the AI providers panel wearing the wrong one: "должно быть
+2 типа drawers с kael шапкой — это основной вид, и с белой шапкой — это вспомогательный вид" —
+"there should be 2 types of drawers: with a Kale head — the primary kind, and with a white head —
+the auxiliary kind"). `Primary` is the band this section used to call "the" head, unqualified —
+it still is, for every sheet that IS the reason the user opened it: a create/edit form, Filter &
+Sort, the coach itself. `Auxiliary` is for a sheet that sits ON TOP of primary content without
+being that content itself — the first, and so far only, case is **AI providers** ("это не
+основной контент" — "it is not primary content" — reached from *inside* the coach panel to
+manage keys, not itself the thing the user came here to work on).
 
-| | Value |
-|---|---|
-| Fill | `bg-primary` / `colorScheme.primary` — Kale-500 `#0A8080` |
-| Padding | 20 start, 12 end, 14 top and bottom |
-| Title | white, **bold, 16px** (`titleMedium`), sentence case, left |
-| Close | a white X on the right, 32px hit area, `hover:bg-white/15` |
-| `actions` | anything about the sheet as a whole, **before** the X — today only the filter panel's padlock (see 7) |
+Picking the wrong one is a defect the same way an off-palette colour is: never reach for
+`Auxiliary` because a sheet happens to be short, plain, or nested inside another — reach for it
+only when the sheet is genuinely secondary to whatever is already open behind it.
+
+| | `Primary` | `Auxiliary` |
+|---|---|---|
+| Fill | `bg-primary` / `colorScheme.primary` — Kale-500 `#0A8080` | white |
+| Bottom edge | none | `1px` hairline — `#F3F3F3` web, `Salt300 #F4F4F3` Android |
+| Padding | 20 start, 12 end, 14 top and bottom | same |
+| Title | white, **bold, 16px** (`titleMedium`), sentence case, left | Salt-1000 (`#003737` web / `#222525` Android), same weight/size |
+| Close | a white X, 32px hit area, `hover:bg-white/15` | a muted-ink X, `text-[#003737]/40`, `hover:bg-[#003737]/5` |
+| `actions` | anything about the sheet as a whole, **before** the X — today only the filter panel's padlock (see 7), which is `Primary` | same slot; nothing uses it yet |
+
+Web: `SheetHead`'s `tone` prop — `"primary"` (default) / `"auxiliary"` —
+`src/components/spira/SheetHead.tsx`. Android: `SpiraSheetHead`'s `tone: SheetHeadTone` —
+`Primary` (default) / `Auxiliary` — `ui/components/SpiraSheetHead.kt`. **AI providers is
+`Auxiliary` on both** (`ProviderSheet`, web and Android) — it opens from a strip inside the
+coach's own chat, manages account-level keys that outlive any one conversation, and was never the
+primary reason the panel is open.
+
+**On a laptop, AI providers is also the one sheet that overlays its OWN parent rather than the
+page.** Every other web sheet either portals to the page (a form, Filter & Sort) or IS the page
+(the coach panel itself, docked on the left of the page as of 2026-09-03 — see the note in
+`AppShell.tsx`; it has already moved sides once and may again, so don't hard-code "right" from
+memory); AI providers stays nested `absolute inset-0` inside the coach panel and slides in from
+the panel's own edge, not the page's — matching the fact
+that it covers the *coach*, not the goal underneath it (owner, 2026-09-03: "на вебе это должна
+быть обычная боковая панель поверх панели чата" — "on web this should be an ordinary side panel
+OVER the chat panel". It had been hard-coded to the phone's bottom-drawer shape at every width,
+which read as a drawer stuck inside a page that otherwise has none — every other sheet in the app
+already splits bottom-drawer-on-a-phone / side-panel-on-a-laptop, so a sheet fixed to the phone
+shape regardless of width was the actual defect, not a deliberate exception). On a phone it stays
+the ordinary bottom drawer, `sheet-inset` sized like any sheet stacked inside another.
 
 The rules that hold it together:
 
@@ -586,9 +667,210 @@ The rules that hold it together:
   "Add a resource"; the web wins, as always.
 - **Checking it by eye needs the card, not the sheet.** A modal sheet renders in its own window, so
   render `SpiraFormSheetContent` / `SpiraFilterSheetContent` directly — see 4 and the note in 7.
-- Two web sheets still wear a white head and are to be converted when next touched: the note
-  editor's **Add a link** sheet (its head carries a description line that has to move into the body
-  first) and the numeric **Update Progress** panel in `Targets.tsx`.
+- Two web sheets still wear a white head that **predates the `tone` system and is not the
+  `Auxiliary` kind** — both are primary content (a create/edit action, not a secondary panel over
+  something else) and are to be converted to `Primary` when next touched, not left as they are on
+  the theory that they're already white: the note editor's **Add a link** sheet (its head carries
+  a description line that has to move into the body first) and the numeric **Update Progress**
+  panel in `Targets.tsx`.
+
+#### 3e-bis. A sheet's top edge is a constant (hard rule, 2026-08-29)
+
+**No sheet is a percentage of the viewport.** Every one takes its height from a `.sheet-*` utility
+in `src/styles.css`, and each is `calc(100dvh - var(--sheet-top-gap))`: the bottom is the
+viewport's bottom, the top is a **constant** below its top. The on-screen keyboard shrinks a sheet
+from below and its top edge does not move at all.
+
+| Class | For |
+|---|---|
+| `sheet-h` | a sheet with no natural content height — the chat, the PDF preview |
+| `sheet-max` | everything else: sized by its content, up to that cap |
+| `sheet-inset` | a sheet stacked INSIDE another one — a percentage of its PARENT, so it cannot outgrow the sheet it sits on (the AI key sheet) |
+
+**The gap is 76px**: the app header is a 64px sticky bar, and 12px of page shows below it so the
+sheet reads as a sheet over a page. Android's `HEADER_CLEARANCE` (`AiChatHost.kt`) is the same
+idea and leaves the same 11–12dp; it also clears the GROW tab row, because there the tabs are part
+of the fixed top chrome, while on the web that strip is sticky page content the sheet may cover.
+
+**Three earlier shapes failed, all for one reason** — a percentage of a viewport the keyboard
+resizes cannot hold still:
+
+| Written as | What the keyboard did to it |
+|---|---|
+| `h-[92vh]` | 92 % of what the keyboard left — a third of the screen |
+| `min(92 * --app-vh, 100dvh)` | the cap won at 100 %: the sheet's top edge landed on the screen's |
+| `min(92 * --app-vh, 92dvh)` | 8 % of 888 is 71 px, 8 % of 430 is 34 — a 37 px jump up, onto the app header ("подскакивает немного и начинает перекрывать хедер") |
+
+`--app-vh` and `src/lib/spira/sheet-height.ts` were retired with the last of them. Do not bring
+them back: they existed to make a *percentage* stable, and the percentage is the thing that never
+worked. That module also cost a second bug on its own — it republished on `focusout`, the instant
+the keyboard *starts* leaving while it is still there, which shrank every sheet mid-tap and ate
+the first tap on any control in a sheet (BUG-064).
+
+**What pays for a sheet not filling the screen is scrolling, and it is a chat rule, not a form
+rule:**
+
+- **The chat's footer floats over its transcript.** The composer's white card sits on the gradient
+  with the conversation scrolling underneath it, so the last message can be scrolled clear of it.
+  Two layers (`AiPanel.tsx`): an outer `absolute inset-0 pointer-events-none flex flex-col
+  justify-end`, which has a definite height so `max-h-[70%]` resolves against it and lets touches
+  through where the footer is not drawn; and an inner layer that hugs its content, carries that
+  70 % cap for the whole stack, and is what `useFooterHeight` measures into the transcript's
+  `padding-bottom`.
+- **Everything that stands in the composer's place floats the same way and on the same ground** —
+  a pending proposal card, the "Revising…" row, "Finish session", "Session complete", **and the
+  composer itself**. None of them gets a slab of its own colour behind it; the gradient is painted
+  once, on the box that holds the transcript and the footer together, and everything on it is
+  transparent (owner, 2026-08-29: "карточка лежит на каком-то отдельном фоне, что неверно";
+  "поле для ввода … на прозрачном фоне, а не плотном фоне").
+- **Android does all of this too**, and the same way: one `Box` with the gradient, the `LazyColumn`
+  filling it, and the footer `align(BottomCenter)` with `onSizeChanged` feeding the list's bottom
+  `contentPadding`. Its keyboard scroll keys on `WindowInsets.isImeVisible`, and is instant for the
+  same reason the web's is.
+- **On Android the end of the conversation is not the top of its last message** (BUG-066). The web
+  scrolls the transcript to `top: 99999`; a `LazyColumn` has no such coordinate, and
+  `scrollToItem(lastIndex)` puts that item's TOP at the top of the viewport. The two are the same
+  place only because a list cannot scroll past its own end — at the composer's resting height
+  there is barely any padding below the last message, so the call **clamps** and lands at the end
+  by accident. The keyboard removes the accident: its height becomes the transcript's bottom
+  `contentPadding`, the clamp stops biting, and a reply taller than the panel is parked on its
+  first line with the rest of it behind the composer, which is what the owner photographed
+  (2026-08-29: "автопрокрутка чата не работает"). `scrollToConversationEnd` walks on from the item
+  a viewport at a time until `scrollBy` consumes nothing, and **both** scroll effects — the
+  streaming follow and the keyboard — go through it; the streaming one had no follow-through at
+  all and, re-firing on every chunk, had the last word.
+  `ChatScrollsToTheEndTest` pins it, and it has to **dispatch an IME inset by hand** onto Compose's
+  own view: without a keyboard the test renders the accidental clamp and passes against the defect.
+- **"Session complete" IS the input.** It renders in the footer and the composer stands down for
+  it, so a finished session leaves nothing to type into — it used to be a message in the
+  transcript with the composer still live underneath.
+- **Opening the keyboard scrolls the transcript to the end** (`useKeyboardStickyBottom`), and
+  **instantly**. The signal is a viewport that *shrank* while something typeable is focused;
+  `focus` alone is a frame too early and would scroll against the old layout. Instant, not smooth,
+  because the keyboard's own slide is already the motion and a 300 ms smooth scroll running
+  against it — over a scroll height the footer's `ResizeObserver` is changing in the same frames —
+  is three animations arguing. Growing back is deliberately not handled: the keyboard leaving must
+  not yank a transcript the reader has scrolled up into.
+- **A transcript resting at its end stays there** when the footer changes height (the composer
+  grows a line, a card arrives), and only then — scrolling back through history is never yanked.
+- **A form sheet keeps its solid pinned foot.** Cancel and Create are decisions, not a composer;
+  content sliding behind them would be wrong. The browser already scrolls a focused field into
+  view inside the body scroller, which is all a form needs.
+
+**Nothing but these utilities may set a sheet's geometry**, and three things have tried:
+
+- **`vaul` must never reposition inputs.** `src/components/ui/drawer.tsx` passes
+  `repositionInputs={false}` to `Drawer.Root` (BUG-060). vaul turns it on by default and it writes
+  an **inline `height` and `bottom`** onto the drawer whenever the visual viewport resizes with
+  something typeable focused — an inline style beats every class, so with it on the sheet is not
+  sized by `.sheet-*` at all, and four consecutive CSS fixes were no-ops. Its number is
+  `initialDrawerHeight`, captured on the first resize the handler ever sees and reapplied for the
+  drawer's life: 718 px at rest, 300 with the keyboard up, and **still 300 on a 780 px screen**
+  once the keyboard went. The flag exists for browsers where the keyboard does not resize the
+  layout viewport; `interactive-widget=resizes-content` means Chrome does, so vaul is a second
+  hand on the same wheel. Everything else it guards is iOS-only — see
+  `backlog/ios-safari-keyboard-covers-the-sheet-composer.md`.
+- **A sheet is `overflow-clip`, never `overflow-hidden`, and it has exactly one scroller: its
+  body** (BUG-063). The two clip identically, but `hidden` still makes the box a **scroll
+  container** — it only hides the scrollbars — so anything that scrolls programmatically can slide
+  the whole sheet inside its own frame. Something did: opening the deadline calendar called
+  `scrollIntoView` on the field, and `scrollIntoView` walks up and scrolls **every** scrollable
+  ancestor. The sheet landed at `scrollTop: 450` with its teal head at **y −292**. `clip` is not a
+  scroll container at all.
+- **A popover never states a height either.** `PopoverContent` caps itself at
+  `max-h-(--radix-popover-content-available-height)` with `collisionPadding={8}`. Radix flips a
+  popover above its trigger when there is no room below, but it will not **shrink** one that fits
+  neither way — it hangs off the top. When the cap bites it must be the **content** that scrolls,
+  not the card, so the deadline card is a flex column and its head and Today / Clear row stay put.
+
+**An error is not a message** (owner, 2026-08-29: "и ошибки это не сообщения"). It goes to the
+panel's notice and nowhere else — it used to be written into the transcript as a turn **and**
+raised as a notice, so a provider's quota error appeared twice on one screen in two shapes. The
+failed turn's empty streaming bubble is removed rather than filled in. An **error** notice does not
+time itself out either, since it is now the only place the failure is reported; everything else
+still clears itself after `PANEL_NOTICE_MS`.
+
+**Nothing overflows its block.** A provider error is one unbroken URL
+(`generativelanguage.googleapis.com/generate_content_free_tier_requests`) and it ran straight past
+the right edge of both the notice and the chat's warning card. Two separate causes, and both are
+needed: **`min-w-0`** so a flex item may shrink below its content's width at all, and
+**`break-words` + `overflow-wrap: anywhere`** so the text then has somewhere to break. Either alone
+does nothing.
+
+**A sheet must not resize at the moment of a tap** (BUG-064). A sheet is `position: fixed; bottom:
+0`, so shrinking it moves everything inside it down; when that lands between `mousedown` and
+`mouseup`, Chrome dispatches **no `click` at all** and the tap is silently lost.
+
+`e2e/sheet-chrome-stays-put.spec.ts` and `e2e/ai-drawer-height.spec.ts` hold all of it, and every
+case was checked red against the code it guards — the top edge jumping 37 px, the floating footer
+at a transcript ending 112 px above the composer, the keyboard scroll 1042 px from the end, the
+swallowed tap. Note what it takes to see the last one: a **real touch** (`hasTouch`,
+`page.touchscreen.tap`). Playwright's synthetic `.click()` does not go through the
+mousedown/mouseup target comparison, so it cannot reproduce a swallowed tap.
+
+#### 3e-ter. Asking for a date is a MODAL on a phone, a popover on a laptop (hard spec, 2026-08-29)
+
+`DeadlinePopover` (web) and `DeadlinePickerDialog` (Android) are the app's one date control, and
+they draw the **same card**. On a phone it went through two wrong shapes first, and both are worth
+knowing:
+
+- a **popover** — a floating card over an open form, its own teal strip directly under the sheet's
+  teal band: two heads stacked for one question;
+- a **bottom sheet**, which fixed that and introduced another. A sheet is how the app asks for
+  something *about the page*, and it comes from the bottom edge because it belongs to what is
+  under it. A calendar is a **value being picked inside a form that is already open**, and a
+  second bottom sheet stacked on the first reads as leaving that form.
+
+So it is a centred modal, which is what Android had all along.
+
+| | Laptop — popover | Phone / Android — modal |
+|---|---|---|
+| Chrome | its own compact teal strip | the shared `SheetHead` / `SpiraSheetHead` |
+| Commit | tapping a day commits and closes | a day is a **draft**; the foot commits |
+| Foot | `Today` / `Clear` as small links | `Cancel` (quiet outline) · `Set deadline` (filled Kale) |
+| Cells | `--cell-size: 2rem`, a mouse target | finger-sized and full width |
+| `Today` / `Clear` | commit immediately | set the draft, like everything else in the card |
+
+Four things that are the spec, not implementation detail:
+
+- **The phone confirms; the laptop commits.** On a finger-sized date grid a mis-tap that commits
+  *and closes* leaves nothing to undo. `Clear` is a draft too, and the confirm word follows it —
+  `Remove deadline` when there is one to remove and the draft has dropped it, `Set deadline`
+  otherwise, disabled when there is nothing to confirm.
+- **The head states the draft** (owner, 2026-08-29): the chosen date once there is one, and
+  "Set deadline" only while there is none — including straight after `Clear`, where reverting to
+  the prompt is exactly what is about to be true. It was a line of its own above the grid, which
+  said the same thing twice: a band with a fixed title, then a sentence restating what the band
+  was for. The format is **`MMMM d, yyyy` and nothing else**, which is what the laptop's popover
+  head has always shown, so all three surfaces read identically. The weekday and the
+  "13d overdue" are dropped on purpose — with them the title is ~250px, which fits a 412px phone
+  and truncates on a 320px one, and a head that is sometimes cut is worse than one that is always
+  short. Both still show on the trigger the picker was opened from.
+- **ISO week numbers, on both surfaces**, in a narrow `W` column down the left. The web gets them
+  from `react-day-picker` (`showWeekNumber` + `ISOWeek`); Android draws its own grid
+  (`SpiraMonthGrid`) because **Material 3's `DatePicker` has no week-number support at all** — and
+  a bare Material picker in a Spira form was a raw platform default besides (see 1). Use
+  `WeekFields.ISO`, never `WeekFields.of(Locale)`: the locale form starts weeks on Sunday in the
+  US and numbers the same rows differently, so the two surfaces would disagree. Six rows always,
+  so the card does not change height as you page through.
+- **The trigger is described once and rendered twice** on the web. Seven variants (`pill`,
+  `input`, `button`, `text`, `icon`, `icon-text`, `renderTrigger`) each have to be a
+  `PopoverTrigger` on one surface and a plain button on the other; `DeadlinePopover` builds
+  `{ className, content }` and picks the element afterwards, so the two cannot drift.
+
+The web switch is `useIsMobile()` (768), matching every form sheet; a modal is the right shape on
+both sides of the 640/767 seam `ListToolbar.tsx` documents, so unlike a sheet it raises no
+question about which container opened it. The modal's only stated height is `.modal-max`
+(`calc(100dvh - 32px)`): a centred card has no top edge to hold still, it simply must not outgrow
+the screen when the keyboard is up, and then the **grid** is what scrolls.
+
+`SheetHead` takes a `titleComponent` so a dialog can pass `DialogTitle` — Radix needs one for the
+dialog's accessible name, and a second screen-reader-only copy beside the band would announce the
+title twice. One head, one heading.
+
+`e2e/deadline-picker.spec.ts` pins both surfaces, the laptop's one-click commit included;
+`VisualCheckDatePickerTest` pins Android's week numbers against a known month (August 2026 runs
+31–36) and writes the picture.
 
 #### 3f. Search fields — the reset is the word "Clear", never a cross (hard spec, 2026-08-22)
 
@@ -610,6 +892,100 @@ Never hand-roll a clear control, and never put an X back inside a field.
 
 The X that **closes** a search stays exactly as it is — the white disc beside the field on Android,
 the corner button on the web. It is the one cross in the row.
+
+#### 3e-quater. Two things a headless host cannot see (hard rule, 2026-08-29)
+
+Robolectric and a headless browser render for real, and both are blind in the same place: **what
+the platform does with a window**. Two defects were shipped behind that blindness in one session,
+and in each case an assertion was written against the defect and **passed with the fix reverted**.
+
+- **A Compose `Dialog` defaults to `usePlatformDefaultWidth = true`** — the platform picks the
+  width, ~320dp on the owner's phone, and the date picker's foot wrapped "Set deadline" onto two
+  lines. Robolectric's dialog window is the full screen width whichever way the flag is set, so a
+  rendered-width assertion cannot tell them apart. A modal that states its own size must pass
+  `usePlatformDefaultWidth = false`.
+- **The on-screen keyboard**, already documented in 3e-bis.
+
+Where a rendering assertion cannot bite, check the **source**, the way `sheet-units.test.ts` checks
+vaul's `repositionInputs`, `DeadlinePickerDialogTest` checks this flag and `ChatFooterConventionTest`
+checks a modifier order. Three ways a source scan passes while the defect is present, all three hit
+in one session — verify a source check **red** before trusting it:
+
+1. **It reads its own explanation.** The KDoc above the call named `usePlatformDefaultWidth = false`
+   twice, so the scan found it with the code reverted. Strip comment lines before matching.
+2. **"A before B" searched the whole file.** `indexOf(".imePadding()", fromIndex)` found the *next*
+   one further down — the composer has its own — so a reversed order still passed. Give the check
+   the single block both are supposed to be in.
+3. **The block was sliced on the wrong token.** Cutting at the first `") {"` ended the chain inside
+   `with(density) {`, and the test then reported the keyboard padding *missing* rather than
+   mis-ordered — a scan can fail in a way that looks like the thing it is looking for. Take the
+   lines, ending on the one that is exactly `) {`.
+
+**`onSizeChanged` goes above the padding it must include.** Modifiers apply outside-in and each
+padding reports the *padded* size upward, so a measurement placed after `imePadding()` /
+`navigationBarsPadding()` misses the nav bar and the keyboard. That is what left the chat's
+transcript padded too short to scroll to its end.
+
+**The Android app IS testable end-to-end, without a login — use it.** This was written off twice
+as "sign-in is interactive, only the owner can do it", which is true of *production* and irrelevant
+locally: the backend's `local` profile already signs **every** request in as `dev@local`
+(`LocalDevAuthFilter`), and the app's backend URL is a build-type default. Nothing had to be added.
+
+**Use the `dev` build type for every local check — never `installDebug`** (owner, 2026-08-30).
+
+`dev` is the Android twin of the backend's `local` Spring profile, and it works the same way,
+because **the login is not the app's decision**: the app asks `/api/auth/me` on start and believes
+the answer. It has no bypass of its own and must never grow one.
+
+| Build type | `BuildConfig.API_BASE_URL` | Sign-in | Cleartext HTTP |
+|---|---|---|---|
+| **`dev`** | `http://10.0.2.2:8080` — the host, from inside the emulator | **none**, when that backend runs the `local` profile | yes |
+| **`debug`** | production (Cloud Run) | real Google — which only the owner can complete | yes |
+| **`release`** | production (Cloud Run) | real Google | no |
+
+`debug` points at production on purpose: it is what `distributeDebug` sends to the owner's phone,
+so a build made without thinking about it is the safe one. That is also why an agent must not
+reach for it locally — it lands on a sign-in screen it cannot get past, which is exactly the dead
+end that had this written off twice as "only the owner can do it".
+
+`-PspiraApiBaseUrl=…` overrides either, for what neither default covers: a real phone on the LAN
+(`http://<PC-LAN-IP>:8080`) or a cloudflared tunnel URL. Full reference, both surfaces, in
+`README.md` → "Build variants — skip Google login for quick local checks".
+
+```
+# 1. backend on the local profile (Docker Postgres first) — see Build / run reference
+# 2. an emulator; the windowed mode crashes on this machine's GPU, headless does not
+"$LOCALAPPDATA/Android/Sdk/emulator/emulator.exe" -avd spira_pixel     -no-window -no-snapshot-load -gpu swiftshader_indirect -no-boot-anim -no-audio
+# 3. the app — `installDev` is the build type pointed at the host from inside the emulator
+cd android && ./gradlew.bat :app:installDev
+adb shell settings put secure show_ime_with_hard_keyboard 1   # a REAL soft keyboard
+adb shell settings put global hide_error_dialogs 1            # see below
+```
+
+It lands on **All goals** with the local database's real data — confirmed on the emulator,
+2026-08-30. `adb shell input tap/swipe/text` drives it and `adb exec-out screencap -p > shot.png`
+photographs it, which is how the chat's keyboard scroll was finally confirmed after two rounds of
+shipping it unverified. Three independent signals that the dev build is really what is running:
+`curl http://localhost:8080/api/auth/me` answers `dev@local` rather than 401, `adb shell dumpsys
+package com.spiramindscape.android | grep versionName` ends in **`-dev`**, and the screenshot has
+no sign-in screen on it.
+
+Three things that make the difference between this working and looking broken:
+
+- **`hide_error_dialogs 1`.** Under software rendering SystemUI ANRs constantly, and its dialog
+  sits on top of everything and swallows every tap. Killing or dismissing it does not help — it
+  comes straight back. This setting stops it being drawn at all; the app underneath was fine the
+  whole time.
+- **`show_ime_with_hard_keyboard 1`**, or the emulator uses the host keyboard and there is no IME
+  to open — which is the entire thing being tested.
+- **A conversation to scroll.** `PUT /api/ai/chat/transcript` seeds one with no model calls and no
+  cost. **It overwrites whatever is there**, and under the `local` profile that is the same
+  `dev@local` transcript the tunnel uses — read it first if it might matter.
+
+**`installDev` and `distributeDebug` are different build types, so they cannot be confused any
+more.** They used to be one — `installDebug -PspiraApiBaseUrl=…` — and the flag is baked into
+`BuildConfig` at assemble time, so distributing after a local run sent the owner a build pointing
+at `10.0.2.2`. `distributeDebug` now **fails** if that flag is set at all.
 
 #### 4. Verify UI changes visually before shipping
 
@@ -721,8 +1097,34 @@ inside either. Both surfaces implement it once — Android `ui/components/SpiraF
 - **Reset all resets ALL** (owner, 2026-08-21). There used to be a class of "standing preference" it
   was not allowed to undo — the status questions — so a button promising everything quietly kept
   four answers. There is no such class now: one `DEFAULTS` table per list, and reset restores it.
+- **A goal's lists answer for themselves — filters, sort AND padlock** (owner, 2026-08-31).
+  `targets`, `options` and `resources` live *inside* a goal, so each goal keeps its own answers and
+  its own padlock; only the All-goals list is app-wide. Both stores key on the goal id — the web by
+  scope (`targets:<goalId>`), Android by prefixing **every** key it touches, the padlock included.
+  - **Two faults, and the second is the worse one.** One flat set of answers meant a filter pinned
+    on goal 1 was already on when goal 2 opened *with goal 2's padlock open* — and then changing it
+    there rewrote goal 1's arrangement behind goal 1's *closed* padlock. A lock another screen can
+    write through is not a lock.
+  - **A goal-less caller gets `NO_GOAL`, on both surfaces** — and that is a **legibility** guard,
+    not an isolation one. No goal has a blank id, so a blank one could never collide with a real
+    goal's answers whatever the fallback. What the name buys is that `targets:none` (web) and
+    `none.filter` (Android) say plainly "something wrote without a goal", where a bare `targets:`
+    reads as the shared bucket this scoping removes and a key starting with `.` reads as
+    corruption. Android normalises it **in the constructor**, so a store built directly cannot skip
+    it. The app-wide store takes `APP_SCOPE`.
+  - **A goal-owned list's pre-scoping arrangement is dropped** — one global answer cannot honestly
+    be attributed to any single goal, so those lists open on their defaults with every padlock open.
+  - **The All-goals list is the exception and migrates intact, padlock included.** It was never part
+    of the defect: it is app-wide, there is only one of it, and its old keys mean exactly what they
+    mean now. Dropping a dashboard arrangement the user had pinned would be the failure this very
+    spec names, inflicted by the fix for a different list. Web: `migrate` lifts the flat fields into
+    `views.goals`. Android: the `schema` bump **renames** `spira_goal_view`'s keys into `app.*`
+    (`adoptLegacyKeys`) instead of clearing them. `viewMode` survives on the web too — it is not a
+    filter and no padlock covers it.
+  - **Known gap:** a deleted goal's scope is never pruned, on either surface. It is small and
+    bounded by the 50-goal cap for live goals, but deleted ones accumulate — see BUG-067.
 - **A padlock sits in the head, right of the title, beside the X** (owner, 2026-08-21) — one per
-  list, on both surfaces.
+  list **per goal**, on both surfaces.
 
   | Padlock | What it means |
   |---|---|
@@ -1079,6 +1481,20 @@ The web's class values are copied into the Kotlin as the measurements to match �
 `rounded-[14px] p-4`, buttons `rounded-[9px]`, headline 17sp serif, detail 13.5sp at 60% ink. Read
 them from `AiPanel.tsx` before changing anything here.
 
+**Two rules about ending a session, because both were learned by losing whole sessions** (owner,
+2026-09-08 — full account in `docs/grow-sessions-rag-guide.md` §9a):
+
+- **A close is three steps, never one turn**: the **record** (what this session was about, written
+  for the next one), then the **proposals** as their own dedicated turn, then the **goodbye**. Asked
+  for together, models write the record, say goodbye and skip the middle — so a session that agreed
+  on something changed nothing on the goal. The record and the proposals are different things: one
+  is memory for the coach, the other is edits to the user's goal.
+- **"End" is local, unconditional and involves no AI at all.** It cancels the stream, stops the
+  timer, clears the draft and leaves. It must never be an instruction sent to the model and must
+  never wait for one — that is how a dead provider left the owner in a session with no exit. A
+  session ended that way has **no record**, and the closing card says so plainly rather than
+  offering to save an empty one over the last session's.
+
 #### Options cards (interaction)
 
 **The web is the spec.** `src/components/spira/OptionsList.tsx` and the Android `OptionsTabContent`
@@ -1255,7 +1671,8 @@ common way a local run fails before it starts.
 | Frontend E2E | `npm run test:e2e` | Playwright, against the **running** stack. Chromium is already installed — no `playwright install` needed. |
 | Frontend build | `npm run build` | |
 | Backend tests | `cd backend && .\mvnw.cmd test` | ~866 tests |
-| Android build | `cd android && .\gradlew.bat :app:assembleDebug` | Emulator reaches local backend at `http://10.0.2.2:8080` |
+| **Android run (local backend, no login)** | `cd android && .\gradlew.bat :app:installDev` | **The one to use for any local check.** Needs the backend on the `local` profile + an emulator. See Design → Components and chrome → 3e-quater, and `README.md` → "Build variants" |
+| Android build | `cd android && .\gradlew.bat :app:assembleDebug` | The **production**-pointing build — what testers get. `assembleDev` is the local-backend twin |
 | Android tests | `cd android && .\gradlew.bat :app:testDebugUnitTest` | ~19 min for the full sweep; prefer `--tests "*OneClass"` while iterating |
 | **Note editor** (after editing `embeds/note-editor/`) | `npm run build:note-editor` | **Easy to forget and silent when you do.** The Android note editor is that TypeScript bundled into `android/app/src/main/assets/note-editor/index.html`; without this step the app keeps running the old asset and your change simply is not there. |
 | Android distribute (APK → email link) | `cd android && .\gradlew.bat distributeDebug -PreleaseNotes="what changed"` | Builds the debug APK and uploads it to Firebase App Distribution; testers (incl. the owner) get an email link. Uses your `firebase login`. |
@@ -1308,10 +1725,15 @@ Android), run unit tests, run the app, and — when a **runtime** error is suspe
 on an **emulator** and read **`adb logcat`** to reproduce and inspect the error. Do this rather
 than relying on the user to relay logs.
 
+On Android that means **`:app:installDev`** against a backend on the `local` profile — the build
+type that needs no sign-in (Design → Components and chrome → 3e-quater). `installDebug` points at
+production and stops at a login the agent cannot complete, which is the whole reason this used to
+be handed back to the user.
+
 **Only the user can do:** complete an interactive **Google sign-in** (a real account + consent
-in the system UI), and any action in the **Google Cloud / Firebase web consoles** (creating
-OAuth clients, Firebase projects, secrets). The agent has no browser access to those and cannot
-tap on a physical device.
+in the system UI) — which is needed for *production* only — and any action in the **Google Cloud /
+Firebase web consoles** (creating OAuth clients, Firebase projects, secrets). The agent has no
+browser access to those and cannot tap on a physical device.
 
 ## Where things live
 

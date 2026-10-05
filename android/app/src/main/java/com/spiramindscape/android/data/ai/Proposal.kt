@@ -176,15 +176,35 @@ fun proposalContext(p: Proposal): String {
 }
 
 /**
+ * The most turns replayed to the model, and the most characters across them.
+ *
+ * Mirrors `ChatHistory.MAX_ENTRIES` / `MAX_CHARS` on the server and `HISTORY_MAX_*` in the web's
+ * `proposal-logic.ts`. The three have to agree: the server is the backstop that bounds whatever a
+ * client sends, but a phone that sent more than the server keeps would have paid for it on the
+ * wire already — which on mobile data is the cost that matters most.
+ */
+const val HISTORY_MAX_ENTRIES = 60
+const val HISTORY_MAX_CHARS = 30_000
+
+/**
  * The transcript as the model should see it: real user/assistant turns only (no error bubbles, no
- * in-flight placeholder, no empties), with **consecutive same-role turns merged**.
+ * in-flight placeholder, no empties), with **consecutive same-role turns merged**, and **bounded**
+ * to the most recent turns that fit the limits above.
  *
  * The merge matters because revising a card writes the user's instruction into the transcript: if
  * that turn fails or is cancelled, the transcript holds two user messages in a row, and nothing
  * downstream normalises roles.
+ *
+ * The bound matters because nothing used to apply one (BUG-056). Every send replayed the whole
+ * stored transcript, so a chat cost more the longer it lived — a conversation seen in production
+ * was re-posting 270 KB per turn. Trimming happens **after** the merge, so the budget is spent on
+ * whole turns rather than fragments, and any assistant turn left stranded at the front is dropped:
+ * Anthropic rejects a conversation that does not start with the user, and a reply with no question
+ * above it reads as though the model spoke first. If that strip would empty the window, the newest
+ * user turn is kept on its own instead of sending nothing.
  */
 fun buildHistory(messages: List<ChatMessage>): List<AiApi.HistoryEntry> {
-    val out = mutableListOf<AiApi.HistoryEntry>()
+    val merged = mutableListOf<AiApi.HistoryEntry>()
     messages
         .filter {
             (it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT) &&
@@ -194,14 +214,50 @@ fun buildHistory(messages: List<ChatMessage>): List<AiApi.HistoryEntry> {
         }
         .forEach { m ->
             val role = if (m.role == ChatRole.USER) "user" else "assistant"
-            val last = out.lastOrNull()
+            val last = merged.lastOrNull()
             if (last != null && last.role == role) {
-                out[out.size - 1] = last.copy(content = last.content + "\n\n" + m.content)
+                merged[merged.size - 1] = last.copy(content = last.content + "\n\n" + m.content)
             } else {
-                out += AiApi.HistoryEntry(role, m.content)
+                merged += AiApi.HistoryEntry(role, m.content)
             }
         }
-    return out
+    return trimHistory(merged)
+}
+
+/** Keeps the newest turns that fit both limits; see [buildHistory]. */
+private fun trimHistory(merged: List<AiApi.HistoryEntry>): List<AiApi.HistoryEntry> {
+    val kept = mutableListOf<AiApi.HistoryEntry>()
+    var chars = 0
+    for (i in merged.indices.reversed()) {
+        if (kept.size >= HISTORY_MAX_ENTRIES) break
+        val entry = merged[i]
+        val cost = entry.content.length
+        // The newest turn is kept even when it alone busts the budget — truncated to its tail
+        // rather than dropped, since dropping it answers a question the model never saw.
+        if (kept.isEmpty() && cost > HISTORY_MAX_CHARS) {
+            kept += entry.copy(content = entry.content.takeLast(HISTORY_MAX_CHARS))
+            chars = HISTORY_MAX_CHARS
+            continue
+        }
+        if (chars + cost > HISTORY_MAX_CHARS) break
+        chars += cost
+        kept += entry
+    }
+    kept.reverse()
+    var start = 0
+    while (start < kept.size && kept[start].role != "user") start++
+    if (start < kept.size) return if (start == 0) kept else kept.subList(start, kept.size).toList()
+    // The window held only assistant turns, so stripping emptied it. Not a rare case: the
+    // newest entry is normally the assistant's last reply, and one long reply near the budget
+    // leaves no room for the user turn before it. Fall back to the newest thing the user
+    // actually said — it can lead, and it beats sending no history at all.
+    return newestUserTurn(merged)
+}
+
+/** The most recent user turn, truncated to the budget; see [trimHistory]. */
+private fun newestUserTurn(merged: List<AiApi.HistoryEntry>): List<AiApi.HistoryEntry> {
+    val newest = merged.lastOrNull { it.role == "user" } ?: return emptyList()
+    return listOf(newest.copy(content = newest.content.takeLast(HISTORY_MAX_CHARS)))
 }
 
 /** One optional, individually-toggleable field of a create proposal. */
@@ -389,7 +445,9 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 if (name.isNotEmpty()) put("title", name)
             }
             title = name.ifEmpty { value.ifEmpty { "New link" } }
-            detail = "New link"
+            // When a label is given, the headline shows it and the URL would otherwise never
+            // appear anywhere on the card — show it here instead of a generic label repeat.
+            detail = if (name.isNotEmpty()) value else "New link"
         }
         ProposalKind.EMAIL -> {
             patch = buildMap {
@@ -398,8 +456,15 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 data.optStringOrNull("role")?.let { put("role", it) }
                 data.optStringOrNull("phone")?.let { put("phone", it) }
             }
-            title = name.ifEmpty { value.ifEmpty { "New contact" } }
-            detail = "New contact"
+            title = name.ifEmpty { value.ifEmpty { "New email" } }
+            // The headline is the name (when given) — the address/role/phone are the actual
+            // content of the resource and must show up SOMEWHERE, or a card carrying only a
+            // name is indistinguishable from one that forgot the email entirely.
+            detail = listOfNotNull(
+                value.ifEmpty { null },
+                data.optStringOrNull("role"),
+                data.optStringOrNull("phone"),
+            ).joinToString(" · ").ifEmpty { "New email" }
         }
         ProposalKind.EDIT_TARGET -> {
             title = value.ifEmpty { name }
@@ -428,7 +493,7 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 if (value.isNotEmpty()) put("url", value)
             }
             title = name.ifEmpty { value.ifEmpty { "Update link" } }
-            detail = "Edit link"
+            detail = if (name.isNotEmpty() && value.isNotEmpty()) value else "Edit link"
         }
         ProposalKind.EDIT_EMAIL -> {
             patch = buildMap {
@@ -437,8 +502,12 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
                 data.optStringOrNull("role")?.let { put("role", it) }
                 data.optStringOrNull("phone")?.let { put("phone", it) }
             }
-            title = name.ifEmpty { value.ifEmpty { "Update contact" } }
-            detail = "Edit contact"
+            title = name.ifEmpty { value.ifEmpty { "Update email" } }
+            detail = listOfNotNull(
+                value.ifEmpty { null },
+                data.optStringOrNull("role"),
+                data.optStringOrNull("phone"),
+            ).joinToString(" · ").ifEmpty { "Edit email" }
         }
         ProposalKind.COMPLETE_TARGET -> {
             title = if (done == false) "Mark target not done" else "Mark target done"
@@ -474,8 +543,15 @@ fun proposalFromToolArgs(argsJson: String, id: String = randomProposalId()): Pro
             }
         }
         ProposalKind.OPEN_GOAL -> {
-            title = "Open this goal"
-            detail = "Open goal"
+            // `openSubject` is the concrete thing the overview cannot edit, and the whole point
+            // of the card: without it this read "Open this goal", which answers a request to add
+            // a description with an unexplained offer to navigate. It was parsed and then
+            // dropped on the floor until 2026-08-30. The web's wording, minus the goal's name —
+            // the card already belongs to the goal it names.
+            // (This is where `openSubject` is read from — the tool's own 'value'.)
+            title = value.ifEmpty { null }?.let { "You can't edit $it from the goals overview" }
+                ?: "Open this goal"
+            detail = "Open the goal to continue there"
         }
         ProposalKind.DELETE_GOAL -> {
             title = "Delete this goal"

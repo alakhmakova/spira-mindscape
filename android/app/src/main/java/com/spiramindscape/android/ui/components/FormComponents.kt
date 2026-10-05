@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,18 +44,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.spiramindscape.android.ui.theme.confidenceColor
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Error900
 import com.spiramindscape.android.ui.theme.SpiraRadii
+import com.spiramindscape.android.ui.theme.confidenceColor
 import com.spiramindscape.android.ui.theme.spiraExtras
 import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** Themed single/multi-line text input. */
 @Composable
@@ -106,16 +114,23 @@ fun SpiraButton(
     enabled: Boolean = true,
 ) {
     // Web buttons are `rounded-md` (--radius-md, 6px) — SpiraShapes.small, not .medium.
+    // **One line, always.** A button whose label wraps is a button that has been given too little
+    // room, and it should look wrong rather than quietly grow a second line — "Set deadline" did
+    // exactly that in the date picker before its dialog was widened (owner, 2026-08-29). The
+    // ellipsis makes a genuinely over-long label visible instead of clipped.
+    val label: @Composable () -> Unit = {
+        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
     when (variant) {
         SpiraButtonVariant.Primary ->
-            Button(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { Text(text) }
+            Button(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { label() }
         SpiraButtonVariant.Ghost ->
-            OutlinedButton(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { Text(text) }
+            OutlinedButton(onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small) { label() }
         SpiraButtonVariant.Destructive ->
             Button(
                 onClick, modifier, enabled = enabled, shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) { Text(text) }
+            ) { label() }
     }
 }
 
@@ -149,38 +164,149 @@ fun ConfidenceStepper(value: Int, onChange: (Int) -> Unit, modifier: Modifier = 
 
 /**
  * The one date picker in the app — used by [DeadlineField], [DeadlineLinkField], the target card's
- * calendar tile and the task rows. "Clear" removes the date; "OK" keeps whatever is selected.
+ * calendar tile and the task rows.
+ *
+ * **A Spira modal, not Material's** (owner, 2026-08-29). It was `DatePickerDialog` + `DatePicker`
+ * — a raw platform default sitting in the middle of a Spira form, which CLAUDE.md → Components
+ * and chrome → 1 forbids — and it could not show **ISO week numbers**, which Material 3's date
+ * picker has no support for at all. The web has drawn them since the beginning
+ * (`src/components/ui/calendar.tsx`), so the two surfaces disagreed about what a calendar is.
+ *
+ * The card is the web's, part for part (`DeadlinePopover`'s phone branch): the app's
+ * [SpiraSheetHead], the chosen date written out in words, [SpiraMonthGrid], `Today` and `Clear`
+ * as worded links, and the app's foot — quiet outline left, filled Kale right.
+ *
+ * **A day is a draft.** Tapping one does not commit and does not close; the foot does. On a
+ * finger-sized grid a mis-tap that instantly commits *and* dismisses leaves nothing to undo, and
+ * `Clear` is a draft for the same reason — which is why the confirm word follows it.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeadlinePickerDialog(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
-    // Seed the calendar with the CURRENT deadline (not "today") so editing an existing date
-    // opens where the user would expect it, rather than always jumping to today's month.
-    val initialMillis = value?.let {
-        try { Instant.parse(it).toEpochMilli() } catch (e: Exception) { null }
-    }
-    val stateDp = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                stateDp.selectedDateMillis?.let {
-                    onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toInstant().toString())
-                }
-                onDismiss()
-            }) { Text("OK") }
-        },
-        dismissButton = {
-            Row {
-                // Clearing a date must be reachable from wherever the picker opens — the calendar
-                // tile and the task rows have no separate "Clear" affordance beside them.
-                if (value != null) {
-                    TextButton(onClick = { onChange(null); onDismiss() }) { Text("Clear") }
-                }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+    // Seed with the CURRENT deadline (not "today") so editing an existing date opens where the
+    // user would expect it, rather than always jumping to today's month.
+    val initial = remember(value) {
+        value?.let {
+            try {
+                Instant.parse(it).atZone(ZoneOffset.UTC).toLocalDate()
+            } catch (e: Exception) {
+                null
             }
-        },
-    ) { DatePicker(state = stateDp) }
+        }
+    }
+    var picked by remember(value) { mutableStateOf(initial) }
+    var month by remember(value) { mutableStateOf(YearMonth.from(initial ?: LocalDate.now())) }
+
+    val clearing = picked == null && initial != null
+    val confirmLabel = if (clearing) "Remove deadline" else "Set deadline"
+
+    // **`usePlatformDefaultWidth = false`, and the card states its own width.** The platform
+    // default is a fixed fraction that ignores what the content asks for: it handed a seven-column
+    // grid plus a week column about 320dp on a 411dp screen, which left each foot button ~139dp
+    // and wrapped "Set deadline" onto two lines (owner, 2026-08-29). Sized here it is the web's
+    // card — the screen less a 16dp gutter, capped at 380dp, which is `w-[calc(100%-32px)]
+    // max-w-[380px]` written in Compose.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 380.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.spiraExtras.surfaceRaised),
+        ) {
+            // **The head states the draft** (owner, 2026-08-29): the date once one is chosen, and
+            // "Set deadline" only while there is none — including straight after `Clear`, where
+            // reverting to the prompt is exactly what is about to be true. It was a line of its
+            // own above the grid, which said the same thing twice: a band with a fixed title,
+            // then a sentence restating what the band was for.
+            //
+            // `MMMM d, yyyy` and nothing else, matching the web's head down to the format. The
+            // weekday and the "13d overdue" the line carried are dropped on purpose — with them
+            // the title runs past a narrow phone's head and truncates, and a head that is
+            // sometimes cut is worse than one that is always short.
+            SpiraSheetHead(
+                picked?.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH))
+                    ?: "Set deadline",
+                onDismiss,
+            )
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                SpiraMonthGrid(
+                    month = month,
+                    selected = picked,
+                    onSelect = { picked = it },
+                    onMonthChange = { month = it },
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Today",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                val t = LocalDate.now()
+                                month = YearMonth.from(t)
+                                picked = t
+                            }
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                    )
+                    if (picked != null) {
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { picked = null }
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                SpiraIcons.Trash,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                "Clear",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(start = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SpiraButton(
+                    "Cancel",
+                    onDismiss,
+                    Modifier.weight(1f),
+                    variant = SpiraButtonVariant.Ghost,
+                )
+                SpiraButton(
+                    confirmLabel,
+                    {
+                        onChange(picked?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toString())
+                        onDismiss()
+                    },
+                    Modifier.weight(1f),
+                    enabled = picked != null || clearing,
+                )
+            }
+        }
+    }
 }
 
 /**

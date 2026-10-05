@@ -12,7 +12,11 @@ import { GoalCard } from "@/components/spira/GoalCard";
 import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
-import { useShellFilters } from "@/components/shell/shell-store";
+import {
+  GOALS_SCOPE,
+  useShellFilters,
+  useViewField,
+} from "@/components/shell/shell-store";
 import { goalProgress } from "@/lib/spira/progress";
 import { useSpira } from "@/lib/spira/store";
 import { cn } from "@/lib/utils";
@@ -38,18 +42,18 @@ function GoalsOverview() {
   const syncError = useSpira((s) => s.syncError);
   const syncErrorKind = useSpira((s) => s.syncErrorKind);
   const refreshGoals = useSpira((s) => s.refreshGoals);
-  const {
-    query,
-    sort,
-    sortDirection,
-    deadlineFrom,
-    deadlineTo,
-    confidence,
-    status,
-    goalDeadline,
-    viewMode,
-    setViewMode,
-  } = useShellFilters();
+  const query = useShellFilters((s) => s.query);
+  const viewMode = useShellFilters((s) => s.viewMode);
+  const setViewMode = useShellFilters((s) => s.setViewMode);
+  // The All-goals list is the app's own — the three lists inside a goal each answer for
+  // themselves, keyed by that goal's id. See `shell-store.ts` → Scope.
+  const sort = useViewField("sort", GOALS_SCOPE);
+  const sortDirection = useViewField("sortDirection", GOALS_SCOPE);
+  const deadlineFrom = useViewField("deadlineFrom", GOALS_SCOPE);
+  const deadlineTo = useViewField("deadlineTo", GOALS_SCOPE);
+  const confidence = useViewField("confidence", GOALS_SCOPE);
+  const status = useViewField("status", GOALS_SCOPE);
+  const goalDeadline = useViewField("goalDeadline", GOALS_SCOPE);
   const [open, setOpen] = useState(false);
 
   const filtered = useMemo(() => {
@@ -130,7 +134,10 @@ function GoalsOverview() {
     // shell's `bg-background` underneath was already white, and this covered it (owner,
     // 2026-08-21). White is the canvas; the cards are told apart by their hairline.
     <div className="relative min-h-screen">
-      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-12">
+      {/* pb-24 (not py-*'s bottom) clears the fixed "New goal" FAB (h-14, bottom-5/-7): without
+          it, the last card in a short list sits directly under the circle and the FAB covers its
+          "Start" control (BUG-072, mobile viewport). */}
+      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 pt-8 pb-24 sm:px-6 sm:pt-12">
         <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {viewMode === "cards" ? (

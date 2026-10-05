@@ -115,7 +115,14 @@ export function NoticeCard({
     >
       {/* Aligned to the message's **first line**, not centred against a message that wraps. */}
       <NoticeGlyph kind={kind} className="mt-px" />
-      <div className="min-w-0 flex-1 leading-[1.5]">{children}</div>
+      {/* `min-w-0` lets the column shrink; `break-words` + `overflow-wrap:anywhere` are what
+          actually break the text once it has. A provider's error is one long unbroken URL —
+          `generativelanguage.googleapis.com/generate_content_free_tier_requests` — and with the
+          first alone it ran straight past the card's right edge (owner, 2026-08-29: "ничего не
+          должно вываливаться из блоков"). */}
+      <div className="min-w-0 flex-1 break-words leading-[1.5] [overflow-wrap:anywhere]">
+        {children}
+      </div>
       {onDismiss && (
         // The X keeps the glyph's rule on the other side: first line, so it is top-right on a
         // message that wraps and simply right on one that doesn't.

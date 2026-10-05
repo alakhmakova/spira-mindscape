@@ -134,6 +134,61 @@ describe("ai-api auth wiring (CSRF + credentials)", () => {
     expect(body.attachments).toEqual(attachments);
   });
 
+  /**
+   * A refused request carries a reason written to be read, and this path used to throw it away
+   * and report "Server error: 400" — which is how a pasted job advert (over the message cap)
+   * reached the owner as "no provider works even with keys" on 2026-09-08.
+   */
+  it("streamChat surfaces the server's reason for a 4xx", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          detail: "That message is too long — keep it under 50000 characters.",
+        }),
+      })),
+    );
+
+    const errors: string[] = [];
+    await streamChat({
+      message: "x",
+      history: [],
+      onToken: () => {},
+      onDone: () => {},
+      onError: (m) => errors.push(m),
+    });
+
+    expect(errors).toEqual([
+      "That message is too long — keep it under 50000 characters.",
+    ]);
+  });
+
+  it("streamChat keeps the generic line for a 5xx (its detail is an internal reference)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        json: async () => ({
+          detail: "Something went wrong. Reference: abc123",
+        }),
+      })),
+    );
+
+    const errors: string[] = [];
+    await streamChat({
+      message: "x",
+      history: [],
+      onToken: () => {},
+      onDone: () => {},
+      onError: (m) => errors.push(m),
+    });
+
+    expect(errors).toEqual(["Server error: 500"]);
+  });
+
   it("streamChat omits attachments (null) when none are provided", async () => {
     const encoder = new TextEncoder();
     let sent = false;

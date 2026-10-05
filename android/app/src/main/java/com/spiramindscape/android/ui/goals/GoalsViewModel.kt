@@ -1,5 +1,6 @@
 package com.spiramindscape.android.ui.goals
 
+import com.apollographql.apollo.api.Optional
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -197,6 +198,55 @@ class GoalsViewModel(private val repository: GoalsRepository) : ViewModel() {
                 _actionError.value = serverMessageOr(e, "Couldn't create this goal. Please try again.")
             } finally {
                 _creating.value = false
+            }
+        }
+    }
+
+    /**
+     * Changes one card field of a goal — the three the All-Goals page can edit.
+     *
+     * Written for the assistant's `edit_goal` card, which used to be refused outright ("That
+     * change belongs to the assistant on All goals" — said by the All-Goals assistant itself),
+     * so the model was instructed at length to produce a card the app then declined to apply.
+     * The web has applied all three since the kind existed.
+     */
+    fun editGoal(id: String, field: String, value: String) {
+        viewModelScope.launch {
+            try {
+                when (field) {
+                    "title" -> repository.updateGoal(id, title = value.trim())
+                    "confidence" -> repository.updateGoal(
+                        id,
+                        confidence = value.trim().toIntOrNull()
+                            ?: throw IllegalArgumentException("confidence is not a number"),
+                    )
+                    "deadline" -> repository.updateGoal(
+                        id,
+                        deadline = Optional.present(value.trim().ifBlank { null }),
+                    )
+                    else -> throw IllegalArgumentException("unknown field")
+                }
+                _state.value = fetch()
+            } catch (e: Exception) {
+                // The card reported the change as made; if it was not, this banner is the only
+                // other place the user could learn otherwise.
+                SpiraLog.w(TAG, "goal_edit_failed field=$field", e)
+                _actionError.value =
+                    serverMessageOr(e, "Couldn't change that goal. Please try again.")
+            }
+        }
+    }
+
+    /** Deletes a goal, once the user has confirmed it. */
+    fun deleteGoal(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteGoal(id)
+                _state.value = fetch()
+            } catch (e: Exception) {
+                SpiraLog.w(TAG, "goal_delete_failed", e)
+                _actionError.value =
+                    serverMessageOr(e, "Couldn't delete this goal. Please try again.")
             }
         }
     }

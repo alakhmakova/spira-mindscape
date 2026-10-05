@@ -1,6 +1,5 @@
 package com.spiramindscape.android.ui.ai
 
-import androidx.compose.foundation.Image
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
@@ -8,69 +7,69 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
-import com.spiramindscape.android.data.goals.ResourceItem
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.material3.HorizontalDivider
-import com.spiramindscape.android.ui.components.SpiraButton
-import com.spiramindscape.android.ui.components.SpiraSheetHead
-import com.spiramindscape.android.ui.components.SpiraTextField
-import com.spiramindscape.android.ui.theme.spiraExtras
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.graphics.asImageBitmap
-import com.spiramindscape.android.ui.goals.decodeDataUrl
-import com.spiramindscape.android.ui.theme.Kale300
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -84,29 +83,39 @@ import com.spiramindscape.android.data.ai.AiApi
 import com.spiramindscape.android.data.ai.ChatMessage
 import com.spiramindscape.android.data.ai.ChatRole
 import com.spiramindscape.android.data.ai.Proposal
-import com.spiramindscape.android.data.ai.ProposalStatus
 import com.spiramindscape.android.data.ai.ProposalKind
+import com.spiramindscape.android.data.ai.ProposalStatus
 import com.spiramindscape.android.data.goals.GoalDetail
+import com.spiramindscape.android.data.goals.ResourceItem
+import com.spiramindscape.android.ui.components.ConfirmDialog
 import com.spiramindscape.android.ui.components.InlineEditText
 import com.spiramindscape.android.ui.components.SpiraBadge
 import com.spiramindscape.android.ui.components.SpiraBadgeTone
+import com.spiramindscape.android.ui.components.SpiraButton
 import com.spiramindscape.android.ui.components.SpiraDropdownMenu
 import com.spiramindscape.android.ui.components.SpiraMenuItem
 import com.spiramindscape.android.ui.components.SpiraNoticeCard
-import com.spiramindscape.android.ui.components.rememberCopyFlash
 import com.spiramindscape.android.ui.components.SpiraNoticeKind
-import com.spiramindscape.android.ui.goals.copyPlainText
-import com.spiramindscape.android.ui.icons.SpiraArt
+import com.spiramindscape.android.ui.components.SpiraSheetHead
+import com.spiramindscape.android.ui.components.SpiraTextField
 import com.spiramindscape.android.ui.components.addActionTextStyle
-import com.spiramindscape.android.ui.theme.SpiraRadii
+import com.spiramindscape.android.ui.components.rememberCopyFlash
+import com.spiramindscape.android.ui.goals.copyPlainText
+import com.spiramindscape.android.ui.goals.decodeDataUrl
+import com.spiramindscape.android.ui.icons.SpiraArt
 import com.spiramindscape.android.ui.icons.SpiraIcons
 import com.spiramindscape.android.ui.theme.Brand1100
 import com.spiramindscape.android.ui.theme.Guava300
 import com.spiramindscape.android.ui.theme.Intelligence300
 import com.spiramindscape.android.ui.theme.Intelligence500
 import com.spiramindscape.android.ui.theme.Intelligence900
+import com.spiramindscape.android.ui.theme.Kale300
 import com.spiramindscape.android.ui.theme.Kale500
 import com.spiramindscape.android.ui.theme.Kale600
+import com.spiramindscape.android.ui.theme.SpiraRadii
+import com.spiramindscape.android.ui.theme.Warning100
+import com.spiramindscape.android.ui.theme.Warning500
+import com.spiramindscape.android.ui.theme.spiraExtras
 
 /**
  * The AI coach panel — the same design as the desktop `AiPanel`, on the brand's Kale-600 ground.
@@ -115,6 +124,9 @@ import com.spiramindscape.android.ui.theme.Kale600
  * provider strip under it, the conversation on the teal itself (user turns in white bubbles, the
  * assistant's in Kale-200 ones leaning the other way), and a single composer at the foot.
  */
+// `isImeVisible` is the only way to know the keyboard is actually up rather than merely asked
+// for; it is still marked experimental and has been stable for several Compose releases.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AiChatScreen(
     viewModel: AiChatViewModel,
@@ -123,7 +135,8 @@ fun AiChatScreen(
     /** The open goal, for the opening prompts. Null in the all-goals chat. */
     goal: GoalDetail? = null,
     /** Apply an accepted proposal. Returns the message to show, or null when it was applied. */
-    onApplyProposal: (Proposal, Set<String>) -> String? = { _, _ -> "This build can't apply that yet." },
+    onApplyProposal: (Proposal, Set<String>, String?) -> String? =
+        { _, _, _ -> "This build can't apply that yet." },
     /**
      * Opens the note the assistant last created, for the "Open note" action on an applied card.
      * Null in the all-goals chat, which has no goal to hang a resource on.
@@ -152,6 +165,8 @@ fun AiChatScreen(
     }
 
     var providerSheet by remember { mutableStateOf(false) }
+    // End is destructive now — it leaves without a record — so it asks first.
+    var confirmEnd by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<ChatNotice?>(null) }
     // The attachment being previewed full-screen, or null. Both the composer chips and a sent
     // message's chips open it through LocalOpenAttachment.
@@ -159,9 +174,48 @@ fun AiChatScreen(
     val listState = rememberLazyListState()
     val inGrow = mode != ChatMode.CHAT
 
-    // Follow the answer as it streams, and land on the newest turn when one arrives.
+    // Follow the answer as it streams, and land on the newest turn when one arrives — at the END
+    // of it, which is a different place from the top of it: see [scrollToConversationEnd].
+    //
+    // Instant, not animated, for the reason the keyboard effect below is: while a reply streams,
+    // the content this is chasing grows every few frames, so an animation is cancelled and
+    // restarted before it can ever settle. The web scrolls the same way (`AiPanel.tsx` puts the
+    // transcript at `top: 99999` on every chunk).
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isNotEmpty()) listState.scrollToConversationEnd(messages.lastIndex)
+    }
+
+    // The floating footer's own height, so the transcript can be padded by exactly it.
+    val density = LocalDensity.current
+    var footerHeight by remember { mutableStateOf(0.dp) }
+
+    // **The keyboard opening brings the end of the conversation down to the composer** (owner,
+    // 2026-08-29), the twin of the web's `useKeyboardStickyBottom`.
+    //
+    // **It is keyed on `footerHeight` as well as on the keyboard, and that is the fix.** Keyed on
+    // `isImeVisible` alone it ran — and did nothing visible, which is what was reported twice.
+    // The reason is a race this screen creates for itself:
+    //
+    //   1. the IME becomes visible, and the flag flips at the START of its slide;
+    //   2. the effect scrolls to the end — of the list as it is measured *now*;
+    //   3. the footer is `imePadding()`-ed, so it grows by the keyboard's height, and its
+    //      `onSizeChanged` feeds that into the transcript's bottom `contentPadding`;
+    //   4. the list is now a keyboard's height short of its end, exactly where it started.
+    //
+    // The transcript genuinely must be padded by the keyboard: the Box behind it is not shrunk by
+    // the IME — only the footer is lifted — so the conversation runs on behind the keys. Which
+    // makes step 3 correct and step 2 early. Re-running on every `footerHeight` means the list
+    // tracks the footer as it rises instead of racing it, and lands settled at the end.
+    //
+    // Instant, not animated: the keyboard's own slide is already the motion, and a second
+    // animation running against a padding that is changing in the same frames is what reads as
+    // jitter. Only while the keyboard is UP; it leaving must not yank a transcript the reader has
+    // scrolled up into.
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(imeVisible, footerHeight) {
+        if (imeVisible && messages.isNotEmpty()) {
+            listState.scrollToConversationEnd(messages.lastIndex)
+        }
     }
 
     CompositionLocalProvider(LocalOpenAttachment provides { previewAttachment = it }) {
@@ -193,11 +247,12 @@ fun AiChatScreen(
                 // No confirmation here, deliberately (owner, 2026-08-23): the empty chat is
                 // itself the feedback, and a toast for it was one more thing to dismiss.
                 onNewChat = viewModel::clearChat,
-                onEndSession = viewModel::closeGrow,
-                // Ending early is only on offer while the session is really running: not
-                // mid-stream, and not once the ending sequence has begun — it is already ending.
-                canEndEarly = !streaming &&
-                    (mode == ChatMode.GROW_ACTIVE || mode == ChatMode.GROW_CLOSING),
+                onEndSession = { confirmEnd = true },
+                // **Always available while a session is open**, mid-stream included. It used to be
+                // greyed out whenever a request was in flight, which is precisely when a user
+                // wants out: a provider that will not answer left the session with no exit at all
+                // (owner, 2026-09-08). End cancels whatever is running — see `endGrowNow`.
+                canEndEarly = isGrowSession(mode),
             )
 
             if (!inGrow) {
@@ -218,9 +273,17 @@ fun AiChatScreen(
             Banner("The session is gently moving toward a close")
         }
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
+        // **The footer floats over the transcript**, exactly as the web does (owner, 2026-08-29;
+        // `AiPanel.tsx`). One Box holds both: the conversation runs its full height underneath,
+        // and whatever stands in the composer's place — the field itself, a proposal card, a
+        // session step — sits over it on the same gradient, with the messages scrolling under it.
+        //
+        // The gradient moved HERE from the LazyColumn, and that is the other half of the report:
+        // every footer branch used to paint `CHAT_GRADIENT_BOTTOM` itself, so a card read as a
+        // slab of its own colour stuck under the chat. One ground, painted once, everything on
+        // it transparent.
+        Box(
+            Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .background(
@@ -231,7 +294,15 @@ fun AiChatScreen(
                         ),
                     ),
                 ),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag(CHAT_TRANSCRIPT_TAG),
+            // The bottom padding is the floating footer's measured height, so the last message
+            // can be scrolled clear of the card it disappears behind rather than resting under it.
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp + footerHeight,
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (!inGrow && messages.isEmpty()) {
@@ -248,7 +319,8 @@ fun AiChatScreen(
                     message = message,
                     onOpenNote = onOpenNote,
                     onAcceptProposal = { proposal, excluded ->
-                        val error = onApplyProposal(proposal, excluded)
+                        val error =
+                            onApplyProposal(proposal, excluded, askedFor(messages, message.id))
                         notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
                         viewModel.settleProposal(message.id, proposal.id, approved = error == null)
                     },
@@ -262,32 +334,42 @@ fun AiChatScreen(
             }
         }
 
-        // The GROW cards sit on the light chat bottom (not a dark block), padded clear of the nav
-        // bar and scrollable, so a tall card is never clipped behind the system bar (owner, 2026-08-18).
+        // The GROW cards are scrollable and capped, so a tall card is never clipped.
         //
         // **`imePadding()` comes BEFORE the height cap and the scroll, and the order is the whole
         // fix** (owner, 2026-08-24: the Edit field was half under the keyboard). Modifiers apply
         // outside-in: put `imePadding()` last and the keyboard's height becomes padding on the
         // *scrollable content*, so the box stays exactly where it was — under the keyboard — and
-        // the padding it gained is only reachable by scrolling. Put it first and the box itself is
-        // lifted clear, which is what the composer has always done (see [Composer]) and why typing
-        // a message worked while typing into a card did not.
+        // the padding it gained is only reachable by scrolling. It sits on the floating column
+        // below now, which is outside every card, so the ordering still holds for all of them.
         val cardHost: @Composable (@Composable () -> Unit) -> Unit = { card ->
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .background(CHAT_GRADIENT_BOTTOM)
                     .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
             ) { card() }
         }
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                // **`onSizeChanged` goes ABOVE the inset padding, not below it.** Modifiers are
+                // applied outside-in and each padding reports the *padded* size upward, so with
+                // this call last it measured the footer's content and missed the nav bar (and,
+                // while typing, the whole keyboard). The transcript was then padded by too
+                // little, its last messages sat behind the footer, and no amount of scrolling
+                // could reach them — "невозможно прокрутить до конца" (owner, 2026-08-29). It
+                // also made the keyboard scroll look broken: it did run, and landed under the
+                // composer.
+                .onSizeChanged { footerHeight = with(density) { it.height.toDp() } }
+                .imePadding()
+                .navigationBarsPadding(),
+        ) {
         notice?.let { shown ->
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .background(CHAT_GRADIENT_BOTTOM)
                     // The same 12dp gutter the composer card and the footer card use, so the
                     // toast is the width of the field it sits over — on any screen.
                     .padding(horizontal = 12.dp)
@@ -345,12 +427,6 @@ fun AiChatScreen(
             pendingMessage != null && (!inGrow || mode == ChatMode.GROW_REVIEW) -> Box(
                 Modifier
                     .fillMaxWidth()
-                    // Lifted clear of the keyboard FIRST — see the note on `cardHost` above for
-                    // why the order of these two matters more than it looks.
-                    .imePadding()
-                    .navigationBarsPadding()
-                    // The composer's spot is light now (the gradient's bottom), not a dark band.
-                    .background(CHAT_GRADIENT_BOTTOM)
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp)
@@ -359,7 +435,10 @@ fun AiChatScreen(
                 ProposalGroup(
                     proposals = pendingMessage.proposals,
                     onAccept = { proposal, excluded ->
-                        val error = onApplyProposal(proposal, excluded)
+                        val error =
+                            onApplyProposal(
+                                proposal, excluded, askedFor(messages, pendingMessage.id),
+                            )
                         notice = error?.let { ChatNotice(it, SpiraNoticeKind.Error) }
                         viewModel.settleProposal(
                             pendingMessage.id, proposal.id, approved = error == null,
@@ -386,8 +465,11 @@ fun AiChatScreen(
                     )
                 }
             }
-            // The composer sits on the gradient's light bottom, not a dark band (owner, 2026-08-17).
-            else -> Column(Modifier.fillMaxWidth().background(CHAT_GRADIENT_BOTTOM)) {
+            // **No ground of its own** — the gradient painted on the Box behind shows through, so
+            // the white field card is the only container the user can see. It carried
+            // `CHAT_GRADIENT_BOTTOM` itself until the footer began floating, which put a solid
+            // block under a transparent design (owner, 2026-08-29).
+            else -> Column(Modifier.fillMaxWidth()) {
                 // The starters ride with the composer, not with the empty state above it.
                 if (!inGrow && messages.isEmpty() && !needsKey) {
                     ComposerSuggestions(goal = goal, onPick = viewModel::send)
@@ -401,7 +483,8 @@ fun AiChatScreen(
                     placeholder = if (inGrow) "Answer in your own words…" else "Ask, plan, or request an action…",
                     growAction = if (!inGrow && viewModel.scopeGoalId != null) viewModel::openGrowStart else null,
                     // In a session the left slot ends it early, where Start GROW would be.
-                    endAction = if (inGrow) viewModel::closeGrow else null,
+                    // Same End as the header's: local, immediate, and behind one question.
+                    endAction = if (inGrow) ({ confirmEnd = true }) else null,
                     draft = composerDraft,
                     onDraftChange = viewModel::setComposerDraft,
                     attachments = composerAttachments,
@@ -414,6 +497,8 @@ fun AiChatScreen(
                     onAttachError = { notice = ChatNotice(it, SpiraNoticeKind.Error) },
                 )
             }
+        }
+        }
         }
     }
 
@@ -430,7 +515,27 @@ fun AiChatScreen(
     if (providerSheet) {
         ProviderSheet(viewModel = viewModel, onDismiss = { providerSheet = false })
     }
+
+    // End leaves the session immediately and keeps nothing, so it is worth one question first —
+    // but the question is local too: nothing here waits on the coach.
+    if (confirmEnd) {
+        ConfirmDialog(
+            title = "End this session?",
+            message = "The session closes now. Nothing from it is saved — no record, no memory.",
+            confirmLabel = "Yes, end it",
+            cancelLabel = "No, keep going",
+            onConfirm = {
+                confirmEnd = false
+                viewModel.endGrowNow()
+            },
+            onDismiss = { confirmEnd = false },
+        )
+    }
 }
+
+/** A GROW session is open — any of its modes, including the ones that are already closing. */
+private fun isGrowSession(mode: ChatMode): Boolean =
+    mode != ChatMode.CHAT && mode != ChatMode.GROW_START
 
 // ── the panel's own tones: white at the opacities the web uses on teal ──────
 
@@ -478,6 +583,44 @@ internal val CHAT_INK = ON_WHITE
 internal val CHAT_INK_MUTED = ON_WHITE.copy(alpha = 0.62f)
 /** A pill/chip that sits on the gradient — translucent white plate with dark ink. */
 internal val CHAT_PILL_BG = Color.White.copy(alpha = 0.72f)
+
+/** So a test can read where the transcript actually came to rest. */
+const val CHAT_TRANSCRIPT_TAG = "ai-chat-transcript"
+
+/**
+ * Lands the transcript on the **end of the conversation**, which is not the same place as the top
+ * of its last message.
+ *
+ * `scrollToItem(lastIndex)` puts that item's TOP at the top of the viewport, and a list cannot
+ * scroll past its own end — so with the composer at its resting height, where there is barely any
+ * padding below the last message, the call clamps and lands at the end by accident. That is why
+ * this looked right for months, and why the report was about the **keyboard** (owner, 2026-08-29:
+ * "автопрокрутка чата не работает"): the keyboard's height becomes the transcript's bottom
+ * `contentPadding`, so there is suddenly a whole keyboard of room below, the clamp stops biting,
+ * and a reply taller than the panel is parked on its FIRST line with the rest of it running on
+ * behind the composer.
+ *
+ * So walk on from there, a viewport at a time — the list only measures what it can see, and each
+ * step composes the next screenful — until it says there is nothing below. `scrollBy` returns
+ * what it actually consumed, which is the only reliable "that is as far as it goes"; the loop
+ * carries a guard as well, because a list that keeps growing under it (a reply still streaming)
+ * must not be able to hold this coroutine open.
+ *
+ * `ChatScrollsToTheEndTest` renders it with a keyboard dispatched by hand, since Robolectric's
+ * window reports no IME inset of its own — without that the test only ever sees the clamp.
+ */
+private suspend fun LazyListState.scrollToConversationEnd(lastIndex: Int) {
+    scrollToItem(lastIndex)
+    var steps = 0
+    while (canScrollForward && steps++ < MAX_SCROLL_STEPS) {
+        val viewport = layoutInfo.viewportSize.height.toFloat()
+        if (viewport <= 0f) return
+        if (scrollBy(viewport) < 0.5f) return
+    }
+}
+
+/** How many screenfuls past the last message's first line [scrollToConversationEnd] will walk. */
+private const val MAX_SCROLL_STEPS = 32
 
 /**
  * How tall the composer's field may grow before it scrolls instead.
@@ -683,20 +826,14 @@ private fun TimerPill(seconds: Int, totalMinutes: Int) {
 
 @Composable
 private fun Banner(text: String) {
-    Row(
-        Modifier
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 10.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(WHITE_10)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // The owner's watering-can-and-sprout illustration, never the fat checkmark.
-        Image(imageVector = SpiraArt.sprout(), contentDescription = null, modifier = Modifier.size(14.dp))
-        Spacer(Modifier.size(8.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = Color.White)
+    // **The app's one message card, not a fourth shape** (owner, 2026-09-08 — the old strip
+    // "выглядит очень плохо"). It was a bespoke translucent band, the only message in the app not
+    // drawn as [SpiraNoticeCard], which is precisely what the notice spec exists to stop. `Ai` is
+    // its kind: the coach speaking about itself, in the Intelligence violet its own surfaces use.
+    // No dismiss — it is a state, not an event, and stands until the session leaves the closing
+    // stretch (a notice the user cannot act on carries no X).
+    Box(Modifier.padding(horizontal = 12.dp).padding(bottom = 10.dp)) {
+        SpiraNoticeCard(kind = SpiraNoticeKind.Ai, message = text, onDismiss = null)
     }
 }
 
@@ -885,6 +1022,17 @@ private fun SuggestionButton(
             color = CHAT_INK,
         )
     }
+}
+
+/**
+ * The user's own message that led to the proposals on [messageId] — the nearest user turn above
+ * it. Some cards can only be applied somewhere else, and carrying the original request there is
+ * what stops "open the goal" from meaning "type it again" (see `AiHandoff`).
+ */
+private fun askedFor(messages: List<ChatMessage>, messageId: String): String? {
+    val i = messages.indexOfFirst { it.id == messageId }
+    if (i < 0) return null
+    return messages.take(i).lastOrNull { it.role == ChatRole.USER }?.content?.ifBlank { null }
 }
 
 @Composable
@@ -1151,17 +1299,34 @@ private fun ThinkingDots() {
     }
 }
 
-/** An error reads as a warning line on the ground, never as a bubble. */
+/**
+ * Something that went wrong, in the conversation.
+ *
+ * **Near-black words, a yellow mark** (owner, 2026-08-29: chat warnings "коричневые, а не
+ * жёлтые"). The whole line used to be set in `warning-500`, and mustard type on the pale teal
+ * gradient reads brown — which is the mistake CLAUDE.md → Notices already names: the kind belongs
+ * on the mark and the border, never on the words. So it takes the app's notice shape, exactly as
+ * the web's does: a `warning-500` outline on a `warning-100` fill, a yellow triangle, and the
+ * message in the ordinary ink.
+ *
+ * `fillMaxWidth` rather than a fixed `widthIn`, so an unbroken URL wraps inside the card instead
+ * of running past its right edge — a quota error from Gemini is one long link and did exactly
+ * that (owner, 2026-08-29: "ничего не должно вываливаться из блоков").
+ */
 @Composable
 private fun ErrorTurn(text: String) {
-    // A bright yellow from the warning ramp — Warning-500 (#C99500), clearly yellow (not the brown
-    // #6B4E00) and legible on the light chat area (owner, 2026-08-18).
-    val warnInk = Color(0xFFC99500)
-    Row(Modifier.widthIn(max = 340.dp)) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Warning100)
+            .border(1.dp, Warning500, RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
         Icon(
             SpiraIcons.TriangleAlert,
             contentDescription = null,
-            tint = warnInk,
+            tint = Warning500,
             modifier = Modifier.padding(top = 3.dp).size(15.dp),
         )
         Spacer(Modifier.size(8.dp))
@@ -1170,7 +1335,8 @@ private fun ErrorTurn(text: String) {
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 14.sp,
             lineHeight = 22.sp,
-            color = warnInk,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -1351,7 +1517,7 @@ private fun Composer(
                 // **Capped, and it scrolls itself — following the caret.**
                 //
                 // Without a ceiling the field grows with the text and pushes the row below it —
-                // paperclip, "End session early", Send — off the bottom of the panel, so a long
+                // paperclip, "End", Send — off the bottom of the panel, so a long
                 // message leaves nothing to press (owner, 2026-08-24). The web has capped this at
                 // 128px from the start (`Math.min(el.scrollHeight, 128)` in `AiPanel.tsx`).
                 //
@@ -1437,7 +1603,7 @@ private fun Composer(
                 // ending is now where starting was, rather than a separate link above (owner,
                 // 2026-08-17). Kale-500, the working primary: the user is acting, not the assistant.
                 val left = when {
-                    endAction != null -> Triple(SpiraIcons.X, "End session early", endAction)
+                    endAction != null -> Triple(SpiraIcons.X, "End", endAction)
                     growAction != null -> Triple(SpiraIcons.SparklesFilled, "Start GROW session", growAction)
                     else -> null
                 }
@@ -1726,7 +1892,7 @@ private fun GrowStartOverlay(onStart: (Int) -> Unit, onCancel: () -> Unit) {
 
 /** The closing card: keep what the session worked out on the goal, or let it go. */
 @Composable
-private fun GrowEndCard(
+internal fun GrowEndCard(
     record: String,
     revising: Boolean,
     onRevise: (String) -> Unit,
@@ -1734,6 +1900,13 @@ private fun GrowEndCard(
     onDiscard: () -> Unit,
 ) {
     var instruction by remember { mutableStateOf("") }
+    // **An empty record is said plainly, and cannot be saved.** The coach writes nothing when the
+    // provider fails mid-close, or when End was pressed and the session ended locally with no AI
+    // involved at all. The card then offered "Save memory" over an empty box: a button that
+    // promises to keep something there is nothing to keep, and pressing it wrote a blank memory
+    // over whatever the previous session had left. Say what happened, and let the user ask for
+    // one in the field below or simply close (owner, 2026-09-08).
+    val hasRecord = record.isNotBlank()
     Column(
         Modifier
             .fillMaxWidth()
@@ -1750,7 +1923,11 @@ private fun GrowEndCard(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Save what you worked out, so the next session picks up the thread.",
+            if (hasRecord) {
+                "Save what you worked out, so the next session picks up the thread."
+            } else {
+                "The coach wrote no record of this session. Ask for one below, or close without saving."
+            },
             style = MaterialTheme.typography.bodyMedium,
             fontSize = 13.sp,
             color = ON_WHITE.copy(alpha = 0.7f),
@@ -1777,7 +1954,7 @@ private fun GrowEndCard(
                 .padding(12.dp),
         ) {
             AiMarkdown(
-                text = record.ifBlank { "The coach ended the session without a record." },
+                text = record.ifBlank { "No record was written." },
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 20.sp),
                 color = CHAT_INK,
                 mutedColor = CHAT_INK_MUTED,
@@ -1846,8 +2023,8 @@ private fun GrowEndCard(
                     .weight(1f)
                     .height(40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(ON_WHITE)
-                    .clickable(enabled = !revising) { onSave() },
+                    .background(if (hasRecord) ON_WHITE else ON_WHITE.copy(alpha = 0.3f))
+                    .clickable(enabled = !revising && hasRecord) { onSave() },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -1867,7 +2044,7 @@ private fun GrowEndCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Discard",
+                    if (hasRecord) "Discard" else "Close",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = ON_WHITE,
@@ -1955,7 +2132,10 @@ fun ChatAttachmentViewerContent(
     }
 
     val title = when {
-        res != null && res.type == "email" -> res.name?.takeIf { it.isNotBlank() } ?: "Contact"
+        res != null && res.type == "email" ->
+            res.name?.takeIf { it.isNotBlank() }
+                ?: res.email?.takeIf { it.isNotBlank() }
+                ?: "Email"
         res != null -> res.title?.takeIf { it.isNotBlank() } ?: attachment.name
         else -> attachment.name
     }
@@ -2075,7 +2255,7 @@ fun ChatAttachmentViewerContent(
                         ViewerBlock {
                             Text(
                                 listOfNotNull(res.role, res.email, res.phone)
-                                    .joinToString("\n").ifBlank { "(no contact details)" },
+                                    .joinToString("\n").ifBlank { "No details saved." },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

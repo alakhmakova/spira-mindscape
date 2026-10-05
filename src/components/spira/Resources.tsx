@@ -38,6 +38,7 @@ import {
   useListActive,
   useListLocked,
   useShellFilters,
+  useViewField,
   type ResourceSortKey,
   type ResourceTypeFilter,
 } from "@/components/shell/shell-store";
@@ -307,16 +308,19 @@ export function ResourcesSection({
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   // In the store, so this list's padlock has something to pin.
-  const sort = useShellFilters((s) => s.resourceSort);
-  const typeFilter = useShellFilters((s) => s.resourceType);
+  // Per goal, like the two lists beside it — see `shell-store.ts` → Scope.
+  const scope = goal.id;
+  const sort = useViewField("resourceSort", scope);
+  const typeFilter = useViewField("resourceType", scope);
   const setResourcesView = useShellFilters((s) => s.setView);
   const resetList = useShellFilters((s) => s.resetList);
   const setLocked = useShellFilters((s) => s.setLocked);
-  const resourcesLocked = useListLocked("resources");
-  const resourcesActive = useListActive("resources");
-  const setSort = (next: ResSort) => setResourcesView({ resourceSort: next });
+  const resourcesLocked = useListLocked("resources", scope);
+  const resourcesActive = useListActive("resources", scope);
+  const setSort = (next: ResSort) =>
+    setResourcesView({ resourceSort: next }, scope);
   const setTypeFilter = (next: ResType) =>
-    setResourcesView({ resourceType: next });
+    setResourcesView({ resourceType: next }, scope);
   // The phone asks both questions in one drawer; the desktop keeps its two menus.
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -369,10 +373,10 @@ export function ResourcesSection({
               open={sheetOpen}
               onOpenChange={setSheetOpen}
               title="Filter & Sort"
-              onReset={() => resetList("resources")}
+              onReset={() => resetList("resources", scope)}
               resetDisabled={!resourcesActive}
               locked={resourcesLocked}
-              onLockedChange={(next) => setLocked("resources", next)}
+              onLockedChange={(next) => setLocked("resources", scope, next)}
             >
               <SheetGroup title="Type">
                 <SheetPills
@@ -1412,6 +1416,13 @@ function ResourcePreview({
     if (resource?.type === "note") {
       return (
         <Drawer open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+          {/* The one sheet that keeps `dvh`, and the exception proves the rule (see CLAUDE.md
+              → Sheets → the unit). A sheet that covers only PART of the screen is anchored to
+              the bottom of the layout viewport, so a fraction of `vh` keeps its top edge still
+              while Chrome's toolbar comes and goes; `dvh` would make it breathe. A FULL-screen
+              surface has the opposite need — it must match what is visible, and `100vh` would
+              push its bottom edge under the toolbar, taking the note editor's own toolbar with
+              it. */}
           <DrawerContent className="mt-0 h-[100dvh] max-h-[100dvh] rounded-none border-0 px-0 flex flex-col bg-surface">
             <MobileNoteBody
               title={resource.title}
@@ -1444,7 +1455,7 @@ function ResourcePreview({
         <DrawerContent
           className={cn(
             "px-0 pb-6 flex flex-col",
-            isPdf ? "h-[92dvh]" : "max-h-[92dvh]",
+            isPdf ? "sheet-h" : "sheet-max",
           )}
         >
           {Body}
@@ -1753,7 +1764,7 @@ export function NewResourceSheet({
   if (isMobile)
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="mt-0 px-0 h-[92dvh] max-h-[92dvh] flex flex-col bg-surface">
+        <DrawerContent className="sheet-max mt-0 px-0 flex flex-col bg-surface">
           {open && <Form goalId={goalId} onDone={handleDone} />}
         </DrawerContent>
       </Drawer>

@@ -56,6 +56,16 @@ public class RestExceptionHandler {
                 .map(RestExceptionHandler::describeFieldError)
                 .distinct()
                 .collect(Collectors.joining("; "));
+        // **A rejected request has to leave a trace.** WARN, per the levels in docs/logging.md:
+        // expected, but notable. This was silent until 2026-09-08, when production started
+        // refusing every chat send from one browser and the logs held nothing but a bare 400 —
+        // no reason, no field, nothing to work from. Only the FIELD NAMES go in: they are our
+        // own schema, where the messages can carry user input ("Unknown provider: …").
+        String fields = ex.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getField)
+                .distinct()
+                .collect(Collectors.joining(","));
+        log.warn("request_validation_failed fields={}", fields);
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         pd.setDetail(detail.isBlank() ? "Some fields are invalid." : detail);
         return pd;

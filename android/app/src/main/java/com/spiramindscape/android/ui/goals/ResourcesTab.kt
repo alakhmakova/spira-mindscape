@@ -132,7 +132,7 @@ fun ResourcesTabContent(
     onQueryChange: (String) -> Unit = {},
 ) {
     var openId by remember { mutableStateOf<String?>(null) }
-    val view = rememberResourceViewState()
+    val view = rememberResourceViewState(goal.id)
     val visible = applyResourceView(goal.resources, query, view.sort, view.ascending, view.filter)
 
     Column(

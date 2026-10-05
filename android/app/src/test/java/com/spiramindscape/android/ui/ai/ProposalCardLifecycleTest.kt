@@ -110,7 +110,7 @@ class ProposalCardLifecycleTest {
                     viewModel = vm,
                     onClose = {},
                     // Applied without complaint, as the goal screen does when the write succeeds.
-                    onApplyProposal = { _, _ -> null },
+                    onApplyProposal = { _, _, _ -> null },
                     onOpenNote = {},
                 )
             }

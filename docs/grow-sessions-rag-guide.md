@@ -64,6 +64,8 @@ to repeat the same setup in your own project.
 7. [Session timing: the coach knows the clock](#7-session-timing-the-coach-knows-the-clock)
 8. [Session memory: continuing where you left off](#8-session-memory-continuing-where-you-left-off)
 9. [Proposals during sessions (and surviving page reloads)](#9-proposals-during-sessions)
+9a. [Ending a session: three steps, and what "End" really does](#9a-ending-a-session-three-steps-and-what-end-really-does)
+9b. [A live session follows you between devices](#9b-a-live-session-follows-you-between-devices)
 10. [Hard guarantees (no silent fallbacks)](#10-hard-guarantees)
 11. [Tests that were written](#11-tests-that-were-written)
 12. [How to repeat this in your own project — checklist](#12-how-to-repeat-this-in-your-own-project)
@@ -500,6 +502,64 @@ were part of this work:
   any pending proposals whose cards the restored transcript no longer carries
   ("These proposals from an earlier session are still waiting for your
   review"). De-duplication is by the server-side proposal id.
+
+## 9a. Ending a session: three steps, and what "End" really does
+
+Two things had to be separated here, because merging them cost the owner several whole sessions
+(BUG-079, BUG-080).
+
+**A close is three steps, not one turn.** "Ending the session" used to ask the coach for the session
+record, the goal proposals and the goodbye all at once. Models wrote the record, said goodbye and
+skipped the middle — a record reads like a summary, so once it is written the turn feels finished.
+The close is now explicit and sequential, in `coach-method.md` and in both clients:
+
+| Step | What it is | Who asks for it |
+|---|---|---|
+| 1. **The record** | What *this* session was about, written for the next one | the coach's closing turn |
+| 2. **The proposals** | Changes to the goal itself, as reviewable cards | `askForProposals()` — a dedicated turn that asks for nothing else |
+| 3. **The goodbye** | Only once the review is done | `askForGoodbye` |
+
+The record and the proposals are **different things and must not be confused**: the record is memory
+for the coach, the proposals are edits to the user's goal. The memory block itself now says so
+(`GoalMemoryService.memoryBlock()`: *context, never material for the record*), because models were
+reading the previous session's memory as a template for what to write.
+
+A subtlety worth keeping: the ending flag is `endRecord !== null && !proposalsTurn`. Without the
+second half, a model that re-calls `end_session` on the proposals turn has its proposals treated as
+part of the ending and silently dropped — the original defect, arriving by a second route.
+
+**"End" is local, unconditional, and involves no AI at all.** It used to send a hidden "wrap this up
+now" instruction and wait for the model. A dead provider therefore meant a session that could not be
+closed, and pressing Stop afterwards latched the wrap-up flag and disabled End permanently — the
+owner was trapped in a session with no exit (2026-09-08).
+
+> **End ends the session. It cancels any stream in flight, stops the timer, clears the draft and any
+> held proposals, and leaves. Nothing is sent, nothing is saved, and nothing about the provider can
+> take the exit away.**
+
+`canEndEarly` is therefore simply "we are in a session". Anything that ends without the coach
+speaking leaves **no record**, and the closing card says so rather than offering to save an empty one
+over the previous session's (BUG-084).
+
+## 9b. A live session follows you between devices
+
+The ordinary chat has synced through `ai_chat_transcript` for a while. A session *in progress* did
+not — it lived in `localStorage` on the web and in the ViewModel on Android, so a session begun on
+the phone did not exist on the laptop (BUG-081).
+
+`ai/grow/session/` gives it a row: `GET` / `PUT` / `DELETE /api/ai/grow/session`, one per
+(user, goal), unique-indexed — a second row would be two clocks running on one conversation.
+
+- **Owner-scoped** through `goalRepository.findByIdAndUserId`, like every other goal-owned resource.
+- `content` is **the client's own JSON** — the minutes, when it ends, and the messages. The server
+  never reads it, so the schema does not move when the session's shape does. Both surfaces write the
+  same shape, which is what makes them interchangeable.
+- It is deliberately **not** the transcript's row. A session row is created when the session starts
+  and **deleted the moment it ends**; what outlives it is the record the user chose to keep and
+  whatever they approved into the goal.
+- Web: `saveGrowSession` also `PUT`s and `clearGrowSession` also `DELETE`s; `resumeFromServer`
+  (guarded by `resumeAskedRef`, so it asks once) offers whatever the server holds. Android:
+  `persistGrowSession` / `restoreGrowSession` / `clearGrowSessionRemote`.
 
 ## 10. Hard guarantees
 

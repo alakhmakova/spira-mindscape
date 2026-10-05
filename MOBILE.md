@@ -84,10 +84,14 @@ Kotlin** (type-safe generated models from the shared schema).
    the system JDK 22 does not). Full one-time setup (SDK, Firebase, the Google OAuth client that
    sign-in needs) is in [`docs/mobile-setup-guide.md`](docs/mobile-setup-guide.md).
 2. **Open the `android/` folder** in Android Studio (not the repo root), let Gradle sync.
-3. **Run** on a device or an emulator (`Run ▶`). The emulator reaches a local backend at
-   `http://10.0.2.2:8080`; by default the app uses the **production** backend, so it works with
-   just internet.
-4. **Terminal build:** `cd android; .\gradlew.bat :app:assembleDebug` (APK in
+3. **Run** on a device or an emulator (`Run ▶`). Pick the **`debug`** build variant to use the
+   production backend — it works with just internet, and asks you to sign in with Google.
+4. **Or run against your own machine, with no sign-in at all:** the **`dev`** variant points at
+   `http://10.0.2.2:8080` (the host, from inside the emulator), and a backend started on the
+   `local` Spring profile signs every request in as `dev@local` — so the app opens straight on
+   All goals. `cd android; .\gradlew.bat :app:installDev`. See the repo `README.md` →
+   "Build variants — skip Google login for quick local checks".
+5. **Terminal build:** `cd android; .\gradlew.bat :app:assembleDebug` (APK in
    `app/build/outputs/apk/debug/`); `:app:testDebugUnitTest` runs the tests.
 
 See [`android/README.md`](android/README.md) for the exact toolchain versions and commands.

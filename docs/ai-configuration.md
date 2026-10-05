@@ -34,7 +34,8 @@ Supported providers at launch:
 | Anthropic | claude-sonnet-4, claude-opus-4 |
 | OpenAI | gpt-4o, o3, o4-mini |
 | Mistral | mistral-large, mistral-medium |
-| Google Gemini | gemini-2.5-flash, gemini-2.5-pro |
+| Google Gemini | gemini-flash-lite-latest, gemini-flash-latest, gemini-pro-latest |
+| Cohere | command-a-03-2025, command-a-vision-07-2025 (sees images) |
 
 ### Key Storage
 
@@ -56,7 +57,12 @@ AIProvider (interface)
   ├── AnthropicProvider
   ├── OpenAIProvider
   ├── MistralProvider
-  └── GeminiProvider
+  ├── GeminiProvider
+  └── CohereProvider
+
+ImageTextReader (interface) — reads a photo for a chat model that cannot see
+  ├── MistralOcrService   (mistral-ocr-latest; best for scans and handwriting)
+  └── CohereVisionReader  (command-a-vision; runs on the user's own Cohere key)
 ```
 
 Each provider implementation handles:
@@ -77,7 +83,8 @@ This matters for how much conversation history and goal data we can include per 
 | Claude (Anthropic) | 200 000 tokens |
 | GPT-4o (OpenAI) | 128 000 tokens |
 | Mistral Large | 128 000 tokens |
-| Gemini 2.5 Flash (Google) | 1 000 000 tokens |
+| Gemini Flash (Google) | 1 000 000 tokens |
+| Command A (Cohere) | 256 000 tokens |
 
 Design to the lowest common denominator: 128 000 tokens. In practice, even a large goal with full history will rarely approach this limit in the MVP.
 
@@ -445,7 +452,7 @@ The AI system should be built in phases aligned with the product roadmap.
 
 ### Phase 5 (current roadmap): Foundation
 
-- Provider abstraction layer (Anthropic, OpenAI, Mistral)
+- Provider abstraction layer (Anthropic, OpenAI, Mistral, Gemini, Cohere)
 - BYOK key storage (encrypted)
 - Goal-scoped AI sessions
 - Basic chat with goal context in system prompt

@@ -2,6 +2,7 @@ package com.spiramindscape.backend.ai.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spiramindscape.backend.ai.provider.anthropic.AnthropicProvider;
+import com.spiramindscape.backend.ai.provider.cohere.CohereProvider;
 import com.spiramindscape.backend.ai.provider.google.GeminiProvider;
 import com.spiramindscape.backend.ai.provider.mistral.MistralProvider;
 import com.spiramindscape.backend.ai.provider.openai.OpenAiProvider;
@@ -20,6 +21,12 @@ public class LlmProviderFactory {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    /**
+     * One client shared by every provider instance. The connect timeout is only half the
+     * story — the per-request deadline and the retry live in {@link LlmHttp}, which each
+     * provider sends through, because a {@code HttpClient} cannot express either
+     * (BUG-055).
+     */
     public LlmProviderFactory(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
@@ -39,6 +46,7 @@ public class LlmProviderFactory {
             case OPENAI    -> new OpenAiProvider(apiKey, model, httpClient, objectMapper);
             case MISTRAL   -> new MistralProvider(apiKey, model, httpClient, objectMapper);
             case GEMINI    -> new GeminiProvider(apiKey, model, httpClient, objectMapper);
+            case COHERE    -> new CohereProvider(apiKey, model, httpClient, objectMapper);
             case TAVILY    -> throw new UnsupportedOperationException("Tavily is a search key, not a chat provider");
         };
     }

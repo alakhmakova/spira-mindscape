@@ -4,9 +4,11 @@ import com.spiramindscape.backend.ai.grow.GoalMemoryService;
 import com.spiramindscape.backend.ai.key.AiKeyService;
 import com.spiramindscape.backend.ai.prompt.PromptResources;
 import com.spiramindscape.backend.ai.provider.LlmProviderFactory;
+import com.spiramindscape.backend.ai.provider.cohere.CohereVisionReader;
 import com.spiramindscape.backend.ai.provider.mistral.MistralOcrService;
 import com.spiramindscape.backend.ai.proposal.AiProposalService;
 import com.spiramindscape.backend.ai.safety.AbuseAuditLogger;
+import com.spiramindscape.backend.goal.GoalService;
 import com.spiramindscape.backend.ai.safety.SafetyService;
 import com.spiramindscape.backend.ai.search.TavilySearchService;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +47,8 @@ class SessionRecordTest {
     @Mock private UrlReadService urlReadService;
     @Mock private GoalMemoryService goalMemory;
     @Mock private MistralOcrService mistralOcr;
+    @Mock private CohereVisionReader cohereVision;
+    @Mock private GoalService goalService;
 
     private AiChatService service;
 
@@ -52,7 +56,7 @@ class SessionRecordTest {
     void setUp() {
         service = new AiChatService(safety, abuseAuditLogger, keyService, providerFactory,
                 goalContextBuilder, searchService, proposalService, resourceReadService,
-                urlReadService, new PromptResources(), goalMemory, mistralOcr);
+                urlReadService, new PromptResources(), goalMemory, mistralOcr, cohereVision, goalService);
     }
 
     @Test

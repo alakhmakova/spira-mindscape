@@ -40,4 +40,15 @@ public interface LlmProvider {
     );
 
     ProviderType providerType();
+
+    /**
+     * The model this instance will actually call — the caller's choice when they made one,
+     * the provider's own default when they did not.
+     *
+     * <p>It exists so a failure can be logged with the model that produced it. Without it a
+     * provider error is a status and a sentence with no way to tell which model refused:
+     * chasing "Rate limit exceeded" through Cloud Run on 30 Aug 2026 could establish the
+     * provider and the hour but not the model, which was the one fact that mattered.
+     */
+    String model();
 }

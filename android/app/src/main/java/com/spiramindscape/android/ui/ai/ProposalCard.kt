@@ -1035,8 +1035,9 @@ private val CREATE_ENTITY_KINDS = setOf(
 /** The mark beside each kind — the web's `KIND_META` icons. */
 internal fun kindIcon(kind: ProposalKind): ImageVector = when (kind) {
     ProposalKind.NEW_GOAL, ProposalKind.OPTION, ProposalKind.LINK,
-    ProposalKind.EMAIL, ProposalKind.EDIT_OPTION, ProposalKind.SELECT_OPTION,
+    ProposalKind.EDIT_OPTION, ProposalKind.SELECT_OPTION,
     -> SpiraIcons.Sparkles
+    ProposalKind.EMAIL -> SpiraIcons.Mail
     ProposalKind.TARGET, ProposalKind.EDIT_TARGET, ProposalKind.TARGET_PROGRESS -> SpiraIcons.Target
     ProposalKind.TASK, ProposalKind.COMPLETE_TARGET, ProposalKind.CHECKLIST_ITEM -> SpiraIcons.Check
     ProposalKind.ADD_CHECKLIST_ITEM -> SpiraIcons.Plus
@@ -1062,7 +1063,7 @@ internal fun kindLabel(kind: ProposalKind): String = when (kind) {
     ProposalKind.OPTION -> "Strategy option"
     ProposalKind.NOTE -> "Resource note"
     ProposalKind.LINK -> "New link"
-    ProposalKind.EMAIL -> "New contact"
+    ProposalKind.EMAIL -> "New email"
     ProposalKind.OBSTACLE -> "New obstacle"
     ProposalKind.ACTION -> "Current action"
     ProposalKind.ADD_CHECKLIST_ITEM -> "New sub-task"
@@ -1075,7 +1076,7 @@ internal fun kindLabel(kind: ProposalKind): String = when (kind) {
     ProposalKind.EDIT_ACTION -> "Edit action"
     ProposalKind.EDIT_NOTE -> "Edit note"
     ProposalKind.EDIT_LINK -> "Edit link"
-    ProposalKind.EDIT_EMAIL -> "Edit contact"
+    ProposalKind.EDIT_EMAIL -> "Edit email"
     ProposalKind.COMPLETE_TARGET -> "Target status"
     ProposalKind.TARGET_PROGRESS -> "Target progress"
     ProposalKind.SELECT_OPTION -> "Select option"

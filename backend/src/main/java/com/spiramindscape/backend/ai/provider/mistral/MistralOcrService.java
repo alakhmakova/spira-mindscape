@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.spiramindscape.backend.ai.provider.ImageTextReader;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -30,7 +31,7 @@ import java.util.Optional;
  * that the image could not be read.
  */
 @Service
-public class MistralOcrService {
+public class MistralOcrService implements ImageTextReader {
 
     private static final Logger log = LoggerFactory.getLogger(MistralOcrService.class);
     private static final String ENDPOINT = "https://api.mistral.ai/v1/ocr";
@@ -56,6 +57,7 @@ public class MistralOcrService {
      * @param maxChars hard cap on the returned text (bounds the chat context)
      * @return the text, or empty when OCR failed or the document held no text
      */
+    @Override
     public Optional<String> extractText(String apiKey, String dataUrl, int maxChars) {
         if (apiKey == null || apiKey.isBlank() || dataUrl == null || !dataUrl.startsWith("data:")) {
             return Optional.empty();
@@ -92,6 +94,12 @@ public class MistralOcrService {
             log.warn("Mistral OCR failed: {}", e.toString());
             return Optional.empty();
         }
+    }
+
+    @Override
+    public String describeReading() {
+        return "text read out of the image by OCR — it may contain mistakes, especially with "
+                + "handwriting";
     }
 
     /**

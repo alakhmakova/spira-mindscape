@@ -19,7 +19,13 @@ public enum ProviderType {
      * ({@code generativelanguage.googleapis.com/v1beta/openai}). The stored key
      * is a Google AI Studio API key (prefix {@code AIza}).
      */
-    GEMINI;
+    GEMINI,
+    /**
+     * Cohere — the native Chat v2 API ({@code api.cohere.com/v2/chat}), not an
+     * OpenAI-compatibility layer: its stream is typed events rather than deltas on a choice.
+     * The stored key is a Cohere API key.
+     */
+    COHERE;
 
     public static ProviderType fromString(String value) {
         return ProviderType.valueOf(value.toUpperCase());

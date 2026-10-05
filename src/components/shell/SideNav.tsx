@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleQuestion, Home, LogOut, Trophy } from "@/components/spira/icons";
+import { useAi } from "@/components/ai/ai-store";
 import { useAuth } from "@/lib/spira/auth";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,15 @@ import { cn } from "@/lib/utils";
  * Deliberately absent: **Calendar** (the drawer has no such row — the dashboard offers it as a
  * view tab) and **Knowledge** (Android's is an unwired placeholder, and copying dead rows onto
  * a second surface would just double the dead ends).
+ *
+ * **Collapses to an icon-only rail while the coach is open** (owner, 2026-09-03, reverting the
+ * coach to the LEFT column: "боковое меню сворачивается до полосы с иконками" — "the side menu
+ * collapses to a strip of icons"). This is what the 2026-08-23 move to the right was avoiding —
+ * "the AI panel used to be the left column, which left nowhere for standing navigation to sit
+ * without the two shoving each other" (`AppShell.tsx`) — solved properly this time instead of by
+ * relocating the panel: the destinations stay exactly the same, sub-item lists (which need room
+ * for text) fold into their parent row, and every row keeps a `title` tooltip so nothing is lost,
+ * only narrowed.
  */
 export function SideNav({
   path,
@@ -49,11 +59,19 @@ export function SideNav({
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
   const navigate = useNavigate();
+  // The coach sits directly to this rail's right (owner, 2026-09-03) — the two would otherwise
+  // fight for the same edge of the screen, so the rail narrows to icons while it's open instead.
+  const collapsed = useAi((s) => s.isOpen);
+  const goToAbout = () =>
+    void navigate({ to: "/settings", search: { tab: "about" } });
 
   return (
     <aside
       aria-label="Main"
-      className="sticky top-0 z-30 hidden h-screen w-[244px] shrink-0 flex-col border-r hairline bg-card lg:flex"
+      className={cn(
+        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r hairline bg-card transition-[width] duration-150 lg:flex",
+        collapsed ? "w-[64px]" : "w-[244px]",
+      )}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4">
         <nav>
@@ -63,38 +81,56 @@ export function SideNav({
             icon={<Home className="h-[18px] w-[18px]" />}
             label="Home"
             active={path === "/" && !goalId}
+            collapsed={collapsed}
           />
 
-          {goalId && goalTitle && (
+          {goalId &&
+            goalTitle &&
+            (collapsed ? (
+              // The rubric itself has no click target on Android either (see the doc comment
+              // above) — a heading over the goal's places, not a place you can stand in.
+              <CollapsedRow
+                icon={<Trophy className="h-[18px] w-[18px]" />}
+                title={goalTitle}
+              />
+            ) : (
+              <NavSection
+                title={goalTitle}
+                icon={<Trophy className="h-[18px] w-[18px]" />}
+                items={GOAL_SECTIONS.map((s) => ({
+                  label: s.label,
+                  onClick: () => {
+                    const el = document.getElementById(s.id);
+                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  },
+                }))}
+              />
+            ))}
+
+          {collapsed ? (
+            // Both rows lead to the same page, so the collapsed rail just needs the one icon.
+            <CollapsedRow
+              icon={<CircleQuestion className="h-[18px] w-[18px]" />}
+              title="About Spira"
+              onClick={goToAbout}
+            />
+          ) : (
             <NavSection
-              title={goalTitle}
-              icon={<Trophy className="h-[18px] w-[18px]" />}
-              items={GOAL_SECTIONS.map((s) => ({
-                label: s.label,
-                onClick: () => {
-                  const el = document.getElementById(s.id);
-                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                },
+              title="About Spira"
+              icon={<CircleQuestion className="h-[18px] w-[18px]" />}
+              // Both rows lead to the same page — they are two of its sections, not two
+              // destinations. Android's drawer offers exactly this pair.
+              items={["How to use", "What is GROW"].map((label) => ({
+                label,
+                onClick: goToAbout,
               }))}
             />
           )}
-
-          <NavSection
-            title="About Spira"
-            icon={<CircleQuestion className="h-[18px] w-[18px]" />}
-            // Both rows lead to the same page — they are two of its sections, not two
-            // destinations. Android's drawer offers exactly this pair.
-            items={["How to use", "What is GROW"].map((label) => ({
-              label,
-              onClick: () =>
-                void navigate({ to: "/settings", search: { tab: "about" } }),
-            }))}
-          />
         </nav>
       </div>
 
       <div className="border-t hairline py-3">
-        {user?.email && (
+        {!collapsed && user?.email && (
           <p className="truncate px-5 pb-1 text-xs text-muted-foreground">
             {user.email}
           </p>
@@ -105,10 +141,14 @@ export function SideNav({
             await logout();
             void navigate({ to: "/login" });
           }}
-          className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+          title="Sign out"
+          className={cn(
+            "flex w-full items-center text-left text-sm text-foreground transition-colors hover:bg-muted",
+            collapsed ? "justify-center py-2.5" : "gap-3 px-5 py-2.5",
+          )}
         >
-          <LogOut className="h-[18px] w-[18px]" />
-          Sign out
+          <LogOut className="h-[18px] w-[18px] shrink-0" />
+          {!collapsed && "Sign out"}
         </button>
       </div>
     </aside>
@@ -128,6 +168,35 @@ const GOAL_SECTIONS = [
   { id: "options-section", label: "Options" },
   { id: "targets-section", label: "Will do" },
 ];
+
+/** A single icon-only row for the collapsed rail — a rubric (no `onClick`) or a merged
+ *  destination (one `onClick` standing in for a whole `NavSection`'s worth of sub-items). */
+function CollapsedRow({
+  icon,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  onClick?: () => void;
+}) {
+  const shared =
+    "flex w-full items-center justify-center px-0 py-2.5 text-foreground";
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(shared, "transition-colors hover:bg-muted")}
+    >
+      {icon}
+    </button>
+  ) : (
+    <div title={title} className={shared}>
+      {icon}
+    </div>
+  );
+}
 
 function NavSection({
   title,
@@ -180,14 +249,16 @@ function NavRow({
   icon,
   label,
   active,
+  collapsed,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
+  collapsed?: boolean;
 }) {
   return (
-    <Link to={to} className="relative flex items-center">
+    <Link to={to} className="relative flex items-center" title={label}>
       {/* Behind the row, hard against the edge — showing it must not shift the label. */}
       {active && (
         <span
@@ -197,14 +268,15 @@ function NavRow({
       )}
       <span
         className={cn(
-          "flex w-full items-center gap-3 px-5 py-2.5 text-sm transition-colors",
+          "flex w-full items-center text-sm transition-colors",
+          collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-5 py-2.5",
           active
             ? "font-semibold text-primary"
             : "text-foreground hover:bg-muted",
         )}
       >
         <span className="shrink-0">{icon}</span>
-        {label}
+        {!collapsed && label}
       </span>
     </Link>
   );

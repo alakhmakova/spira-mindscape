@@ -88,12 +88,23 @@ fun mergeAttachmentBytes(previous: List<ChatMessage>, next: List<ChatMessage>): 
 fun encodeTranscript(messages: List<ChatMessage>): String =
     JSONArray().apply { messagesForStore(messages).forEach { put(it.toJson()) } }.toString()
 
-/** Parses a stored transcript, or null when it is unusable (so the caller keeps what it has). */
+/**
+ * Parses a stored transcript, or null when it is unusable (so the caller keeps what it has).
+ *
+ * **Session notes are dropped on the way in.** "Session ended…" is a transient line: posted when
+ * a session closes and removed a few seconds later by the coroutine in `leaveGrow`. That timer
+ * lives in the ViewModel, so closing the app inside those seconds leaves the note behind in a
+ * transcript already written to the server, where it stays for good — BUG-077's real gap, still
+ * visible in the owner's 5 September session. A timer alone cannot make something ephemeral;
+ * dropping it whenever the transcript is read can, and it heals the notes already stranded.
+ */
 fun parseTranscript(content: String?): List<ChatMessage>? {
     if (content.isNullOrBlank()) return null
     return runCatching {
         val arr = JSONArray(content)
-        (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { chatMessageFromJson(it) } }
+        (0 until arr.length())
+            .mapNotNull { i -> arr.optJSONObject(i)?.let { chatMessageFromJson(it) } }
+            .filterNot { it.role == ChatRole.SYSTEM }
     }.getOrNull()
 }
 
