@@ -97,4 +97,40 @@ to the schema or the hosting:
 1. Run the workflow by hand.
 2. Restore that artifact into a scratch branch.
 3. Compare the row counts with `MANIFEST.txt`.
-4. Write the date here: _(last rehearsed: never — pending the secrets being added)_
+4. Write the date here: _(last rehearsed against **production**: never — pending the two secrets;
+   rehearsed end to end against the **local** database 2026-10-05, see below)_
+
+### Rehearsing locally, which needs no secrets and no production
+
+The whole path — dump, encrypt, decrypt, restore, compare — runs against the Docker Postgres this
+project already uses, and that is where to find out whether the procedure works before the day it
+matters. It was run this way on **2026-10-05** and the restored row counts matched `MANIFEST.txt`
+table for table.
+
+```bash
+# 1. Dump from inside the container, so the client version always matches the server
+docker exec spira-mindscape-postgres pg_dump --no-owner --no-privileges   --format=plain -U spira spira > /tmp/spira.sql
+
+# 2. Encrypt exactly as the workflow does
+printf '%s' "a-throwaway-passphrase" | gpg --batch --yes --quiet   --passphrase-fd 0 --pinentry-mode loopback   --symmetric --cipher-algo AES256 --output /tmp/spira.sql.gpg /tmp/spira.sql
+
+# 3. A scratch database to restore into
+docker exec spira-mindscape-postgres psql -U spira -d postgres -c "CREATE DATABASE spira_restore_test"
+
+# 4. Restore. Two environment variables make it runnable without a terminal prompt:
+BACKUP_PASSPHRASE="a-throwaway-passphrase" PSQL="docker exec -i spira-mindscape-postgres psql"   scripts/db-restore.sh /tmp/spira.sql.gpg   "postgresql://spira:spira@localhost:5432/spira_restore_test"
+# it asks for the host to confirm: type  localhost:5432
+
+# 5. Clean up — the dump is every user's own writing, in the clear
+docker exec spira-mindscape-postgres psql -U spira -d postgres -c "DROP DATABASE spira_restore_test"
+rm -f /tmp/spira.sql /tmp/spira.sql.gpg
+```
+
+Two things that rehearsal is there to find, and did:
+
+- **`PSQL`** exists because a machine that develops against Docker has no local `psql` at all — so
+  the restore script, the half that has to work on the worst day, could not run on the owner's own
+  computer. It now takes any client that reads SQL on stdin.
+- **`BACKUP_PASSPHRASE`** exists because `gpg` otherwise asks on a terminal, and a rehearsal driven
+  from a script has none. Left unset, the prompt is still the default — which keeps the passphrase
+  out of shell history for a human doing this by hand.

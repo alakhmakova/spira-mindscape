@@ -1,4 +1,8 @@
-import { type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { appendFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * The measuring tools the three non-axe accessibility checks share — keyboard reach, reflow and
@@ -292,4 +296,87 @@ export async function clippedText(page: Page): Promise<string[]> {
     }
     return out.slice(0, 10);
   });
+}
+
+/* ── axe ─────────────────────────────────────────────────────────────────────────── */
+
+/** The rule tags that make up WCAG 2.1 level A + AA. */
+export const WCAG_21_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+
+/**
+ * `A11Y_RECORD=1 npx playwright test <spec> --retries=0` writes what every surface currently has
+ * to `e2e/.a11y-baseline.ndjson` instead of failing, so surfaces can be added without reading two
+ * dozen numbers out of failure messages one run at a time. It is a recording mode and nothing
+ * else: **the run it produces proves nothing** — the numbers go into the spec's own `ACCEPTED` and
+ * the suite is re-run normally before anything is believed.
+ */
+export const RECORD = process.env.A11Y_RECORD === "1";
+const BASELINE_LOG = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  ".a11y-baseline.ndjson",
+);
+
+/**
+ * Run axe over what is on screen and hold this surface to what it is allowed to have.
+ *
+ * `within` scopes the scan to an overlay. **An overlay is measured on its own, not with the page
+ * behind it**, and that is a correctness fix rather than a convenience: a modal marks the page
+ * behind it `aria-hidden` and axe then skips it, so whether the chrome behind is counted depends
+ * on whether the hiding had happened when the scan ran — and on what else was open a moment
+ * earlier. Measured on this suite: one sheet read 0 in one run and 6 in the next, with nothing in
+ * the app changed.
+ */
+export async function axeScan(
+  page: Page,
+  surface: string,
+  accepted: Record<string, Record<string, number>>,
+  within?: string,
+) {
+  const builder = new AxeBuilder({ page }).withTags(WCAG_21_AA);
+  const { violations } = await (
+    within ? builder.include(within) : builder
+  ).analyze();
+
+  const counted: Record<string, number> = {};
+  for (const violation of violations) {
+    counted[violation.id] = violation.nodes.length;
+  }
+
+  // The report is what makes a failure actionable: the rule, how many nodes, and the first
+  // selector — without it a red run says only "something regressed".
+  const detail = violations
+    .map(
+      (v) =>
+        `  ${v.id} (${v.impact}) x${v.nodes.length}\n` +
+        `    ${v.help}\n` +
+        `    first: ${v.nodes[0]?.target.join(" ")}`,
+    )
+    .join("\n");
+
+  if (RECORD) {
+    // The first selector and the element itself, as well as the count: a number says a surface
+    // has three of something, and only the markup says which component it is.
+    const where = Object.fromEntries(
+      violations.map((v) => [
+        v.id,
+        `${v.nodes[0]?.target.join(" ")} :: ${v.nodes[0]?.html?.slice(0, 220)}`,
+      ]),
+    );
+    appendFileSync(
+      BASELINE_LOG,
+      JSON.stringify({ surface, counted, where }) + "\n",
+    );
+    return;
+  }
+
+  const allowed = accepted[surface] ?? {};
+  const regressions = Object.entries(counted).filter(
+    ([id, count]) => count > (allowed[id] ?? 0),
+  );
+
+  expect(
+    regressions,
+    `${surface}: accessibility violations beyond what is recorded in ACCEPTED.\n` +
+      `  counted: ${JSON.stringify(counted)}\n${detail}`,
+  ).toEqual([]);
 }

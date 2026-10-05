@@ -50,8 +50,37 @@ Two halves, because a backup nobody has ever restored is not a backup:
 2. Restore that artifact into a scratch Neon branch and check the row counts match production's.
 3. Delete something in the scratch branch and restore over it — the rehearsal is the test.
 
+## 2026-10-05: rehearsed locally, and three defects it found
+
+The whole path — dump, sanity-check, manifest, encrypt, decrypt, restore, compare — was run end to
+end against the Docker Postgres (`docs/database-backup-and-restore.md` has the commands). The
+restored row counts matched `MANIFEST.txt` table for table, the guard against restoring over a
+non-empty database refused as it should (exit 1), and a restore into an empty one returned 0.
+
+**Reading the YAML would not have found any of this:**
+
+| What | Why it mattered |
+|---|---|
+| The artifact name was `spira-db-${{ github.run_started_at }}` | that is an ISO-8601 timestamp, and `upload-artifact@v4` **rejects a name containing a colon**. The first run would have dumped, checked, encrypted — and then failed on the last step, keeping nothing |
+| `MANIFEST.txt` counted **COPY blocks**, which is one per table whatever the data | so "compare the counts with the MANIFEST", the final instruction of both halves, could not be carried out: the dump reported 1 and the restore reported 4,000. It now counts rows per table, straight out of the dump, in the same shape the restore prints |
+| `scripts/db-restore.sh` required a local `psql` | the machine most likely to rehearse it develops against Docker and has no client at all, so the half that must work on the worst day could not be run by its owner. `PSQL=...` now takes any client that reads SQL on stdin |
+
+Two smaller things came with them: `BACKUP_PASSPHRASE` makes the decrypt work without a terminal
+(gpg otherwise waits on a pinentry that a script has not got), and the queries that are not the
+restore itself now read from `/dev/null` — a client that forwards stdin, like `docker exec -i`, was
+swallowing the confirmation the script asks the operator to type.
+
 ## Resolution
 
-Implemented 2026-09-24 (workflow + scripts + guide). **The owner must still add the repository
-secrets** (`PROD_DATABASE_URL`, `BACKUP_PASSPHRASE`) and run the workflow once by hand; until that
-is done the job cannot run and the bug is not closed.
+Implemented 2026-09-24 (workflow + scripts + guide) and rehearsed locally 2026-10-05, which is what
+turned up the three defects above. **It still cannot run**, and the two things left are the owner's:
+
+1. **The workflow has to reach the default branch.** A `schedule:` trigger only fires from the
+   repository's default branch — GitHub answers `workflow db-backup.yml not found on the default
+   branch` while it lives in a feature branch, and a scheduled job that does not exist cannot go
+   red to tell you so.
+2. **The two secrets have to exist**: `PROD_DATABASE_URL` and `BACKUP_PASSPHRASE`. `gh secret list`
+   is empty today, so even on the default branch the first run would stop at its own preflight.
+
+Then: run it once by hand, download the artifact, and rehearse the restore into a scratch branch —
+at which point the date in the guide stops saying "never".

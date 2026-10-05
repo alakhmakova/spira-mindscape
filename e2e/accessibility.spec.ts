@@ -1,8 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
-import { appendFileSync } from "node:fs";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { axeScan } from "./a11y-helpers";
 import {
   createGoal,
   addOptions,
@@ -40,8 +38,6 @@ const SAMPLE_PNG = fileURLToPath(
  * count it had when it was recorded** — a new instance of an already-known rule still fails, and
  * so does any new rule. The list is meant to shrink; every line in it is a defect, not a decision.
  */
-const WCAG_21_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
-
 const PHONE = { width: 390, height: 844 };
 
 /** An overlay is scanned on its own — see `scan`. */
@@ -83,114 +79,46 @@ const MENU = '[role="menu"]';
  * is still held at zero, which is where a genuinely new defect would show up.
  */
 const ACCEPTED: Record<string, Record<string, number>> = {
+  // Measured 2026-10-04, every surface, with each overlay scanned on its own.
   "All goals": { "color-contrast": 1 },
+  // A ceiling: one row per goal with a deadline. Measured 5 against three goals.
   Timeline: { "color-contrast": 12 },
   "Filter panel": {},
   "New goal sheet": {},
-  // A ceiling: the month grid's muted cells, which differ from month to month (2 in September,
-  // 4 in October).
+  // A ceiling: the month grid's muted cells, which differ from month to month — measured 2 in
+  // September and 4 in October, on a page nobody touched in between.
   Calendar: { "color-contrast": 8 },
   "Settings — profile": { "color-contrast": 2 },
   "Settings — fonts": { "color-contrast": 1 },
   "Settings — about": { "color-contrast": 1 },
   "Sign in": {},
+  // A ceiling: the page grows with the goal's own targets, options and resources.
   "Goal workspace": { "color-contrast": 8 },
-  // Scoped to the menu itself, so the `aria-hidden-focus` this used to carry is gone from the
-  // number — it was the page's left `<aside>` behind the menu, not anything in the menu. It is a
-  // real (if benign: focus is trapped) finding and stays recorded in BUG-023.
+  // **The one node here is the menu's own destructive item** — "Delete option", red on white.
+  // Scanning the menu alone is what made it visible: against the whole page it was lost among the
+  // chrome behind, and the `aria-hidden-focus` this entry used to carry was never the menu's at
+  // all (it was the page's left `<aside>`). Both are recorded in BUG-023.
   "Element menu": { "color-contrast": 1 },
-  // A ceiling, for the same reason as Calendar: the day grid is what is being counted.
-  "Deadline popover": { "color-contrast": 18 },
-  // ⚠ The eleven entries from here down still carry their **pre-scoping** numbers: the run that
-  // was re-measuring them was stopped by the machine running out of memory, so they are generous
-  // rather than wrong — the check passes, and checks less than it could. Re-record them
-  // (`A11Y_RECORD=1`) and tighten.
-  "New target sheet": { "color-contrast": 1 },
-  "Add a resource sheet": { "color-contrast": 1 },
-  "Delete confirm": { "color-contrast": 6 },
+  // A ceiling, for the same reason as Calendar: the day grid is what is being counted. The first
+  // node is the card's own "Set deadline" — white on Kale, the known 4.08:1 pair.
+  "Deadline popover": { "color-contrast": 20 },
+  "New target sheet": {},
+  "Add a resource sheet": {},
+  // Its own heading and buttons, not the page behind.
+  "Delete confirm": { "color-contrast": 3 },
   "Note open": { "color-contrast": 6 },
   "Picture full screen": { "color-contrast": 6 },
   "AI coach": { "color-contrast": 8 },
   "All goals (phone)": { "color-contrast": 1 },
-  "Header search (phone)": { "color-contrast": 1 },
-  "Filter drawer (phone)": { "color-contrast": 1 },
-  "New goal drawer (phone)": { "color-contrast": 1 },
+  "Header search (phone)": {},
+  "Filter drawer (phone)": {},
+  "New goal drawer (phone)": {},
   "Goal workspace (phone)": { "color-contrast": 8 },
 };
 
-/**
- * `A11Y_RECORD=1 npx playwright test e2e/accessibility.spec.ts --retries=0` writes what every
- * surface currently has to `e2e/.a11y-baseline.ndjson` instead of failing, so a new surface can be
- * added without reading two dozen numbers out of a failure message one run at a time. It is a
- * recording mode and nothing else: **the run it produces proves nothing**, and the numbers have to
- * be pasted into `ACCEPTED` above and the suite re-run normally before anything is believed.
- */
-const RECORD = process.env.A11Y_RECORD === "1";
-const BASELINE_LOG = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  ".a11y-baseline.ndjson",
-);
-
-/**
- * Run axe over what is on screen and hold this surface to what it is allowed to have.
- *
- * `within` scopes the scan to the overlay itself. **An overlay is measured on its own, not with
- * the page behind it**, and that is a correctness fix rather than a convenience: a modal marks the
- * page behind it `aria-hidden` and axe then skips it, so whether the chrome behind is counted
- * depends on whether the hiding had happened when the scan ran — and on what else was open a
- * moment earlier. Measured on this suite: the New target sheet read 0 in one run and 6 in the next
- * (the whole goal page behind it), with nothing in the app changed, because the deadline popover
- * closing just before it had restored the aria-hidden state the sheet had set. Scoping the scan to
- * the dialog removes the question.
- */
+/** Run axe over this surface, holding it to what `ACCEPTED` says it may have. */
 async function scan(page: Page, surface: string, within?: string) {
-  const builder = new AxeBuilder({ page }).withTags(WCAG_21_AA);
-  const { violations } = await (
-    within ? builder.include(within) : builder
-  ).analyze();
-
-  const counted: Record<string, number> = {};
-  for (const violation of violations) {
-    counted[violation.id] = violation.nodes.length;
-  }
-
-  // The report is what makes a failure actionable: the rule, how many nodes, and the first
-  // selector — without it a red run says only "something regressed".
-  const detail = violations
-    .map(
-      (v) =>
-        `  ${v.id} (${v.impact}) x${v.nodes.length}\n` +
-        `    ${v.help}\n` +
-        `    first: ${v.nodes[0]?.target.join(" ")}`,
-    )
-    .join("\n");
-
-  if (RECORD) {
-    // The first selector and the element itself, as well as the count: a number says a surface
-    // has three of something, and only the markup says which component it is.
-    const where = Object.fromEntries(
-      violations.map((v) => [
-        v.id,
-        `${v.nodes[0]?.target.join(" ")} :: ${v.nodes[0]?.html?.slice(0, 220)}`,
-      ]),
-    );
-    appendFileSync(
-      BASELINE_LOG,
-      JSON.stringify({ surface, counted, where }) + "\n",
-    );
-    return;
-  }
-
-  const accepted = ACCEPTED[surface] ?? {};
-  const regressions = Object.entries(counted).filter(
-    ([id, count]) => count > (accepted[id] ?? 0),
-  );
-
-  expect(
-    regressions,
-    `${surface}: accessibility violations beyond what is recorded in ACCEPTED.\n` +
-      `  counted: ${JSON.stringify(counted)}\n${detail}`,
-  ).toEqual([]);
+  await axeScan(page, surface, ACCEPTED, within);
 }
 
 /** The dashboard, loaded and settled. */

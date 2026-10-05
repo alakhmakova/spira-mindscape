@@ -48,3 +48,32 @@ Fixed 2026-09-08 in `backend/pom.xml`.
 
 Every override carries a comment saying what it patches and when to drop it. Backend 1064 tests and
 web 273 tests green after the bumps. The user commits manually.
+
+## 2026-10-05: red again, and the lesson is in the shape of it
+
+**CI has been failing every night since 2026-10-01**, on `main` and on this branch alike, and
+every other job — backend, frontend, Android, Python E2E, Playwright — was green throughout. One
+job, one finding:
+
+```
+io.netty:netty-handler  CVE-2026-75595  CRITICAL  installed 4.1.136.Final  fixed in 4.1.137.Final
+```
+
+An SNI routing bypass: a fragmented TLS ClientHello falls back to the default virtual host. It is
+**the version this file pinned a week ago** — 4.1.136 was the answer to a codec-http CVE, and the
+new one is against 4.1.136 itself. Bumped to **4.1.137.Final**; `dependency:list` confirms it
+resolves, and the Spring context still boots (18 security integration tests green).
+
+Two things worth keeping:
+
+- **A pin is a snapshot, not a fix.** It records what was unfixed on the day it was written. When
+  this job goes red with nothing changed in the repository, the work is to read the version trivy
+  asks for and move the number — not to look for a regression.
+- **`main` carries no overrides at all** and reported exactly the same single finding, which says
+  Spring Boot's own parent has caught up on Tomcat since: the `tomcat.version` override here is no
+  longer doing anything and can be dropped the next time this file is opened. Left in place for
+  now rather than changed in the same pass as a red build.
+
+Note the split that made this readable: the scan runs **HIGH with `--exit-code 0`** (reported, does
+not fail) and **CRITICAL with `--exit-code 1`**. Seven HIGH findings sat in the log the whole time
+without hiding the one line that mattered.

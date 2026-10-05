@@ -33,7 +33,7 @@ Two things are worth being precise about, because both are easy to overstate:
 | Layer | Sees | Misses | Where |
 |---|---|---|---|
 | **1. Lint** — `eslint-plugin-jsx-a11y` | every component, including screens no test opens and states no test produces | anything that depends on rendering: colour, size, order, what a name computes to | `eslint.config.js` |
-| **2. axe** — `@axe-core/playwright` | the rendered page: computed names, roles, contrast, ARIA validity, over 23 surfaces at two widths | anything that is a property of the *sequence* or the *layout* rather than one element | `e2e/accessibility.spec.ts` |
+| **2. axe** — `@axe-core/playwright` | the rendered page: computed names, roles, contrast, ARIA validity, over **37 surfaces** at two widths | anything that is a property of the *sequence* or the *layout* rather than one element | `e2e/accessibility.spec.ts`, `a11y-overlays.spec.ts` |
 | **3. Browser measurements** | the tab sequence, reflow at 320px, text at 200 %, the size of every target | whether any of it is *sensible* | `e2e/a11y-keyboard.spec.ts`, `a11y-zoom.spec.ts`, `a11y-target-size.spec.ts`, helpers in `a11y-helpers.ts` |
 | **4. A person** | everything the first three cannot: a screen reader, whether a name is meaningful, whether an order makes sense, whether an error is understandable | nothing — but it does not run on every commit | §6 |
 
@@ -54,7 +54,8 @@ Layers 2 and 3 drive the real app, so the stack has to be up — Docker Postgres
 npm run lint
 
 # 2 + 3. the browser checks — the stack has to be running
-npx playwright test e2e/accessibility.spec.ts      # axe, 23 surfaces
+npx playwright test e2e/accessibility.spec.ts      # axe: routes and the overlays a page opens
+npx playwright test e2e/a11y-overlays.spec.ts      # axe: the overlays that need a goal with things in it
 npx playwright test e2e/a11y-keyboard.spec.ts      # 2.1.1, 2.1.2, 2.4.3, 2.4.7
 npx playwright test e2e/a11y-zoom.spec.ts          # 1.4.10 Reflow, 1.4.4 Resize text
 npx playwright test e2e/a11y-target-size.spec.ts   # 2.5.8 AA (and 2.5.5 AAA, reported)
@@ -117,7 +118,7 @@ Two conventions keep it honest:
 
 `e2e/accessibility.spec.ts` opens each screen *and each thing that opens over a screen* — a sheet
 takes focus and names its own controls, so a page that passes says nothing about the drawer on top
-of it. 23 surfaces: the five routes (Settings counts three tabs), ten overlays, and five again at
+of it. 37 surfaces: the five routes (Settings counts three tabs), the overlays, and five again at
 phone width, where the app draws a drawer where the laptop draws a side panel.
 
 Two mechanics worth knowing:
@@ -126,6 +127,12 @@ Two mechanics worth knowing:
   Vite *proxies* `/login` to the backend for the OAuth redirect — so a hard `goto("/login")` lands
   on Spring Security's own generated page. The spec answers `/api/auth/me` with 401 and loads `/`,
   which makes the app navigate to its own sign-in screen the way a real visitor does.
+- **A test builds the state it checks.** `a11y-overlays.spec.ts` creates its own goal, option,
+  Reality item, resource and two targets before opening anything, because **a check that opens
+  whatever happens to be in the database measures the database, not the app**. The screenshot pass
+  showed it plainly: the ⋯ menu photographed empty, because the goal the script picked had no
+  options. Anything that only exists once the user has made something — a target's menu, the
+  Will-do filter panel, a subtask row — is unreachable until a fixture puts it there.
 - **A recording mode.** `A11Y_RECORD=1 npx playwright test e2e/accessibility.spec.ts --retries=0`
   writes every surface's counts and the first offending element to `e2e/.a11y-baseline.ndjson`
   instead of failing. Reading two dozen numbers out of failure messages one run at a time is how a

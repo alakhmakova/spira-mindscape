@@ -67,6 +67,7 @@ jobs:
           sudo apt-get install -y postgresql-client-17
 
       - name: Dump
+        id: dump
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
@@ -82,15 +83,27 @@ jobs:
             echo "::error::The dump does not look like a Spira database — refusing to keep it."
             exit 1
           fi
-          # What is in it, so a restore can be checked against the same numbers.
+          # **Rows per table, counted out of the dump itself** — the restore script reports the
+          # same shape afterwards, so the two can be read side by side. It used to count COPY
+          # blocks, which is one per table whatever the data, so "check the counts against the
+          # MANIFEST" could not be done: the two halves were counting different things.
+          #
+          # A plain dump writes each table as `COPY public.<t> (...) FROM stdin;`, its rows, then
+          # a line holding only `\.` — so every table in the dump is counted, not a list that
+          # goes stale the next time a table is added.
           {
-            echo "taken:        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "dump lines:   $lines"
-            for table in app_user goal target resource option reality_item ai_chat_transcript; do
-              echo "$table rows:  $(grep -c "^COPY public.$table " backup/spira.sql || true) copy block(s)"
-            done
+            echo "taken:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "dump lines: $lines"
+            echo "rows per table:"
+            awk '
+              /^COPY public\.[a-z_]+ / { t = $2; sub(/^public\./, "", t); n = 0; inblock = 1; next }
+              inblock && /^\\.$/    { printf "  %-28s %s\n", t, n; inblock = 0; next }
+              inblock                  { n++ }
+            ' backup/spira.sql
           } > backup/MANIFEST.txt
           cat backup/MANIFEST.txt
+          # A colon-free stamp for the artifact name — see "Keep it".
+          echo "stamp=$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
 
       - name: Encrypt
         env:
@@ -112,7 +125,10 @@ jobs:
       - name: Keep it
         uses: actions/upload-artifact@v4
         with:
-          name: spira-db-${{ github.run_started_at }}
+          # **No colons.** `github.run_started_at` is an ISO-8601 timestamp, and
+          # `upload-artifact` rejects a name containing `:` — so the first run would have done
+          # every bit of the work and then failed on the last step.
+          name: spira-db-${{ steps.dump.outputs.stamp }}
           path: backup/
           retention-days: 90
           if-no-files-found: error

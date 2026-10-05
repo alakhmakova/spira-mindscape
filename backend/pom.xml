@@ -39,10 +39,18 @@
         <!-- Also ahead of the parent, for the HIGH findings the same scan reports. These are
              properties Boot itself declares, so overriding them here moves the whole managed
              set rather than one artifact:
-               netty 4.1.135 → 4.1.136  (CVE in netty-codec-http)
+               netty 4.1.136 → 4.1.137  (CVE-2026-75595, CRITICAL: an SNI routing bypass in
+                                        netty-handler, where a fragmented TLS ClientHello falls
+                                        back to the default virtual host)
                postgresql 42.7.11 → 42.7.12
-             Drop each once the parent catches up. -->
-        <netty.version>4.1.136.Final</netty.version>
+             Drop each once the parent catches up.
+
+             **This line has moved twice now**, and will again: it started at 4.1.136 for a
+             codec-http CVE and the nightly scan went red on 2026-10-01 because a new one was
+             published against 4.1.136 itself. The pin is a snapshot of what was unfixed on the
+             day it was written, not a fix — when CI goes red here with nothing changed in this
+             repository, read the version trivy asks for and move the number. -->
+        <netty.version>4.1.137.Final</netty.version>
         <postgresql.version>42.7.12</postgresql.version>
     </properties>
 

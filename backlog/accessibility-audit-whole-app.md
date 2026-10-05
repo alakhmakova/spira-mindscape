@@ -266,6 +266,29 @@ Three things that made it possible, and are worth keeping:
   messages one run at a time is how a baseline ends up wrong. The run it produces proves nothing
   and the numbers still have to be pasted into `ACCEPTED` and the suite re-run normally.
 
+### 2026-10-04: each overlay is now scanned on its own, and that changed the numbers
+
+The scan used to cover the whole page with the overlay on it, and that made every overlay's number
+depend on something it does not control: a modal marks the page behind it `aria-hidden` and axe then
+skips it, so whether the chrome behind was counted depended on **when** the scan ran and on what
+else had been open a moment earlier. Measured: the New target sheet read 0 in one run and 6 in the
+next — the whole goal page behind it — with nothing in the app changed, because the deadline popover
+closing just before had restored the `aria-hidden` state the sheet had set. `scan()` now takes a
+`within` selector and every overlay is measured alone.
+
+**It made three things visible that the page behind had been masking:**
+
+| Where | What |
+|---|---|
+| The ⋯ menu | its own **destructive item — "Delete option", red on white** — is the single contrast failure in it |
+| The deadline card | the first node is its own **"Set deadline"**, white on Kale (the known 4.08:1 pair), then the day grid |
+| The delete confirm | **3 nodes, starting with its own heading** — worth a look, since near-black on white should pass; axe may be measuring through the dim overlay |
+
+And it removed one entry that was never the overlay's: the `aria-hidden-focus` recorded against the
+⋯ menu was the page's left `<aside>` behind it, not anything in the menu. It is still a real (if
+benign — focus is trapped) finding, and it is recorded here rather than in a number that implied the
+wrong owner.
+
 ### What the first full sweep found
 
 23 surfaces. **Four findings that were not the known colour pairs**, three of them fixed on the
@@ -340,6 +363,13 @@ covers and how to run it by hand is written up in **`docs/accessibility-testing.
 - **A focus ring is a difference, not a property.** Every card here has a `box-shadow`, so "the
   shadow is not none while focused" is true of controls that show nothing at all when you tab to
   them. The check re-reads the same elements with nothing focused and compares.
+
+## The findings have their own bug
+
+Everything the four checks measured — the contrast pairs, the tap targets, the text at 200 % — is
+written up with its numbers and its pictures in
+**`backlog/contrast-and-tap-targets-fail-wcag-in-named-places.md` (BUG-096)**. This file stays what
+it is: the umbrella for the audit and the machinery.
 
 ## Fix approach
 

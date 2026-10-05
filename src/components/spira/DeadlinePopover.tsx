@@ -177,7 +177,17 @@ export function DeadlinePopover({
         </PopoverTrigger>
       ) : renderTrigger ? (
         <PopoverTrigger asChild>
-          <button type="button" className={cn("text-left", className)}>
+          {/* Named here, not by the caller: whatever `renderTrigger` draws is the caller's
+              business, and on the target card it drew no text at all — axe read the control that
+              opens the date picker as an unnamed button (BUG-023). The component knows the date,
+              so it can always say what the control is for. */}
+          <button
+            type="button"
+            aria-label={
+              date ? `Deadline ${format(date, "MMMM d, yyyy")}` : "Set deadline"
+            }
+            className={cn("text-left", className)}
+          >
             {renderTrigger()}
           </button>
         </PopoverTrigger>

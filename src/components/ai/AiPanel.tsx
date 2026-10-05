@@ -5192,6 +5192,10 @@ function ProviderSheet({
             </h3>
           </div>
           <button
+            type="button"
+            // Named, like the chat header's own close. Without it the only way out of this sheet
+            // announced itself as "button" (BUG-023).
+            aria-label="Close"
             onClick={onClose}
             className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-[#003737]/50 hover:bg-black/5 hover:text-[#003737] transition-colors"
           >
