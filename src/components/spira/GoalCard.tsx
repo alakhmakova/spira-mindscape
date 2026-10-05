@@ -105,13 +105,11 @@ export function GoalCard({ goal }: { goal: Goal }) {
           </div>
         </div>
 
-        <button
-          onClick={() => setConfirm(true)}
-          className="relative z-10 shrink-0 p-2 -m-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-secondary/50 transition-colors flex items-center justify-center"
-          aria-label="Delete goal"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {/* The delete button is drawn here but lives at the END of the card — see below. This
+            holds its place so the header keeps its spacing: 24px, which is what the button
+            occupied in the layout (a 32px box pulled in 4px a side by its negative margin).
+            Measured: with `h-8` instead, the card grew 8px taller. */}
+        <span aria-hidden="true" className="h-6 w-6 shrink-0" />
       </div>
 
       {/* Title */}
@@ -189,6 +187,30 @@ export function GoalCard({ goal }: { goal: Goal }) {
           </Link>
         </div>
       </div>
+
+      {/**
+       * **Last in the card, not first** (owner, 2026-09-30, found with a keyboard).
+       *
+       * It used to sit in the header row, which put it ahead of the goal's own name in the DOM —
+       * so tabbing through the dashboard announced "Delete goal, button" before saying WHICH goal,
+       * and reaching the sixth goal meant passing through six delete buttons. That is WCAG 2.4.3
+       * (Focus Order): the sequence has to keep its meaning, and a destructive action that names
+       * itself before its object does not.
+       *
+       * Now the order is: the goal, its deadline, Start, and only then delete — the same shape as
+       * the resource head, where the X closes the group rather than opening it. It is positioned
+       * back into the corner, so nothing moves on screen; a spacer holds its place in the header.
+       */}
+      <button
+        onClick={() => setConfirm(true)}
+        className="absolute right-5 top-5 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-secondary/50 hover:text-muted-foreground"
+        // The name carries the goal, so it is unambiguous wherever focus lands and whatever is
+        // read out before it.
+        aria-label={`Delete "${goal.title || "Untitled goal"}"`}
+        title="Delete goal"
+      >
+        <X className="h-4 w-4" />
+      </button>
 
       <ConfirmDialog
         open={confirm}

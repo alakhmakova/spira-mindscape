@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -119,16 +122,35 @@ class SharedRateLimitStoreIntegrationTest {
     // slow and a liar: the loop that empties the bucket takes real milliseconds, during which
     // the bucket is already refilling, so what such a test proves depends on how fast the
     // machine ran it. Seeding `refilled_at_millis` states the elapsed time exactly.
+    //
+    // Seeding alone was not enough, though: the store still read the REAL clock when it came to
+    // spend, so the elapsed time it saw was "what we seeded + however long the machine took to get
+    // from the seed to the call". `refillIsFractional` expects no whole token after 500 ms, which a
+    // half-second pause turns into a whole token — and under a full test run with the database busy
+    // it failed exactly that way. So the store in these tests runs on a clock that stands still at
+    // `NOW`, and every bucket is seeded relative to the same instant. Elapsed time is now a number
+    // the test writes down, not one it measures.
 
-    /** An empty bucket that was last touched {@code agoMillis} ago. */
+    /** An arbitrary fixed instant. What matters is that the seed and the store agree on it. */
+    private static final long NOW = 1_800_000_000_000L;
+
+    /** A store whose clock never moves. */
+    private SharedRateLimitStore frozenStore() {
+        return new SharedRateLimitStore(repository,
+                Clock.fixed(Instant.ofEpochMilli(NOW), ZoneOffset.UTC));
+    }
+
+    /** An empty bucket that was last touched {@code agoMillis} before {@link #NOW}. */
     private void seedEmptyBucket(String key, long agoMillis) {
-        repository.insertBucket(key, 0, System.currentTimeMillis() - agoMillis);
+        repository.insertBucket(key, 0, NOW - agoMillis);
     }
 
     @Test
     @DisplayName("A bucket refills over time")
     void refillsOverTime() {
-        // 60 per minute is one per second, so thirty seconds owes thirty tokens.
+        SharedRateLimitStore store = frozenStore();
+        // 60 per minute is one per second, so thirty seconds owes thirty tokens — and, with the
+        // clock stopped, not one more, however long the thirty calls take.
         seedEmptyBucket("graphql:u:3", 30_000);
 
         for (int i = 0; i < 30; i++) {
@@ -141,6 +163,7 @@ class SharedRateLimitStoreIntegrationTest {
     @Test
     @DisplayName("A refill is fractional, so a short wait is not rounded away to nothing")
     void refillIsFractional() {
+        SharedRateLimitStore store = frozenStore();
         // Half a second against 60-per-minute is worth half a token: not enough on its own,
         // and it must not be lost either. Truncating to whole tokens would make every limit
         // quietly stricter than it says, and the shorter the wait the worse the error.
@@ -156,6 +179,7 @@ class SharedRateLimitStoreIntegrationTest {
     @Test
     @DisplayName("A refill never exceeds the bucket's capacity")
     void refillIsCappedAtCapacity() {
+        SharedRateLimitStore store = frozenStore();
         // Without the cap, an idle caller would bank tokens for as long as they stayed quiet
         // and could then spend an hour's worth in one burst — the exact thing a rate limit is
         // there to prevent. An hour idle against 3-per-minute would be 180 tokens; the cap

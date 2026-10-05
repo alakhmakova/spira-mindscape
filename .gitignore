@@ -42,6 +42,10 @@ backend/.mvn/wrapper/*.zip
 android/app/google-services.json
 google-services.json
 
+# Anything this agent writes for the owner personally — CV drafts, letters. They are hers, not
+# the project's, and this repository is PUBLIC.
+Claude outputs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -58,7 +62,10 @@ google-services.json
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-e2e/.created-goals.ndjson
+# Per-run artefacts: the goal ids a run created (global-teardown deletes them and then the file,
+# but an interrupted run leaves it behind) and a recorded accessibility baseline.
+/e2e/.created-goals.ndjson
+/e2e/.a11y-baseline.ndjson
 
 # Coaching source books — copyrighted third-party works.
 # They were removed from the repo (and must be purged from history); keep local

@@ -268,6 +268,21 @@ export function DeadlinePopover({
         : "Set deadline"
       : undefined;
 
+  /**
+   * The trigger's accessible name, for the variants whose content carries no words of its own.
+   *
+   * `title` is not enough and `renderTrigger` has not even that: whatever the caller draws there
+   * is the caller's business, and on the target card it drew no text at all — axe read the control
+   * that opens the date picker as an unnamed button (BUG-023). The component knows the date, so it
+   * can always say what the control is for.
+   */
+  const triggerLabel =
+    variant === "icon" || renderTrigger
+      ? date
+        ? `Deadline ${format(date, "MMMM d, yyyy")}`
+        : "Set deadline"
+      : undefined;
+
   const onOpen = () => {
     setMonth(date || new Date());
     setPicked(date);
@@ -319,6 +334,7 @@ export function DeadlinePopover({
           <button
             type="button"
             title={iconTitle}
+            aria-label={triggerLabel}
             onClick={() => {
               onOpen();
               setOpen(true);
@@ -442,7 +458,11 @@ export function DeadlinePopover({
       }}
     >
       {wrap(
-        <PopoverTrigger title={iconTitle} className={trigger.className}>
+        <PopoverTrigger
+          title={iconTitle}
+          aria-label={triggerLabel}
+          className={trigger.className}
+        >
           {trigger.content}
         </PopoverTrigger>,
       )}
@@ -577,7 +597,12 @@ function MonthGrid({
                   setMonth(new Date(parseInt(y), month.getMonth(), 1))
                 }
               >
-                <SelectTrigger className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2">
+                {/* Named: the value inside it is not the control's name, and axe read this
+                    combobox as having none at all (BUG-023). */}
+                <SelectTrigger
+                  aria-label="Year"
+                  className="h-6 w-fit px-2 py-0 border border-transparent shadow-none bg-transparent hover:bg-secondary focus:ring-0 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors [&>svg]:ml-2"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-56 min-w-[5rem]">

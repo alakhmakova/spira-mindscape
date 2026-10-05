@@ -2,9 +2,11 @@ package com.spiramindscape.backend.security;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -77,19 +79,37 @@ public class SharedRateLimitStore implements RateLimitStore {
     private final RateLimitBucketRepository repository;
 
     /**
+     * Where "now" comes from. The system clock in production; a fixed one in tests.
+     *
+     * <p>The refill is arithmetic on elapsed time, so a test reading the real clock was asserting
+     * on how fast the machine ran it: {@code refillIsFractional} seeded a bucket "500 ms ago" and
+     * expected no whole token yet, which stops being true the moment the machine pauses for half a
+     * second between the seed and the check — and under a full test run with Postgres busy, it did.
+     */
+    private final Clock clock;
+
+    /**
      * When the purge last ran, epoch millis. Per-instance and approximate on purpose: several
      * instances purging is a few redundant DELETEs of rows that are already gone, which is
      * cheaper than the scheduling machinery that would coordinate them.
      */
-    private final AtomicLong lastPurgeMillis = new AtomicLong(System.currentTimeMillis());
+    private final AtomicLong lastPurgeMillis;
 
+    @Autowired
     public SharedRateLimitStore(RateLimitBucketRepository repository) {
+        this(repository, Clock.systemUTC());
+    }
+
+    /** With an explicit clock — for tests that need time to stand still. */
+    SharedRateLimitStore(RateLimitBucketRepository repository, Clock clock) {
         this.repository = repository;
+        this.clock = clock;
+        this.lastPurgeMillis = new AtomicLong(clock.millis());
     }
 
     @Override
     public boolean tryConsume(String key, int perMinute) {
-        long now = System.currentTimeMillis();
+        long now = clock.millis();
         double tokensPerMilli = perMinute / 60_000.0;
         try {
             // The common case: the caller already has a bucket with something in it.

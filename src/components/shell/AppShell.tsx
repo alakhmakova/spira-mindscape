@@ -298,6 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}

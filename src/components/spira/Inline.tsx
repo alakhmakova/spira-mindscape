@@ -563,6 +563,7 @@ export function InlineText({
   return (
     <span className={cn("flex min-w-0 flex-col", className)}>
       <span className="relative block min-w-0">
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events -- the keyboard path is focus, not a key: onFocus on this same span (tabIndex 0) enters edit mode */}
         <span
           ref={displayRef}
           role="textbox"

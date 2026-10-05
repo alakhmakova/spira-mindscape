@@ -177,8 +177,8 @@ Two steps were needed; both keep all existing data intact.
 
 **Step 1 — swap the Docker image.** The stock `postgres:16` image does not
 ship the extension files. The drop-in replacement `pgvector/pgvector:pg16` is
-the same Postgres 16 plus the extension. Changed in *both* compose files
-(`backend/docker-compose.yml` and `deploy/production/docker-compose.yml`):
+the same Postgres 16 plus the extension, and it is what `backend/docker-compose.yml`
+runs locally (production is Neon, which has the extension already):
 
 ```yaml
 services:

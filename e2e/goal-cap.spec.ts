@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { goalsCreatedThisRun } from "./helpers";
 
 /**
  * **The cap on goals in motion, as the user meets it** (owner, 2026-08-25).
@@ -37,10 +38,22 @@ test("the fifty-first goal is refused, and the optimistic card is taken back", a
   await page.waitForLoadState("networkidle");
 
   // Start from a known state: this user's goals accumulate across the suite.
+  //
+  // **It clears only what this run made** (2026-09-24). It used to delete the account's entire
+  // list, which in CI is the suite's own fixtures and on a developer's machine is her real work
+  // — one local `npx playwright test` emptied the dev database. A goal this run did not create
+  // is somebody's, so the test stands down rather than touching it.
   const existing = (await gql(page, "{ goals { id } }")) as {
     data: { goals: { id: string }[] };
   };
   const ids = existing.data.goals.map((g) => g.id);
+  const mine = goalsCreatedThisRun();
+  const theirs = ids.filter((id) => !mine.has(id));
+  test.skip(
+    theirs.length > 0,
+    `the account already holds ${theirs.length} goal(s) this run did not create — ` +
+      `filling to the cap would mean deleting them. Run this spec against an empty database.`,
+  );
   if (ids.length) {
     await gql(
       page,

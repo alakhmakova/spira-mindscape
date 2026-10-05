@@ -3593,6 +3593,24 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
 // ── Proposal content modal ───────────────────────────────────────────────────
 
+/**
+ * Escape closes an overlay.
+ *
+ * Only the content modal did this; the provider sheet and the end-session confirm closed on a
+ * click on their backdrop, which a keyboard cannot reach — so the way out was whichever button
+ * happened to be inside, and there was no way out at all that matched the rest of the app
+ * (BUG-023).
+ */
+function useCloseOnEscape(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
 function ContentModal({
   title,
   body,
@@ -3606,20 +3624,15 @@ function ContentModal({
   image?: string;
   onClose: () => void;
 }) {
-  // Close on Escape, like the other overlays.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useCloseOnEscape(onClose);
 
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the dimmed backdrop is a mouse shortcut; the sheet closes on Escape and by its own button
     <div
       className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(0,55,55,0.45)] backdrop-blur-[2px]"
       onClick={onClose}
     >
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- event plumbing, not an interaction: keeps a click inside the card from reaching the backdrop */}
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[440px] max-h-[80%] flex flex-col bg-white text-[#003737] rounded-[18px] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.55)]"
@@ -4200,6 +4213,7 @@ function InstructBox({
         value={instruction}
         onChange={(e) => setInstruction(e.target.value)}
         rows={2}
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
         autoFocus
         placeholder="e.g. “in English”, “make it shorter”, “due next Friday”"
         className={cn(PROPOSAL_INPUT_CLS, "resize-none")}
@@ -5551,6 +5565,7 @@ function ProviderSheet({
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({});
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  useCloseOnEscape(onClose);
   const isMobile = useIsMobile();
 
   const loadModels = async (provId: string) => {
@@ -5577,6 +5592,7 @@ function ProviderSheet({
   };
 
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the dimmed backdrop is a mouse shortcut; the sheet closes on Escape and by its own button
     <div
       className={cn(
         "absolute inset-0 z-45 flex bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]",
@@ -5611,6 +5627,7 @@ function ProviderSheet({
           from the PAGE's edge, coincidentally lining up with the coach's edge only because the
           coach itself docks flush right; nesting keeps that relationship explicit rather than
           accidental. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- event plumbing, not an interaction: keeps a click inside the card from reaching the backdrop */}
       <div
         className={cn(
           "flex min-h-0 flex-col overflow-hidden bg-white text-[#003737]",
@@ -5778,6 +5795,7 @@ function ProviderSheet({
                           placeholder={
                             p.keyPrefix ? `${p.keyPrefix}…` : "API key"
                           }
+                          // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
                           autoFocus
                           className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
                         />
@@ -5873,6 +5891,7 @@ function ProviderSheet({
                       value={tavilyVal}
                       onChange={(e) => setTavilyVal(e.target.value)}
                       placeholder="tvly-…"
+                      // eslint-disable-next-line jsx-a11y/no-autofocus -- this field is the only reason the surface opened; not focusing it sends the first keypress nowhere
                       autoFocus
                       className="flex-1 border-none outline-none font-mono text-[13.5px] text-[#003737] bg-transparent py-1.5 tracking-[0.02em]"
                     />
@@ -5937,11 +5956,15 @@ function EndConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useCloseOnEscape(onCancel);
+
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the dimmed backdrop is a mouse shortcut; the sheet closes on Escape and by its own button
     <div
       className="absolute inset-0 z-45 flex items-end bg-[rgba(0,55,55,0.42)] backdrop-blur-[2px]"
       onClick={onCancel}
     >
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- event plumbing, not an interaction: keeps a click inside the card from reaching the backdrop */}
       <div
         className="w-full bg-white text-[#003737] rounded-t-[22px] px-5 pt-6 pb-5"
         onClick={(e) => e.stopPropagation()}
@@ -6305,6 +6328,16 @@ function Composer({
   const [attachError, setAttachError] = useState("");
   // Which attach surface is open: the source menu, or the resource picker. Null = closed.
   const [attachMenu, setAttachMenu] = useState<null | "sources">(null);
+  // Escape closes the attach menu. Its click-away layer is a mouse affordance, so without this a
+  // keyboard user who opened the menu had no way to dismiss it (BUG-023).
+  useEffect(() => {
+    if (attachMenu === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAttachMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [attachMenu]);
   // The picker is a sheet now, not a second page of the attach dropdown — Android's is,
   // and the two surfaces draw the same card (CLAUDE.md, Design 3e).
   const [resourceSheet, setResourceSheet] = useState(false);
@@ -6592,6 +6625,7 @@ function Composer({
                 {attachMenu !== null && (
                   <>
                     {/* click-away layer */}
+                    {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- a mouse click-away layer; the menu closes on Escape and when an item is chosen */}
                     <div
                       className="fixed inset-0 z-40"
                       onClick={() => setAttachMenu(null)}

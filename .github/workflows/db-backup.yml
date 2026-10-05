@@ -1,0 +1,134 @@
+# A backup the project itself holds, and can restore from.
+#
+# The hosting provider's own point-in-time window is short and outside this project's control, so
+# production had no restore path at all (BUG-092). This takes a logical dump every night, encrypts
+# it with a passphrase only the owner has, and keeps it as a workflow artifact.
+#
+# **It must fail loudly.** A backup job that goes quietly red is the same as no backup, so every
+# step here is fatal and the schedule is daily, not weekly — a break is noticed the next morning.
+#
+# Secrets it needs (Settings -> Secrets and variables -> Actions):
+#   PROD_DATABASE_URL   the libpq form (not JDBC): postgresql://<user>:<password>@<host>/<db>?sslmode=require
+#   BACKUP_PASSPHRASE   a long random passphrase; WITHOUT IT THE DUMPS ARE UNREADABLE
+#
+# Restoring: docs/database-backup-and-restore.md
+name: Database backup
+
+on:
+  schedule:
+    # 02:10 UTC, before the CI run at 03:00 so a slow dump never delays the tests.
+    - cron: "10 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    name: Dump and encrypt
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check the secrets are set
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          # Say which one is missing. A backup that silently does nothing is the failure
+          # this whole workflow exists to prevent.
+          missing=""
+          [ -z "$DATABASE_URL" ] && missing="$missing PROD_DATABASE_URL"
+          [ -z "$PASSPHRASE" ] && missing="$missing BACKUP_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — see docs/database-backup-and-restore.md"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the Postgres client matching the server
+        run: |
+          set -euo pipefail
+          # The distro's client is usually older than the server, and pg_dump refuses to dump a
+          # newer server. Take the client from PGDG so the versions can never drift apart.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump
+        id: dump
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          # Plain SQL, not the custom format: it can be read, grepped and partially applied by
+          # hand, which is what a person restoring at 2am actually needs.
+          pg_dump --no-owner --no-privileges --format=plain "$DATABASE_URL" > backup/spira.sql
+          # A dump that came back empty is a failed backup wearing a green tick.
+          lines=$(wc -l < backup/spira.sql)
+          echo "dump lines: $lines"
+          if [ "$lines" -lt 50 ] || ! grep -q "CREATE TABLE public.goal" backup/spira.sql; then
+            echo "::error::The dump does not look like a Spira database — refusing to keep it."
+            exit 1
+          fi
+          # **Rows per table, counted out of the dump itself** — the restore script reports the
+          # same shape afterwards, so the two can be read side by side. It used to count COPY
+          # blocks, which is one per table whatever the data, so "check the counts against the
+          # MANIFEST" could not be done: the two halves were counting different things.
+          #
+          # A plain dump writes each table as `COPY public.<t> (...) FROM stdin;`, its rows, then
+          # a line holding only `\.` — so every table in the dump is counted, not a list that
+          # goes stale the next time a table is added.
+          {
+            echo "taken:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "dump lines: $lines"
+            echo "rows per table:"
+            awk '
+              /^COPY public\.[a-z_]+ / { t = $2; sub(/^public\./, "", t); n = 0; inblock = 1; next }
+              inblock && /^\\.$/    { printf "  %-28s %s\n", t, n; inblock = 0; next }
+              inblock                  { n++ }
+            ' backup/spira.sql
+          } > backup/MANIFEST.txt
+          cat backup/MANIFEST.txt
+          # A colon-free stamp for the artifact name — see "Keep it".
+          echo "stamp=$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypt
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # The artifact is readable by anyone with repository access, and the dump is every
+          # user's own writing (BUG-093). It never leaves this job unencrypted.
+          #
+          # gpg, not age: age asks for the passphrase on a terminal and there is none here, while
+          # gpg takes it on a file descriptor and is already installed on the runner.
+          printf '%s' "$PASSPHRASE" | gpg --batch --yes --quiet \
+            --passphrase-fd 0 --pinentry-mode loopback \
+            --symmetric --cipher-algo AES256 \
+            --output backup/spira.sql.gpg backup/spira.sql
+          rm -f backup/spira.sql
+          ls -la backup
+
+      - name: Keep it
+        uses: actions/upload-artifact@v4
+        with:
+          # **No colons.** `github.run_started_at` is an ISO-8601 timestamp, and
+          # `upload-artifact` rejects a name containing `:` — so the first run would have done
+          # every bit of the work and then failed on the last step.
+          name: spira-db-${{ steps.dump.outputs.stamp }}
+          path: backup/
+          retention-days: 90
+          if-no-files-found: error

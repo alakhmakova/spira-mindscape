@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Trash2,
@@ -759,6 +766,11 @@ function ResourceCard({
             e.stopPropagation();
             setExpanded(true);
           }}
+          // An icon-only button has no words of its own, so it needs a name given to it: axe
+          // reported this one as `button-name`, critical, on every screen that lists resources
+          // (BUG-023). The name says what it reveals, not what it looks like.
+          aria-label={`Actions for ${resourceDisplayName(r)}`}
+          title="Actions"
           className="flex h-full items-center justify-center px-1.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground hover:bg-secondary/30"
         >
           <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
@@ -770,6 +782,8 @@ function ResourceCard({
               e.stopPropagation();
               setExpanded(false);
             }}
+            aria-label="Hide the actions"
+            title="Hide the actions"
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-secondary/50"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
@@ -1231,6 +1245,17 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
     setZoomed(true);
   };
   const close = () => setZoomed(false);
+
+  // Escape closes it, like every other overlay in the app. Without this the only ways out were
+  // the corner X and a click on the backdrop — the second of which a keyboard cannot reach at all.
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed]);
   const zoomIn = () =>
     setScale((s) => Math.min(IMG_ZOOM_MAX, +(s + IMG_ZOOM_STEP).toFixed(2)));
   const zoomOut = () =>
@@ -1260,7 +1285,15 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
 
   return (
     <>
-      <div className="relative cursor-zoom-in group" onClick={open}>
+      {/* A real button, not a div with an onClick: opening the picture full screen was reachable
+          with a mouse only, and a keyboard user could not open it at all (BUG-023). The name says
+          what happens, because "sample.png" alone would only repeat the alt text below it. */}
+      <button
+        type="button"
+        onClick={open}
+        aria-label={`Open ${alt} full screen`}
+        className="relative block w-full cursor-zoom-in group"
+      >
         <img
           src={src}
           alt={alt}
@@ -1271,8 +1304,9 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
             <ZoomIn className="h-5 w-5" />
           </div>
         </div>
-      </div>
+      </button>
       {zoomed && (
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the dimmed backdrop is a mouse shortcut; the sheet closes on Escape and by its own button
         <div
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center overflow-hidden"
           onClick={close}
@@ -1286,6 +1320,7 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
           </button>
 
           {/* Zoom toolbar */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- event plumbing, not an interaction: keeps a click inside the card from reaching the backdrop */}
           <div
             className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-white/10 px-1 py-1 text-white backdrop-blur"
             onClick={(e) => e.stopPropagation()}
@@ -1318,6 +1353,7 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
             </button>
           </div>
 
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- dragging to pan is a pointer affordance; zoom and close are real buttons beside it */}
           <img
             src={src}
             alt={alt}
@@ -1801,6 +1837,10 @@ function Form({
   );
   const [fileError, setFileError] = useState("");
   const fileInputId = `resource-file-${goalId}-${initialResource?.id ?? "new"}`;
+  // Every visible label in this form is bound to its own control. They used to be bare `<label>`
+  // elements sitting above the field, which look right and announce nothing: a screen reader read
+  // the input with no name at all, and "Optional" (the placeholder) where it guessed one (BUG-023).
+  const fieldId = useId();
 
   const onFile = (f: File) => {
     if (!validResourceFileType(f.type)) {
@@ -1934,10 +1974,19 @@ function Form({
       <div className="px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
         {!initialResource && (
           <div>
-            <label className="text-sm font-semibold block mb-2">
+            {/* Not a `<label>`: there is no single control to bind one to. The four buttons are a
+                named group, which is what says "Type" over them to a screen reader. */}
+            <span
+              id={`${fieldId}-type`}
+              className="text-sm font-semibold block mb-2"
+            >
               Type <span className="text-destructive">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
+            </span>
+            <div
+              role="group"
+              aria-labelledby={`${fieldId}-type`}
+              className="grid grid-cols-2 gap-2"
+            >
               {(["note", "link", "file", "email"] as const).map((t) => {
                 const Icon = typeMeta[t].icon;
                 return (
@@ -1961,11 +2010,18 @@ function Form({
         )}
         {type !== "email" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">
+            <label
+              htmlFor={`${fieldId}-title`}
+              className="text-sm font-semibold block mb-1.5"
+            >
               Title{" "}
               {type === "note" && <span className="text-destructive">*</span>}
             </label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input
+              id={`${fieldId}-title`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
             {labelError && (
               <p
                 className="mt-2 text-xs font-medium text-destructive"
@@ -1978,13 +2034,16 @@ function Form({
         )}
         {type === "note" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">Note</label>
+            {/* A `<label>` cannot bind to the editor — its editable element is a contenteditable
+                inside TipTap — so the heading is a span and the editor carries the name itself. */}
+            <span className="text-sm font-semibold block mb-1.5">Note</span>
             {/* `embedded` renders it as a bordered field (matching the inputs) on
                 mobile, with the formatting toolbar tucked behind "Format". */}
             <RichTextEditor
               value={body}
               onChange={(html) => setBody(html)}
               placeholder="Write your note here..."
+              ariaLabel="Note"
               embedded
             />
             {bodyError && (
@@ -1999,10 +2058,14 @@ function Form({
         )}
         {type === "link" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">
+            <label
+              htmlFor={`${fieldId}-url`}
+              className="text-sm font-semibold block mb-1.5"
+            >
               URL <span className="text-destructive">*</span>
             </label>
             <Input
+              id={`${fieldId}-url`}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://"
@@ -2019,7 +2082,10 @@ function Form({
         )}
         {type === "file" && (
           <div>
-            <label className="text-sm font-semibold block mb-1.5">
+            <label
+              htmlFor={fileInputId}
+              className="text-sm font-semibold block mb-1.5"
+            >
               File <span className="text-destructive">*</span>
             </label>
             <input
@@ -2053,8 +2119,14 @@ function Form({
         {type === "email" && (
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Name</label>
+              <label
+                htmlFor={`${fieldId}-name`}
+                className="text-sm font-semibold block mb-1.5"
+              >
+                Name
+              </label>
               <Input
+                id={`${fieldId}-name`}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Optional"
@@ -2069,10 +2141,14 @@ function Form({
               )}
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">
+              <label
+                htmlFor={`${fieldId}-email`}
+                className="text-sm font-semibold block mb-1.5"
+              >
                 Email <span className="text-destructive">*</span>
               </label>
               <Input
+                id={`${fieldId}-email`}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
@@ -2088,8 +2164,14 @@ function Form({
               )}
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">Role</label>
+              <label
+                htmlFor={`${fieldId}-role`}
+                className="text-sm font-semibold block mb-1.5"
+              >
+                Role
+              </label>
               <Input
+                id={`${fieldId}-role`}
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 placeholder="Optional"
@@ -2104,10 +2186,14 @@ function Form({
               )}
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">
+              <label
+                htmlFor={`${fieldId}-phone`}
+                className="text-sm font-semibold block mb-1.5"
+              >
                 Phone
               </label>
               <Input
+                id={`${fieldId}-phone`}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="Optional"

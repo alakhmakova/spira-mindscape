@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useId, useMemo } from "react";
 import {
   AlertTriangle,
   Calendar,
@@ -1829,6 +1829,9 @@ function InlineEditable({
       contentEditable
       suppressContentEditableWarning
       role="textbox"
+      // `contentEditable` already makes this focusable, so Tab has always reached it — but the
+      // role promises a tabbable control and nothing in the markup said so. Stated explicitly.
+      tabIndex={0}
       aria-label={ariaLabel}
       onBlur={handleBlur}
       onInput={(e) => onTyping?.(e.currentTarget.textContent || "")}
@@ -2384,6 +2387,9 @@ function NewTargetForm({
   goalId: string;
   onDone: () => void;
 }) {
+  // Every visible label in this form is bound to its own control; a bare `<label>` above a field
+  // looks right and announces nothing (BUG-023).
+  const fieldId = useId();
   const addTarget = useSpira((s) => s.addTarget);
   // **A resource can be attached before the target exists** (owner, 2026-08-20). It used to be
   // reachable only from a card that had already been created, so adding a target with its reading
@@ -2513,10 +2519,19 @@ function NewTargetForm({
 
       <div className="px-5 pt-4 pb-8 space-y-6 overflow-y-auto flex-1 min-h-0">
         <div>
-          <label className="text-sm font-semibold block mb-2">
+          {/* Not a `<label>`: there is no single control to bind one to. The three cards are a
+              named group, which is what says "Type" over them to a screen reader. */}
+          <span
+            id={`${fieldId}-type`}
+            className="text-sm font-semibold block mb-2"
+          >
             Type <span className="text-destructive">*</span>
-          </label>
-          <div className="space-y-2">
+          </span>
+          <div
+            role="group"
+            aria-labelledby={`${fieldId}-type`}
+            className="space-y-2"
+          >
             {(
               [
                 {
@@ -2584,7 +2599,10 @@ function NewTargetForm({
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-semibold">
+            <label
+              htmlFor={`${fieldId}-title`}
+              className="text-sm font-semibold"
+            >
               Title <span className="text-destructive">*</span>
             </label>
             {title.length >= FIELD_LIMITS.targetTitle - 20 && (
@@ -2601,6 +2619,7 @@ function NewTargetForm({
             )}
           </div>
           <Input
+            id={`${fieldId}-title`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Outbound applications"
@@ -2630,10 +2649,14 @@ function NewTargetForm({
         {type === "numeric" && (
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-sm font-semibold block mb-1.5">
+              <label
+                htmlFor={`${fieldId}-start`}
+                className="text-sm font-semibold block mb-1.5"
+              >
                 Start <span className="text-destructive">*</span>
               </label>
               <Input
+                id={`${fieldId}-start`}
                 type="number"
                 min={0}
                 step="any"
@@ -2642,10 +2665,14 @@ function NewTargetForm({
               />
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5">
+              <label
+                htmlFor={`${fieldId}-total`}
+                className="text-sm font-semibold block mb-1.5"
+              >
                 Target <span className="text-destructive">*</span>
               </label>
               <Input
+                id={`${fieldId}-total`}
                 type="number"
                 min={0}
                 step="any"
@@ -2654,10 +2681,14 @@ function NewTargetForm({
               />
             </div>
             <div>
-              <label className="text-sm font-semibold block mb-1.5 text-muted-foreground">
+              <label
+                htmlFor={`${fieldId}-unit`}
+                className="text-sm font-semibold block mb-1.5 text-muted-foreground"
+              >
                 Unit
               </label>
               <Input
+                id={`${fieldId}-unit`}
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="apps…"

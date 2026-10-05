@@ -152,9 +152,11 @@ function SignInPanel() {
 
         <LoginError />
 
+        {/* Plain words, not links. These were `<a href="#">`: a link that goes nowhere, which a
+            screen reader still announces as a link and a keyboard still stops on (BUG-023). There
+            are no Terms or Privacy pages yet — when there are, these become real links. */}
         <p className="signin-legal">
-          By continuing, you agree to Spira's <a href="#">Terms</a> and{" "}
-          <a href="#">Privacy Policy</a>.
+          By continuing, you agree to Spira's Terms and Privacy Policy.
         </p>
       </div>
     </section>
@@ -368,8 +370,6 @@ function LoginStyles() {
 .login-root .g-button--solid:hover { background-color: var(--lp-primary-deep); border-color: var(--lp-primary-deep); }
 
 .login-root .signin-legal { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--lp-muted-fg); }
-.login-root .signin-legal a { color: var(--lp-foreground); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--lp-border-strong); }
-.login-root .signin-legal a:hover { text-decoration-color: var(--lp-foreground); }
 .login-root .signin-error { margin: 0; font-size: 13px; color: oklch(0.58 0.18 25); text-align: center; }
 
 /* ── Responsive: collapse to single column ── */

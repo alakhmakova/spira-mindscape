@@ -11,9 +11,10 @@ import java.util.Locale;
  * width and control characters, common homoglyphs, leetspeak digit/symbol
  * substitution, and inter-character spacing ("b o m b" / "b.o.m.b").
  *
- * <p>This is a HEURISTIC aid, not the whole defense — the language-agnostic
- * guarantee comes from the LLM classifier ({@link AiSafetyClassifier}); this
- * just makes the cheap first pass harder to fool.
+ * <p>This is a HEURISTIC aid, not the whole defense. The language-agnostic guarantee is
+ * meant to come from an LLM classifier — <b>which does not exist yet</b>, so in practice
+ * this IS the whole keyword layer, and it must therefore favour precision: a false match
+ * costs a real user their request and writes an abuse event against their account.
  */
 public final class TextNormalizer {
 
@@ -40,12 +41,34 @@ public final class TextNormalizer {
         s = deLeet(s);
 
         // 5) Collapse separators used to space out a word ("b o m b", "b.o.m.b").
-        //    Replace runs of separators between single letters with nothing, then
-        //    collapse remaining whitespace.
-        s = s.replaceAll("(?<=\\p{L})[\\s._\\-*]+(?=\\p{L})", "");
+        s = collapseSpacedLetters(s);
         s = s.replaceAll("\\s+", " ").trim();
 
         return s;
+    }
+
+    /**
+     * Join letters that were spaced out one at a time — and NOTHING else.
+     *
+     * <p>A separator is dropped only when the letter on each side stands alone, so
+     * "b o m b" and "b.o.m.b" fold to "bomb" while ordinary prose keeps its word
+     * boundaries.
+     *
+     * <p><b>This used to delete the separator between ANY two letters.</b> The regex
+     * carried no single-letter constraint although the comment above it claimed one, so
+     * every long paste became one unbroken run of letters with no word boundaries left.
+     * {@link SafetyService} matched by plain substring, so innocent text manufactured
+     * disallowed terms out of nothing: Swedish "till olika" became "tillolika", which
+     * contains "loli" — a CSAM term. The request was refused before it ever reached a
+     * provider, and a CSAM abuse event was logged against the user's own account
+     * (reported 2026-09-09). It is not a quirk of Swedish: "topics among" gives
+     * "topicsamong", which contains "csam" in plain English.
+     */
+    private static String collapseSpacedLetters(String s) {
+        // Left side: a letter with no letter before it. Right side: a letter with no
+        // letter after it. Both lookarounds read the ORIGINAL string, so a whole run of
+        // single letters still collapses in one pass.
+        return s.replaceAll("(?<=(?<!\\p{L})\\p{L})[\\s._\\-*]+(?=\\p{L}(?!\\p{L}))", "");
     }
 
     private static String mapHomoglyphs(String s) {

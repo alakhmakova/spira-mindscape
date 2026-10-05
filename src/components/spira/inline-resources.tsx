@@ -333,6 +333,7 @@ export function ElementActionsMenu({
     // clicks bubble to whatever renders this menu. When that is an InlineText read view (the
     // Options card), an un-stopped click would drop the field into edit mode and unmount the menu
     // mid-interaction. `display: contents` keeps the layout untouched.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- event plumbing, not an interaction: keeps a click inside the card from reaching the backdrop
     <span className="contents" onClick={(e) => e.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

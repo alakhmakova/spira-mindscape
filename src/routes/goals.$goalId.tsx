@@ -819,16 +819,31 @@ function GoalNav() {
   return (
     <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/**
+         * **The current section is bolder and a darker Guava** (owner, 2026-09-30).
+         *
+         * It used to differ by colour alone, which is WCAG 1.4.1 (Use of Color, level A). The
+         * colour stays in the Guava family - it is the brand's accent for "where you are" - and
+         * moves to `reserved-800 #D34533`, the warmest step of that ramp that comes closest to AA
+         * on white at this size. Measured across the ramp: 500 `#F45D48` 3.23:1 - 700 `#E4523E`
+         * 3.77:1 - **800 `#D34533` 4.4979:1** - 900 `#C23928` 5.37:1. Only 900 clears 4.5, and it
+         * reads red rather than coral, so the contrast question is still open (BUG-023).
+         *
+         * The weight is the app's one real step, Book to Medium: above Medium the brand face has
+         * no separate file, so 500/600/700 all render identically (measured: the same string is
+         * 127.53px wide at every one of them, 125.88px at 400). **A weight change heavier than
+         * Medium is not a signal on this project.**
+         */}
         <div className="flex items-center justify-center gap-8 h-12">
           {items.map((item) => (
             <button
               key={item.id}
               onClick={() => scrollTo(item.id, item.label)}
               className={cn(
-                "text-[13px] font-medium transition-colors",
+                "text-[13px] transition-colors",
                 active === item.label
-                  ? "text-[#F45D48]"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "font-medium text-[#D34533]"
+                  : "font-normal text-muted-foreground hover:text-foreground",
               )}
             >
               {item.label}
