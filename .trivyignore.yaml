@@ -1,0 +1,48 @@
+# Trivy suppressions — read `.github/workflows/ci.yml` (dependency-scan) with this.
+#
+# The policy is BLOCK on CRITICAL, and `--ignore-unfixed` already drops advisories
+# upstream has no answer for. An entry here is for the remaining case: a CVE Trivy
+# calls *fixed* whose only fix is a release we cannot take, on a code path this app
+# does not have. Every entry carries a `statement` saying why it is unreachable and
+# an `expired_at` so it cannot be forgotten — once that date passes the scan fails
+# again and the decision has to be made afresh.
+#
+# This is not a place to park a CRITICAL that is merely inconvenient to fix.
+vulnerabilities:
+  # Both of these are Spring Framework 6.2.19 (via Spring Boot 3.5.15), and both are
+  # fixed ONLY in Spring Framework 7.0.9 — i.e. Spring Boot 4. There is no 6.2.x OSS
+  # patch: 6.2.20 exists for commercial Enterprise Support subscribers only, and
+  # 6.2.19 is the last version on Maven Central. So the choice is a Spring Boot 4
+  # migration or an ignore; see backlog/spring-webmvc-criticals-have-no-oss-fix.md.
+  #
+  # Neither reaches this backend, and for the same underlying reason: it renders no
+  # views at all. There is no Thymeleaf, FreeMarker or JSP dependency, no
+  # `ViewResolver`, no `ModelAndView` and no view name anywhere in `backend/src/main`
+  # — every endpoint answers with JSON (GraphQL + REST) or a raw SSE stream, and the
+  # SPA is served as a static asset.
+  - id: CVE-2026-47884
+    paths:
+      - backend/pom.xml
+    # XsltView RCE/SSRF. Requires a "/" mapping that resolves a view whose name is
+    # not explicitly specified, so that a request path becomes the view path. This
+    # app has no view resolution to reach, and `XsltView` is never instantiated.
+    statement: >-
+      spring-webmvc XsltView path traversal. Not reachable: this backend declares no
+      view technology and no ViewResolver/ModelAndView, so no request can resolve to
+      a view. Fixed only in Spring Framework 7.0.9 (Spring Boot 4) — no 6.2.x OSS
+      patch exists. Tracked in backlog/spring-webmvc-criticals-have-no-oss-fix.md.
+    expired_at: 2026-12-31
+  - id: CVE-2026-47890
+    paths:
+      - backend/pom.xml
+    # SSE stream corruption via a bare CR in a rendered *view fragment*. The AI chat
+    # does stream SSE (`AiController.chat` returns an `SseEmitter`), but it writes
+    # model text directly — there is no fragment rendering on that path. Spring's own
+    # advisory rates it CVSS 2.6 (Low); only Trivy's NVD feed calls it CRITICAL.
+    statement: >-
+      spring-webmvc/webflux SSE stream corruption while rendering view fragments. Not
+      reachable: the one SSE endpoint writes strings through SseEmitter and renders no
+      view fragments. Spring rates it Low (CVSS 2.6). Fixed only in Spring Framework
+      7.0.9 (Spring Boot 4); 6.2.20 is Enterprise-Support-only. Tracked in
+      backlog/spring-webmvc-criticals-have-no-oss-fix.md.
+    expired_at: 2026-12-31

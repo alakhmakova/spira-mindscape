@@ -254,11 +254,16 @@ jobs:
       # suspenders with the warmed ~/.m2 above). npm/lockfile deps are covered
       # fully; Java deps resolve from the local cache. Policy: report HIGH,
       # block on CRITICAL.
+      #
+      # --ignorefile: the YAML ignore format is NOT auto-detected (only a plain
+      # `.trivyignore` is), so it has to be named here or every suppression in it
+      # silently does nothing. Each entry there carries a reason and an expiry —
+      # read `.trivyignore.yaml` before adding one.
       - name: Trivy scan — report HIGH (non-blocking)
-        run: trivy fs --scanners vuln --severity HIGH --ignore-unfixed --offline-scan --exit-code 0 .
+        run: trivy fs --scanners vuln --severity HIGH --ignore-unfixed --offline-scan --ignorefile .trivyignore.yaml --exit-code 0 .
 
       - name: Trivy scan — block on CRITICAL
-        run: trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --offline-scan --exit-code 1 .
+        run: trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --offline-scan --ignorefile .trivyignore.yaml --exit-code 1 .
 
   e2e:
     name: Python E2E tests
