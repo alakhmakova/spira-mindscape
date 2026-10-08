@@ -17,7 +17,7 @@ import { getConfidenceColor } from "./confidence-color";
 import { ProgressBar } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog, QuotedName } from "./ConfirmDialog";
 import { cn } from "@/lib/utils";
 
 /** Overdue red — same as "Yes, delete" button in ConfirmDialog */
@@ -216,7 +216,13 @@ export function GoalCard({ goal }: { goal: Goal }) {
         open={confirm}
         onOpenChange={setConfirm}
         title="Delete this goal?"
-        description={`Are you sure you want to permanently delete "${goal.title}"? All targets, options, and resources inside it will be removed. You can't undo this.`}
+        description={
+          <>
+            Are you sure you want to permanently delete{" "}
+            <QuotedName>{goal.title}</QuotedName>? All targets, options, and
+            resources inside it will be removed. You can&apos;t undo this.
+          </>
+        }
         confirmLabel="Yes, delete"
         cancelLabel="No, go back"
         onConfirm={() => deleteGoal(goal.id)}

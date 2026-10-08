@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { axeScan } from "./a11y-helpers";
+import { axeScan, type AcceptedViolations } from "./a11y-helpers";
 import {
   createGoal,
   addOptions,
@@ -46,74 +46,154 @@ const ALERT = '[role="alertdialog"]';
 const MENU = '[role="menu"]';
 
 /**
- * Violations each surface had when it was recorded, by rule id.
+ * What each surface is allowed to have — **by element, not by count** (re-recorded 2026-10-06).
  *
- * Recorded 2026-09-30 against the running app. Fix one, then lower its number here — the check
- * fails if a surface grows *more* of a rule than it is admitted to have, which is what keeps this
- * from becoming a licence.
+ * Each line is a defect that has been seen, named by the element carrying it, with how many nodes
+ * share that signature. A node whose signature is not listed, or one that has multiplied past its
+ * number, fails the run. Fewer than recorded never fails: fixing something must not break the
+ * suite.
  *
- * `color-contrast` is most of it, and it is a handful of brand pairs rather than a hundred
- * mistakes, measured 2026-09-29:
- *   white on the header's teal   #FFFFFF on #268B8A at 14px  4.08:1  (needs 4.5)
- *   `text-muted-foreground/60`   #A3A3A3 on #FFFFFF at 16px  2.52:1
- *   Guava as text on white       13px, the goal page's section nav
- * The nav is `reserved-800 #D34533` — 4.4979:1, which misses 4.5 by two thousandths, so axe still
- * counts it. In that ramp only `900 #C23928` (5.3712:1) passes at this size, and the owner reads
- * 900 as red rather than coral. Recorded, not decided (BUG-023). The header pair is why almost
- * every surface carries at least one: the **account avatar** — white initials on `bg-white/15`
- * over the teal bar — is on every screen the app has, and it is the first node axe names on
- * nearly all of them.
+ * **This replaces a per-rule total, and the reason is a defect those totals hid for weeks.** The
+ * owner asked why no test had ever flagged the "Add target" button, which puts white on `#F45D48`
+ * at 3.23:1. axe had been reporting it on every single run — this surface's line read
+ * `{ "color-contrast": 8 }`, axe found 5, `5 <= 8`, green. Worse, under a ceiling of 8 one defect
+ * could be swapped for another and nothing would move. A number says how many; only a signature
+ * says which, and only a signature can be taken to a developer as "go and fix this one".
  *
- * **Some numbers here are ceilings rather than measurements, and each says why.** Two things make
- * a count move without anything changing in the app:
- *
- * - **the data on screen** — a Timeline row per goal with a deadline, a day cell per day of
- *   whatever month is being shown. The Calendar page is the clearest case: it reads 2 in September
- *   and 4 in October, because a month with more days from its neighbours has more muted cells.
- * - **the chrome behind an overlay.** A modal marks the page behind it `aria-hidden`, and axe
- *   then skips it — but a scan that lands before the library has done the hiding counts the app
- *   header as well, avatar and all. That is a property of when the scan runs, not of the overlay,
- *   so every surface that opens over the page allows the one node the header contributes.
- *
- * The ceilings carry headroom for those two and nothing else: every other rule on those surfaces
- * is still held at zero, which is where a genuinely new defect would show up.
+ * Re-record with `A11Y_RECORD=1` — and read `RECORD`'s own warning before believing that run.
  */
-const ACCEPTED: Record<string, Record<string, number>> = {
-  // Measured 2026-10-04, every surface, with each overlay scanned on its own.
-  "All goals": { "color-contrast": 1 },
-  // A ceiling: one row per goal with a deadline. Measured 5 against three goals.
-  Timeline: { "color-contrast": 12 },
+const ACCEPTED: AcceptedViolations = {
+  "All goals": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
+  Timeline: {
+    "color-contrast": {
+      // <span class="font-medium text-muted-foreground/50 text-[12px]">Deadline</span>
+      "span.font-medium.text-[12px].text-muted-foreground/50": 3,
+      // <span>Nov 4, 2026</span>
+      span: 3,
+      // <span class="font-semibold text-muted-foreground/70">28d left</span>
+      "span.font-semibold.text-muted-foreground/70": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <span class="num text-[11px] font-bold tabular-nums text-muted-foreground/60">20%</span>
+      "span.font-bold.num.tabular-nums.text-[11px].text-muted-foreground/60": 1,
+    },
+  },
   "Filter panel": {},
   "New goal sheet": {},
-  // A ceiling: the month grid's muted cells, which differ from month to month — measured 2 in
-  // September and 4 in October, on a page nobody touched in between.
-  Calendar: { "color-contrast": 8 },
-  "Settings — profile": { "color-contrast": 2 },
-  "Settings — fonts": { "color-contrast": 1 },
-  "Settings — about": { "color-contrast": 1 },
+  Calendar: {
+    "color-contrast": {
+      // <div class="text-xs num inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-full font-semibold
+      "div.font-semibold.h-6.inline-flex.items-center.justify-center.min-w-6.num.px-1.5.rounded-full.text-foreground/70.text-xs": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <span class="truncate">apply C:\Users\buale\OneDrive\Изображения\Снимки экрана\2026-10-06 10 12 11.png</span>
+      "span.truncate": 1,
+    },
+  },
+  "Settings — profile": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button type="button" class="inline-flex items-center gap-2 rounded-md border-2 border-border px-4 py-2 text-s
+      "button.border-2.border-border.font-semibold.gap-2.hover:border-destructive/60.inline-flex.items-center.px-4.py-2.rounded-md.text-destructive.text-sm.transition-colors": 1,
+    },
+  },
+  "Settings — fonts": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
+  "Settings — about": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
   "Sign in": {},
-  // A ceiling: the page grows with the goal's own targets, options and resources.
-  "Goal workspace": { "color-contrast": 8 },
-  // **The one node here is the menu's own destructive item** — "Delete option", red on white.
-  // Scanning the menu alone is what made it visible: against the whole page it was lost among the
-  // chrome behind, and the `aria-hidden-focus` this entry used to carry was never the menu's at
-  // all (it was the page's left `<aside>`). Both are recorded in BUG-023.
-  "Element menu": { "color-contrast": 1 },
-  // A ceiling, for the same reason as Calendar: the day grid is what is being counted. The first
-  // node is the card's own "Set deadline" — white on Kale, the known 4.08:1 pair.
-  "Deadline popover": { "color-contrast": 20 },
+  "Goal workspace": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button class="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-med
+      "button.bg-[#F45D48].font-medium.h-9.hidden.hover:bg-[#F45D48]/90.items-center.px-3.rounded-md.sm:inline-flex.text-sm.text-white": 1,
+    },
+  },
+  "Element menu": {
+    "color-contrast": {
+      // <div role="menuitem" class="relative flex cursor..." tabindex="-1" data-orientation="vertical" data-radix-coll
+      "div.cursor....flex.relative": 1,
+    },
+  },
+  "Deadline popover": {
+    "color-contrast": {
+      // <th aria-label="Monday" class="text-muted-foreground/40 flex-1 select-none rounded-md text-[0.8rem] font-norma
+      "th.flex-1.font-normal.rdp-weekday.rounded-md.select-none.text-[0.8rem].text-center.text-muted-foreground/40": 7,
+      // <span class="text-[11px] font-medium text-muted-foreground/40">40</span>
+      "span.font-medium.text-[11px].text-muted-foreground/40": 6,
+    },
+  },
   "New target sheet": {},
   "Add a resource sheet": {},
-  // Its own heading and buttons, not the page behind.
-  "Delete confirm": { "color-contrast": 3 },
-  "Note open": { "color-contrast": 6 },
-  "Picture full screen": { "color-contrast": 6 },
-  "AI coach": { "color-contrast": 8 },
-  "All goals (phone)": { "color-contrast": 1 },
+  "Delete confirm": {},
+  "Note open": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button class="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-med
+      "button.bg-[#F45D48].font-medium.h-9.hidden.hover:bg-[#F45D48]/90.items-center.px-3.rounded-md.sm:inline-flex.text-sm.text-white": 1,
+    },
+  },
+  "Picture full screen": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button class="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-med
+      "button.bg-[#F45D48].font-medium.h-9.hidden.hover:bg-[#F45D48]/90.items-center.px-3.rounded-md.sm:inline-flex.text-sm.text-white": 1,
+    },
+  },
+  "AI coach": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="text-[16px] font-normal leading-none text-white/74 pt-0.5">ai coach</span>
+      "span.font-normal.leading-none.pt-0.5.text-[16px].text-white/74": 1,
+      // <button class="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hov
+      "button.-mx-2.font-medium.gap-[6px].hover:bg-white/10.hover:text-white.inline-flex.items-center.px-2.py-1.rounded-lg.text-[12.5px].text-white/74.transition-colors": 1,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button class="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-med
+      "button.bg-[#F45D48].font-medium.h-9.hidden.hover:bg-[#F45D48]/90.items-center.px-3.rounded-md.sm:inline-flex.text-sm.text-white": 1,
+    },
+  },
+  "All goals (phone)": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
   "Header search (phone)": {},
   "Filter drawer (phone)": {},
   "New goal drawer (phone)": {},
-  "Goal workspace (phone)": { "color-contrast": 8 },
+  "Goal workspace (phone)": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
 };
 
 /** Run axe over this surface, holding it to what `ACCEPTED` says it may have. */
@@ -354,8 +434,15 @@ test("a goal card names the goal before it offers to delete it", async ({
   await dashboard(page);
 
   // Walk the page as a keyboard user does, and write down what each stop calls itself.
+  //
+  // **The budget has to clear the standing rail, and the rail now lists every goal** (2026-10-07).
+  // It was 40, which was ample while the nav held four rows; the rail lists one row per goal now,
+  // so on a database with a few dozen in it the walk ran out of presses among the goal names and
+  // reported "nothing offered to delete", with the delete button sitting just past the end. That
+  // is a measurement artefact, not a focus-order defect — the thing this test is actually about is
+  // the ORDER of the two stops, and both have to be reached before the order can be read.
   const stops: string[] = [];
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     await page.keyboard.press("Tab");
     stops.push(
       await page.evaluate(() => {

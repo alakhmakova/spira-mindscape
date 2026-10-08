@@ -48,7 +48,7 @@ import {
   NewResourceSheet,
   InlineResourcesProvider,
 } from "@/components/spira/Resources";
-import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { useAi } from "@/components/ai/ai-store";
 import type { Confidence } from "@/lib/spira/types";
 import {
@@ -359,7 +359,14 @@ function GoalWorkspace() {
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           title="Delete this goal?"
-          description={`Are you sure you want to permanently delete "${goal.title}"? Everything inside it — targets, options, resources — will be removed. You can't undo this.`}
+          description={
+            <>
+              Are you sure you want to permanently delete{" "}
+              <QuotedName>{goal.title}</QuotedName>? Everything inside it —
+              targets, options, resources — will be removed. You can&apos;t undo
+              this.
+            </>
+          }
           confirmLabel="Yes, delete"
           cancelLabel="No, go back"
           onConfirm={() => {
@@ -817,33 +824,65 @@ function GoalNav() {
   };
 
   return (
-    <div className="sticky top-16 z-20 bg-background/95 backdrop-blur w-full border-b hairline">
+    <div className="sticky top-16 z-20 w-full border-b hairline bg-background">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/**
-         * **The current section is bolder and a darker Guava** (owner, 2026-09-30).
+         * **A white row, the current section underlined** (owner, 2026-10-07).
          *
-         * It used to differ by colour alone, which is WCAG 1.4.1 (Use of Color, level A). The
-         * colour stays in the Guava family - it is the brand's accent for "where you are" - and
-         * moves to `reserved-800 #D34533`, the warmest step of that ramp that comes closest to AA
-         * on white at this size. Measured across the ramp: 500 `#F45D48` 3.23:1 - 700 `#E4523E`
-         * 3.77:1 - **800 `#D34533` 4.4979:1** - 900 `#C23928` 5.37:1. Only 900 clears 4.5, and it
-         * reads red rather than coral, so the contrast question is still open (BUG-023).
+         * It is `#1E7676` with a 2px rule under it; every other label is `#56514E`. The rule is
+         * a **`text-decoration`**, so it is exactly as wide as the word and cannot move anything
+         * (owner, 2026-10-08). As a `border-b-2` on the item it spanned the padding too, which
+         * is a tab strip rather than an underlined label — and it then needed a transparent twin
+         * on every other item so that marking one did not shift the row.
          *
-         * The weight is the app's one real step, Book to Medium: above Medium the brand face has
-         * no separate file, so 500/600/700 all render identically (measured: the same string is
-         * 127.53px wide at every one of them, 125.88px at 400). **A weight change heavier than
-         * Medium is not a signal on this project.**
+         * That underline is also what answers **WCAG 1.4.1** (Use of Color, level A): the row
+         * used to differ by colour alone, and the weight step it leaned on was not a second
+         * signal at all — the body face ships two weights, so 500, 600 and 700 paint identical
+         * glyphs (measured: `font-weight: 700` moved ink coverage by **+0.0%**). Both inks clear
+         * **1.4.3** on white — `#1E7676` 5.37:1, `#56514E` 7.83:1 — and the rule clears the 3:1
+         * that **1.4.11** asks of a graphic carrying state.
+         *
+         * Two shapes were tried in between and are gone: a dark `#1a2332` band, and a solid
+         * Guava chip. The chip is worth remembering for what it cost — on `#F45D48` no type
+         * colour passes at all (3.91:1 black, 3.23:1 white), and only `Guava-450 #EF7B6C` was
+         * pale enough to carry a near-black word, which is a lot of palette spent on a row that
+         * reads perfectly well as type on white.
+         *
+         * **14px, and that is the only honest size lever.** `-webkit-text-stroke` as faux bold
+         * blurs the word at the size it is actually read — half a pixel has nowhere to land on a
+         * 1x screen, so it draws a grey fringe, halo pixels per solid pixel going 10.6 → 12.7.
+         * It measured fine at `deviceScaleFactor: 3`, which is simply the wrong scale to judge
+         * it at. 14px gives 20 solid ink pixels against 13px's 16, at a lower halo ratio of 9.6,
+         * and it is on every item so the row does not reflow as the mark travels.
          */}
-        <div className="flex items-center justify-center gap-8 h-12">
+        <div className="flex h-12 items-center justify-center gap-0 overflow-x-auto">
           {items.map((item) => (
             <button
               key={item.id}
               onClick={() => scrollTo(item.id, item.label)}
               className={cn(
-                "text-[13px] transition-colors",
+                // **The rule goes under the WORDS, not under the tab** (owner, 2026-10-08,
+                // against the reference she brought: one underlined label in a row of plain
+                // ones). It was a `border-b-2` on the item, which spans the padding as well and
+                // so reads as a tab strip; `text-decoration` is as wide as the label and no
+                // wider, which is the whole difference.
+                //
+                // It is also the one marking that cannot move anything: a text decoration is
+                // outside the box model, so there is no transparent twin to keep on the other
+                // items the way a border needed one.
+                //
+                // **And the decoration is the browser's own — no `decoration-*`, no
+                // `underline-offset-*`.** Measured against her reference link, both at a cap
+                // height of 11px: it is 1px thick and sits one clear pixel under the baseline,
+                // which is exactly what `thickness: auto` / `offset: auto` draw here. The
+                // `decoration-2 underline-offset-[7px]` this carried for a day put a 2px rule
+                // seven pixels down — a tab strip's rule wearing a link's shape. `auto` also
+                // keeps it proportional if the size ever changes, where both of those were
+                // fixed pixels.
+                "inline-flex h-full shrink-0 items-center whitespace-nowrap px-3 text-[14px] transition-colors sm:px-4",
                 active === item.label
-                  ? "font-medium text-[#D34533]"
-                  : "font-normal text-muted-foreground hover:text-foreground",
+                  ? "font-medium text-[#1E7676] underline"
+                  : "font-normal text-[#56514E] no-underline hover:text-[#1E7676]",
               )}
             >
               {item.label}

@@ -40,9 +40,7 @@ import { cn } from "@/lib/utils";
 import {
   LockFilled,
   LockOpenFilled,
-  CaretsExpandVertical,
-  ChevronUp,
-  ChevronDown,
+  SortCarets,
 } from "@/components/spira/icons";
 import { CalendarPageArt, PlusMarkArt } from "./TargetTileArt";
 import {
@@ -85,7 +83,7 @@ import {
   useReadableText,
   useTallText,
 } from "@/components/spira/inline-resources";
-import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { stripResourceTokens } from "@/lib/spira/links";
 import { resourceDisplayName } from "@/lib/spira/resources";
@@ -725,6 +723,10 @@ export function TargetsSection({
           </span>
           <button
             onClick={onNewTarget}
+            // **White on `#F45D48` is 3.23:1**, under the 4.5:1 that 14px text owes — recorded
+            // against this exact button in `e2e/accessibility.spec.ts`, not hidden. Recoloured to
+            // Guava-450 with near-black type on 2026-10-06 and put back the same day at the
+            // owner's request; the contrast question stays open under BUG-023.
             className="hidden sm:inline-flex items-center px-3 h-9 rounded-md bg-[#F45D48] text-white text-sm font-medium hover:bg-[#F45D48]/90"
           >
             Add target
@@ -948,63 +950,87 @@ export function DesktopTargetsTable({
     return () => window.removeEventListener("hashchange", handleHash);
   }, [goal.targets]);
 
-  // The sort indicator, and the two states say different things.
+  // **Every sortable column shows the same mark — Gravity's `carets-expand-vertical`, the double
+  // caret — and the sorted one is told apart by its ink alone** (owner, 2026-10-06: "для date в
+  // таблице ... должно быть вверх/вниз как у target name and progress"). This supersedes the
+  // 2026-08-21 rule, which gave the active column a single chevron so the direction could be read
+  // off the header; the owner saw one header carrying a lone chevron while its neighbours carried
+  // a double caret and read it as three columns drawn by three different hands, which is the
+  // louder problem. Direction is still asked and answered in the filter panel's own
+  // Ascending/Descending control, where it is a question rather than a decoration.
   //
-  // An **inactive** column shows Gravity's `carets-expand-vertical` — the double caret (owner,
-  // 2026-08-21). It used to show a faint ChevronUp, which is not "you can sort by this": it is
-  // "sorted ascending, quietly", and next to the one column that really was sorted ascending the
-  // only thing telling them apart was opacity. The double caret has no direction to misread.
-  //
-  // The **active** column keeps the single chevron, because that is where direction is real
-  // information — up for ascending, down for descending, in Kale.
-  const SortIcon = ({ field }: { field: string }) => {
-    const active = sortField === field;
-    const Icon = active
-      ? sortDesc
-        ? ChevronDown
-        : ChevronUp
-      : CaretsExpandVertical;
-    return (
-      <Icon
-        className={cn(
-          "ml-1.5 h-4 w-4 shrink-0 transition-opacity",
-          active
-            ? "text-primary opacity-100"
-            : "opacity-30 group-hover:opacity-60",
-        )}
-      />
-    );
-  };
+  // **The mark is set in the same ink as the word beside it**, Kale on the sorted column. It used
+  // to carry `opacity-30`, which left it at **1.48:1** on the header band while its own label sat
+  // at 4.82:1 — so one header looked like it had a control and the next looked like it had none,
+  // and the double caret could not say "you can sort by this" because it could not be seen. That
+  // also failed WCAG 1.4.11, which asks 3:1 of a graphic carrying meaning. Inheriting
+  // `currentColor` makes it deepen together with its word on hover, which `group-hover:opacity-60`
+  // never did: nothing up the tree carries `group`, so that half of the rule was dead from the day
+  // it was written.
+  const SortIcon = ({ field }: { field: string }) => (
+    <SortCarets
+      className="ml-1.5 h-4 w-4 shrink-0 transition-colors"
+      lit={sortField === field ? (sortDesc ? "desc" : "asc") : undefined}
+    />
+  );
+
+  /**
+   * A sortable column's label with its caret.
+   *
+   * **The frame came off on 2026-10-06**, together with the Kale on the caret: the owner brought a
+   * reference table whose header marks the sorted column by ink alone — a near-black caret in a
+   * grey band — and a teal box round one header was the loudest thing on the page beside it. What
+   * the frame was there to answer, 1.4.1, is answered by the caret: a near-black mark against the
+   * band's own muted grey is a difference in weight, not only in hue.
+   */
+  const SortHeader = ({
+    field,
+    label,
+    title,
+  }: {
+    field: SortField;
+    label: string;
+    title?: string;
+  }) => (
+    <div title={title} className="flex items-center">
+      {label}
+      <SortIcon field={field} />
+    </div>
+  );
 
   return (
     <div className="spira-target-desktop-table">
       <Table>
-        <TableHeader className="bg-muted">
-          <TableRow className="border-0 border-b">
+        {/* **Measured off the reference, not guessed** (owner, 2026-10-06 — "сверяй все точно").
+            Sampled from the screenshot and neutralised for its green cast, each value landing on a
+            palette step almost exactly: band `#F7F7F7` → neutral-150 `#F6F6F6`, rules `#9F9F9F` →
+            neutral-800 (exact), header type `#686868` → neutral-1200 `#6B6B6B`. The band carries a
+            rule **above and below**, which it did not before. */}
+        <TableHeader className="bg-[#F6F6F6] [&_tr]:border-[#9F9F9F]">
+          <TableRow className="border-t border-b border-[#9F9F9F] text-[#6B6B6B]">
             {/* The padlock gets a column of its own rather than trailing the title. Inline, it
                 sat at a different x on every row (wherever that target's name happened to end),
                 which read as clutter instead of as a column of state you can scan down. */}
-            <TableHead className="w-[5%] pl-6">
+            {/* The reference leaves this cell empty in the head and puts the control itself in
+                every body row, centred — so the padlock column follows its checkbox column. */}
+            <TableHead className="w-[5%] pl-4 pr-3">
               <span className="sr-only">Progress lock</span>
             </TableHead>
             <TableHead
               className="cursor-pointer hover:text-foreground w-[40%]"
               onClick={() => toggleSort("title")}
             >
-              <div className="flex items-center">
-                Target Name <SortIcon field="title" />
-              </div>
+              <SortHeader field="title" label="Target Name" />
             </TableHead>
             <TableHead
               className="cursor-pointer hover:text-foreground w-[15%]"
               onClick={() => toggleSort("deadline")}
             >
-              <div
-                className="flex items-center"
+              <SortHeader
+                field="deadline"
+                label="Date"
                 title="Deadline or Completed date"
-              >
-                Date <SortIcon field="deadline" />
-              </div>
+              />
             </TableHead>
             <TableHead className="w-[15%]">
               <div title="Click to update">Update</div>
@@ -1013,14 +1039,15 @@ export function DesktopTargetsTable({
               className="cursor-pointer hover:text-foreground w-[15%]"
               onClick={() => toggleSort("progress")}
             >
-              <div className="flex items-center">
-                Progress <SortIcon field="progress" />
-              </div>
+              <SortHeader field="progress" label="Progress" />
             </TableHead>
             <TableHead className="w-[10%] text-right pr-6">Actions</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        {/* **A rule under the last row too** (owner, 2026-10-07). `TableBody` drops it by default
+            (`[&_tr:last-child]:border-0`), so the table used to trail off into the card with no
+            edge, where the reference closes it. */}
+        <TableBody className="[&_tr:last-child]:border-b">
           {displayTargets.map((t) => {
             const progress = targetProgress(t);
             const done = progress >= 1;
@@ -1030,17 +1057,18 @@ export function DesktopTargetsTable({
                 key={t.id}
                 id={`target-desktop-${t.id}`}
                 className={cn(
-                  "group scroll-mt-24 transition-colors bg-white",
+                  "group scroll-mt-24 transition-colors bg-white border-[#9F9F9F]",
                   // A paler hover step from the palette (CLAUDE.md): Kale-100 when done,
                   // Warning-100 when not — visible, but not the loud earlier tints.
                   done ? "hover:bg-[#F3FAFB]" : "hover:bg-[#FFFBF7]",
                 )}
               >
-                {/* The padlock is always visible — it is state, not a hidden action — and it now
-                    has its own column, so it lines up down the table. It top-aligns to sit level
-                    with the title's first line, and stays grey (Kale on hover) rather than
-                    lighting up when locked. */}
-                <TableCell className="pl-6 align-top">
+                {/* The padlock is always visible — it is state, not a hidden action — and it has
+                    its own column, so it lines up down the table. **Centred in the row**, the way
+                    the reference places its checkboxes (owner, 2026-10-06); it used to top-align
+                    to the title's first line. It stays grey (Kale on hover) rather than lighting
+                    up when locked. */}
+                <TableCell className="pl-4 pr-3 align-middle">
                   <ProgressLockButton
                     locked={locked}
                     neutralTone
@@ -1051,7 +1079,12 @@ export function DesktopTargetsTable({
                     iconClassName="h-4 w-4"
                   />
                 </TableCell>
-                <TableCell className="align-top">
+                {/* **Centred, not top-aligned** (owner, 2026-10-07). It was the one cell in the
+                    row that was not: the padlock and every other cell sat on the row's centre
+                    line while the title sat 6px above it, so the two left-hand columns read as
+                    two different rows. The reference centres everything — checkbox, avatar and
+                    name all within 2px of the row's middle. */}
+                <TableCell>
                   <InlineText
                     value={t.title}
                     onChange={(title) => updateTarget(goal.id, t.id, { title })}
@@ -1331,7 +1364,13 @@ function TargetDeleteConfirm({
       open={open}
       onOpenChange={onOpenChange}
       title="Delete this target?"
-      description={`Are you sure you want to permanently delete "${title || "this target"}"? Progress and checklist tasks inside it will be removed. You can't undo this.`}
+      description={
+        <>
+          Are you sure you want to permanently delete{" "}
+          <QuotedName>{title || "this target"}</QuotedName>? Progress and
+          checklist tasks inside it will be removed. You can&apos;t undo this.
+        </>
+      }
       confirmLabel="Yes, delete"
       cancelLabel="No, go back"
       onConfirm={onConfirm}

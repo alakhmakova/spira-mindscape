@@ -52,11 +52,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install the Postgres client matching the server
+      - name: Install the Postgres client the server asks for
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
           set -euo pipefail
-          # The distro's client is usually older than the server, and pg_dump refuses to dump a
-          # newer server. Take the client from PGDG so the versions can never drift apart.
+          # **pg_dump refuses to dump a server newer than itself**, and the runner's client is
+          # older than Neon's. This step used to name a version — `postgresql-client-17` — while
+          # claiming the versions "can never drift apart"; they drifted the first night it ran
+          # (2026-10-06, the very first scheduled backup):
+          #
+          #     pg_dump: error: aborting because of server version mismatch
+          #     pg_dump: detail: server version: 18.6; pg_dump version: 16.15
+          #
+          # So the server is asked instead of guessed. `psql` tolerates a version mismatch — it
+          # warns and carries on — which is exactly why it can be the one to ask; `pg_dump` is
+          # the tool that cannot.
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
             https://www.postgresql.org/media/keys/ACCC4CF8.asc
@@ -64,7 +75,29 @@ jobs:
             https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-17
+
+          major=$(psql "$DATABASE_URL" -tAc \
+            "SELECT current_setting('server_version_num')::int / 10000")
+          echo "server major version: $major"
+          case "$major" in
+            [1-9][0-9]) ;;
+            *) echo "::error::Could not read the server's major version (got '$major')."; exit 1 ;;
+          esac
+          sudo apt-get install -y "postgresql-client-$major"
+
+          # **Put the versioned binary first on PATH, and never trust whatever `pg_dump` resolves
+          # to.** In the failed run `postgresql-client-17` installed cleanly — the step was green —
+          # and the dump still executed **16.15**. Why is not in the log, and it is not Debian's
+          # `pg_wrapper` being naive: in a clean `ubuntu:24.04`, installing client 18 beside the
+          # image's 16 does make `/usr/bin/pg_dump` report 18.6 (checked 2026-10-06). So something
+          # in the runner image — most likely its own PGDG client 16 sitting earlier on PATH —
+          # wins over the newer package. Naming the directory sidesteps the question entirely:
+          # `GITHUB_PATH` prepends, so this one is ahead of anything the image set up.
+          #
+          # Assert the binary is there, so a package that installs somewhere else fails in THIS
+          # step rather than three steps later as a dump error.
+          test -x "/usr/lib/postgresql/$major/bin/pg_dump"
+          echo "/usr/lib/postgresql/$major/bin" >> "$GITHUB_PATH"
 
       - name: Dump
         id: dump
@@ -73,6 +106,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p backup
+          # Which binary actually ran, in the log, above the dump it produced. The failure this
+          # replaces was a client silently one PATH entry away from the one that was installed.
+          command -v pg_dump
+          pg_dump --version
           # Plain SQL, not the custom format: it can be read, grepped and partially applied by
           # hand, which is what a person restoring at 2am actually needs.
           pg_dump --no-owner --no-privileges --format=plain "$DATABASE_URL" > backup/spira.sql

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { axeScan } from "./a11y-helpers";
+import { axeScan, type AcceptedViolations } from "./a11y-helpers";
 import {
   createGoal,
   addOptions,
@@ -23,37 +23,115 @@ import {
 const DIALOG = '[role="dialog"]';
 const ALERT = '[role="alertdialog"]';
 const MENU = '[role="menu"]';
+/**
+ * The coach panel itself. Its own surfaces are not Radix dialogs, so a page-wide scan of them
+ * swept in the goal page behind and **counted a different number every run** — 6, then 17, then 6
+ * on unchanged code, because what the goal page had finished rendering decided the total. Scoping
+ * to the panel measures what this test is named after: what the coach opens on top of *itself*.
+ */
+const AI_PANEL = 'aside[aria-label="AI coach"]';
 
 /**
- * Violations each surface had when it was recorded, by rule id. Same contract as the sister
- * spec: a line is a defect that has been seen, never a decision, and anything new fails.
+ * What each surface is allowed to have — **by element, not by count** (re-recorded 2026-10-06).
  *
- * Recorded 2026-10-04.
+ * Each line is a defect that has been seen, named by the element carrying it, with how many nodes
+ * share that signature. A node whose signature is not listed, or one that has multiplied past its
+ * number, fails the run. Fewer than recorded never fails: fixing something must not break the
+ * suite.
+ *
+ * **This replaces a per-rule total, and the reason is a defect those totals hid for weeks.** The
+ * owner asked why no test had ever flagged the "Add target" button, which puts white on `#F45D48`
+ * at 3.23:1. axe had been reporting it on every single run — this surface's line read
+ * `{ "color-contrast": 8 }`, axe found 5, `5 <= 8`, green. Worse, under a ceiling of 8 one defect
+ * could be swapped for another and nothing would move. A number says how many; only a signature
+ * says which, and only a signature can be taken to a developer as "go and fix this one".
+ *
+ * Re-record with `A11Y_RECORD=1` — and read `RECORD`'s own warning before believing that run.
  */
-const ACCEPTED: Record<string, Record<string, number>> = {
-  // **The one node is the menu's own destructive item** — "Delete option", red on white.
-  "Option menu": { "color-contrast": 1 },
-  "Reality item menu": {},
+const ACCEPTED: AcceptedViolations = {
+  "Option menu": {
+    "color-contrast": {
+      // <div role="menuitem" class="relative flex cursor..." tabindex="-1" data-orientation="vertical" data-radix-coll
+      "div.cursor....flex.relative": 1,
+    },
+  },
+  "Reality item menu": {
+    "color-contrast": {
+      // <div role="menuitem" class="relative flex cursor..." tabindex="-1" data-orientation="vertical" data-radix-coll
+      "div.cursor....flex.relative": 1,
+    },
+  },
   "Options filter panel": {},
   "Resources filter panel": {},
-  "Delete resource confirm": { "color-contrast": 4 },
-  // The AI panel's own surfaces are not Radix dialogs, so they are scanned with the page behind
-  // them and carry its chrome — the teal bar's avatar and the chat's own gradient.
-  "AI provider sheet": { "color-contrast": 6 },
-  "AI attach menu": { "color-contrast": 8 },
-  "Header search results": { "color-contrast": 1 },
-  // ── What a target brings with it ───────────────────────────────────
+  "Delete resource confirm": {},
+  "AI provider sheet": {
+    "color-contrast": {
+      // <span class="ml-2 text-[12px] text-[#003737]/50">200 000 tokens</span>
+      "span.ml-2.text-[#003737]/50.text-[12px]": 5,
+      // <span class="text-[12px] text-[#003737]/40">Not connected</span>
+      "span.text-[#003737]/40.text-[12px]": 4,
+      // <p class="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">Keys are stored encrypted on your account. Keep
+      "p.leading-[1.5].mb-4.text-[#003737]/60.text-[13.5px]": 1,
+      // <span class="inline-flex items-center gap-1.5 text-[12px] font-mono text-[#003737]/50">
+      "span.font-mono.gap-1.5.inline-flex.items-center.text-[#003737]/50.text-[12px]": 1,
+    },
+  },
+  "AI attach menu": {
+    "color-contrast": {
+      // <span class="text-[16px] font-normal leading-none text-white/74 pt-0.5">ai coach</span>
+      "span.font-normal.leading-none.pt-0.5.text-[16px].text-white/74": 1,
+      // <button class="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hov
+      "button.-mx-2.font-medium.gap-[6px].hover:bg-white/10.hover:text-white.inline-flex.items-center.px-2.py-1.rounded-lg.text-[12.5px].text-white/74.transition-colors": 1,
+    },
+  },
+  "Header search results": {
+    "color-contrast": {
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+    },
+  },
   "Targets filter panel": {},
-  // Its own destructive item again, as in every element menu.
-  "Target menu": { "color-contrast": 1 },
-  "Delete target confirm": { "color-contrast": 3 },
-  // Ceilings, and the widest ones here. The card's panel is part of the page, so these carry the
-  // page's chrome with them, and the card's own text includes a date and a progress figure that
-  // change from run to run: measured at **6, 7 and 9** on the same code. Two failures in a row at
-  // 9 against a ceiling of 8 is not flake — it is a number that moves, so the ceiling moved.
-  "Target progress — numeric": { "color-contrast": 10 },
-  "Target progress — checklist": { "color-contrast": 10 },
-  "Subtask menu": { "color-contrast": 1 },
+  "Target menu": {
+    "color-contrast": {
+      // <div role="menuitem" class="relative flex cursor..." tabindex="-1" data-orientation="vertical" data-radix-coll
+      "div.cursor....flex.relative": 1,
+    },
+  },
+  "Delete target confirm": {},
+  "Target progress — numeric": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <button aria-expanded="true" class="flex w-full items-center justify-center bg-[#E0F2F5] px-4 py-3 text-[15px]
+      "button.bg-[#E0F2F5].flex.font-semibold.hover:bg-[#8DD3D4]/40.items-center.justify-center.px-4.py-3.text-[15px].text-primary.transition-colors.w-full": 1,
+      // <span>(from&nbsp;</span>
+      span: 1,
+      // <button type="button" class="mt-2 flex items-center gap-2 py-1 text-left text-sm font-semibold text-destructiv
+      "button.flex.font-semibold.gap-2.hover:text-destructive/80.items-center.mt-2.py-1.text-destructive.text-left.text-sm.transition-colors": 1,
+    },
+  },
+  "Target progress — checklist": {
+    "color-contrast": {
+      // <span class="text-base text-muted-foreground/60 font-medium">% completed</span>
+      "span.font-medium.text-base.text-muted-foreground/60": 3,
+      // <button type="button" class="mt-2 flex items-center gap-2 py-1 text-left text-sm font-semibold text-destructiv
+      "button.flex.font-semibold.gap-2.hover:text-destructive/80.items-center.mt-2.py-1.text-destructive.text-left.text-sm.transition-colors": 2,
+      // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
+      "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
+      // <span>(from&nbsp;</span>
+      span: 1,
+      // <button aria-expanded="true" class="flex w-full items-center justify-center bg-[#E0F2F5] px-4 py-3 text-[15px]
+      "button.bg-[#E0F2F5].flex.font-semibold.hover:bg-[#8DD3D4]/40.items-center.justify-center.px-4.py-3.text-[15px].text-primary.transition-colors.w-full": 1,
+    },
+  },
+  "Subtask menu": {
+    "color-contrast": {
+      // <div role="menuitem" class="relative flex cursor..." tabindex="-1" data-orientation="vertical" data-radix-coll
+      "div.cursor....flex.relative": 1,
+    },
+  },
 };
 
 async function scan(page: Page, surface: string, within?: string) {
@@ -252,17 +330,24 @@ test("what the AI panel opens on top of itself", async ({ page }) => {
     page.getByPlaceholder("Ask, plan, or request an action…"),
   ).toBeVisible();
 
-  // The key sheet. It is the panel's own markup rather than a Radix dialog, so it is scanned with
-  // the page — the chrome behind is part of what that costs.
-  await page.getByRole("button", { name: /Bring your own key/i }).click();
-  await scan(page, "AI provider sheet");
+  // The key sheet. It is the panel's own markup rather than a Radix dialog, so it is scanned
+  // scoped to the panel (`AI_PANEL`) rather than to a dialog role.
+  //
+  // **Wait for the provider rows, not just for the sheet.** The sheet's frame arrives before its
+  // list does, and a scan that lands in between measures an empty card: the 2026-10-06 recording
+  // caught exactly that and wrote `{}`, after which every normal run reported eleven nodes the
+  // baseline had never heard of. The per-element format is what made that legible — it named the
+  // muted token rows rather than saying "11 where 0 was expected".
+  await page.getByRole("button", { name: /^Provider: /i }).click();
+  await expect(page.getByText("Google Gemini")).toBeVisible();
+  await scan(page, "AI provider sheet", AI_PANEL);
   await page.keyboard.press("Escape");
 
   // The composer's attach menu, likewise the panel's own.
   const attach = page.getByRole("button", { name: "Attach" }).first();
   if (await attach.isVisible().catch(() => false)) {
     await attach.click();
-    await scan(page, "AI attach menu");
+    await scan(page, "AI attach menu", AI_PANEL);
     await page.keyboard.press("Escape");
   }
 });

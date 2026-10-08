@@ -79,7 +79,7 @@ async function stubAi(page: Page, script: Turn[]) {
 }
 
 function panelOf(page: Page): Locator {
-  return page.getByRole("complementary", { name: "spira ai coach" });
+  return page.getByRole("complementary", { name: "AI coach" });
 }
 
 async function openCoach(page: Page) {

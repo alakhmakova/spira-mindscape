@@ -134,10 +134,15 @@ Two mechanics worth knowing:
   options. Anything that only exists once the user has made something — a target's menu, the
   Will-do filter panel, a subtask row — is unreachable until a fixture puts it there.
 - **A recording mode.** `A11Y_RECORD=1 npx playwright test e2e/accessibility.spec.ts --retries=0`
-  writes every surface's counts and the first offending element to `e2e/.a11y-baseline.ndjson`
-  instead of failing. Reading two dozen numbers out of failure messages one run at a time is how a
-  baseline ends up wrong. **The run it produces proves nothing** — the numbers go into `ACCEPTED`
-  and the suite is re-run normally.
+  writes every surface's violations to `e2e/.a11y-baseline.ndjson` instead of failing — each one as
+  `rule → signature → count`, in the shape `ACCEPTED` takes, with the offending markup alongside,
+  so re-recording is a paste rather than a transcription. Reading three dozen entries out of
+  failure messages one run at a time is how a baseline ends up wrong.
+  **The run it produces proves nothing** — the entries go into `ACCEPTED` and the suite is re-run
+  normally, and a recording that caught a surface mid-render is worse than none: the AI provider
+  sheet recorded `{}` once because its list had not arrived yet, and every later run then failed
+  against a baseline that had never seen its eleven real nodes. Read what was recorded before
+  trusting it.
 
 ### Layer 3 — the three measurements
 
@@ -188,31 +193,66 @@ and failing on everything at once produces a permanently red check that everyone
 
 | Check | Baseline | Keyed by |
 |---|---|---|
-| axe | `ACCEPTED` | surface → rule → node count |
+| axe | `ACCEPTED` | surface → rule → **element signature** → node count |
 | keyboard | `UNREACHABLE_BY_DESIGN` | `tag[role] "name"` → reason |
 | zoom | `ALLOWED_SIDEWAYS`, `ALLOWED_CLIPPED` | surface → count |
 | target size | `SMALLER_THAN_AA` | `tag[role] "name"` → surface |
 
 **The rule: every line is a defect, not a decision.** A baseline records what was true on the day it
 was written so that *new* breakage still fails — a new rule, a new instance of a known rule, a
-control that stops being reachable. Fix one, lower its number. Nothing is added to a baseline
+control that stops being reachable. Fix one, delete its line. Nothing is added to a baseline
 without a reason written beside it, because an unexplained entry is indistinguishable from a
 control nobody can use.
 
-Some numbers in the axe baseline are **ceilings rather than measurements**, and each says so. Two
-things move a count without anything changing in the app, and a baseline that ignores them produces
-a suite that goes red by itself — which is the same end as one nobody reads:
+### Why the axe baseline names elements rather than counting them (2026-10-06)
 
-- **The data on screen.** A Timeline row per goal with a deadline; a day cell per day of whatever
-  month is being shown. The Calendar page is the clearest case: **2 violations in September and 4
-  in October**, because a month that borrows more days from its neighbours has more muted cells.
-- **The chrome behind an overlay.** A modal marks the page behind it `aria-hidden` and axe then
-  skips it — but a scan that lands before the library has done the hiding counts the app header as
-  well. That is a property of *when* the scan runs, not of the overlay, so every surface that opens
-  over the page allows the one node the header contributes.
+It used to be `surface → rule → a number`, and that shape hid a real defect for weeks. The owner
+asked why no test had ever flagged the "Add target" button, which puts white on `#F45D48` at
+**3.23:1**. axe had been reporting it on every run — but the goal page's line read
+`{ "color-contrast": 8 }`, axe found 5, `5 <= 8`, green. Worse: under a ceiling of 8, one defect
+could be **swapped for another** and nothing would move.
 
-Every other rule on those surfaces is still held at zero, which is where a genuinely new defect
-shows up.
+So each line now names the element and says how many nodes share it:
+
+```ts
+"Goal workspace": {
+  "color-contrast": {
+    // <button class="... bg-[#F45D48] text-white text-sm font-medium">Add target</button>
+    ".sm\\:inline-flex.bg-\\[\\#F45D48\\].hover\\:bg-\\[\\#F45D48\\]\\/90": 1,
+    …
+  },
+},
+```
+
+A node whose signature is not listed fails; so does one that has multiplied past its number. Fewer
+than recorded never fails, because fixing something must not break the suite. The markup goes in as
+a comment on every line, because a selector names an element and only the markup says which
+component it is — which is what makes an entry something a person can go and fix.
+
+**This was verified red the way it matters**: turning the goal nav's chip text white adds exactly
+one node to a surface that had 5 against the old ceiling of 8, so the old shape stayed green and
+the new one fails with `color-contrast x1 (not recorded) — .border-[#EF7B6C]`.
+
+**The signature is the element's own selector, not the whole path** — `signature()` in
+`a11y-helpers.ts` takes the last step of the chain axe reports and strips two things that make a
+line expire for no reason: `:nth-child(n)`, which numbered the same Timeline span three times
+purely because it is on rows 1, 2 and 3, and generated ids like
+`button[aria-controls="radix-_r_16_"]`, which Radix mints per render.
+
+### What a count still absorbs
+
+The data on screen: a Timeline row per goal with a deadline, a day cell per day of whatever month
+is shown. The Calendar page is the clearest case — **2 violations in September and 4 in October**,
+because a month that borrows more days from its neighbours has more muted cells. Those nodes share
+a signature, so they sit on one line with a count, and the count is a ceiling.
+
+**What is no longer absorbed is timing.** `axeScan` now waits for the scanned subtree's animations
+to finish before analysing. axe reports a node whose background it cannot resolve as *incomplete*
+rather than as a violation, and a card still fading in is exactly that — so the same dialog counted
+0 in one run and 1 in the next on unchanged code, three separate times in this suite. Waiting for
+`getAnimations()` rather than for a fixed delay keeps it fast and removes the whole class.
+
+Every rule not listed on a surface is held at zero, which is where a genuinely new defect shows up.
 
 **Verify a new check red before trusting it green.** The axe baseline was verified by lowering one
 entry to zero and confirming the failure. A check that cannot fail is worse than no check, because

@@ -9,8 +9,8 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SheetHead } from "@/components/spira/SheetHead";
-import { X, ArrowUp, Paperclip } from "@/components/spira/icons";
+import { SheetHead, AUX_SHEET_HEAD_BUTTON } from "@/components/spira/SheetHead";
+import { X, ArrowUp, Paperclip, Comment } from "@/components/spira/icons";
 import {
   Drawer,
   DrawerContent,
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/drawer";
 import { useNavigate } from "@tanstack/react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { useAi } from "./ai-store";
 import { useSpira } from "@/lib/spira/store";
 import { useActivityGate } from "@/lib/useActivityGate";
@@ -592,6 +592,7 @@ function attachmentOpener(
 
 export function AiPanel() {
   const isOpen = useAi((s) => s.isOpen);
+  const collapsed = useAi((s) => s.collapsed);
   const close = useAi((s) => s.close);
   const setWide = useAi((s) => s.setWide);
   const isMobile = useIsMobile();
@@ -650,18 +651,19 @@ export function AiPanel() {
 
   if (isMobile) {
     return (
-      <Drawer open={isOpen} onOpenChange={(o) => !o && close()}>
+      <Drawer open={isOpen && !collapsed} onOpenChange={(o) => !o && close()}>
         {/* A chat has no natural content height — a two-message conversation would make a
             two-message-tall drawer — so unlike the form sheets this one cannot be
             content-sized. `sheet-h` gives it a real one, measured from the KEYBOARD-FREE
             viewport rather than from `vh`: with `interactive-widget=resizes-content` the
             keyboard shrinks the layout viewport, so `92vh` meant "92 % of the sliver above the
             keyboard" — 276 px of an 888 px phone. See CLAUDE.md → Sheets → the height. */}
-        <DrawerContent className="sheet-h mt-0 flex flex-col px-0 border-0 bg-[#0A8080] text-white">
-          {/* Title kept for accessibility only — PanelContent renders the
-              visible header (wordmark + New chat + close), so avoid duplicating it. */}
+        <DrawerContent className="sheet-h mt-0 flex flex-col px-0 border-0 bg-white">
+          {/* The drawer's accessible name. The visible head is PanelContent's, and it has no
+              heading of its own — its title slot is the provider control — so this is the only
+              place the panel is named. */}
           <DrawerHeader className="sr-only">
-            <DrawerTitle>spira ai coach</DrawerTitle>
+            <DrawerTitle>AI coach</DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 flex flex-col">{Body}</div>
         </DrawerContent>
@@ -677,11 +679,24 @@ export function AiPanel() {
         // The coach sits on the LEFT of the page, between the standing navigation and the
         // content (owner, 2026-09-03, reverting the 2026-08-23 move to the right). Hence the
         // border and the shadow fall to the right, onto the page content beside it.
-        "sticky top-0 z-40 hidden h-screen max-h-screen shrink-0 flex-col border-r border-white/15 bg-[#0A8080] text-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
+        //
+        // **`top-16` and 4rem off the height**, because the header is a band across the whole
+        // width above these columns now (owner, 2026-10-07) rather than a sibling beside them.
+        // For the same reason this is `z-30` and no longer `z-40`: it was ranked above the header
+        // only because the two used to overlap.
+        "sticky top-16 z-30 hidden h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] shrink-0 flex-col border-r hairline bg-white shadow-[12px_0_30px_-24px_rgba(0,0,0,0.55)] md:flex",
         isDragging && "[&_iframe]:pointer-events-none",
       )}
-      style={{ width: `${width}px` }}
-      aria-label="spira ai coach"
+      /**
+       * **Parked, not closed** — see `collapsed` in `ai-store`. The element stays mounted and
+       * keeps the conversation, the scroll position and whatever is half-typed in the composer;
+       * only its box goes away. It is `display: none` as an inline style rather than a `hidden`
+       * class on purpose: `hidden` and the `md:flex` above are both `display` utilities, and
+       * which of them wins is decided by Tailwind's own ordering of the generated sheet, not by
+       * the order they are written in here.
+       */
+      style={{ width: `${width}px`, display: collapsed ? "none" : undefined }}
+      aria-label="AI coach"
     >
       <div
         ref={handleRef}
@@ -689,25 +704,10 @@ export function AiPanel() {
         className="resize-handle ai-panel-right-resize-handle ai-panel-resize-handle"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize spira ai coach panel"
+        aria-label="Resize AI coach panel"
       />
       {Body}
     </aside>
-  );
-}
-
-// ── Wordmark ───────────────────────────────────────────────────────────────
-
-function Wordmark() {
-  return (
-    <>
-      <span className="text-[27px] font-extrabold leading-none tracking-[-0.5px]">
-        spira
-      </span>
-      <span className="text-[16px] font-normal leading-none text-white/74 pt-0.5">
-        ai coach
-      </span>
-    </>
   );
 }
 
@@ -1328,6 +1328,15 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     mins: number;
   } | null>(null);
   const [showProvider, setShowProvider] = useState(false);
+  // The nav's key button asks for this sheet from outside the panel; the request is consumed here
+  // and cleared, so it cannot stay latched on and re-open the sheet on the next render.
+  const keysWanted = useAi((s) => s.keysWanted);
+  const keysShown = useAi((s) => s.keysShown);
+  useEffect(() => {
+    if (!keysWanted) return;
+    setShowProvider(true);
+    keysShown();
+  }, [keysWanted, keysShown]);
   const [confirmEnd, setConfirmEnd] = useState(false);
   // What "Save memory" will persist — previewed and revisable on the end card.
   // Initialised from localStorage: an undecided session end survives reloads.
@@ -2987,84 +2996,96 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="spira-ai-dark flex flex-col h-full min-h-0 relative">
-      {/* Chrome band — the wordmark row and the provider strip together. It carries **Kale-500**
-          (the header stays dark teal) while the conversation below sits on a light teal gradient,
-          so the header reads as chrome over the chat. */}
-      <div className="shrink-0 bg-[#0A8080]">
-        {/* Header */}
-        <header className="h-[62px] shrink-0 flex items-center justify-between px-5">
-          <div className="flex items-baseline gap-[7px]">
-            <Wordmark />
-          </div>
-          <div className="flex items-center gap-2">
-            {inGrow ? (
-              <>
-                <TimerPill
-                  frac={timerFrac}
-                  closing={closing}
-                  label={timerLabel}
-                />
-                <button
-                  onClick={() => setConfirmEnd(true)}
-                  disabled={!canEndEarly}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/30 bg-transparent text-white text-xs font-semibold hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
-                >
-                  <Ic path={PATHS.x} size={12} /> End
-                </button>
-              </>
-            ) : (
-              <>
-                {list.length > 0 && (
-                  <button
-                    onClick={newChat}
-                    disabled={busy}
-                    className="inline-flex items-center gap-1.5 px-2.5 h-[34px] rounded-[9px] text-white/74 text-[12.5px] font-medium hover:bg-white/12 hover:text-white disabled:opacity-40 transition-colors"
-                    title="Start a new chat — clears the history so context uses only this goal's data"
-                    aria-label="New chat"
-                  >
-                    <Ic path={PATHS.circlePlus} size={14} /> New chat
-                  </button>
-                )}
-                <button
-                  onClick={onClose}
-                  className="w-[34px] h-[34px] grid place-items-center rounded-[9px] text-white/74 hover:bg-white/12 hover:text-white transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </>
-            )}
-          </div>
-        </header>
+      {/* **One white band, on one line** (owner, 2026-10-07). It used to be two rows of teal
+          chrome — a "spira ai coach" wordmark over a provider strip — which said the panel's own
+          name twice (the rail's mark already opened it) and spent 100px of a conversation on it.
+          What is left is what the head is actually for: **which model is answering**, or the
+          offer of a key when none is set, plus the two things you do to the panel itself.
 
-        {/* Context / provider strip */}
-        {!inGrow && (
-          <div className="flex items-center justify-between gap-2 px-5 pb-3">
+          It is the `auxiliary` head, the same band AI providers wears, because it opens from
+          here — see CLAUDE.md → Sheets → the two head types. */}
+      {!inGrow ? (
+        <SheetHead
+          tone="auxiliary"
+          // **It ends level with the goal page's section-nav band** (owner, 2026-10-08). The two
+          // white bands sit side by side directly under the app header, so a difference in
+          // height is a ragged line across the top of the page. Measured at 1600x900: the nav
+          // band runs 65..119 — a 48px tab row, a 5px read-so-far strip and its hairline — while
+          // this head's padding made it 61 tall and 7px deeper. 54 is that band, stated here
+          // rather than derived, because the coach also stands beside pages that have no nav row
+          // at all and must not change height when it moves between them.
+          className="h-[54px] py-0"
+          // **A value, not a title.** 16px bold is the size a sheet's NAME is set at; a model id
+          // in that slot read as a headline over the conversation. 14px medium is the app's own
+          // chrome type — the same step the section-nav labels and the rail's rows use.
+          titleClassName="text-sm font-medium"
+          onClose={onClose}
+          title={
             <button
               onClick={() => setShowProvider(true)}
-              className="inline-flex items-center gap-[6px] text-[12.5px] font-medium text-white/74 hover:text-white hover:bg-white/10 rounded-lg px-2 py-1 -mx-2 transition-colors"
+              className="-mx-2 flex min-w-0 max-w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-[#003737]/5"
+              // The accessible name leads with the word the control IS, then the value it is
+              // showing — the visible text is inside it, so the name still matches what is read
+              // aloud, and the control stays findable when the value changes from an invitation
+              // ("Bring your own key") to a vendor's name.
+              aria-label={`Provider: ${
+                activeProvider.connected ? activeLabel : "Bring your own key"
+              }`}
+              title={
+                activeProvider.connected
+                  ? `${activeProvider.vendor} — tap to change the model or its key`
+                  : "Add an API key to start chatting"
+              }
             >
-              <Ic path={PATHS.key} size={12} />
-              Bring your own key
-              <Ic path={PATHS.chevron} size={12} className="opacity-60" />
-            </button>
-            <span className="inline-flex items-center gap-[6px] text-[12px] font-medium text-white shrink-0 font-mono">
-              <span
-                className={cn(
-                  "w-[7px] h-[7px] rounded-full",
-                  // The chat gradient's own two colours (owner, 2026-08-17): connected takes the
-                  // teal top-of-gradient step, a missing key the pale bottom step — the state still
-                  // reads and the dot ties back to the conversation's palette.
-                  activeProvider.connected
-                    ? "bg-[#83D2D2] shadow-[0_0_0_3px_rgba(131,210,210,0.25)]"
-                    : "bg-[#F2FFFF] shadow-[0_0_0_3px_rgba(242,255,255,0.3)]",
-                )}
+              {/* The dot only appears once a provider is connected: with no key there is no
+                  state to report, and the words already say so. */}
+              {activeProvider.connected && (
+                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[#83D2D2] shadow-[0_0_0_3px_rgba(131,210,210,0.25)]" />
+              )}
+              <span className="truncate">
+                {/* **The model, not the vendor** (owner, 2026-10-08: "нужно не просто
+                    провайдер писать, а конкретное имя модели"). "Mistral" says who is billing
+                    you; `mistral-large-latest` says what is answering, which is the thing that
+                    changes the replies and the thing the key sheet lets you pick. */}
+                {activeProvider.connected ? activeLabel : "Bring your own key"}
+              </span>
+              <Ic
+                path={PATHS.chevron}
+                size={12}
+                className="shrink-0 opacity-50"
               />
-              {activeLabel}
-            </span>
+            </button>
+          }
+          actions={
+            list.length > 0 && (
+              <button
+                onClick={newChat}
+                disabled={busy}
+                className={cn(AUX_SHEET_HEAD_BUTTON, "disabled:opacity-40")}
+                title="New chat"
+                aria-label="New chat"
+              >
+                <Comment className="h-4 w-4" />
+              </button>
+            )
+          }
+        />
+      ) : (
+        /* In a GROW session the head says how long is left and offers the one way out. The
+           timer and End keep the band's ink rather than the teal-panel white they wore. */
+        <div className="flex h-[54px] shrink-0 items-center gap-2 border-b border-[#F3F3F3] bg-white px-5">
+          <div className="min-w-0 flex-1">
+            <TimerPill frac={timerFrac} closing={closing} label={timerLabel} />
           </div>
-        )}
-      </div>
+          <button
+            onClick={() => setConfirmEnd(true)}
+            disabled={!canEndEarly}
+            className="inline-flex items-center gap-1 rounded-full border border-[#003737]/25 px-3 py-1.5 text-xs font-semibold text-[#003737] transition-colors hover:bg-[#003737]/5 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <Ic path={PATHS.x} size={12} /> End
+          </button>
+        </div>
+      )}
 
       {/* **The app's one message card, not a fourth shape** (owner, 2026-09-08: the old strip
           "выглядит очень плохо"). It used to be a bespoke `bg-white/10` band with 12.5px white
@@ -3556,9 +3577,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               }}
               title={isGoal ? "Delete this goal?" : "Delete this target?"}
               description={
-                isGoal
-                  ? `“${name}” and all its targets, options, notes and history will be permanently deleted. This can't be undone.`
-                  : `“${name}” will be permanently removed from this goal. This can't be undone.`
+                isGoal ? (
+                  <>
+                    <QuotedName>{name}</QuotedName> and all its targets,
+                    options, notes and history will be permanently deleted. This
+                    can&apos;t be undone.
+                  </>
+                ) : (
+                  <>
+                    <QuotedName>{name}</QuotedName> will be permanently removed
+                    from this goal. This can&apos;t be undone.
+                  </>
+                )
               }
               confirmLabel="Yes, delete"
               onConfirm={() => {
@@ -3837,28 +3867,35 @@ function TimerPill({
 }) {
   // Display-only: this used to be a "Skip (demo)" button that silently jumped
   // the session to its closing stretch — a stray click made the time feel fake.
+  //
+  // **Ink on white, since the head went white** (2026-10-07). It was white-on-teal, and on the
+  // new band it would have been a white pill on a white band — see the note on the head above.
+  // The closing stretch keeps its warning tone, but as the palette's real yellow
+  // (`warning-500 #C99500`) rather than the pale `#FFDEA1` that only read against teal: a brown
+  // or a near-white warning on white is the thing CLAUDE.md → Notices rules out.
+  const tone = closing ? "text-[#C99500]" : "text-[#003737]";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/12 text-white font-sans",
-        closing && "text-[#FFDEA1]",
+        "inline-flex items-center gap-2 rounded-full bg-[#003737]/5 px-3 py-1.5 font-sans",
+        tone,
       )}
     >
       <Ic path={PATHS.clock} size={12} />
       <span
         className={cn(
           "text-[12.5px] font-semibold tabular-nums tracking-[0.02em]",
-          closing && "text-[#FFDEA1]",
+          tone,
         )}
       >
         {label}
       </span>
-      <span className="w-[46px] h-1 rounded-full bg-white/26 overflow-hidden">
+      <span className="h-1 w-[46px] overflow-hidden rounded-full bg-[#003737]/15">
         <span
           className="block h-full rounded-full transition-[width] duration-[900ms] linear"
           style={{
             width: `${frac * 100}%`,
-            background: closing ? "#FFDEA1" : "white",
+            background: closing ? "#C99500" : "#0A8080",
           }}
         />
       </span>
@@ -5633,7 +5670,16 @@ function ProviderSheet({
           "flex min-h-0 flex-col overflow-hidden bg-white text-[#003737]",
           isMobile
             ? "sheet-inset w-full rounded-t-[22px]"
-            : "h-full w-full sm:max-w-md",
+            : // **Exactly as wide as the coach, at every width** (owner, 2026-10-08). It used to
+              // be `w-full sm:max-w-md`, which is two different things either side of 448px: on
+              // a narrow coach the card filled it, and one drag of the resize handle later it
+              // stuck at 448 with a strip of chat beside it and nothing to say why — that is the
+              // "ерунда при растягивании" she reported. Capping it at a share of the coach
+              // (88 %) was the wrong answer to the same question: it left the card narrower than
+              // the chat even at rest, which she then reported in turn. The width is the coach's,
+              // full stop, so dragging the edge resizes both together — the handle is `z-60`
+              // over this sheet's `z-45` backdrop, so it stays grabbable while the sheet is open.
+              "h-full w-full",
         )}
         onClick={(e) => e.stopPropagation()}
         style={{

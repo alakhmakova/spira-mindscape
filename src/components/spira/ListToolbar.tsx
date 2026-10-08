@@ -148,7 +148,11 @@ export function SectionSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-9 pl-8 pr-14"
+        // **The right padding is only there when the word "Clear" is.** It was `pr-14`
+        // unconditionally — 56px held open for a control that only exists once something is
+        // typed — so an empty 200px field spent a quarter of itself on nothing and clipped its
+        // own placeholder to "Search target" (owner, 2026-10-06).
+        className={cn("h-9 pl-8", value ? "pr-14" : "pr-3")}
       />
       {value && <ClearSearchWord onClear={() => onChange("")} />}
     </div>
@@ -222,7 +226,11 @@ export function SectionSearchField({
           }}
           placeholder={placeholder}
           aria-label={placeholder}
-          className="h-9 w-full rounded-md border border-border bg-surface pl-9 pr-14 text-sm outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary"
+          className={cn(
+            "h-9 w-full rounded-md border border-border bg-surface pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground/75 focus:border-primary",
+            // Same rule as `SectionSearchInput`: room for "Clear" only while there is a Clear.
+            value ? "pr-14" : "pr-3",
+          )}
         />
         {value && <ClearSearchWord onClear={() => onChange("")} />}
       </div>

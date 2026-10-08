@@ -322,10 +322,13 @@ both unless it names a surface.
 | The target card's numeric row | Components and chrome → 3b |
 | **Pills** — the one capsule shape | Components and chrome → 3c |
 | **Notices and toasts** — the one message card | Components and chrome → 3d |
+| **Confirm dialogs** — the bold name of what is being deleted | Components and chrome → 3d-bis |
 | **Sheets** — the drawer, the side panel, the two head types (Kale / white) | Components and chrome → 3e |
 | **Dates** — a modal on a phone, a popover on a laptop; ISO weeks | Components and chrome → 3e-ter |
 | **Sheet heights** — a constant top edge, never a percentage | Components and chrome → 3e-bis |
 | **What a headless host cannot see** — dialog width, the keyboard | Components and chrome → 3e-quater |
+| **"Where you are"** — the shape that is not a colour alone | Components and chrome → 3e-quinquies |
+| **The standing rail**, the brand row, and scrollbars | Components and chrome → 3e-sexies |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
@@ -426,12 +429,60 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
     had to go looking for. Solid-when-closed against outline-when-open reads at a glance. Both
     surfaces draw the pair: `LockFilled` / `LockOpenFilled` on the web, `SpiraIcons.Lock` /
     `SpiraIcons.LockOpen` on Android.
-- **A sortable column that is not the sorted one shows `carets-expand-vertical`** — Gravity's
-  double caret (owner, 2026-08-21). It used to be a faint `ChevronUp`, which does not say "you can
+- **Every sortable column shows `carets-expand-vertical`** — Gravity's double caret — and the
+  sorted one is told apart **by its ink alone**, Kale against the header's own grey (owner,
+  2026-08-21, revised 2026-10-06). It began as a faint `ChevronUp`, which does not say "you can
   sort by this"; it says "sorted ascending, quietly", and next to the column that genuinely *was*
-  ascending the only difference was opacity. The double caret has no direction to misread. The
-  **active** column keeps a single chevron in Kale, because there the direction is real
-  information. (Web: `SortIcon` in `Targets.tsx`.)
+  ascending the only difference was opacity. The double caret has no direction to misread.
+  (Web: `SortIcon` in `Targets.tsx`.)
+  - **On the sorted column exactly ONE of the two triangles is lit** — the one that points the way
+    the sort runs, up for ascending and down for descending, with the other staying the header's
+    own ink (owner, 2026-10-06: "не оба треугольника должны быть зелеными, а только 1 в
+    зависимости от порядка сортировки"). So the shape never changes from column to column and the
+    direction is still readable off the header; across a whole header row exactly one triangle is
+    a different colour.
+  - **And the sorted column's label is FRAMED** — **2px Kale, square corners, the full height of
+    the header band, and only as wide as the label and its caret** (owner, 2026-10-06). One lit
+    triangle says which way the sort runs, but it is a 16px mark on a wide row; the frame is what
+    makes the column findable without hunting for it. The frame and the lit triangle are the same
+    colour: one column, one signal in two places.
+  - **Both wrong shapes are worth knowing**, because each looked reasonable on its own. A 1px
+    `rounded-md` box hugging the label read as a **tag sitting inside the cell** rather than as the
+    column being marked ("рамка должна быть жирнее с квадратными краями и на всю высоту шапки
+    таблицы"). Outlining the **whole cell** then fixed the height and broke the width — on the
+    40%-wide Target Name column it drew a teal rectangle across half the table ("ширина такая
+    большая не нужна"). Full height ties the frame to the band; the width belongs to the words.
+  - **The border is present in BOTH states and only its colour changes** (`border-transparent`
+    when the column is not sorted), so nothing moves as the sort travels from column to column —
+    the same rule the drawer's rail follows, below. `-mx-2` cancels the cell's own `px-2`, so the
+    frame grows outwards into padding that is already there and the label keeps the x its column's
+    rows use.
+  - **The sorted column used to keep a single chevron** instead. The owner photographed the
+    result — one header carrying a lone chevron between two carrying a double caret — and asked
+    for all three to match ("должно быть вверх/вниз как у target name and progress").
+  - Gravity ships `carets-expand-vertical` as **one** path holding two subpaths, which cannot be
+    coloured apart. `icons.tsx` names the two outlines (`CARET_UP` / `CARET_DOWN`) and builds both
+    `CaretsExpandVertical` and the two-tone **`SortCarets`** from them, so there is one copy of
+    each. They do not overlap, so drawing them as two elements fills exactly as the merged path
+    did — the "one argument per source `<path>`" warning above is about *merging* paths, which can
+    hollow a glyph out, and this is the reverse.
+  - **The caret is set in the same ink as the word beside it.** It carried `opacity-30` for six
+    weeks, which left it at **1.48:1** on the header band while its own label sat at 4.82:1 — so
+    one header looked like it had a control and the next looked like it had none, and the glyph
+    could not do the one job this rule gives it. A graphic that carries meaning owes 3:1 (WCAG
+    1.4.11). Inheriting `currentColor` also makes it deepen together with its word on hover; the
+    `group-hover:opacity-60` that was supposed to do that had never fired, because nothing up the
+    tree carries `group`. `e2e/sort-icon-contrast.spec.ts` measures the painted colour — read back
+    through a canvas, since the computed value stays in `oklch()` — and fails under 3:1.
+  - **Both carets are set in the same ink as the word beside them** (owner, 2026-10-06). The
+    inactive one carried `opacity-30` for six weeks, which left it at **1.48:1** on the header band
+    while its own label sat at 4.82:1 and the active caret at 4.57:1 — so one header looked like it
+    had a control and the next looked like it had none, and the double caret could not do the one
+    job this rule gave it. A graphic that carries meaning owes 3:1 (WCAG 1.4.11). The icon inherits
+    `currentColor` from the header instead, so it deepens together with its word on hover; the
+    `group-hover:opacity-60` that was supposed to do that had never fired, because nothing up the
+    tree carries `group`. `e2e/sort-icon-contrast.spec.ts` measures the painted colour — read back
+    through a canvas, since the computed value stays in `oklch()` — and fails under 3:1.
 - Do **not** use Material Icons (`androidx.compose.material.icons.*`) or ad-hoc drawn shapes, and
   **no emoji as icons**. **No hollow dots**: an icon whose eyes are drawn as tiny rings reads at
   16dp as a rendering artefact — Gravity's `face-smile` / `face-sad` draw theirs solid, which is
@@ -586,6 +637,38 @@ the outer one still said "an empty page" while the inner one said the opposite. 
 the empty state's invitation; the filtered case replaces it rather than sitting inside it (web:
 `src/routes/index.tsx`; Android already drew it this way).
 
+#### 3d-bis. A confirm dialog sets the NAME of what it is about in bold (hard rule, 2026-10-06)
+
+Every dialog that asks "are you sure?" quotes the thing it is about — a goal, a target, a
+resource, a note — and **that name is bold inside the sentence**, quotes included, so what is
+about to go is read at a glance instead of being found inside a line of flat prose.
+
+**Android has drawn it this way all along** and the web had not: `ConfirmDialog` in
+`FormComponents.kt` takes a `subject` and `emphasise()` bolds every occurrence of it in the
+message; all five Android call sites pass one. On the web only the resource dialog did it, and its
+own comment already claimed the goal and target dialogs followed the same rule. They did not. The
+owner found it on a target named after a job advert, where the name is a URL longer than the
+sentence around it.
+
+One component draws it — **`QuotedName`** in `src/components/spira/ConfirmDialog.tsx` — and every
+confirm uses it: the goal card, the goal page, the target dialog, the resource dialog and the
+coach's own. Don't hand-roll a `<strong>`.
+
+- **The quotes are inside the bold**, as on Android, so the mark that opens the name and the name
+  itself are one object rather than two weights meeting mid-word.
+- **It takes the full-strength ink as well as the weight**, against a sentence set at 80% of it.
+  One signal was not enough, and the reason is measurable rather than a matter of taste: the body
+  face ships Book (400) and Medium (500) and Medium covers every heavier weight — true of GCentra
+  and of the candidates in Settings → Fonts (measured on Tilda Sans, 2026-10-06: the same string
+  sets 190.4px at 400 and 193.7px at 500, 600 and 700 alike). So `font-semibold` buys exactly one
+  step and there is no second one to reach for; colour is the other axis. Shipped bold-only first
+  and the owner rejected it on sight — "слишком маленькая разница".
+- **Both surfaces, same two signals.** `QuotedName` is `font-semibold text-foreground` on a
+  `text-foreground/80` sentence; `emphasise()` is `FontWeight.Bold` plus `onSurface` on a
+  `onSurface.copy(alpha = 0.8f)` message. Android's KDoc had claimed the ink for months while its
+  span set only the weight — the same way the web's resource dialog claimed a rule the goal and
+  target dialogs did not follow. A comment is not the behaviour; check the span.
+
 #### 3e. Sheets — one shape, two heads, on both surfaces (hard spec, 2026-08-22 — heads revised 2026-09-03)
 
 A **sheet** is how the app asks for something without leaving the page — Filter & Sort, New goal,
@@ -609,10 +692,62 @@ grow a third** (owner, 2026-09-03, on the AI providers panel wearing the wrong o
 "there should be 2 types of drawers: with a Kale head — the primary kind, and with a white head —
 the auxiliary kind"). `Primary` is the band this section used to call "the" head, unqualified —
 it still is, for every sheet that IS the reason the user opened it: a create/edit form, Filter &
-Sort, the coach itself. `Auxiliary` is for a sheet that sits ON TOP of primary content without
-being that content itself — the first, and so far only, case is **AI providers** ("это не
+Sort. `Auxiliary` is for a sheet that sits ON TOP of primary content without
+being that content itself — **AI providers** ("это не
 основной контент" — "it is not primary content" — reached from *inside* the coach panel to
 manage keys, not itself the thing the user came here to work on).
+
+**The coach's own head is `Auxiliary` too** (owner, 2026-10-07: "сделай белый хедер как у AI
+providers"), which is the one place this rule reads backwards and is deliberate. The web coach
+is no longer a sheet over a page — it is a **column of the page**, docked beside the content
+with the app header banded across both — so it has no dimmed page behind it to be the primary
+thing *of*. A Kale band there put a second slab of teal directly above the conversation's own
+teal gradient, and the white band is what separates the two. It is still the coach: what
+changed is that it stopped being a sheet.
+
+**And its head says one thing** (same instruction, "чтобы помещалось в одну линию"): the
+**model** that is answering — `mistral-large-latest`, not "Mistral" (owner, 2026-10-08: "нужно
+не просто провайдер писать, а конкретное имя модели") — or **"Bring your own key"** when no key
+is set. Never both, and never the panel's own name: "spira ai coach" was a wordmark over a
+provider strip, two rows naming the panel that the rail's mark and the header's opener had
+already named. The vendor moved into the control's tooltip; the control itself opens the key
+sheet. Beside it sit exactly two marks, the owner's chat-bubble glyph for **New chat** and the
+close X.
+
+**And its head's title is set as a VALUE, not as a title.** A sheet's name is 16px bold and stays
+so; this slot holds which model is answering, and a model id at that size was the loudest thing in
+the panel (owner, 2026-10-08: "слишком гигантскими и жирными буквами … выбивается из всего
+приложения"). It is 14px medium — the app's own chrome step, the one the section-nav labels and
+the rail's rows use. `SheetHead` takes a `titleClassName` for it.
+
+**Its head ends level with whatever white band is beside it.** On a goal page the section-nav
+band runs 65..119 under the app header — a 48px tab row, a 5px read-so-far strip and its hairline
+— so the coach's head is **54px** rather than padding-sized (it was 61, and the two white bands
+made a ragged line across the top of the page; owner, 2026-10-08). 54 is stated on the head, not
+derived from the page, because the coach also stands beside pages that have no nav row and must
+not change height as it moves between them. `SheetHead` takes a `className` for exactly this one
+caller; it is not a licence to restyle the band.
+
+**The key sheet is EXACTLY as wide as the coach, at every width.** `w-full sm:max-w-md` was two
+different things either side of 448px: on a narrow coach the card filled it, and one drag of the
+resize handle later it stuck at 448 with a strip of chat beside it and nothing on screen to say
+why ("происходит ерунда при растягивании", owner, 2026-10-08). Capping it at a *share* of the
+coach was the wrong answer to the same question and was reported in turn — "AI providers уже чем
+чат даже без растягивания". It is `w-full` with no cap, so dragging the coach's edge resizes both
+together; the handle is `z-60` over this sheet's `z-45` backdrop, so it stays grabbable while the
+sheet is open.
+
+**The coach and the standing rail take turns, and the coach is PARKED rather than closed**
+(owner, 2026-10-07: "либо чат, либо меню"; "информация из чата не должна быть потеряна"). On
+the web they are both columns on the left of the page, so showing one puts the other away.
+Opening the rail over a live chat sets `collapsed` in `ai-store`: the panel stays **mounted**
+and is hidden with an inline `display: none`, so the scroll position, a pending proposal card
+and a half-typed message all survive — closing it would unmount `PanelContent` and take them
+with it. Putting the rail away again brings a parked chat back; a chat the user closed outright
+is not parked and must not reappear. The rail's coach mark **pulses in Kale** while it holds a
+parked chat and reads "Back to the chat", because nothing else on screen says where the
+conversation went. `e2e/coach-and-rail.spec.ts` pins all of it, and measures the draft rather
+than the panel, because unmount-and-remount looks identical until something was typed.
 
 Picking the wrong one is a defect the same way an off-palette colour is: never reach for
 `Auxiliary` because a sheet happens to be short, plain, or nested inside another — reach for it
@@ -871,6 +1006,97 @@ title twice. One head, one heading.
 `e2e/deadline-picker.spec.ts` pins both surfaces, the laptop's one-click commit included;
 `VisualCheckDatePickerTest` pins Android's week numbers against a known month (August 2026 runs
 31–36) and writes the picture.
+
+#### 3e-quinquies. "Where you are" is never a colour alone (hard rule, 2026-10-06)
+
+Wherever the app marks the one item you are currently on — the sorted column in the targets table,
+the current section in the goal page's nav — the mark is a **shape**, not another hue, because a
+hue on its own is WCAG 1.4.1 (Use of Color, level A).
+
+| Surface | The mark | What else marks it |
+|---|---|---|
+| Sorted column in the targets table (`SortHeader` in `Targets.tsx`) | a **2px Kale frame**, square corners, the full height of the header band, only as wide as the label | one caret half lit, carrying the direction |
+| Current section in the goal nav (`src/routes/goals.$goalId.tsx`) | an **underline under the WORD** — a plain `text-decoration` in Kale `#1E7676`, at the **browser's own thickness and offset** | the label turns `#1E7676`, where every other is `#56514E` |
+
+**The nav's rule goes under the words, not under the tab** (owner, 2026-10-08, against a reference
+of one underlined label in a row of plain ones). As a `border-b-2` on the item it spanned the
+padding as well, which reads as a tab strip; a text decoration is as wide as the label and no
+wider. It is also the one marking that cannot move anything — a decoration is outside the box
+model, so unlike a border it needs no transparent twin on the other items to stop the row shifting
+as the mark travels.
+
+**The decoration is the browser's own — never a `decoration-*` or `underline-offset-*`.**
+Measured against the owner's reference link (2026-10-08), both at a cap height of 11px: her line
+is **1px thick and sits one clear pixel under the baseline**, which is exactly what
+`text-decoration-thickness: auto` and `text-underline-offset: auto` draw. The nav carried
+`decoration-2 underline-offset-[7px]` for a day — a 2px rule seven pixels down, which is a tab
+strip's rule wearing a link's shape, and it is what she spotted side by side with the reference.
+`auto` is also the only form that stays proportional if the size changes; both of those were
+fixed pixels. The weight was measured too and is **already right**: the reference `a`'s ink mass
+is 19.07 against our `font-medium` 18.89 and `font-normal` 15.15, so `font-medium` stays.
+Descenders are skipped either way — `text-decoration-skip-ink` is `auto` in both.
+
+**Both inks carry type on white**: `#1E7676` is 5.37:1 and `#56514E` 7.83:1, over the 4.5:1 of
+1.4.3; the rule is drawn in the label's own ink, so it clears the 3:1 that 1.4.11 asks of a graphic
+carrying state without a second measurement.
+
+**Four shapes that did not work here**, all tried in the first days of October 2026 and all worth
+remembering for what each cost:
+
+- **Guava type plus `font-medium`.** A weight step is not a signal on this project: the body face
+  has no file above Medium, so 500, 600 and 700 render identically — measured twice, on GCentra
+  (127.53px at every weight above 400) and on Tilda Sans (193.7px).
+- **A Guava frame, then a solid Guava-450 chip.** On a coral surface the fill has to be chosen by
+  what its **word** needs: `#F45D48` carries no type colour at all (3.91:1 black, 3.23:1 white)
+  and only `Guava-450 #EF7B6C` was pale enough for a near-black word at 4.64:1. That is a lot of
+  palette spent on a row that reads perfectly well as type on white — and it is still the right
+  move when a brand colour *must* be used and will not darken enough to carry type: give the
+  colour a shape to be, and let the words be black.
+- **A dark `#1A2332` band**, which is where `Pepper` entered the palette. The band is gone from
+  this row; the colour stays in the palette.
+- **A full-width tab border**, the shape immediately before this one.
+
+**A mark costs width, and the narrow screen is where that lands.** Five nav labels at `gap-8` came
+to ~345px: it fit a 390px screen and already did not fit 320px, and a frame's padding pushed 390
+over too, wrapping "Will do" onto a second line with its tail cut off. The gap and the padding are
+per-breakpoint, every label is `whitespace-nowrap`, and the strip is its own `overflow-x-auto` —
+**a narrow strip that scrolls inside itself is survivable; a PAGE that scrolls sideways is WCAG
+1.4.10.** `e2e/section-nav-active-marker.spec.ts` measures both.
+
+**Android's GROW tab bar already answers this** with its Guava underline — a line that is there or
+is not there is a shape cue, which is why that surface was left alone through all of the above.
+
+#### 3e-sexies. The web's standing rail, and the row above it (hard rules, 2026-10-08)
+
+**A rubric is never a destination, and is never lit.** It is a heading over places, not a place you
+can stand in, so the only thing tapping it does is open and close its list. "All goals" was briefly
+both, and one tap did two things: the list unfolded *and* the app navigated away, so the list you
+had just opened was sitting on a page you had just left. The destination is its own row — **Home**,
+with nothing under it — above the rubric. `NavSection` has no `to` any more, which is what stops
+this being re-introduced by accident.
+
+**The brand row is aligned by INK, and the correction goes on the word.** The menu mark, the
+wordmark and the "ai coach" opener all sit in 32px boxes centred on 32, but only two of them paint
+there: measured at `deviceScaleFactor: 4`, the mark's glyph centres on 31.9 and the opener's frame
+on 32.4, while "spira" centres on **36.3** — `leading-none` on a 32px face makes the line box
+shorter than the glyphs and the overflow is not symmetric (the dot of the `i` above, the tail of
+the `p` below). So the wordmark carries `-translate-y-1` and nothing else in the row is nudged.
+The mark used to carry `+4` instead, to meet the word where it was — which left the opener beside
+it out by the same amount, and that is exactly what the owner saw: "меню … слишком низко, ai coach
+слишком высоко" (2026-10-08).
+
+**The "ai coach" opener never leaves the header.** It used to hide itself while the coach was open,
+on the theory that an opener for something already open is a dead control — but the header is the
+one row that is the same on every page, and a word that comes and goes out of it is the
+"появляется, то исчезает" the rail itself was rebuilt to stop. With the coach already up it brings
+it back to the front, which is what a parked chat needs anyway.
+
+**Scrollbars are the browser's own.** `styles.css` carried a full `::-webkit-scrollbar` set for a
+day — 15px, `#C1C1C1` on `#F1F1F1`, square, sampled off a reference screenshot — and it is deleted
+and must not come back (owner, 2026-10-08: "я просила вернуть обычные нормальные скроллы, а не
+кастомное абы что"). Styling those pseudo-elements opts the page out of the platform scrollbar
+altogether, so every scroller in the app read as a widget this app had invented. `.hide-scrollbar`
+stays: it hides a bar rather than redesigning one.
 
 #### 3f. Search fields — the reset is the word "Clear", never a cross (hard spec, 2026-08-22)
 
@@ -1206,6 +1432,15 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
 `public/fonts/README.md`) and **`res/font/`** (Android). Full steps for any font swap live in
 **`docs/changing-fonts.md`**.
 
+> ⚠️ **The owner is evaluating Montserrat as the body face** (2026-10-08: "сейчас я рассматриваю
+> Montserrat как основной шрифт, так что все тестируй на нем"). The default in the code is still
+> Tilda Sans and she has not asked for that to change — but **check visual work with Montserrat
+> selected**, because it ships real weights where GCentra and Tilda ship only Book and Medium.
+> Every "a weight step is not a signal on this project" below was measured on a two-weight face
+> and stops being true the moment she switches: `font-medium` and `font-semibold` then genuinely
+> render heavier. Set it in the browser with
+> `localStorage["spira:app-font"] = '{"state":{"font":"montserrat"},"version":0}'`.
+>
 > **The body face is switchable at runtime while the owner picks one** (GRO-122): **Settings →
 > Fonts** carries **many** candidates at once — fifteen as of 2026-08-17, grouped by whether they
 > have Cyrillic — and a tap re-fonts the whole app. It moves **only** the body face; headings stay
@@ -1263,15 +1498,39 @@ one from either table.**
 
 | Ramp | Values (light → dark) |
 |---|---|
-| **Guava** (coral accent) | `100 #FFF3EF` · `200 #FEEFE8` · `300 #FAC6B9` · `400 #F49582` · **`500 #F45D48`** · `600 #EF523C` |
+| **Guava** (coral accent) | `100 #FFF3EF` · `200 #FEEFE8` · `300 #FAC6B9` · `400 #F49582` · `450 #EF7B6C` · **`500 #F45D48`** · `600 #EF523C` |
 | **Kale** (teal — working primary) | `100 #F3FAFB` · `200 #E0F2F5` · `300 #8DD3D4` · `400 #2BABAD` · **`500 #0A8080`** · `600 #005961` |
 | **Ginger** (warm background) | `100 #FFFAF2` · `200 #FFF2DF` |
 | **Parsnip** (warm-grey background) | `100 #FBFAFA` · `200 #F8F5F2` |
 | **Salt** (neutral grey) | `200 #FBFAFA` · `300 #F4F4F3` · `400 #EAEAEA` · `500 #DCDCDC` · `600 #BABABC` · `700 #919197` · `800 #6C6C72` · `900 #525257` · `1000 #222525` |
+| **Pepper** (deep navy surface) | `#1A2332` |
 | **White** | `#FFFFFF` |
 
 Typography colour is **Salt-1000 `#222525`** on light. Ginger/Parsnip have only the two light
 tints shown (there is no darker Ginger/Parsnip — for a stronger tone use Salt or Kale).
+
+> **`Pepper #1A2332` was added on 2026-10-07** (owner), for the goal page's section-nav band, and
+> it is a colour of its own rather than a step on a ramp. It is the **nearest thing the palette had
+> to a dark surface** and still not the same: `info-1200 #1E2633` sits 5.1 away in RGB and
+> **ΔE76 2.10** in Lab — over the ~2 where a difference stops being visible, so rounding to that
+> step would have been a change, not a tidy-up. Named for Salt, which it is the other half of.
+>
+> On it, white type is **15.78:1** and the nav's coral chip **5.80:1** — which is also how that
+> row's last open figure got closed, the chip's edge having been 2.72:1 on white against the 3:1 a
+> graphic owes. **Reach for a dark band when a brand colour will not carry on white**; it is the
+> same move as giving the colour a shape, one layer further out.
+>
+> **`Guava-450 #EF7B6C` was added on 2026-10-06** (owner), and it was the only step added to the
+> brand palette since it was written down. It belongs to the **Guava / `reserved` coral family**
+> and sits between Guava-400 `#F49582` and Guava-500 `#F45D48` — measured: hue 6.9°, lightness
+> 68%, within 8.8 (RGB distance) of the exact midpoint of those two, and at the same lightness as
+> `reserved-500 #FF725D`, its nearest neighbour in the extended ramp.
+>
+> **It earns its place by being the lightest coral a black word can sit on and still pass AA.**
+> Near-black on it is **4.64:1**, over the 4.5:1 that body text owes (WCAG 1.4.3). Every darker
+> step fails that — Guava-500 3.91:1, `reserved-700 #E4523E` 3.35:1 — and every lighter one reads
+> as no fill at all. So when a small Guava surface has to carry words, this is the step. Its own
+> edge against white is 2.72:1, so it is not a choice for a thin line that must be seen on its own.
 
 #### Extended ramps (also allowed)
 

@@ -13,6 +13,31 @@ import { X } from "@/components/spira/icons";
 import { cn } from "@/lib/utils";
 
 /**
+ * The name of the thing being acted on, quoted and set **bold** inside the sentence that asks
+ * about it — so what is about to go is read at a glance instead of being found inside a line of
+ * flat prose. Android has drawn it this way all along (`emphasise` / the `subject` parameter of
+ * `ConfirmDialog` in `FormComponents.kt`); on the web only the resource dialog did, and its
+ * comment already claimed the goal and target dialogs followed the same rule. Now they do.
+ *
+ * The quotes are **inside** the bold, as they are on Android, so the mark that opens the name and
+ * the name itself are one object rather than two weights meeting mid-word.
+ *
+ * **It carries full-strength ink as well as the weight** (owner, 2026-10-06: "слишком маленькая
+ * разница"). One signal was not enough, and the reason is measurable rather than a matter of taste:
+ * the body face ships Book (400) and Medium (500) and Medium covers every heavier weight, so
+ * `font-semibold` buys exactly one step — on Tilda Sans the same string sets 190.4px at 400 and
+ * 193.7px at 500, 600 and 700 alike. The sentence around it is `text-foreground/80`; the name is
+ * `text-foreground`, so it is both heavier and darker. Android's `emphasise()` does the same.
+ */
+export function QuotedName({ children }: { children: React.ReactNode }) {
+  return (
+    <strong className="font-semibold text-foreground">
+      &quot;{children}&quot;
+    </strong>
+  );
+}
+
+/**
  * Centered confirmation dialog. White card, hairline border, drop-shadow.
  * Cancel = neutral outlined ("No, go back"), Confirm = solid red destructive —
  * or solid teal (`tone="primary"`) when the action creates something rather than removes it.
@@ -55,10 +80,16 @@ export function ConfirmDialog({
         </button>
 
         <AlertDialogHeader className="space-y-2 text-left pr-8">
-          <AlertDialogTitle className="font-sans font-semibold text-[20px] text-foreground tracking-tight">
+          <AlertDialogTitle className="font-sans font-semibold text-[20px] text-foreground tracking-tight break-words">
             {title}
           </AlertDialogTitle>
-          <AlertDialogDescription className="text-[14px] text-foreground/80 leading-relaxed">
+          {/* **A long word has to have somewhere to break.** A target named after a job advert
+              carries its whole URL, and an unbreakable 130-character token made the grid column
+              — and with it the footer — 735px wide inside a card clamped to 600px, so the buttons
+              were drawn outside the white card entirely. Two things fix it and both are needed:
+              `grid-cols-[minmax(0,1fr)]` on the card, so the column may shrink below its content
+              at all, and this, so the text then has a place to break. */}
+          <AlertDialogDescription className="text-[14px] text-foreground/80 leading-relaxed break-words [overflow-wrap:anywhere]">
             {description}
           </AlertDialogDescription>
         </AlertDialogHeader>

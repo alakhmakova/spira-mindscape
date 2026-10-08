@@ -424,10 +424,18 @@ fun SpiraFormSheetContent(
 }
 
 /**
- * [message] with every occurrence of [subject] set bold and in the full-strength ink. Returns the
- * message unchanged when there is no subject to pick out.
+ * [message] with every occurrence of [subject] set bold and in [ink], the full-strength colour,
+ * against a message drawn at 80% of it. Returns the message unchanged when there is no subject.
+ *
+ * **The weight alone was not enough** (owner, 2026-10-06, on the web twin: "слишком маленькая
+ * разница"). This KDoc claimed the full-strength ink before the code did any such thing — the span
+ * set only `FontWeight.Bold`, so the name inherited the message's 80% alpha like everything else.
+ * The reason one step of weight does not carry on its own is the body face: GCentra ships Book and
+ * Medium, Medium is registered at `FontWeight.Bold` too (`Type.kt`), so "bold" is one step and
+ * there is no second one to reach for. Colour is the other axis, and it is the same answer the web
+ * reached — `QuotedName` in `ConfirmDialog.tsx`.
  */
-private fun emphasise(message: String, subject: String?): AnnotatedString {
+private fun emphasise(message: String, subject: String?, ink: Color): AnnotatedString {
     if (subject.isNullOrBlank()) return AnnotatedString(message)
     return buildAnnotatedString {
         var from = 0
@@ -435,7 +443,7 @@ private fun emphasise(message: String, subject: String?): AnnotatedString {
             val at = message.indexOf(subject, from)
             if (at < 0) break
             append(message.substring(from, at))
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(subject) }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = ink)) { append(subject) }
             from = at + subject.length
         }
         append(message.substring(from))
@@ -454,69 +462,100 @@ fun ConfirmDialog(
     /** "destructive" (default) = red confirm; primary = teal, for a constructive action. */
     destructive: Boolean = true,
     /**
-     * The thing being acted on — its name is drawn **bold** wherever it appears in [message], so
-     * the user can see *what* they are about to delete instead of having to find it inside a
-     * sentence set in one flat weight.
+     * The thing being acted on — its name is drawn **bold and in the full-strength ink** wherever
+     * it appears in [message], so the user can see *what* they are about to delete instead of
+     * having to find it inside a sentence set in one flat weight. See [emphasise].
      */
     subject: String? = null,
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.spiraExtras.surfaceRaised)
-                .padding(24.dp),
-        ) {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    title,
-                    // The title is set in the SANS, not the headline serif — it is interface
-                    // copy, not a heading, exactly as on the web.
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontSize = 20.sp,
-                    lineHeight = 26.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(end = 28.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    emphasise(message, subject),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                )
-                Spacer(Modifier.height(24.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                ) {
-                    DialogButton(
-                        label = cancelLabel,
-                        onClick = onDismiss,
-                    )
-                    DialogButton(
-                        label = confirmLabel,
-                        onClick = { onConfirm(); onDismiss() },
-                        // error-900 from the palette's semantic ramp — the colour reserved for
-                        // danger. Guava stays the brand accent and is deliberately not used here.
-                        container = if (destructive) Error900 else MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
+        ConfirmDialogContent(
+            title = title,
+            message = message,
+            onConfirm = onConfirm,
+            onDismiss = onDismiss,
+            confirmLabel = confirmLabel,
+            cancelLabel = cancelLabel,
+            destructive = destructive,
+            subject = subject,
+        )
+    }
+}
 
-            Icon(
-                com.spiramindscape.android.ui.icons.SpiraIcons.X,
-                contentDescription = "Close",
-                tint = MaterialTheme.spiraExtras.mutedForeground,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(16.dp)
-                    .clickable(onClick = onDismiss),
+/**
+ * The card itself, without the window around it.
+ *
+ * It is split out for the same reason `SpiraFilterSheetContent` is (CLAUDE.md → Design → 7): a
+ * `Dialog` renders in **its own window**, which the `VisualCheck*` helper cannot photograph — it
+ * draws the activity's decor view, so an open dialog is simply absent from the PNG. Rendering the
+ * card directly is what makes the one check that can catch a defect here actually check something.
+ */
+@Composable
+internal fun ConfirmDialogContent(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    confirmLabel: String = "Yes, remove",
+    cancelLabel: String = "No, go back",
+    destructive: Boolean = true,
+    subject: String? = null,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.spiraExtras.surfaceRaised)
+            .padding(24.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                title,
+                // The title is set in the SANS, not the headline serif — it is interface
+                // copy, not a heading, exactly as on the web.
+                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 20.sp,
+                lineHeight = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(end = 28.dp),
             )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                emphasise(message, subject, MaterialTheme.colorScheme.onSurface),
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+            ) {
+                DialogButton(
+                    label = cancelLabel,
+                    onClick = onDismiss,
+                )
+                DialogButton(
+                    label = confirmLabel,
+                    onClick = { onConfirm(); onDismiss() },
+                    // error-900 from the palette's semantic ramp — the colour reserved for
+                    // danger. Guava stays the brand accent and is deliberately not used here.
+                    container = if (destructive) Error900 else MaterialTheme.colorScheme.primary,
+                )
+            }
         }
+
+        Icon(
+            com.spiramindscape.android.ui.icons.SpiraIcons.X,
+            contentDescription = "Close",
+            tint = MaterialTheme.spiraExtras.mutedForeground,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(16.dp)
+                .clickable(onClick = onDismiss),
+        )
     }
 }
 
