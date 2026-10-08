@@ -50,6 +50,27 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # **The Android note editor is a COMMITTED build artifact**, so a change to
+      # `embeds/note-editor/` only reaches the phone if someone remembers
+      # `npm run build:note-editor` — and CLAUDE.md already says that step is "easy to
+      # forget and silent when you do". Silent is the problem: the whole suite stays
+      # green while the APK ships the old bundle.
+      #
+      # That is not hypothetical for a security bump. `src/components/spira/editor-security.test.ts`
+      # pins the patched versions in `package-lock.json`, but the lockfile is not what
+      # the WebView runs; this asset is. Without this step the floors could pass while
+      # the phone still ran the unpatched `prosemirror-view`.
+      #
+      # It is a byte comparison of a rebuild against what is committed. `npm ci` installs
+      # the locked toolchain, so the output is reproducible; if this ever goes red without
+      # anyone having touched `embeds/`, suspect a non-deterministic build before
+      # suspecting the author.
+      - name: The committed note-editor bundle matches its source
+        run: |
+          npm run build:note-editor
+          git diff --exit-code -- android/app/src/main/assets/note-editor/index.html \
+            || { echo "::error::android/app/src/main/assets/note-editor/index.html is stale — run 'npm run build:note-editor' and commit the result."; exit 1; }
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
