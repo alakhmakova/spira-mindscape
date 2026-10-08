@@ -326,57 +326,155 @@ const BASELINE_LOG = path.join(
  * earlier. Measured on this suite: one sheet read 0 in one run and 6 in the next, with nothing in
  * the app changed.
  */
+/**
+ * What a surface is allowed to have: rule id → **element signature** → how many nodes.
+ *
+ * **It used to be rule id → a single number, and that number hid real defects.** The owner asked
+ * why no test had ever flagged the "Add target" button, which puts white on `#F45D48` at 3.23:1;
+ * axe had been reporting it on every run. The goal page's line read `{ "color-contrast": 8 }`,
+ * axe found 5, `5 <= 8` and the suite went green — and under a ceiling of 8 one defect can be
+ * swapped for another without anything failing. A count records *how many*; only a signature
+ * records *which*.
+ */
+export type AcceptedViolations = Record<
+  string,
+  Record<string, Record<string, number>>
+>;
+
+/**
+ * An element's identity: **its own tag and its own classes**, read off the markup axe reports.
+ *
+ * **Not the CSS path axe computes**, which was the first attempt and did not survive a week. That
+ * path is the *shortest selector that is unique in the page as it stands*, so it changes when
+ * other elements change: the Timeline's muted span was recorded as
+ * `.gap-1\.5.items-center.flex > span` and later reported as `.gap-1\.5.items-center > span` —
+ * same element, same defect, a line of baseline retired for nothing. Stripping `:nth-child` and
+ * Radix's generated ids fixed two symptoms of that and left the cause.
+ *
+ * The opening tag depends on the element alone. `<span class="font-medium text-[12px]">` is
+ * `span.font-medium.text-[12px]` wherever it sits and whatever is beside it. Classes are sorted so
+ * that re-ordering a `className` string is not a change, and framework-generated ones are dropped.
+ *
+ * **A restyle does expire the line, and that is right**: changing an element's classes is exactly
+ * when its contrast wants looking at again. Several nodes can share a signature — three identical
+ * muted spans down the Timeline do — which is why the baseline stores a count against it.
+ */
+function signature(node: { target: unknown[]; html?: string }): string {
+  const html = node.html ?? "";
+  const tag = /^<([a-z][a-z0-9-]*)/i.exec(html)?.[1]?.toLowerCase();
+  if (tag) {
+    const classes = (/\sclass="([^"]*)"/i.exec(html)?.[1] ?? "")
+      .split(/\s+/)
+      .filter((c) => c && !/^(radix-|_r_)/.test(c))
+      .sort();
+    return classes.length ? `${tag}.${classes.join(".")}` : tag;
+  }
+  // No markup to go on — fall back to the last step of the path, cleaned the old way.
+  const raw = node.target
+    .map((t) => (typeof t === "string" ? t : JSON.stringify(t)))
+    .join(" ");
+  const steps = raw
+    .split(">")
+    .map((s) =>
+      s
+        .replace(/:nth-child\(\d+\)/g, "")
+        .replace(/\[[^\]]*(?:radix|_r_)[^\]]*\]/g, "")
+        .trim(),
+    )
+    .filter(Boolean);
+  return steps[steps.length - 1] ?? raw;
+}
+
 export async function axeScan(
   page: Page,
   surface: string,
-  accepted: Record<string, Record<string, number>>,
+  accepted: AcceptedViolations,
   within?: string,
 ) {
+  // **Let the surface stop moving first.** axe reports a node whose background it cannot resolve
+  // as *incomplete* rather than as a violation, and a card that is still fading in is exactly
+  // that — so the same dialog counted 0 in one run and 1 in the next, on unchanged code, three
+  // times in this suite (the Reality menu's red Delete, then both delete confirms' `.shadow`).
+  // Waiting for the animations rather than for a fixed delay keeps it fast and removes the whole
+  // class; the race guard is for an animation that never ends, like a spinner.
+  await page.evaluate(async (sel) => {
+    const root = sel ? document.querySelector(sel) : document.body;
+    if (!root) return;
+    const settled = Promise.all(
+      root
+        .getAnimations({ subtree: true })
+        .map((a) => a.finished.catch(() => {})),
+    );
+    await Promise.race([
+      settled,
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }, within ?? null);
+
   const builder = new AxeBuilder({ page }).withTags(WCAG_21_AA);
   const { violations } = await (
     within ? builder.include(within) : builder
   ).analyze();
 
-  const counted: Record<string, number> = {};
+  // rule id → signature → how many nodes carry it right now.
+  const found: Record<string, Record<string, number>> = {};
   for (const violation of violations) {
-    counted[violation.id] = violation.nodes.length;
+    const bySignature: Record<string, number> = (found[violation.id] ??= {});
+    for (const node of violation.nodes) {
+      const key = signature(node);
+      bySignature[key] = (bySignature[key] ?? 0) + 1;
+    }
   }
 
-  // The report is what makes a failure actionable: the rule, how many nodes, and the first
-  // selector — without it a red run says only "something regressed".
-  const detail = violations
-    .map(
-      (v) =>
-        `  ${v.id} (${v.impact}) x${v.nodes.length}\n` +
-        `    ${v.help}\n` +
-        `    first: ${v.nodes[0]?.target.join(" ")}`,
-    )
-    .join("\n");
-
   if (RECORD) {
-    // The first selector and the element itself, as well as the count: a number says a surface
-    // has three of something, and only the markup says which component it is.
-    const where = Object.fromEntries(
-      violations.map((v) => [
-        v.id,
-        `${v.nodes[0]?.target.join(" ")} :: ${v.nodes[0]?.html?.slice(0, 220)}`,
-      ]),
-    );
+    // Printed in the shape ACCEPTED takes, so a re-record is a paste rather than a transcription.
+    // The markup goes alongside, because a selector names an element and only the markup says
+    // which component it is.
+    const markup: Record<string, string> = {};
+    for (const violation of violations) {
+      for (const node of violation.nodes) {
+        markup[`${violation.id} ${signature(node)}`] ??= (
+          node.html ?? ""
+        ).slice(0, 180);
+      }
+    }
     appendFileSync(
       BASELINE_LOG,
-      JSON.stringify({ surface, counted, where }) + "\n",
+      JSON.stringify({ surface, found, markup }) + "\n",
     );
     return;
   }
 
   const allowed = accepted[surface] ?? {};
-  const regressions = Object.entries(counted).filter(
-    ([id, count]) => count > (allowed[id] ?? 0),
-  );
+  // A regression is an element that is NOT on this surface's list, or one that is on it but has
+  // multiplied. Fewer than recorded never fails — fixing something must not break the suite.
+  const regressions: string[] = [];
+  for (const [id, bySignature] of Object.entries(found)) {
+    for (const [key, count] of Object.entries(bySignature)) {
+      const ceiling = allowed[id]?.[key] ?? 0;
+      if (count > ceiling) {
+        regressions.push(
+          `${id} x${count}${ceiling ? ` (recorded ${ceiling})` : " (not recorded)"} — ${key}`,
+        );
+      }
+    }
+  }
+
+  // The report names the rule, the element and its help text, so a red run says what to go and
+  // fix rather than only that something regressed.
+  const detail = violations
+    .map(
+      (v) =>
+        `  ${v.id} (${v.impact}) x${v.nodes.length} — ${v.help}\n` +
+        v.nodes.map((n) => `      ${signature(n)}`).join("\n"),
+    )
+    .join("\n");
 
   expect(
     regressions,
     `${surface}: accessibility violations beyond what is recorded in ACCEPTED.\n` +
-      `  counted: ${JSON.stringify(counted)}\n${detail}`,
+      regressions.map((r) => `  ${r}`).join("\n") +
+      `\n  — everything axe reported here —\n${detail}\n` +
+      `  Re-record with A11Y_RECORD=1 if these are genuinely accepted.`,
   ).toEqual([]);
 }

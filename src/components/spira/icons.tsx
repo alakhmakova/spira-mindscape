@@ -252,16 +252,82 @@ export const ChevronRightIcon = make(
   </>,
 );
 /* gravity: chevron-right */
+// Gravity ships `carets-expand-vertical` as ONE path holding two subpaths, which is right for an
+// icon that is only ever one colour. The sort control needs to light the half that matches the
+// direction, so the two are named here and the icon is assembled from them — one copy of each
+// outline, used by both `CaretsExpandVertical` and `SortCarets`. They do not overlap, so drawing
+// them as two elements fills exactly as the merged path did (the warning in CLAUDE.md is about
+// *merging* paths, which can hollow a glyph out; this is the reverse).
+const CARET_UP =
+  "M12 6.273a.73.73 0 0 0-.18-.479L8.8 2.342A1 1 0 0 0 8.046 2h-.092a1 1 0 0 0-.753.341L4.18 5.794A.727.727 0 0 0 4.727 7h6.546A.727.727 0 0 0 12 6.273";
+const CARET_DOWN =
+  "M4 9.727c0 .176.064.346.18.479l3.02 3.453a1 1 0 0 0 .753.341h.092a1 1 0 0 0 .753-.341l3.021-3.453A.727.727 0 0 0 11.273 9H4.727A.727.727 0 0 0 4 9.727";
+
 export const CaretsExpandVertical = make(
   <>
     <path
       fill="currentColor"
       fillRule="evenodd"
       clipRule="evenodd"
-      d="M12 6.273a.73.73 0 0 0-.18-.479L8.8 2.342A1 1 0 0 0 8.046 2h-.092a1 1 0 0 0-.753.341L4.18 5.794A.727.727 0 0 0 4.727 7h6.546A.727.727 0 0 0 12 6.273M4 9.727c0 .176.064.346.18.479l3.02 3.453a1 1 0 0 0 .753.341h.092a1 1 0 0 0 .753-.341l3.021-3.453A.727.727 0 0 0 11.273 9H4.727A.727.727 0 0 0 4 9.727"
+      d={CARET_UP}
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d={CARET_DOWN}
     />
   </>,
 );
+
+/**
+ * The same double caret, with **one half lit**.
+ *
+ * A sorted column shows the direction by darkening the caret that points it — not by swapping in a
+ * different glyph, and not by marking both (owner, 2026-10-06: "не оба треугольника должны быть
+ * зелеными, а только 1 в зависимости от порядка сортировки"). Every column therefore draws the
+ * identical shape and only the ink moves, which is what makes a row of headers read as one family.
+ *
+ * **The lit half is near-black, not Kale** (owner, 2026-10-06, against a reference table whose sort
+ * marks measure `#101010`). A teal caret was the only coloured thing in an otherwise grey header
+ * band; the reference marks the sorted column by weight of ink alone.
+ *
+ * `lit` is left out for a column that is not the sorted one; both halves then take the header's own
+ * ink, like the word beside them.
+ */
+export function SortCarets({
+  className,
+  lit,
+  ...props
+}: SVGProps<SVGSVGElement> & { className?: string; lit?: "asc" | "desc" }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="1em"
+      height="1em"
+      className={cn("shrink-0", className)}
+      aria-hidden="true"
+      {...props}
+    >
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d={CARET_UP}
+        className={lit && (lit === "asc" ? "text-[#222525]" : "text-[#858585]")}
+      />
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d={CARET_DOWN}
+        className={
+          lit && (lit === "desc" ? "text-[#222525]" : "text-[#858585]")
+        }
+      />
+    </svg>
+  );
+}
 /* gravity: carets-expand-vertical */
 export const ChevronUp = make(
   <>
@@ -1111,3 +1177,111 @@ export const SortDescending = make(
   </>,
 );
 /* gravity: bars-descending-align-left-arrow-down */
+
+/**
+ * The header's menu mark (owner, 2026-10-07, who supplied the drawing — it replaced Gravity's
+ * `bars`, which ran wider and squarer).
+ *
+ * Stripped to the drawing alone: `nv_id` on both elements, the two minified class names, `role`,
+ * `focusable`, `width` and the wrapper's own `fill` all belonged to the site it came from. It was
+ * already on a 16 box, so it stands beside the rest of the set without resizing.
+ *
+ * `fillRule="evenodd"` is added for the module's sake, not the source's — the three bars do not
+ * overlap, so it draws identically either way, and every other glyph here carries it.
+ */
+export const Bars = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M2 4.5a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.5zM2 8a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H2.75A.75.75 0 012 8zm.75 2.75a.75.75 0 000 1.5h10.5a.75.75 0 000-1.5H2.75z"
+    />
+  </>,
+);
+/*
+ * A speech bubble with two lines of type in it — the owner's own glyph (2026-10-07), supplied for
+ * the coach's **New chat** control. It is drawn on Gravity's system (a 16 box, .5/.75 radii, the
+ * line as a fill) so it sits in the same column as the rest, but it is not from the Gravity set
+ * and the name describes the drawing, not the action: the tooltip says what it does.
+ */
+export const Comment = make(
+  <>
+    <path
+      fill="currentColor"
+      d="M8.667 7.834a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1z"
+    />
+    <path fill="currentColor" d="M11 5.167a.5.5 0 0 1 0 1H5a.5.5 0 1 1 0-1z" />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 1.167c1.995 0 3.85.083 5.38.227a1.75 1.75 0 0 1 1.582 1.546c.13 1.175.204 2.568.204 4.06 0 1.49-.074 2.884-.204 4.06a1.75 1.75 0 0 1-1.58 1.546c-1.398.131-3.065.21-4.861.224l-2.06 1.765a.987.987 0 0 1-1.629-.749v-1.088a49 49 0 0 1-2.214-.152 1.75 1.75 0 0 1-1.58-1.547A38 38 0 0 1 .833 7c0-1.49.075-2.884.205-4.06a1.75 1.75 0 0 1 1.58-1.545A59 59 0 0 1 8 1.167m0 1c-1.97 0-3.792.082-5.288.222a.75.75 0 0 0-.68.661 37 37 0 0 0-.2 3.95c0 1.46.073 2.816.198 3.95.04.35.32.626.68.66.797.075 1.687.133 2.643.172a.5.5 0 0 1 .479.499v1.536l2.175-1.864.071-.051a.5.5 0 0 1 .252-.07 57 57 0 0 0 4.957-.222.75.75 0 0 0 .68-.66A37 37 0 0 0 14.166 7c0-1.46-.073-2.816-.198-3.95a.75.75 0 0 0-.68-.66A58 58 0 0 0 8 2.165"
+    />
+  </>,
+);
+/* gravity: key — "bring your own key" */
+export const Key = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M10.313 7.488 9 7.653v5.37a.5.5 0 0 1-.353.478l-1.62.498-.006.001h-.008l-.007-.006-.005-.007v-.003L7 13.979V7.653l-1.313-.165a1.5 1.5 0 0 1-1.271-1.144l-.588-2.5A1.5 1.5 0 0 1 5.288 2h5.424a1.5 1.5 0 0 1 1.46 1.844l-.588 2.5a1.5 1.5 0 0 1-1.271 1.144m2.731-.8A3 3 0 0 1 10.5 8.976v4.046a2 2 0 0 1-1.412 1.911l-1.62.499A1.52 1.52 0 0 1 5.5 13.979V8.977a3 3 0 0 1-2.544-2.29l-.588-2.5A3 3 0 0 1 5.288.5h5.424a3 3 0 0 1 2.92 3.687zM6.75 3.5a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5z"
+    />
+  </>,
+);
+/* gravity: gear — the account */
+export const Gear = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M7.199 2H8.8a.2.2 0 0 1 .2.2c0 1.808 1.958 2.939 3.524 2.034a.2.2 0 0 1 .271.073l.802 1.388a.2.2 0 0 1-.073.272c-1.566.904-1.566 3.164 0 4.069a.2.2 0 0 1 .073.271l-.802 1.388a.2.2 0 0 1-.271.073C10.958 10.863 9 11.993 9 13.8a.2.2 0 0 1-.199.2H7.2a.2.2 0 0 1-.2-.2c0-1.808-1.958-2.938-3.524-2.034a.2.2 0 0 1-.272-.073l-.8-1.388a.2.2 0 0 1 .072-.271c1.566-.905 1.566-3.165 0-4.07a.2.2 0 0 1-.073-.27l.801-1.389a.2.2 0 0 1 .272-.072C5.042 5.138 7 4.007 7 2.199c0-.11.089-.199.199-.199M5.5 2.2c0-.94.76-1.7 1.699-1.7H8.8c.94 0 1.7.76 1.7 1.7a.85.85 0 0 0 1.274.735 1.7 1.7 0 0 1 2.32.622l.802 1.388c.469.813.19 1.851-.622 2.32a.85.85 0 0 0 0 1.472 1.7 1.7 0 0 1 .622 2.32l-.802 1.388a1.7 1.7 0 0 1-2.32.622.85.85 0 0 0-1.274.735c0 .939-.76 1.7-1.699 1.7H7.2a1.7 1.7 0 0 1-1.699-1.7.85.85 0 0 0-1.274-.735 1.7 1.7 0 0 1-2.32-.622l-.802-1.388a1.7 1.7 0 0 1 .622-2.32.85.85 0 0 0 0-1.471 1.7 1.7 0 0 1-.622-2.32l.801-1.389a1.7 1.7 0 0 1 2.32-.622A.85.85 0 0 0 5.5 2.2m4 5.8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0M11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
+    />
+  </>,
+);
+/* gravity: arrow-chevron-left — collapses the nav */
+export const ArrowChevronLeft = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M14 8.75a.75.75 0 0 0 0-1.5H8.31l2.72-2.72a.75.75 0 1 0-1.06-1.06l-4 4a.75.75 0 0 0 0 1.06l4 4a.75.75 0 1 0 1.06-1.06L8.31 8.75zM6.53 4.53a.75.75 0 0 0-1.06-1.06l-4 4a.75.75 0 0 0 0 1.06l4 4a.75.75 0 0 0 1.06-1.06L3.06 8z"
+    />
+  </>,
+);
+
+/**
+ * The trophy that stands for **All goals** (owner, 2026-10-07, who supplied the drawing).
+ *
+ * Taken from the SVG she sent and stripped to the drawing alone: the wrapper's `data-internal-name`,
+ * its two minified class names, `role`, `focusable`, `width` and `color` all belonged to the site it
+ * came from, not to this glyph. What is left is the three `<path>` elements, which already sat on a
+ * 16 box with `evenodd` fills — the same drawing system as Gravity, so it needs no resizing to stand
+ * beside them.
+ */
+export const Award = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.417 3.083v5.25c0 1.059.858 1.917 1.916 1.917h1.334a1.917 1.917 0 0 0 1.916-1.917v-5.25zM3.917 3c0-.782.634-1.417 1.416-1.417h5.334c.782 0 1.416.635 1.416 1.417v5.333a3.417 3.417 0 0 1-3.416 3.417H7.333a3.417 3.417 0 0 1-3.416-3.417z"
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M7.25 13.667V11h1.5v2.667z"
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.25 13.667a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5H6a.75.75 0 0 1-.75-.75m5.333-9.334a.75.75 0 0 1 .75-.75h2c.783 0 1.417.635 1.417 1.417v1.333A2.75 2.75 0 0 1 12 9.083h-.667a.75.75 0 0 1 0-1.5H12c.69 0 1.25-.56 1.25-1.25v-1.25h-1.917a.75.75 0 0 1-.75-.75M1.25 5c0-.782.634-1.417 1.417-1.417h2a.75.75 0 0 1 0 1.5H2.75v1.25c0 .69.56 1.25 1.25 1.25h.667a.75.75 0 0 1 0 1.5H4a2.75 2.75 0 0 1-2.75-2.75z"
+    />
+  </>,
+);

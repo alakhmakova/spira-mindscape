@@ -29,7 +29,7 @@ test("a long message keeps the caret in view and the actions reachable", async (
     .first()
     .click();
 
-  const panel = page.getByRole("complementary", { name: "spira ai coach" });
+  const panel = page.getByRole("complementary", { name: "AI coach" });
   const field = panel.getByPlaceholder("Ask, plan, or request an action…");
   await field.click();
 

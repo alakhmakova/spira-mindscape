@@ -73,6 +73,24 @@ rows unless `--force` is passed, asks you to type the target host back, restores
 
 On Windows use Git Bash (`bash scripts/db-restore.sh ...`); it needs `psql` and `gpg` on the path.
 
+**Mind the client version, and know which tool cares.** Production is Neon, on **PostgreSQL 18**,
+while the local Docker database is **16** — two majors apart, so a client that is fine for one is
+not automatically fine for the other.
+
+- **`pg_dump` refuses outright** to dump a server newer than itself: `aborting because of server
+  version mismatch`. That is what broke the very first scheduled backup (2026-10-06), and why the
+  workflow now asks the server its major version and installs that client rather than naming one.
+- **`psql` only warns**, so restoring with an older client usually works — which is also why it is
+  the tool the workflow uses to ask the question in the first place.
+- A dump taken from 18 may still use syntax a 16 server rejects, so when rehearsing a restore
+  locally, restore into a **matching** major (or accept that `ON_ERROR_STOP` may stop on a
+  statement the old server has never heard of).
+
+On a Debian/Ubuntu machine, `/usr/bin/pg_dump` is `pg_wrapper` and it does **not** necessarily run
+the newest client installed — call `/usr/lib/postgresql/<major>/bin/pg_dump` if you need to be
+sure. On this project's own machine the simplest answer is the one the local section below uses:
+run `pg_dump` **inside** the container, where client and server are the same build.
+
 ---
 
 ## The local development database

@@ -132,7 +132,7 @@ test.describe("the AI drawer on a phone", () => {
 
     // 2. The head is still there. Its leaving the top of the drawer is the tell that the whole
     //    card is scrolling as one block instead of the transcript scrolling inside it.
-    const head = page.getByRole("button", { name: /Bring your own key/i });
+    const head = page.getByRole("button", { name: /^Provider: /i });
     await expect(head).toBeInViewport();
 
     // 3. And the card can still be answered, which is the whole point of the complaint.

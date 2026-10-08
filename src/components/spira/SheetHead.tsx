@@ -35,6 +35,8 @@ export function SheetHead({
   onClose,
   actions,
   tone = "primary",
+  className,
+  titleClassName,
   /**
    * What renders the title. Defaults to a plain `h2`; a **dialog** passes `DialogTitle`, because
    * Radix needs one as the dialog's accessible name and adding a second, screen-reader-only copy
@@ -42,10 +44,29 @@ export function SheetHead({
    */
   titleComponent: Title = "h2",
 }: {
-  title: string;
+  /**
+   * Normally the sheet's name. The coach's head passes a **node**: its title slot is the
+   * provider control, because that head has to say which model is answering and offer the key
+   * sheet on one line (owner, 2026-10-07). The band's measurements are the thing this component
+   * owns; what sits in the title's place is the caller's.
+   */
+  title: React.ReactNode;
   onClose: () => void;
   actions?: React.ReactNode;
   tone?: "primary" | "auxiliary";
+  /**
+   * For a head that has to line up with something beside it rather than size itself — today only
+   * the coach's, which sits level with the goal page's section-nav band. It is not a licence to
+   * restyle the band: the fill, the hairline, the gutter and the X are this component's.
+   */
+  className?: string;
+  /**
+   * Overrides the title's own type. A sheet's name is 16px bold and stays so; the coach's head
+   * puts a **value** in that slot — which model is answering — and a model id set as a title was
+   * the loudest thing in the panel (owner, 2026-10-08: "слишком гигантскими и жирными буквами …
+   * выбивается из всего приложения").
+   */
+  titleClassName?: string;
   titleComponent?: React.ElementType;
 }) {
   const auxiliary = tone === "auxiliary";
@@ -54,12 +75,14 @@ export function SheetHead({
       className={cn(
         "flex shrink-0 items-center gap-1 px-5 py-3.5",
         auxiliary ? "border-b border-[#F3F3F3] bg-white" : "bg-primary",
+        className,
       )}
     >
       <Title
         className={cn(
-          "flex-1 text-base font-bold",
+          "min-w-0 flex-1 text-base font-bold",
           auxiliary ? "text-[#003737]" : "text-primary-foreground",
+          titleClassName,
         )}
       >
         {title}

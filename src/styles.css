@@ -111,10 +111,26 @@
  * These are candidates, not brand faces: **no `ascent-override`**. GCentra's overrides exist to
  * keep body text from shifting inside its line box against adjacent icons, but forcing every
  * candidate onto GCentra's metrics would hide exactly the difference the owner is looking at.
+ * Tilda Sans is the one exception and it is a `descent-override` only - see its block below.
  *
  * Every file is subset to Latin + Cyrillic — twelve families at two weights is otherwise 5.9 MB
  * of glyphs the app never draws. Licences stay with each foundry; all are free for commercial
  * use.
+ */
+/*
+ * Tilda Sans carries a `descent-override`, and it is the only candidate that does.
+ *
+ * Chrome clips an `<input>`'s text to the font's own content box - ascent + descent - and
+ * nothing in CSS moves that box: `line-height`, `padding` and `height` were each measured and
+ * each changed the rendering by exactly zero bytes. Tilda Sans declares a descent of 24.9% of
+ * the em and draws `g` at 24.4% (Regular) and `j` at 25.1% (Medium), so the tail sits on the
+ * clip line - or past it - and the rasteriser shaves it flat. The "Search goals" placeholder is
+ * where the owner spotted it (2026-10-08), but it was every input in the app.
+ *
+ * 26% is the smallest step that clears it (measured: the tail tapers 33 -> 11 device px instead
+ * of being chopped at 28; 27% and 28% render identically, so they buy nothing). The ascent is
+ * the font's own, and the line box therefore grows by 1.1% of the em - 0.15px at 14px - which
+ * matters nowhere, because Tailwind states a `line-height` on essentially every text class.
  */
 @font-face {
   font-family: "Tilda Sans";
@@ -122,6 +138,9 @@
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+  ascent-override: 95.1%;
+  descent-override: 26%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: "Tilda Sans";
@@ -129,6 +148,9 @@
   font-weight: 500 900;
   font-style: normal;
   font-display: swap;
+  ascent-override: 95.1%;
+  descent-override: 26%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: "PT Root UI";
@@ -871,6 +893,22 @@
     }
   }
 }
+
+/*
+ * **The browser's own scrollbars, everywhere** (owner, 2026-10-08: "я просила вернуть обычные
+ * нормальные скроллы, а не кастомное абы что").
+ *
+ * This file carried a full `::-webkit-scrollbar` set for a day — 15px, `#C1C1C1` on `#F1F1F1`,
+ * square — sampled off a reference screenshot. It is deleted and must not come back. Styling the
+ * legacy pseudo-elements opts the page out of the platform scrollbar altogether: Chrome stops
+ * drawing the overlay bar it draws everywhere else, so every scroller in the app looked like a
+ * widget this app had invented rather than like the scrollbar the rest of the machine uses, and
+ * the width had to be guessed at because the screenshot it came from had arrow buttons this
+ * browser does not draw.
+ *
+ * `.hide-scrollbar` below is the one exception and stays: it hides a bar rather than redesigning
+ * one.
+ */
 
 @layer utilities {
   .hide-scrollbar {

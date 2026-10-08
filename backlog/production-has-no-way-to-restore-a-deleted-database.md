@@ -84,3 +84,42 @@ turned up the three defects above. **It still cannot run**, and the two things l
 
 Then: run it once by hand, download the artifact, and rehearse the restore into a scratch branch —
 at which point the date in the guide stops saying "never".
+
+## 2026-10-06: it ran for the first time, and failed in 22 seconds
+
+Both of the owner's two items were done — the workflow reached `main` with PR #8 and both secrets
+exist — so the schedule fired at 08:53 UTC and the job went red on its fourth step:
+
+```
+pg_dump: error: aborting because of server version mismatch
+pg_dump: detail: server version: 18.6 (4e955f5); pg_dump version: 16.15 (Ubuntu 16.15-1.pgdg24.04+2)
+```
+
+Two separate faults, and the second is the one worth remembering:
+
+1. **The client version was named, not derived.** The step was called "Install the Postgres client
+   matching the server" and its comment claimed the versions "can never drift apart" — then it
+   installed `postgresql-client-17` against a Neon server on **18**. A hard-coded number cannot
+   match anything; it can only be right for a while. The step now asks the server
+   (`SELECT current_setting('server_version_num')::int / 10000`, through `psql`, which tolerates a
+   mismatch precisely where `pg_dump` does not) and installs that major.
+2. **The installed client was not the one that ran.** `postgresql-client-17` installed cleanly —
+   the step was green — and `pg_dump` still executed **16.15**. The log does not say why, and the
+   obvious explanation is wrong: the first guess was that Debian's `pg_wrapper` simply ignores a
+   newer client, but a clean `ubuntu:24.04` was checked (2026-10-06) and it does not — install
+   client 18 beside the image's 16 there and `/usr/bin/pg_dump` reports **18.6**. So something
+   particular to the runner image, most likely its own PGDG client 16 sitting earlier on `PATH`,
+   beats the newer package. The fix does not need the answer: the workflow prepends
+   `/usr/lib/postgresql/<major>/bin` through `GITHUB_PATH`, which goes ahead of anything the image
+   set up, asserts the binary exists in the install step, and prints `command -v pg_dump` and
+   `pg_dump --version` above the dump — so the next wrong binary is named in the log instead of
+   surfacing three steps later as a version error.
+
+**Why the local rehearsal could not have caught either.** It ran against the Docker Postgres, which
+is **16.14**, with the container's own client — the one configuration where the versions are
+guaranteed to agree. Production is two majors ahead. The rehearsal was still worth its three
+defects; this is simply the class it could not reach, and the lesson is that a backup is only
+proven by a real scheduled run against the real server.
+
+Still the owner's to do, unchanged: once this reaches `main`, run it by hand, download the
+artifact, and rehearse the restore into a scratch Neon branch.

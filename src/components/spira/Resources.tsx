@@ -57,7 +57,7 @@ import {
   InlineResourcesContextProvider,
   type InlineResourcesValue,
 } from "@/components/spira/inline-resources";
-import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
+import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { SheetHead } from "./SheetHead";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -515,11 +515,9 @@ export function ResourcesList({
             ? (() => {
                 const name = resourceDisplayName(pendingDelete);
                 const count = countResourceAttachments(goal, pendingDelete.id);
-                // The name is set bold in both wordings — the same rule the goal and target
-                // dialogs follow, so what is about to go is never buried in a sentence.
-                const named = (
-                  <strong className="font-semibold">&quot;{name}&quot;</strong>
-                );
+                // The name is set bold in both wordings — the same rule every other confirm
+                // follows, so what is about to go is never buried in a sentence.
+                const named = <QuotedName>{name}</QuotedName>;
                 return count > 0 ? (
                   <span className="flex items-start gap-2">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
