@@ -150,8 +150,11 @@ function ProgressLockButton({
   iconClassName?: string;
   /**
    * In the desktop table the padlock is a scannable column of state, not a per-row accent: the
-   * owner wants it the same grey whether locked or not, going Kale only on hover. Cards keep the
-   * default (locked = Kale) so a locked card still reads as locked at a glance.
+   * owner wants it the same grey whether locked or not, **deepening to near-black on hover, not
+   * to Kale** (owner, 2026-10-08). Teal on hover read as a second meaning — in this table Kale is
+   * what marks the sorted column — where all the hover has to say is "this one is under the
+   * pointer". Cards keep the default (locked = Kale) so a locked card still reads as locked at a
+   * glance.
    */
   neutralTone?: boolean;
 }) {
@@ -176,7 +179,7 @@ function ProgressLockButton({
         // card's smiley exactly — the two hang off the same corner and must read as one component.
         "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors",
         neutralTone
-          ? "text-muted-foreground hover:text-primary"
+          ? "text-muted-foreground hover:text-foreground"
           : locked
             ? "text-primary hover:text-primary/75"
             : "text-muted-foreground/60 hover:text-foreground",

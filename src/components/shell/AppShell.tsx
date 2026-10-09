@@ -1,6 +1,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  AiSparkle,
   Bars,
   Search,
   Filter,
@@ -109,7 +110,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const openKeys = useAi((s) => s.openKeys);
   // The standing rail's own switch, driven by the menu mark in the header. Deliberately not
   // persisted: hiding the navigation is a thing you do for one look at a wide page, not a setting.
-  const [navOpen, setNavOpen] = useState(true);
+  //
+  // **Open by default on a laptop, closed on a phone** (owner, 2026-10-09). From `lg` the rail is
+  // a column the page is laid out around, so it belongs on screen; below `lg` it is an overlay
+  // over the content, and an overlay that is up before you ask for it is a wall in front of the
+  // app. Read once, at mount, rather than tracked: this is which state to START in, and a user
+  // who resizes mid-session has the menu mark right there.
+  const [navOpen, setNavOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth >= 1024,
+  );
 
   /**
    * **The rail and the coach take turns** (owner, 2026-10-07: "либо чат, либо меню"). They share
@@ -423,11 +432,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               page spaced this group at 16 and the dashboard at 8, so the wordmark and the opener
               moved 8px sideways as you walked between them — measured at 1400: `spira` at 76 on
               a goal and 68 on the dashboard. The goal page's 16 is the one that stays. */}
-          <div className="flex items-center justify-start gap-4">
+          <div className="flex items-center justify-start gap-2 sm:gap-4">
             {/* **The menu mark, left of the wordmark** (owner, 2026-10-07) — the place every
                 reference she brought puts it. It shows and hides the standing rail, so the page
-                can have the whole width when the list of goals is not wanted. Only from `lg`,
-                because that is the one width at which the rail exists at all. */}
+                can have the whole width when the list of goals is not wanted.
+                **At every width** (owner, 2026-10-09: "на мобайл тоже должно быть меню боковое").
+                It was `lg` and up, because that was the one width the rail existed at; the rail
+                now opens as an overlay below `lg`, so the mark that opens it has to be there
+                too — see the rail's own classes in `SideNav.tsx`. */}
             <button
               type="button"
               onClick={() => showNav(!navOpen)}
@@ -447,7 +459,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               // edge and the logo begins 30px after the ink ends. The row's own padding is 24, the
               // button adds 6, and the glyph's bars start 2/16 into a 20px box — so `-ml-2` brings
               // the ink to 24, and `mr-5` leaves the 30.
-              className="-ml-2 mr-[12px] hidden shrink-0 rounded-md p-1.5 text-foreground transition-colors hover:bg-muted lg:grid lg:place-items-center"
+              className="-ml-2 mr-1 grid shrink-0 place-items-center rounded-md p-1.5 text-foreground transition-colors hover:bg-muted sm:mr-[12px]"
             >
               <Bars className="h-5 w-5" />
             </button>
@@ -459,20 +471,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 
                 The "ai coach" word still goes, and for its own reason: it is the opener, and an
                 opener for something already open is a dead control. */}
+            {/* **The wordmark stands alone here** (owner, 2026-10-09). The Spira flower sat to
+                its left for an afternoon; it is still the favicon, and the coach's own flower now
+                rides in the opener beside this, so the row had two marks and a word in it. The
+                one that went is the one the tab already carries. */}
+            {/* **The word is smaller on a phone**, and it has to be: at 390 CSS px the menu
+                mark this row gained on 2026-10-09 pushed the avatar 19px off the right edge of
+                the page, which is WCAG 1.4.10 Reflow. 24px here against 32 from `sm`, with
+                tighter gaps, is what brings 360 and 390 back to zero overflow. */}
             <Link
               to="/"
-              className={cn(
-                // **`-translate-y-1` is the one correction in this row**, and it is on the word
-                // because the word is what is off. `leading-none` on a 32px face makes the line
-                // box shorter than the glyphs, and the overflow is not symmetric — only the dot
-                // of the `i` sits above, while the tail of the `p` hangs below — so the painted
-                // ink lands at 22.0..50.5, centred on 36.3 inside a box centred on 32. 4px up
-                // brings it to 32.3, where the menu mark (31.9) and the opener's frame (32.4)
-                // already are. A translate, not a margin, so the row's layout is untouched.
-                "-translate-y-1 text-[32px] font-extrabold leading-none tracking-[-0.01em] text-primary transition-colors hover:text-primary/85",
-              )}
+              className="flex items-center gap-1.5 transition-colors hover:text-primary/85 sm:gap-2.5"
             >
-              spira
+              <span
+                className={cn(
+                  // **`-translate-y-1` is the one correction in this row**, and it is on the word
+                  // because the word is what is off. `leading-none` on a 32px face makes the line
+                  // box shorter than the glyphs, and the overflow is not symmetric — only the dot
+                  // of the `i` sits above, while the tail of the `p` hangs below — so the painted
+                  // ink lands at 22.0..50.5, centred on 36.3 inside a box centred on 32. 4px up
+                  // brings it to 32.3, where the menu mark (31.9) and the opener's frame (32.4)
+                  // already are. A translate, not a margin, so the row's layout is untouched.
+                  //
+                  // `font-[family-name:var(--font-wordmark)]` pins it to GCentra: the Fonts tab
+                  // rewrites `--font-sans` on `:root`, and the app's own name must not change
+                  // shape while a body face is being auditioned (owner, 2026-10-09).
+                  "font-[family-name:var(--font-wordmark)] text-[24px] font-extrabold leading-none tracking-[-0.01em] text-primary sm:text-[32px]",
+                )}
+              >
+                spira
+              </span>
             </Link>
             {/* **It never leaves the header** (owner, 2026-10-08). It used to hide itself while
                 the coach was open, on the theory that an opener for something already open is a
@@ -483,9 +511,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {
               <button
                 onClick={showChat}
-                className="whitespace-nowrap rounded-none border border-primary px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 sm:px-2.5"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-none border border-primary px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 sm:px-2.5"
               >
                 ai coach
+                {/* **The owner's sparkle** (2026-10-09), in the opener's own Kale ink — the same
+                    `AiSparkle` the rail lights when a chat is live, so the opener and the live
+                    marker are one mark. It is on the set's own 16 box and measures 30.8% ink
+                    coverage, inside Gravity's 29.5–44.4 band, so it needs no thickening.
+
+                    Two others were tried here: the coach's flower (a two-colour drawing inside a
+                    one-colour control read as a sticker on it) and the Noun sparkle cluster
+                    (16.1% coverage — dust beside a 15px word, even stroked). */}
+                <AiSparkle className="h-[18px] w-[18px]" />
               </button>
             }
           </div>
@@ -710,12 +747,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           the same number `--sheet-top-gap` is built from. */}
       <div className="flex min-h-0 flex-1">
         {navOpen && (
-          <SideNav
-            path={path}
-            goalId={openGoalId}
-            onOpenChat={showChat}
-            onOpenKeys={showKeys}
-          />
+          <>
+            {/* **Below `lg` the rail is an overlay, so it needs a scrim** (owner, 2026-10-09:
+                "на мобайл боковое меню это overlay"). From `lg` the rail is a column the page is
+                laid out around and nothing is covered, so there is nothing to dim and no way to
+                tap "outside" — hence `lg:hidden`. It starts under the header band, which stays
+                reachable: the same mark that opened the rail closes it.
+                A `<button>` rather than a `<div>`, so a keyboard can dismiss it too. */}
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => showNav(false)}
+              className="fixed inset-x-0 bottom-0 top-16 z-40 bg-foreground/30 lg:hidden"
+            />
+            <SideNav
+              path={path}
+              goalId={openGoalId}
+              onOpenChat={showChat}
+              onOpenKeys={showKeys}
+              onNavigate={() => {
+                // Only on the overlay. On a laptop the rail is standing navigation: following a
+                // link from it must not put it away.
+                if (window.innerWidth < 1024) showNav(false);
+              }}
+            />
+          </>
         )}
         <AiPanel />
         <div className="flex min-w-0 flex-1 flex-col">

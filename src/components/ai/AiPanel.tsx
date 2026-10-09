@@ -26,6 +26,7 @@ import { useActivityGate } from "@/lib/useActivityGate";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { SproutArt } from "@/components/spira/SproutArt";
+import { FlowerArt } from "@/components/spira/FlowerArt";
 import { ResourceAttachSheet } from "./ResourceAttachSheet";
 import { NoticeCard } from "@/components/spira/Notice";
 import {
@@ -3132,12 +3133,19 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           {/* Empty state */}
           {!inGrow && msgs.length === 0 && (
             <div className="pt-5 pb-2 text-center">
-              {/* **The watering can and sprout** — the owner's illustration, the same artwork
-                  Android draws (`SpiraArt.sprout`), and it is vector rather than a bitmap. It
-                  replaced a plain leaf glyph here on 2026-08-17, so the two surfaces head the
-                  assistant with one picture instead of two ideas of it. */}
-              <div className="w-[52px] h-[52px] rounded-full bg-white/70 border border-[#005961]/20 grid place-items-center mx-auto mb-4">
-                <SproutArt size={26} />
+              {/* **The flower, on nothing** — the owner's mark (`FlowerArt.tsx`), vector
+                  rather than a bitmap and a single path, so the ink is **stated here** rather
+                  than inherited.
+                  **A plain white disc, and the flower smaller inside it** (owner, 2026-10-09:
+                  "сделай как фон белый круг, тогда цветок должен стать меньше"). An earlier disc
+                  here was 52px with a **teal hairline** round it, and that ring was the loudest
+                  thing in the empty state — this one has no border at all: it is ground for the
+                  mark, not a frame round it. 68 and 40 leaves 14px of white on every side, the
+                  same proportion the favicon's crop uses.
+                  `grid place-items-center` rather than padding, so the mark is centred on the
+                  disc whatever size either of them is given next. */}
+              <div className="mx-auto mb-4 grid h-[68px] w-[68px] place-items-center rounded-full bg-white">
+                <FlowerArt size={40} className="text-[#222525]" />
               </div>
               <p className="text-[14px] leading-[1.6] text-[#003737] max-w-[30ch] mx-auto mb-5">
                 {goal

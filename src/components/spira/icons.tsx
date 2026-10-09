@@ -860,6 +860,28 @@ export const Sparkles = make(
   </>,
 );
 /* gravity: sparkles */
+export const AiSparkle = make(
+  <>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M6.667 4.167a.5.5 0 0 1 .469.326l.343.93.305.81c.267.684.44 1.02.701 1.283.35.348.832.538 2.092 1.005l.93.343a.5.5 0 0 1 0 .939l-.93.343c-1.261.467-1.743.657-2.092 1.006-.348.35-.539.831-1.006 2.092l-.343.93a.5.5 0 0 1-.939 0l-.343-.93c-.467-1.26-.657-1.743-1.005-2.092-.262-.261-.599-.434-1.283-.7l-.81-.306-.93-.343a.5.5 0 0 1 0-.939l.93-.343.81-.305c.684-.267 1.02-.439 1.283-.7.349-.35.538-.832 1.005-2.093l.343-.93.033-.07a.5.5 0 0 1 .437-.256"
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M11.767 1.5a.4.4 0 0 1 .375.262l.173.465c.237.643.321.846.467.992l.058.052c.145.117.371.207.934.416l.465.171a.4.4 0 0 1 0 .75l-.465.173c-.643.238-.846.322-.992.468s-.23.349-.467.992l-.173.465a.4.4 0 0 1-.75 0l-.172-.465c-.238-.643-.322-.846-.468-.992s-.35-.23-.992-.468l-.465-.173a.4.4 0 0 1 0-.75l.465-.171c.643-.238.846-.322.992-.468s.23-.35.468-.992l.172-.465a.4.4 0 0 1 .375-.262"
+    />
+  </>,
+);
+/* NOT Gravity — the owner's own sparkle (2026-10-09), for the "ai coach" opener in the header.
+   It is on the same 16 box as the set and measures 30.8% ink coverage of its own square, which
+   sits inside Gravity's range (29.5 for `key` and `sparkles`, 44.4 for `home`), so it carries the
+   same weight as its neighbours. A Noun Project sparkle was offered alongside it and is NOT used:
+   measured at 16.1% it is half the set's weight, and thickening a four-pointed star changes the
+   star rather than its wall. */
 export const SquareDashed = make(
   <>
     <path
@@ -1116,23 +1138,30 @@ export const LockFilled = make(
 );
 /* gravity: lock-fill — **solid, and deliberately so** (owner, 2026-08-21). It used to draw the
    outline `lock`, which meant the two states of the padlock differed only in whether the shackle
-   was hanging open: at 16px that is a couple of pixels and you had to look for it. The pair is now
-   solid-when-closed against outline-when-open, so "locked" reads at a glance.
+   was hanging open: at 16px that is a couple of pixels and you had to look for it.
 
-   This is the sanctioned exception to "never a solid mark in a column of outline ones" — the same
-   one `FolderOpen` / `FolderOpenFilled` uses. The filled twin marks the ON state of a toggle beside
-   its own outline sibling; it is not a solid glyph sitting in a row of unrelated outline ones. */
+   Its open twin was outline until 2026-10-08, when the owner asked for **both to be filled** — see
+   `LockOpenFilled` below.
+
+   Either way this pair is the sanctioned exception to "never a solid mark in a column of outline
+   ones": it is a toggle's own two states, not a solid glyph sitting in a row of unrelated outline
+   ones. */
 export const LockOpenFilled = make(
   <>
     <path
       fill="currentColor"
       fillRule="evenodd"
       clipRule="evenodd"
-      d="M10.5 5a2.5 2.5 0 0 0-4.532-1.456c-.242.336-.66.559-1.052.428c-.393-.131-.611-.56-.41-.922A4 4 0 0 1 12 5v1h.001a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h6.5zm.75 2.5H4A1.5 1.5 0 0 0 2.5 9v3A1.5 1.5 0 0 0 4 13.5h8a1.5 1.5 0 0 0 1.5-1.5V9A1.5 1.5 0 0 0 12 7.5zM8 8.75a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2A.75.75 0 0 1 8 8.75"
+      d="M8 1a4 4 0 0 1 4 4v1l.154.004A3 3 0 0 1 15 9v3a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h6.5V5a2.5 2.5 0 0 0-4.531-1.456c-.242.336-.66.559-1.052.428c-.393-.131-.61-.56-.408-.922A4 4 0 0 1 8 1m0 7.75a.75.75 0 0 0-.75.75v2a.75.75 0 0 0 1.5 0v-2A.75.75 0 0 0 8 8.75"
     />
   </>,
 );
-/* gravity: lock-open */
+/* gravity: lock-open-fill — **both padlocks are solid now** (owner, 2026-10-08). It drew the
+   outline `lock-open` until then, which is where its name came from: the pair was
+   solid-when-closed against outline-when-open. With both filled the two states differ only in the
+   shackle again, which is what the 2026-08-21 note above was written against — so if the open one
+   ever becomes hard to tell from the closed one at 16px, that is the thing to revisit, not the
+   fill. The name finally describes the glyph either way. */
 export const User = make(
   <>
     <path

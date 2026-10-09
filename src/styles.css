@@ -427,6 +427,16 @@
     sans-serif;
   --font-heading: "ITC Clearface", "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* **The wordmark's own face, and the Fonts tab must never move it** (owner, 2026-10-09:
+     "в хедере независимо от выбранного шрифта приложения именно spira пусть всегда будет
+     написано gcentra шрифтом"). `app-font.ts` rewrites `--font-sans` and `--font-display` on
+     `:root` to re-font the whole app while a body face is being chosen; a logo is not a body
+     face, and the app's own name changing shape as you audition fonts is the one thing in the
+     header that should hold still. This token is deliberately NOT in that function's list —
+     check `useApplyAppFont` before adding anything here. */
+  --font-wordmark:
+    GCentra, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
 
   --shadow-soft: 0 1px 2px 0 oklch(0.2 0 0 / 0.04);
   --shadow-raised:
