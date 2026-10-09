@@ -459,7 +459,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               // edge and the logo begins 30px after the ink ends. The row's own padding is 24, the
               // button adds 6, and the glyph's bars start 2/16 into a 20px box — so `-ml-2` brings
               // the ink to 24, and `mr-5` leaves the 30.
-              className="-ml-2 mr-1 grid shrink-0 place-items-center rounded-md p-1.5 text-foreground transition-colors hover:bg-muted sm:mr-[12px]"
+              className="-ml-2 mr-1 grid shrink-0 place-items-center rounded-md p-1.5 text-foreground transition-colors hover:bg-muted max-[359px]:mr-0 sm:mr-[12px]"
             >
               <Bars className="h-5 w-5" />
             </button>
@@ -478,7 +478,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* **The word is smaller on a phone**, and it has to be: at 390 CSS px the menu
                 mark this row gained on 2026-10-09 pushed the avatar 19px off the right edge of
                 the page, which is WCAG 1.4.10 Reflow. 24px here against 32 from `sm`, with
-                tighter gaps, is what brings 360 and 390 back to zero overflow. */}
+                tighter gaps, is what brings 360 and 390 back to zero overflow.
+                **Below 360 the row needs 47px more** (2026-10-09: the account sat 31px past the
+                edge at 320, and that also zoomed mobile Chrome's layout viewport out, so a tap
+                on the "New goal" FAB landed on a goal card). Every `max-[359px]:` in this row is
+                that budget: the opener's sparkle goes (the WORD stays — it never leaves the
+                header), and the gaps and padding tighten by a few px each. 360 and up are
+                unchanged. `a11y-zoom.spec.ts` measures 320. */}
             <Link
               to="/"
               className="flex items-center gap-1.5 transition-colors hover:text-primary/85 sm:gap-2.5"
@@ -511,7 +517,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {
               <button
                 onClick={showChat}
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-none border border-primary px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 sm:px-2.5"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-none border border-primary px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 max-[359px]:px-1.5 sm:px-2.5"
               >
                 ai coach
                 {/* **The owner's sparkle** (2026-10-09), in the opener's own Kale ink — the same
@@ -522,13 +528,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     Two others were tried here: the coach's flower (a two-colour drawing inside a
                     one-colour control read as a sticker on it) and the Noun sparkle cluster
                     (16.1% coverage — dust beside a 15px word, even stroked). */}
-                <AiSparkle className="h-[18px] w-[18px]" />
+                <AiSparkle className="h-[18px] w-[18px] max-[359px]:hidden" />
               </button>
             }
           </div>
 
-          {/* Spacer (only for non-workspace) */}
-          {!isWorkspace && <div className="flex-1" />}
+          {/* Spacer (only for non-workspace). **From `sm` only** — below it the search is a glyph
+              in the right cluster and that cluster's own `ml-auto` does the pushing; a spacer
+              there was a zero-width box costing two 8px gaps on a row with none to spare. */}
+          {!isWorkspace && <div className="hidden flex-1 sm:block" />}
 
           {/* Search (Centered for workspace, inline for non-workspace) */}
           <div
@@ -587,10 +595,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Right side items */}
           <div
             className={cn(
-              "flex shrink-0 items-center gap-2 sm:gap-4 justify-end",
-              // The goal page's row is flex on a phone (see above), so nothing else pushes the
-              // account across to the right edge.
-              isWorkspace && "ml-auto sm:ml-0",
+              "flex shrink-0 items-center gap-2 sm:gap-4 justify-end max-[359px]:gap-1",
+              // Below `sm` both rows are flex with nothing else to push the account across to
+              // the right edge (the dashboard's spacer only exists from `sm`).
+              "ml-auto sm:ml-0",
             )}
           >
             {/* **The search and the filters live HERE**, in the teal bar, as bare glyphs — the

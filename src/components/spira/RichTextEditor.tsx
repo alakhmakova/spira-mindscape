@@ -88,6 +88,7 @@ export function RichTextEditor({
   // The editable area's accessible name. A `<label>` cannot reach it — the control is a
   // contenteditable element TipTap renders — so a caller that shows a heading over the editor
   // passes the same word here, or a screen reader announces an unnamed text box (BUG-023).
+  // Defaults to "Note".
   ariaLabel?: string;
   // `embedded`: rendered as a bordered field inside a form (e.g. the create sheet)
   // rather than a full-screen editor — keeps the toolbar inside the box.
@@ -124,16 +125,13 @@ export function RichTextEditor({
               : "min-h-[40vh]",
         ),
         "data-placeholder": placeholder ?? "",
-        // `role`/`aria-multiline` come with the name, not instead of it: a name on a bare
-        // contenteditable `<div>` is an `aria-prohibited-attr` violation, because a generic
-        // element may not carry one. The role is what the element actually is.
-        ...(ariaLabel
-          ? {
-              "aria-label": ariaLabel,
-              role: "textbox",
-              "aria-multiline": "true",
-            }
-          : {}),
+        // **Always named.** TipTap 3.31 merges `role="textbox"` onto every editor itself, so an
+        // editor without a name is an unnamed text box (axe `aria-input-field-name`) — the open
+        // note and the full-screen note both shipped that way after the bump. Every editor in
+        // the app is a note's body, so "Note" is the honest default.
+        "aria-label": ariaLabel ?? "Note",
+        role: "textbox",
+        "aria-multiline": "true",
       },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
