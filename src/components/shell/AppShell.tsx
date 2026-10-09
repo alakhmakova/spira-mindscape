@@ -517,7 +517,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {
               <button
                 onClick={showChat}
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-none border border-primary px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 max-[359px]:px-1.5 sm:px-2.5"
+                // **The reference's "Simple" frame** (owner, 2026-10-09), measured: a 2px rule in
+                // the deep Kale (Kale-600), with 4px corners rather than square ones.
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[4px] border-2 border-[#005961] px-2 py-1 text-[15px] font-medium leading-none text-primary transition-colors hover:bg-primary/5 max-[359px]:px-1.5 sm:px-2.5"
               >
                 ai coach
                 {/* **The owner's sparkle** (2026-10-09), in the opener's own Kale ink — the same

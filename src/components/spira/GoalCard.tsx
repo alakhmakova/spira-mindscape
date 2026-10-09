@@ -14,9 +14,12 @@ import { useSpira } from "@/lib/spira/store";
 import { ConfirmDialog, QuotedName } from "./ConfirmDialog";
 import { cn } from "@/lib/utils";
 
-/** Overdue red — same as "Yes, delete" button in ConfirmDialog */
-/** error-800 — the palette's semantic red for an overdue state (CLAUDE.md extended ramps). */
-const OVERDUE_RED = "#D74041";
+/**
+ * **error-900** — the palette's semantic red for an overdue state (CLAUDE.md extended ramps). It
+ * was error-800 `#D74041`, which is 4.43:1 on the card's `#FAFAFA` body and fails 1.4.3 for the
+ * "Due date" line it colours; error-900 is 5.1:1. The stripe takes the same red.
+ */
+const OVERDUE_RED = "#C53336";
 
 /**
  * The two greys of the card's left half, sampled from the owner's reference (`gusto/cards1.png`,
@@ -37,6 +40,31 @@ const WELL = "#F4F4F3";
  * band and the body are drawn in.
  */
 const WEDGE = "#D6D6D6";
+
+/**
+ * The card's own frame, measured off the owner's reference task card (`gusto/upcomingsynccalendar.png`,
+ * 2026-10-09): a **1px outline in a mid grey** — neutral-700, where the old `border/60` hairline
+ * all but vanished on white — **4px corners**, and a soft shadow that falls mostly downwards. The
+ * shadow is the notice card's own pair (CLAUDE.md 3d), not a new one.
+ */
+const OUTLINE = "#ABABAB";
+const SHADOW = "0 4px 12px rgba(28,28,28,.08), 0 2px 8px rgba(28,28,28,.04)";
+const SHADOW_HOVER =
+  "0 8px 20px rgba(28,28,28,.10), 0 2px 8px rgba(28,28,28,.06)";
+
+/**
+ * The status stripe down the card's left edge, on EVERY card (owner, 2026-10-09) — the reference
+ * task card's stripe, measured: **5px wide, 3px in from the outline, 4px short of it top and
+ * bottom, fully rounded ends**. Grey at 0%, Kale once the goal has begun or is done on time, red
+ * when it is overdue — overdue wins, so a late goal that has not been started is red, not grey.
+ */
+const STRIPE_IDLE = "#BABABA";
+const STRIPE_MOVING = "#0A8080";
+
+function stripeColour(progress: number, isOverdue: boolean) {
+  if (isOverdue) return OVERDUE_RED;
+  return progress > 0 ? STRIPE_MOVING : STRIPE_IDLE;
+}
 
 /** How much of a goal's description the card shows before "View full goal description". */
 const DESCRIPTION_LINES = 2;
@@ -202,24 +230,27 @@ export function GoalCard({ goal }: { goal: Goal }) {
          *   │ band │ring│      │   band    │      │
          *   └──────┴────┘      └───────────┴──────┘
          */
-        "group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] overflow-hidden border bg-card text-card-foreground transition-shadow hover:shadow-md sm:grid-cols-[minmax(0,1fr)_228px]",
-        completed ? "border-[#4CACAC]/50" : "border-border/60",
+        // **`sm:grid-rows-[1fr_auto]`** — the ring spans both rows on a laptop and is usually
+        // taller than the body and the band together. With auto rows the surplus went into the
+        // band's row while the band itself stayed 48px, which left a white strip under every
+        // card's band (owner, 2026-10-09). A flexible first row takes all of it instead.
+        "group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-[4px] border bg-card text-card-foreground shadow-[var(--card-shadow)] transition-shadow hover:shadow-[var(--card-shadow-hover)] sm:grid-cols-[minmax(0,1fr)_228px] sm:grid-rows-[1fr_auto]",
       )}
+      style={
+        {
+          borderColor: OUTLINE,
+          "--card-shadow": SHADOW,
+          "--card-shadow-hover": SHADOW_HOVER,
+        } as React.CSSProperties
+      }
     >
-      {/**
-       * **Only an overdue card carries a rule, and it is red.** The reference card has no stripe
-       * at all; the one place the owner's screenshots use one is the task that is three days late
-       * (`gusto/home.png`), where it is the whole point. A stripe in the confidence colour ran on
-       * every card and was the loudest thing in the list — and the confidence has its own cell in
-       * the band below.
-       */}
-      {isOverdue ? (
-        <div
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-[3px]"
-          style={{ backgroundColor: OVERDUE_RED }}
-        />
-      ) : null}
+      {/* Over the body's grey and the band's, so `z-[2]` — above the stretched link's overlay
+          (`z-[1]`), which would otherwise paint the band over its lower end. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-1 left-[3px] top-1 z-[2] w-[5px] rounded-full"
+        style={{ backgroundColor: stripeColour(progress, isOverdue) }}
+      />
 
       {/* BODY — what the goal is. Full width on a phone, the top-left cell on a laptop. */}
       <div
@@ -347,8 +378,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
        */}
       <div
         className={cn(
-          "col-start-2 row-start-2 flex flex-col items-center justify-center gap-2.5 border-l border-t bg-white px-6 py-5 sm:row-span-2 sm:row-start-1 sm:border-t-0 sm:py-6",
-          completed ? "border-[#4CACAC]/50" : "border-border/60",
+          "col-start-2 row-start-2 flex flex-col items-center justify-center gap-2.5 border-l border-t border-border/60 bg-white px-6 py-5 sm:row-span-2 sm:row-start-1 sm:border-t-0 sm:py-6",
         )}
       >
         <span className="text-sm text-muted-foreground">Progress</span>

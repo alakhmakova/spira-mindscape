@@ -205,7 +205,9 @@ async function scan(page: Page, surface: string, within?: string) {
 async function dashboard(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "All goals" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Goals", exact: true }),
+  ).toBeVisible();
 }
 
 test.describe("WCAG 2.1 AA — the machine-checkable part, every surface", () => {

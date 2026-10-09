@@ -12,6 +12,9 @@ import { GoalCard } from "@/components/spira/GoalCard";
 import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { GoalsTable } from "@/components/spira/GoalsTable";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
+import { Upcoming } from "@/components/spira/Upcoming";
+import { useAuth } from "@/lib/spira/auth";
+import { greeting } from "@/lib/spira/greeting";
 import {
   GOALS_SCOPE,
   useShellFilters,
@@ -55,6 +58,7 @@ function GoalsOverview() {
   const status = useViewField("status", GOALS_SCOPE);
   const goalDeadline = useViewField("goalDeadline", GOALS_SCOPE);
   const [open, setOpen] = useState(false);
+  const userName = useAuth((s) => s.user?.name);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -138,62 +142,81 @@ function GoalsOverview() {
           it, the last card in a short list sits directly under the circle and the FAB covers its
           "Start" control (BUG-072, mobile viewport). */}
       <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 pt-8 pb-24 sm:px-6 sm:pt-12">
-        <header className="spira-overview-header flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            {viewMode === "cards" ? (
-              <>
-                <h1 className="font-heading text-3xl leading-[1.1] text-foreground sm:text-4xl">
-                  All goals
-                </h1>
-                <p className="mt-1.5 text-sm text-muted-foreground sm:text-[15px]">
-                  {goals.length} {goals.length === 1 ? "goal" : "goals"} in
-                  motion. Pick one to dive into, or shape a new one.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 className="font-heading text-3xl leading-[1.1] text-foreground sm:text-4xl">
-                  Timeline
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Goals, targets and tasks with deadlines, ordered by the
-                  nearest date.
-                </p>
-              </>
-            )}
-          </div>
-          {/* **Tabs, not a segmented control** — the same row Android draws on a goal
-              (`GrowTabsRow`): the word alone, with a Guava underline on the current one. The old
-              pill group carried an icon per view, which a tab row does not (CLAUDE.md → TabBar). */}
-          <TabBar
-            className="shrink-0"
-            items={[
-              {
-                label: "Cards",
-                active: viewMode === "cards",
-                onSelect: () => setViewMode("cards"),
-              },
-              {
-                label: "Timeline",
-                active: viewMode === "table",
-                onSelect: () => setViewMode("table"),
-              },
-              { label: "Calendar", to: "/calendar" },
-            ]}
-          />
+        {/**
+         * **The greeting, then the list under its own heading** (owner, 2026-10-09, after
+         * `gusto/upcomingsynccalendar.png`). "All goals" was a title naming the page the user had
+         * just opened; the greeting is what that reference opens with instead, and the list gets a
+         * plain section heading — "Goals" where the reference says "Tasks".
+         *
+         * **Both in the BODY face, not the heading serif**, at the reference's sizes: the greeting
+         * 26px and the section heading 20px, both medium. Measured on its cap heights (19px and
+         * 15px at a 0.7 cap ratio — Montserrat's is the same), so the sizes hold for the face the
+         * owner is trying out.
+         */}
+        <header className="spira-overview-header">
+          <h1 className="text-[26px] font-medium leading-tight text-foreground">
+            {greeting(userName)}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground sm:text-[15px]">
+            {goals.length} {goals.length === 1 ? "goal" : "goals"} in motion.
+            Pick one to dive into, or shape a new one.
+          </p>
         </header>
 
-        {isLoading && !hasLoaded ? (
-          /* ── Loading ── */
-          <div
-            className="surface-card p-12 flex flex-col items-center gap-4"
-            role="status"
-          >
-            <Loader className="h-8 w-8 text-[#F45D48] animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading your goals…</p>
-          </div>
-        ) : filtered.length === 0 && goals.length > 0 ? (
-          /* ── Filtered: the list HAS goals and the user's own search or filter is hiding them.
+        {/* Two columns from `lg`: the goals, and Upcoming beside them at the reference's
+            proportions (about two to one). Below `lg` Upcoming follows the list. Timeline is a
+            wide table, so it keeps the whole width. */}
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-10",
+            viewMode === "cards" &&
+              "lg:grid-cols-[minmax(0,1fr)_minmax(260px,340px)] lg:gap-9",
+          )}
+        >
+          <div className="min-w-0 space-y-5">
+            <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-6 gap-y-3">
+              <h2 className="text-xl font-medium leading-tight text-foreground">
+                {viewMode === "cards" ? "Goals" : "Timeline"}
+              </h2>
+              {/* **Tabs, not a segmented control** — the same row Android draws on a goal
+                  (`GrowTabsRow`): the word alone, with a Guava underline on the current one. */}
+              <TabBar
+                className="shrink-0"
+                items={[
+                  {
+                    label: "Cards",
+                    active: viewMode === "cards",
+                    onSelect: () => setViewMode("cards"),
+                  },
+                  {
+                    label: "Timeline",
+                    active: viewMode === "table",
+                    onSelect: () => setViewMode("table"),
+                  },
+                  { label: "Calendar", to: "/calendar" },
+                ]}
+              />
+            </div>
+            {viewMode === "table" ? (
+              <p className="-mt-2 text-sm text-muted-foreground">
+                Goals, targets and tasks with deadlines, ordered by the nearest
+                date.
+              </p>
+            ) : null}
+
+            {isLoading && !hasLoaded ? (
+              /* ── Loading ── */
+              <div
+                className="surface-card p-12 flex flex-col items-center gap-4"
+                role="status"
+              >
+                <Loader className="h-8 w-8 text-[#F45D48] animate-spin" />
+                <p className="text-sm text-muted-foreground">
+                  Loading your goals…
+                </p>
+              </div>
+            ) : filtered.length === 0 && goals.length > 0 ? (
+              /* ── Filtered: the list HAS goals and the user's own search or filter is hiding them.
              **The notice alone, with nothing around it** (owner, 2026-08-22): it used to sit
              centred inside the empty state's `surface-card`, so a warning-yellow outline was
              drawn inside a grey one — two frames for one message, and the grey one said "an
@@ -203,72 +226,78 @@ function GoalsOverview() {
 
              **Full width, text left** (owner, 2026-08-22): it stands where the cards would, so it
              takes the same column they do rather than a narrow box centred in it. */
-          <FilteredEmptyNotice className="w-full text-left">
-            No goals match that search or filter. Clear them to see the rest.
-          </FilteredEmptyNotice>
-        ) : filtered.length === 0 ? (
-          /* ── Empty / Error ── */
-          <div className="surface-card p-12 text-center">
-            {syncError ? (
-              /* Error: backend or network problem — no CTA */
-              <>
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-                  {syncErrorKind === "network" ? (
-                    <GlobeOff className="h-8 w-8" />
-                  ) : (
-                    <Cable className="h-8 w-8" />
-                  )}
-                </div>
-                <div className="font-display text-2xl text-foreground">
-                  {syncErrorKind === "network"
-                    ? "You appear to be offline"
-                    : "Couldn't load your goals"}
-                </div>
-                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                  {syncError}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void refreshGoals()}
-                  className="mt-5 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </button>
-              </>
+              <FilteredEmptyNotice className="w-full text-left">
+                No goals match that search or filter. Clear them to see the
+                rest.
+              </FilteredEmptyNotice>
+            ) : filtered.length === 0 ? (
+              /* ── Empty / Error ── */
+              <div className="surface-card p-12 text-center">
+                {syncError ? (
+                  /* Error: backend or network problem — no CTA */
+                  <>
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                      {syncErrorKind === "network" ? (
+                        <GlobeOff className="h-8 w-8" />
+                      ) : (
+                        <Cable className="h-8 w-8" />
+                      )}
+                    </div>
+                    <div className="font-display text-2xl text-foreground">
+                      {syncErrorKind === "network"
+                        ? "You appear to be offline"
+                        : "Couldn't load your goals"}
+                    </div>
+                    <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                      {syncError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void refreshGoals()}
+                      className="mt-5 inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </button>
+                  </>
+                ) : (
+                  /* Truly empty — DB has no goals, connection is fine */
+                  <>
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary">
+                      <Trophy className="h-8 w-8" />
+                    </div>
+                    <div className="font-display text-2xl text-foreground">
+                      Your journey starts here
+                    </div>
+                    <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                      Set your first goal and start turning ambition into
+                      progress.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setOpen(true)}
+                      className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                    >
+                      Create your first goal
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : viewMode === "cards" ? (
+              /* One goal per row (owner, 2026-10-09): the card is a two-column spread — what the
+             goal is on the left, how far it has come on the right — so it takes the width. */
+              <div className="flex flex-col gap-4 sm:gap-5">
+                {filtered.map((goal) => (
+                  <GoalCard key={goal.id} goal={goal} />
+                ))}
+              </div>
             ) : (
-              /* Truly empty — DB has no goals, connection is fine */
-              <>
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary">
-                  <Trophy className="h-8 w-8" />
-                </div>
-                <div className="font-display text-2xl text-foreground">
-                  Your journey starts here
-                </div>
-                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                  Set your first goal and start turning ambition into progress.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setOpen(true)}
-                  className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                >
-                  Create your first goal
-                </button>
-              </>
+              <GoalsTable goals={goals} filteredGoalIds={filteredGoalIds} />
             )}
           </div>
-        ) : viewMode === "cards" ? (
-          /* One goal per row (owner, 2026-10-09): the card is a two-column spread — what the
-             goal is on the left, how far it has come on the right — so it takes the width. */
-          <div className="flex flex-col gap-4 sm:gap-5">
-            {filtered.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
-            ))}
-          </div>
-        ) : (
-          <GoalsTable goals={goals} filteredGoalIds={filteredGoalIds} />
-        )}
+
+          {viewMode === "cards" ? <Upcoming /> : null}
+        </div>
 
         <button
           type="button"

@@ -35,6 +35,14 @@ contributors — human or agent — should read this top-to-bottom, then `README
 
 When work is ready, summarize what changed and let the user commit.
 
+**Claude never appears as a contributor** (owner, 2026-10-09). If the owner explicitly asks the
+agent to commit, the commit is authored as the owner — `Anastasiya Lakhmakova
+<101577820+alakhmakova@users.noreply.github.com>`, never `Claude <noreply@anthropic.com>` — and
+carries **no `Co-Authored-By: Claude` and no `Claude-Session:` trailer**, whatever a session's
+default attribution says. Either one puts Claude in the repository's contributor list. A fix
+handed over as a file is a plain `git diff` (applied with `git apply`), not `git format-patch`
+output, which carries the author with it.
+
 ### Cutting a release (hard order, owner 2026-08-30)
 
 **A GitHub release is a tag, and the hook does not catch it.** `gh release create` publishes a new

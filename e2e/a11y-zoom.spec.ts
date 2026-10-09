@@ -82,7 +82,9 @@ test("at 320 CSS pixels nothing has to be scrolled sideways", async ({
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "All goals" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Goals", exact: true }),
+  ).toBeVisible();
   await noSidewaysScroll(page, "All goals");
 
   // A drawer at this width, and the widest thing the app puts on a small screen.

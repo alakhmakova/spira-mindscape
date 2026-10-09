@@ -120,7 +120,9 @@ test("every control on the dashboard can be reached, and shows it", async ({
   await createGoal(page, `A11y kb ${Date.now()}`);
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "All goals" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Goals", exact: true }),
+  ).toBeVisible();
 
   await walk(page, "All goals");
 });
