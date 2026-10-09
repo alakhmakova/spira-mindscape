@@ -259,7 +259,9 @@ function GoalsOverview() {
             )}
           </div>
         ) : viewMode === "cards" ? (
-          <div className="spira-goals-grid grid gap-4 sm:gap-5">
+          /* One goal per row (owner, 2026-10-09): the card is a two-column spread — what the
+             goal is on the left, how far it has come on the right — so it takes the width. */
+          <div className="flex flex-col gap-4 sm:gap-5">
             {filtered.map((goal) => (
               <GoalCard key={goal.id} goal={goal} />
             ))}

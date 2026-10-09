@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Award,
   CircleQuestion,
@@ -7,6 +7,7 @@ import {
   Gear,
   Key,
   LogOut,
+  AiSparkle,
   Sparkles,
   X,
 } from "@/components/spira/icons";
@@ -81,6 +82,7 @@ export function SideNav({
   goalId,
   onOpenChat,
   onOpenKeys,
+  onNavigate,
 }: {
   path: string;
   /** The open goal, so its row in the goals list can mark itself. */
@@ -93,6 +95,13 @@ export function SideNav({
   onOpenChat: () => void;
   /** The same, for the coach's key sheet — it is one of the panel's own surfaces. */
   onOpenKeys: () => void;
+  /**
+   * Called when a link in here is followed. Below `lg` this rail is an **overlay** over the page,
+   * so going somewhere has to put it away — otherwise the destination loads behind a sheet of
+   * navigation the user has to dismiss by hand. The caller decides, because it is the caller that
+   * knows which shape the rail is in right now.
+   */
+  onNavigate?: () => void;
 }) {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
@@ -107,12 +116,55 @@ export function SideNav({
   const goToAbout = () =>
     void navigate({ to: "/settings", search: { tab: "about" } });
 
+  /**
+   * **One link away, and on a phone the rail goes with it.**
+   *
+   * Delegated from the container rather than threaded through every row: the links in here are
+   * rendered by `NavRow` and `NavSection`, from half a dozen call sites, and a prop each of them
+   * has to remember to call is a prop one of them will forget.
+   *
+   * A **native** listener on a ref, not an `onClick` on the `<aside>`: a click handler in JSX on
+   * a non-interactive element is two `jsx-a11y` errors (`click-events-have-key-events`,
+   * `no-noninteractive-element-interactions`), and they are right — that shape usually means a
+   * div pretending to be a button. This one is not a control at all; it is delegation, which is a
+   * DOM concern. The real targets are `<Link>`s and keep their own keyboard behaviour, and a
+   * keyboard Enter on one of them raises a click here just the same.
+   *
+   * The callback is read through a ref so the effect can subscribe once: the caller passes an
+   * inline arrow, which is a new function on every render.
+   */
+  const railRef = useRef<HTMLElement>(null);
+  const navigateRef = useRef(onNavigate);
+  navigateRef.current = onNavigate;
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest("a")) navigateRef.current?.();
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, []);
+
   return (
     <aside
+      ref={railRef}
       aria-label="Main"
       className={cn(
-        "sticky top-16 z-30 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r hairline bg-card transition-[width] duration-150 lg:flex",
-        "w-[223px]",
+        "z-30 flex shrink-0 flex-col border-r hairline bg-card transition-[width] duration-150",
+        // **An overlay below `lg`, a column from `lg`** (owner, 2026-10-09). Below the breakpoint
+        // the page has no room to be laid out around 223px of navigation, so the rail lifts out
+        // of the flow and lies over the content with a scrim behind it (`AppShell.tsx`), under
+        // the header band rather than over it — the mark that opened it stays reachable. The
+        // shadow is what tells it apart from the page beneath; from `lg` there is nothing beneath
+        // it, so the shadow goes.
+        //
+        // **Never more than half the screen** (owner, 2026-10-09: "боковое меню на мобайл должно
+        // занимать не более половины экрана") — so the page behind it stays the larger thing and
+        // it reads as a panel over the app rather than as having replaced it. 280 is the width it
+        // wants; below a 560px screen the cap is what it gets.
+        "fixed bottom-0 left-0 top-16 z-50 w-[280px] max-w-[50vw] shadow-xl",
+        "lg:sticky lg:z-30 lg:h-[calc(100vh-4rem)] lg:w-[223px] lg:max-w-none lg:shadow-none",
       )}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pt-[14px]">
@@ -183,12 +235,20 @@ export function SideNav({
             label={chatParked ? "Back to the chat" : "AI coach"}
             onClick={onOpenChat}
           >
-            <Sparkles
-              className={cn(
-                "h-[18px] w-[18px]",
-                chatParked && "animate-pulse text-primary",
-              )}
-            />
+            {/* **Both stars go solid while a chat is live** (owner, 2026-10-09). Gravity's
+                `sparkles` draws its big star as an outline and only the small one filled; the
+                owner's `AiSparkle` has both solid, so the pair reads as one toggle's two states —
+                the sanctioned use of a filled twin (CLAUDE.md, "never a solid mark in a column of
+                outline ones"). It pulses in Kale as well, because nothing else on screen says
+                where a parked conversation went.
+
+                A dandelion was tried in this cell on 2026-10-08 and taken straight back out: it
+                was hairline art in a row of solid-stroke icons. */}
+            {chatParked ? (
+              <AiSparkle className="h-[18px] w-[18px] animate-pulse text-primary" />
+            ) : (
+              <Sparkles className="h-[18px] w-[18px]" />
+            )}
           </FootMark>
           <FootMark label="API keys" onClick={onOpenKeys}>
             <Key className="h-[18px] w-[18px]" />

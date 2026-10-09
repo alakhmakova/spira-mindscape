@@ -1,31 +1,4 @@
 import { cn } from "@/lib/utils";
-import { getConfidenceColor } from "./confidence-color";
-
-export function ConfidencePill({
-  value,
-  className,
-}: {
-  value: number;
-  className?: string;
-}) {
-  const color = getConfidenceColor(value);
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 text-xs font-semibold text-foreground",
-        className,
-      )}
-      title={`Confidence ${value}/10`}
-    >
-      <span
-        className="inline-block w-2 h-2 rounded-full shrink-0"
-        style={{ backgroundColor: color }}
-      />
-      <span className="text-muted-foreground">Confidence</span>
-      <span className="num font-bold">{value}/10</span>
-    </span>
-  );
-}
 
 export function ConfidenceStepper({
   value,

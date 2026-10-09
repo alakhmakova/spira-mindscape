@@ -35,11 +35,6 @@ const AAA_2_1 = 44;
  * Recorded 2026-09-30. Every line is a defect; this list is meant to shrink.
  */
 const SMALLER_THAN_AA: Record<string, string> = {
-  // Measured 2026-09-30 on a 390px phone: **44 wide and 14 tall**. The line of text is the whole
-  // target — there is no padding around it — so eight goal cards give eight instances of one
-  // component. A defect, not a decision: the card has room, the link simply has no height of its
-  // own (BUG-023).
-  'a "Start"': "All goals — the goal card's link into the workspace",
   // The goal page's own chrome, measured the same day: every one of these is a line of text at
   // **20px tall** with no padding of its own. One component each, not twenty mistakes.
   'button "Goal"': "Goal workspace — the section navigation",

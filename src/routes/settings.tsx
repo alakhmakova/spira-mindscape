@@ -13,6 +13,7 @@ import {
   ABOUT_FURTHER_READING,
   ABOUT_SECTIONS,
 } from "@/lib/spira/about-content";
+import { ARTWORK_CREDITS } from "@/lib/spira/licences";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -21,7 +22,9 @@ export const Route = createFileRoute("/settings")({
   // route). Anything unrecognised falls back to My profile.
   validateSearch: (search: Record<string, unknown>): { tab?: TabId } => {
     const tab = search.tab;
-    return tab === "fonts" || tab === "about" ? { tab } : {};
+    return tab === "fonts" || tab === "about" || tab === "licences"
+      ? { tab }
+      : {};
   },
   head: () => ({
     meta: [
@@ -35,12 +38,13 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-type TabId = "profile" | "fonts" | "about";
+type TabId = "profile" | "fonts" | "about" | "licences";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "profile", label: "My profile" },
   { id: "fonts", label: "Fonts" },
   { id: "about", label: "About Spira" },
+  { id: "licences", label: "Licences" },
 ];
 
 /**
@@ -99,6 +103,7 @@ function SettingsPage() {
       )}
       {tab === "fonts" && <FontsTab />}
       {tab === "about" && <AboutTab />}
+      {tab === "licences" && <LicencesTab />}
     </div>
   );
 }
@@ -337,6 +342,46 @@ function AboutTab() {
               </a>
               <p className="mt-0.5 text-[15px] leading-[1.62] text-muted-foreground">
                 {book.author} — {book.note}
+              </p>
+            </div>
+          ))}
+        </div>
+      </SettingRow>
+    </div>
+  );
+}
+
+/**
+ * **Licences** — what Spira uses that someone else made, and the credit each one asks for.
+ *
+ * A tab of its own rather than a note on About Spira (owner, 2026-10-09): About Spira is where
+ * the coaching method is explained to the person being coached, and a licence notice has no
+ * business in the middle of that. CC BY wants the author named in a manner reasonable for the
+ * medium; for an app whose source its users never read, that means a page in the app.
+ *
+ * `lib/spira/licences.ts` holds the lines. Anything else third-party belongs here as it arrives.
+ */
+function LicencesTab() {
+  return (
+    <div className="pt-8 space-y-10" role="tabpanel">
+      <SettingRow label="Artwork">
+        <div className="max-w-prose space-y-4">
+          {ARTWORK_CREDITS.map((credit) => (
+            <div key={credit.author}>
+              <p className="text-[15px] leading-[1.62] text-foreground">
+                {credit.work} by {credit.author} from{" "}
+                <a
+                  href={credit.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  Noun Project
+                </a>{" "}
+                ({credit.licence})
+              </p>
+              <p className="mt-0.5 text-[15px] leading-[1.62] text-muted-foreground">
+                {credit.where}
               </p>
             </div>
           ))}

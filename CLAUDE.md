@@ -421,14 +421,23 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
     Gravity's.)
 - **Never put a solid mark in a column of outline ones.** Gravity's `-fill` twins exist for exactly
   one purpose: marking the **ON state of a toggle next to its own outline sibling** — the selected
-  footer item (`FolderOpen` / `FolderOpenFilled`), and the **closed padlock**
-  (`lock-fill` / `lock-open`, owner 2026-08-21) that keeps a list's filters and sort. The drawer's
-  trophy was once a filled cup beside five hollow glyphs and it was the loudest thing on the sheet.
-  - The padlock is the case that shows *why* the twins exist. Drawn as two outlines, locked and
-    unlocked differed only in whether the shackle hung open — a couple of pixels at 16px, which you
-    had to go looking for. Solid-when-closed against outline-when-open reads at a glance. Both
-    surfaces draw the pair: `LockFilled` / `LockOpenFilled` on the web, `SpiraIcons.Lock` /
-    `SpiraIcons.LockOpen` on Android.
+  footer item (`FolderOpen` / `FolderOpenFilled`), and the **padlock** that keeps a list's filters
+  and sort. The drawer's trophy was once a filled cup beside five hollow glyphs and it was the
+  loudest thing on the sheet.
+  - **The padlock is BOTH solid now** — `lock-fill` / `lock-open-fill` (owner, 2026-10-08, on the
+    targets table: "и закрытый и открытый замочек сделай залитыми"). It is still a toggle's own two
+    states rather than a solid mark among unrelated outline ones, so it is still the sanctioned
+    exception; what changed is that the two states are told apart by the **shackle** alone, open
+    and swung clear to the right against closed and seated.
+  - That is the arrangement the 2026-08-21 note was written against, and it is worth keeping the
+    reason on record: drawn as two **outlines**, locked and unlocked differed by a couple of pixels
+    at 16px and you had to go looking for it, which is why the closed one went solid in the first
+    place. So if the open padlock ever becomes hard to tell from the closed one at 16px, the thing
+    to revisit is how the shackle reads — not the fill.
+  - **The web is done; Android is not.** The pair is `LockFilled` / `LockOpenFilled` on the web
+    (both now filled, `icons.tsx`) and `SpiraIcons.Lock` / `SpiraIcons.LockOpen` on Android, where
+    the open one is **still the outline** `lock-open` — mirror it when next touching that file, or
+    the two surfaces disagree.
 - **Every sortable column shows `carets-expand-vertical`** — Gravity's double caret — and the
   sorted one is told apart **by its ink alone**, Kale against the header's own grey (owner,
   2026-08-21, revised 2026-10-06). It began as a faint `ChevronUp`, which does not say "you can
