@@ -25,7 +25,6 @@ import { useSpira } from "@/lib/spira/store";
 import { useActivityGate } from "@/lib/useActivityGate";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
-import { SproutArt } from "@/components/spira/SproutArt";
 import { FlowerArt } from "@/components/spira/FlowerArt";
 import { ResourceAttachSheet } from "./ResourceAttachSheet";
 import { NoticeCard } from "@/components/spira/Notice";
@@ -5420,7 +5419,7 @@ function GrowStartOverlay({
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
-          <SproutArt size={15} /> GROW session
+          GROW session
         </span>
         <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
           Focused time on a single goal

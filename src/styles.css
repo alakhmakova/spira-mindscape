@@ -813,9 +813,6 @@
   .spira-main {
     container: spira-main / inline-size;
   }
-  .spira-goals-grid {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 410px), 1fr));
-  }
   .spira-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

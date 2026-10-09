@@ -1,20 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  X,
-  Calendar,
-  AlertTriangle,
-} from "@/components/spira/icons";
-import { useState } from "react";
+import { X, Calendar, AlertTriangle } from "@/components/spira/icons";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Goal } from "@/lib/spira/types";
 import {
   formatPercent,
   goalProgress,
   goalProgressSteps,
+  targetProgress,
 } from "@/lib/spira/progress";
-import { ConfidencePill } from "./Confidence";
-import { getConfidenceColor } from "./confidence-color";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressRing } from "./ProgressBar";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { useSpira } from "@/lib/spira/store";
 import { ConfirmDialog, QuotedName } from "./ConfirmDialog";
@@ -23,6 +17,29 @@ import { cn } from "@/lib/utils";
 /** Overdue red — same as "Yes, delete" button in ConfirmDialog */
 /** error-800 — the palette's semantic red for an overdue state (CLAUDE.md extended ramps). */
 const OVERDUE_RED = "#D74041";
+
+/**
+ * The two greys of the card's left half, sampled from the owner's reference (`gusto/cards1.png`,
+ * 2026-10-09): **the body is `#FAFAFA` and the band under it `#F2EFF0`** — both grey, and
+ * deliberately different shades, while the progress column beside them stays pure white. The
+ * palette carries the pair as neutral-100 and Salt-300.
+ *
+ * This is the one place a Spira surface is not white (CLAUDE.md → Colour: "the page is `#FFFFFF`
+ * … and so are the cards"). The owner asked for her picture; the rule is noted, not ignored.
+ */
+const BODY = "#FAFAFA";
+const WELL = "#F4F4F3";
+
+/**
+ * **neutral-400** — the cell divider, which is a WEDGE and not a line (owner, 2026-10-09).
+ * Measured in her picture: a right triangle about 10x8, its vertical edge on the cell's boundary
+ * and its base on the band's bottom edge, in a grey (`#D1CECF`) darker than either of the two the
+ * band and the body are drawn in.
+ */
+const WEDGE = "#D6D6D6";
+
+/** How much of a goal's description the card shows before "View full goal description". */
+const DESCRIPTION_LINES = 2;
 
 function formatDeadlineInfo(iso: string | undefined, completed = false) {
   if (!iso) return null;
@@ -61,6 +78,88 @@ function formatDeadlineInfo(iso: string | undefined, completed = false) {
   return { dateStr, countdown, isOverdue };
 }
 
+function formatCreated(iso: string | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * One of the three cells along the foot of the card's left half.
+ *
+ * Measured off the owner's reference (2026-10-09, `gusto/cards1.png`): the label is ~13px of grey
+ * and the **value under it is BIGGER, ~15px**, in a darker grey than the label but lighter than
+ * the title. The band is 48px tall and carries **no rule of its own along the top** — the tint is
+ * what separates it from the body.
+ *
+ * **The cells are told apart by a wedge, not by a line** (owner, 2026-10-09). Every cell carries
+ * one in its bottom-right corner, the last one included, exactly as her picture does.
+ */
+function StatCell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    // **Left on a phone, centred on a laptop** (owner, 2026-10-09). Stacked in a column of their
+    // own the three cells are a list, and a list reads down its left edge; across the foot of a
+    // wide card they are the reference's three centred columns. The phone's gutter is the body's
+    // own 20px, so the labels line up with the goal's title above them.
+    <div className="relative flex min-w-0 flex-col justify-center gap-[3px] px-5 py-2.5 text-left sm:items-center sm:px-2 sm:py-0 sm:text-center">
+      <span className="text-[13px] leading-none text-muted-foreground">
+        {label}
+      </span>
+      <span className="truncate text-[15px] font-medium leading-tight text-foreground/85">
+        {children}
+      </span>
+      {/* Drawn rather than a border: a triangle has no border form, and `clip-path` keeps it out
+          of the layout so the cell's own text is unaffected by it. **Bigger on a phone** (owner,
+          2026-10-09) — at 10x8 it was a speck against a 56px row. */}
+      <span
+        aria-hidden="true"
+        className="absolute bottom-0 right-0 h-3.5 w-4 sm:h-2 sm:w-[10px]"
+        style={{
+          backgroundColor: WEDGE,
+          clipPath: "polygon(100% 0, 100% 100%, 0 100%)",
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Whether a clamped block of text is actually taller than its clamp — so the control that expands
+ * it only appears when there is something to expand. The same measurement `Inline.tsx` makes for
+ * its own "Show more": `scrollHeight` reports the full height even while the element is clamped.
+ */
+function useOverflowing(
+  ref: React.RefObject<HTMLElement | null>,
+  lines: number,
+  enabled: boolean,
+) {
+  const [overflowing, setOverflowing] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !enabled) {
+      setOverflowing(false);
+      return;
+    }
+    const measure = () => {
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+      if (!Number.isFinite(lineHeight)) return;
+      // `scrollHeight` reports the full height even while the element is clamped — measured at
+      // three widths with the clamp on and lifted, 68 either way.
+      setOverflowing(el.scrollHeight > lineHeight * lines + 2);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, lines, enabled]);
+  return overflowing;
+}
+
 export function GoalCard({ goal }: { goal: Goal }) {
   const progress = goalProgress(goal);
   const completed = progress >= 1;
@@ -68,74 +167,69 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const updateGoal = useSpira((s) => s.updateGoal);
   const [confirm, setConfirm] = useState(false);
 
-  const accentColor = getConfidenceColor(goal.confidence);
+  const [expanded, setExpanded] = useState(false);
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const descriptionClamped = useOverflowing(
+    descriptionRef,
+    DESCRIPTION_LINES,
+    Boolean(goal.description),
+  );
+
   const displayDate =
     completed && goal.achievedAt ? goal.achievedAt : goal.deadline;
   const deadlineInfo = formatDeadlineInfo(displayDate, completed);
   const isOverdue = deadlineInfo?.isOverdue ?? false;
-
-  const stripeColor = isOverdue ? OVERDUE_RED : accentColor;
+  const targetCount = goal.targets.length;
+  // "2/10" — how many are finished out of all of them (owner, 2026-10-09). `targetProgress` is
+  // the same reading the target card and the goal's own percentage use, so the cell cannot
+  // disagree with the ring beside it.
+  const targetsDone = goal.targets.filter((t) => targetProgress(t) >= 1).length;
+  const percentLabel = formatPercent(progress, goalProgressSteps(goal));
 
   return (
     <div
       className={cn(
-        "text-card-foreground rounded-xl p-6 hover:shadow-md transition-shadow relative flex flex-col h-full cursor-pointer group border",
-        completed ? "bg-card border-[#4CACAC]/50" : "bg-card border-border/60",
+        /**
+         * **A grid, not two columns of flex** (owner, 2026-10-09). On a phone the three cells
+         * stand one under another with the ring BESIDE them, so the band and the ring share a
+         * row — which they cannot do while the band lives inside a left-hand column. Three
+         * siblings on a grid give both arrangements from one markup:
+         *
+         *   phone              laptop
+         *   ┌───────────┐      ┌───────────┬──────┐
+         *   │   body    │      │   body    │      │
+         *   ├──────┬────┤      ├───────────┤ ring │
+         *   │ band │ring│      │   band    │      │
+         *   └──────┴────┘      └───────────┴──────┘
+         */
+        "group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] overflow-hidden border bg-card text-card-foreground transition-shadow hover:shadow-md sm:grid-cols-[minmax(0,1fr)_228px]",
+        completed ? "border-[#4CACAC]/50" : "border-border/60",
       )}
     >
-      {/* Confidence, Progress & Actions Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <ConfidencePill
-            value={goal.confidence}
-            className="relative z-10 shrink-0"
-          />
+      {/**
+       * **Only an overdue card carries a rule, and it is red.** The reference card has no stripe
+       * at all; the one place the owner's screenshots use one is the task that is three days late
+       * (`gusto/home.png`), where it is the whole point. A stripe in the confidence colour ran on
+       * every card and was the loudest thing in the list — and the confidence has its own cell in
+       * the band below.
+       */}
+      {isOverdue ? (
+        <div
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ backgroundColor: OVERDUE_RED }}
+        />
+      ) : null}
 
-          <span className="w-px h-3.5 bg-border shrink-0" />
-
-          <div className="flex items-center gap-2 flex-1 min-w-0 max-w-32">
-            <div className="flex-1">
-              {/* The **Contrast** pair (owner, 2026-08-17): coral on teal rather than two steps of
-                  one colour, so a bar reads at a glance down a long list of goals. */}
-              <ProgressBar value={progress} tone="contrast" />
-            </div>
-            <span className="text-xs font-bold text-foreground num shrink-0">
-              {formatPercent(progress, goalProgressSteps(goal))}%
-            </span>
-          </div>
-        </div>
-
-        {/* The delete button is drawn here but lives at the END of the card — see below. This
-            holds its place so the header keeps its spacing: 24px, which is what the button
-            occupied in the layout (a 32px box pulled in 4px a side by its negative margin).
-            Measured: with `h-8` instead, the card grew 8px taller. */}
-        <span aria-hidden="true" className="h-6 w-6 shrink-0" />
-      </div>
-
-      {/* Title */}
-      <div className="flex-1 flex flex-col justify-center min-w-0 py-5">
-        <h3 className="font-medium text-lg text-foreground/90 leading-snug line-clamp-2">
-          <Link
-            to="/goals/$goalId"
-            params={{ goalId: goal.id }}
-            className="after:absolute after:inset-0"
-          >
-            {goal.title}
-          </Link>
-        </h3>
-      </div>
-
-      {/* Footer */}
-      <div className="mt-auto relative z-10">
-        {/* Footer bar */}
-        <div className="flex items-center justify-between gap-3 rounded-md pr-3 pl-4 h-10 border border-border/80 relative overflow-hidden bg-transparent">
-          {/* Colored stripe on the left */}
-          <div
-            className="absolute left-0 top-0 bottom-0 w-[3px]"
-            style={{ backgroundColor: stripeColor }}
-          />
-
-          {/* Deadline clickable trigger */}
+      {/* BODY — what the goal is. Full width on a phone, the top-left cell on a laptop. */}
+      <div
+        className="col-span-2 col-start-1 row-start-1 min-w-0 sm:col-span-1"
+        style={{ backgroundColor: BODY }}
+      >
+        <div className="flex h-full flex-col gap-2 p-5 pr-12 sm:p-6 sm:pr-6">
+          {/* Where the reference card carries a logo: the deadline, or the offer to set one.
+              Both triggers carry `py-1`: the line of text is 20px on its own, and a control
+              owes 24x24 (WCAG 2.2 AA, 2.5.8). `e2e/a11y-target-size.spec.ts` measures it. */}
           <DeadlinePopover
             iso={goal.deadline}
             achievedAt={goal.achievedAt}
@@ -143,7 +237,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
             onChange={(next) => updateGoal(goal.id, { deadline: next })}
             renderTrigger={() =>
               deadlineInfo ? (
-                <span className="text-[13px] font-medium flex items-center gap-2.5 min-w-0 transition-opacity hover:opacity-70 cursor-pointer">
+                <span className="relative z-10 flex min-w-0 items-center gap-2.5 py-1 text-[13px] font-medium transition-opacity hover:opacity-70">
                   <span
                     className="flex items-center gap-1.5"
                     style={{
@@ -155,37 +249,133 @@ export function GoalCard({ goal }: { goal: Goal }) {
                     {isOverdue ? (
                       <AlertTriangle className="h-3.5 w-3.5 translate-y-[1px]" />
                     ) : (
-                      <Calendar className="h-3.5 w-3.5 opacity-70 translate-y-[1px]" />
+                      <Calendar className="h-3.5 w-3.5 translate-y-[1px] opacity-70" />
                     )}
                     {completed
                       ? deadlineInfo.dateStr
                       : `Due date ${deadlineInfo.dateStr}`}
                   </span>
-                  <span className="w-px h-3.5 bg-border shrink-0" />
-                  <span className="text-foreground font-semibold truncate">
+                  <span className="h-3.5 w-px shrink-0 bg-border" />
+                  <span className="truncate font-semibold text-foreground">
                     {completed ? "Achieved" : deadlineInfo.countdown}
                   </span>
                 </span>
               ) : (
-                <span className="text-[13px] font-medium text-muted-foreground transition-opacity hover:opacity-70 cursor-pointer">
+                <span className="relative z-10 inline-flex items-center py-1 text-[13px] font-medium text-muted-foreground transition-opacity hover:opacity-70">
                   Set deadline
                 </span>
               )
             }
           />
 
-          {/* Start link */}
-          <Link
-            to="/goals/$goalId"
-            params={{ goalId: goal.id }}
-            className="shrink-0 flex items-center gap-0.5 text-[13px] leading-[14px] font-semibold text-muted-foreground hover:text-foreground transition-colors group-start"
-          >
-            <span className="underline decoration-1 underline-offset-[3px]">
-              Start
-            </span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
+          {/* 18px and bolder than the body, with the body's own ink — the reference's own
+              hierarchy (title cap height 13px at near-black #2B2B2D, description 15px grey). */}
+          <h3 className="line-clamp-2 text-lg font-semibold leading-snug text-foreground">
+            <Link
+              to="/goals/$goalId"
+              params={{ goalId: goal.id }}
+              // **`after:z-[1]`, not a bare overlay** — the stat cells and the progress ring are
+              // positioned boxes LATER in the DOM, so at `z-auto` they paint over an overlay that
+              // has none and swallow the click, leaving the bottom half of a `cursor-pointer` card
+              // doing nothing. 1 is still under the `z-10` controls that must stay clickable.
+              className="after:absolute after:inset-0 after:z-[1]"
+            >
+              {goal.title}
+            </Link>
+          </h3>
+
+          {goal.description ? (
+            <p
+              ref={descriptionRef}
+              className={cn(
+                "text-sm leading-relaxed text-muted-foreground",
+                expanded ? undefined : "line-clamp-2",
+              )}
+            >
+              {goal.description}
+            </p>
+          ) : null}
+
+          {/**
+           * Where the reference card says "View full plan details" (owner, 2026-10-09). It opens
+           * the goal's own words in place rather than navigating — the card itself is the link to
+           * the goal, so a second way in would be two controls for one thing.
+           *
+           * It appears only when the text is actually longer than its two lines, measured rather
+           * than assumed; a word that promises more and shows nothing is worse than no word.
+           */}
+          {goal.description && (descriptionClamped || expanded) ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="relative z-10 w-fit py-1.5 text-sm font-semibold leading-[15px] text-primary underline decoration-1 underline-offset-[3px] transition-opacity hover:opacity-70"
+            >
+              {expanded
+                ? "Hide full goal description"
+                : "View full goal description"}
+            </button>
+          ) : null}
         </div>
+      </div>
+
+      {/**
+       * BAND — the three cells. **Stacked one under another on a phone** and side by side on a
+       * laptop (owner, 2026-10-09); either way the same cell, the same two greys and the same
+       * corner wedge. 48px per row is the height measured in the reference.
+       */}
+      <div
+        className="col-start-1 row-start-2 grid grid-cols-1 sm:h-12 sm:grid-cols-3"
+        style={{ backgroundColor: WELL }}
+      >
+        <StatCell label="Created">{formatCreated(goal.createdAt)}</StatCell>
+        <StatCell label="Confidence">
+          {/* No colour dot (owner, 2026-10-09): the reference's cells are words and figures,
+              and the confidence's own colour lives on the goal page. */}
+          <span className="num">{goal.confidence}/10</span>
+        </StatCell>
+        <StatCell label="Targets">
+          <span className="num">
+            {targetsDone}/{targetCount}
+          </span>
+        </StatCell>
+      </div>
+
+      {/**
+       * RING — white, against the two greys beside it, exactly as the reference is. It sits to
+       * the RIGHT of the three cells on a phone and spans the whole card's height on a laptop,
+       * so the word stays above it on both.
+       */}
+      <div
+        className={cn(
+          "col-start-2 row-start-2 flex flex-col items-center justify-center gap-2.5 border-l border-t bg-white px-6 py-5 sm:row-span-2 sm:row-start-1 sm:border-t-0 sm:py-6",
+          completed ? "border-[#4CACAC]/50" : "border-border/60",
+        )}
+      >
+        <span className="text-sm text-muted-foreground">Progress</span>
+        {/**
+         * Measured off the owner's reference ring (`gusto/home.png`, 2026-10-09): **99px across
+         * with a 13px stroke** — 13% of the diameter, where ours was 10% and read as a hairline —
+         * round caps, starting at twelve o'clock, and **"71%" set at 18px** in near-black, filling
+         * about a fifth of the diameter. The arc is a dark teal on a near-white track; `deep` is
+         * that pair, and `ProgressBar.tsx` says what it cost to add it.
+         */}
+        <ProgressRing value={progress} tone="deep">
+          {/* The inner disc is 74px across and `formatPercent` can return ">99.99" — six
+              characters that do not fit at 18px. The step down is by length, not by value, so a
+              one-decimal percentage keeps the big number. */}
+          <span
+            className={cn(
+              "num font-semibold text-foreground",
+              percentLabel.length > 4
+                ? "text-xs"
+                : percentLabel.length > 2
+                  ? "text-sm"
+                  : "text-[18px]",
+            )}
+          >
+            {percentLabel}%
+          </span>
+        </ProgressRing>
       </div>
 
       {/**
@@ -197,13 +387,13 @@ export function GoalCard({ goal }: { goal: Goal }) {
        * (Focus Order): the sequence has to keep its meaning, and a destructive action that names
        * itself before its object does not.
        *
-       * Now the order is: the goal, its deadline, Start, and only then delete — the same shape as
+       * Now the order is: the deadline, the goal, Start, and only then delete — the same shape as
        * the resource head, where the X closes the group rather than opening it. It is positioned
-       * back into the corner, so nothing moves on screen; a spacer holds its place in the header.
+       * into the card's top-right corner, which is the head of the progress column.
        */}
       <button
         onClick={() => setConfirm(true)}
-        className="absolute right-5 top-5 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-secondary/50 hover:text-muted-foreground"
+        className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-secondary/50 hover:text-muted-foreground"
         // The name carries the goal, so it is unambiguous wherever focus lands and whatever is
         // read out before it.
         aria-label={`Delete "${goal.title || "Untitled goal"}"`}

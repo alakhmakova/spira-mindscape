@@ -3,6 +3,11 @@ import { cn } from "@/lib/utils";
 /**
  * **The Spira mark** — the owner's `noun_Flower_8306464.svg` from the Noun Project: a
  * six-petal bloom, **all Guava with a white centre** (owner, 2026-10-09).
+ *
+ * **Licence: CC BY 3.0 — "Flower by Ladang Visual from Noun Project"** (the owner supplied the
+ * line, 2026-10-09). The credit lives in **Settings → Licences → Artwork**
+ * (`ARTWORK_CREDITS` in `lib/spira/licences.ts`), because the drawing is redrawn as paths
+ * here and in `public/favicon.svg` without the download's own attribution text.
 
  * Three things in it are decisions rather than the drawing's own:
  * - the five paths of petal creases are **dropped** — at this size they read as dirt;

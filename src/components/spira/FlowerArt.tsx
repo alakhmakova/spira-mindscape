@@ -6,6 +6,12 @@ import { cn } from "@/lib/utils";
  * Source: a Noun Project drawing, `noun_Flower_7221070.svg`, with the download's two attribution
  * `<text>` lines stripped.
  *
+ * **Licence: CC BY 3.0 — "Flower by Firda Wahyu Dianti from Noun Project"** (the owner supplied
+ * the line, 2026-10-09). Stripping the credit from the drawing is what makes it drawable at any
+ * size, so the credit has to be carried elsewhere: it is in **Settings → Licences → Artwork**
+ * (`ARTWORK_CREDITS` in `lib/spira/licences.ts`). If this mark ships on a surface that has no
+ * route to that page, the credit has to travel with it.
+ *
  * **Two layers, painted the way the brand's own flower is painted.** The owner's reference is
  * `gusto/images/flower_guava.svg`, and the thing to copy there is not a colour but a construction:
  * the coral is a **separate, loose, rounded shape sitting UNDER the black outline**, not a fill of
