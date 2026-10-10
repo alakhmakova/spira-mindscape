@@ -472,7 +472,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 The "ai coach" word still goes, and for its own reason: it is the opener, and an
                 opener for something already open is a dead control. */}
             {/* **The wordmark stands alone here** (owner, 2026-10-09). The Spira flower sat to
-                its left for an afternoon; it is still the favicon, and the coach's own flower now
+                its left for an afternoon; the tab carries the mark (a sprout since 2026-10-10), and the coach's own flower now
                 rides in the opener beside this, so the row had two marks and a word in it. The
                 one that went is the one the tab already carries. */}
             {/* **The word is smaller on a phone**, and it has to be: at 390 CSS px the menu

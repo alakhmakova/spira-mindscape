@@ -23,8 +23,10 @@ import { cn } from "@/lib/utils";
  * silhouette, so the bloom's (path 2 of 8) is what is painted. Only the first subpath can be
  * pulled out this way — the rest begin with a relative `m` and land elsewhere alone.
  *
- * This is what `public/favicon.svg` draws. The component is kept for the next surface
- * that wants the brand mark — the app header carried it for an afternoon and no longer does.
+ * **This is no longer the favicon** (owner, 2026-10-10): the tab carries a Kale sprout now,
+ * drawn in `public/favicon.svg`, because the Guava flower was lost on a dark tab bar. The
+ * component is kept but **renders nowhere**, so its credit was taken off Settings → Licences —
+ * put the "Flower by Ladang Visual" line back in `ARTWORK_CREDITS` before rendering it again.
  */
 export function SpiraMark({
   className,
