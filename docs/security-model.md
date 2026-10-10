@@ -144,6 +144,17 @@ Even if everything above were bypassed, the AI can only **propose** changes you
 approve, and proposals are validated server-side (unknown actions and oversized
 payloads are dropped). It cannot silently edit or delete your data.
 
+### 5d. The model's words are not markup
+
+A note body is HTML, and the AI coach writes note bodies — so a prompt injected
+through an attached document can put `<img onerror=…>` into a proposal. Every place
+that renders or parses stored note HTML goes through `lib/spira/safe-html.ts`:
+parsed in an **inert document** (nothing in it loads or runs) and reduced to an
+**allowlist** of what TipTap itself produces. The CSP (`script-src 'self'`) is the
+second layer, not the only one. Tests: `safe-html.test.ts`,
+`e2e/note-html-is-inert.spec.ts` (a real browser, with a control proving the old
+way fired).
+
 ---
 
 ## 6. SSRF — the server shouldn't fetch its own secrets
@@ -169,6 +180,20 @@ logins, or trying to overload the server (DoS).
 using bucket4j) per user (or per IP when anonymous). Limits on AI chat, GraphQL,
 login start, and key saving; over-limit gets `429 Too Many Requests` with a
 `Retry-After`. Limits are tunable via properties (`spira.ratelimit.*`).
+
+**A request is not a unit of work in GraphQL**, so the per-request limit needs
+help: one body can nest a query as deep as the schema goes, or carry hundreds of
+aliased copies of one mutation (`a1: createGoal(…) a2: createGoal(…) …`) and still
+count once. `graphql/GraphQlLimitsConfig.java` caps each request at depth 15,
+complexity 500 and **10 mutation fields** (fragments followed), far above what the
+web and Android clients send (`spira.graphql.*`). graphql-java itself stops a
+document at 15,000 tokens, and Cloud Run caps a body at 32 MiB.
+
+**Volumetric DDoS** is not something the app can absorb: Google's front end in
+front of Cloud Run takes the network-level floods, and `--max-instances 1` caps the
+bill — at the price that a sustained application-level flood becomes an outage
+rather than a cost. Putting the domain behind Cloudflare's free proxy (or Cloud
+Armor, which is paid) is the next step if that ever matters.
 
 ---
 
@@ -303,7 +328,8 @@ Honesty matters in security. These are known and planned, not done:
   loss would be unrecoverable; needs scheduled `pg_dump` to separate storage and
   a backed-up encryption key).
 - **Data export / account deletion** (privacy rights).
-- **Secret rotation** procedures and **GraphQL query-complexity** limits.
+- **Secret rotation** procedures. (GraphQL depth/complexity/alias limits are done
+  — see §7.)
 
 The full plan, the OWASP Top 10 2025 mapping, and the validation checklist are in
 `specs/2026-06-12-security-hardening/`.
@@ -321,6 +347,8 @@ The full plan, the OWASP Top 10 2025 mapping, and the validation checklist are i
 | Prompt-injection defense | `ai/chat/AiChatService.java` |
 | SSRF guard | `ai/chat/UrlReadService.java` |
 | Rate limiting | `security/RateLimitFilter.java` |
+| GraphQL depth / complexity / alias caps | `graphql/GraphQlLimitsConfig.java` |
+| Untrusted note HTML | `src/lib/spira/safe-html.ts` |
 | Secret encryption | `ai/crypto/EncryptionService.java` |
 | REST error handling | `web/RestExceptionHandler.java` |
 | CORS prod lockdown | `config/CorsConfig.java` |
