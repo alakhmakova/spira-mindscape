@@ -16,14 +16,18 @@ The suite is meant for the backend's **`e2e` profile**, which switches the rate 
 and the limiter is on at 120 GraphQL calls a minute, so a long run starts failing with 429s that
 have nothing to do with what is being tested.
 
-## Why the goals are created in ONE request
+## Why the goals are created in batches of ten
 
 Filling the allowance a mutation at a time is 50 requests, and cleaning up is 50 more; the backend
 allows **120 GraphQL calls a minute** (`spira.ratelimit.graphql-per-minute`), so the first draft of
 this file spent the whole budget and the suite started failing with 429s that looked nothing like a
-cap problem. GraphQL runs the fields of a mutation **serially**, so fifty aliased `createGoal`
-fields in a single document do the same work in one request — and leave room for the rest of the
-suite.
+cap problem. GraphQL runs the fields of a mutation **serially**, so several aliased `createGoal`
+fields in one document do the same work in fewer requests.
+
+**Ten per request, not fifty** (2026-10-10). Fifty aliased writes in one document is exactly the
+amplifier `GraphQlLimitsConfig` now refuses — one request doing the work of fifty against a limit
+that counts requests — so this file batches at that cap (`spira.graphql.max-mutation-fields`):
+five requests to fill the allowance instead of one, still well inside the rate limit.
 
 The same goes for the cleanup, which is unconditional: a test that left fifty goals behind would
 poison the cap for everything that ran after it, and the failure would appear somewhere else
@@ -38,23 +42,35 @@ from graphql import queries
 MAX_ACTIVE_GOALS = 50
 
 
+# Keep in step with GraphQlLimitsConfig's `spira.graphql.max-mutation-fields`.
+MAX_MUTATIONS_PER_REQUEST = 10
+
+
+def _chunks(items, size=MAX_MUTATIONS_PER_REQUEST):
+    for start in range(0, len(items), size):
+        yield start, items[start : start + size]
+
+
 def _batch_create(client, count, prefix="Cap filler"):
-    """Create `count` goals in ONE request; returns their ids."""
-    fields = "\n".join(
-        f'g{i}: createGoal(input: {{ title: "{prefix} {i}", confidence: 5 }}) {{ id }}'
-        for i in range(count)
-    )
-    result = gql(client, "mutation { " + fields + " }")
-    data = require_data({"data": result.get("data"), "errors": result.get("errors")}, "g0")
-    assert data["id"]
-    return [result["data"][f"g{i}"]["id"] for i in range(count)]
+    """Create `count` goals, ten per request; returns their ids."""
+    ids = []
+    for start, block in _chunks(list(range(count))):
+        fields = "\n".join(
+            f'g{i}: createGoal(input: {{ title: "{prefix} {i}", confidence: 5 }}) {{ id }}'
+            for i in block
+        )
+        result = gql(client, "mutation { " + fields + " }")
+        first = f"g{block[0]}"
+        data = require_data({"data": result.get("data"), "errors": result.get("errors")}, first)
+        assert data["id"]
+        ids += [result["data"][f"g{i}"]["id"] for i in block]
+    return ids
 
 
 def _batch_delete(client, ids):
-    if not ids:
-        return
-    fields = "\n".join(f'd{i}: deleteGoal(id: "{gid}")' for i, gid in enumerate(ids))
-    gql(client, "mutation { " + fields + " }")
+    for start, block in _chunks(ids):
+        fields = "\n".join(f'd{start + i}: deleteGoal(id: "{gid}")' for i, gid in enumerate(block))
+        gql(client, "mutation { " + fields + " }")
 
 
 @pytest.fixture

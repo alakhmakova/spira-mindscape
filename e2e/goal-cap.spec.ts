@@ -10,12 +10,16 @@ import { goalsCreatedThisRun } from "./helpers";
  * on the server and vanishes on the next reload. This checks the two things the user experiences —
  * the sentence arrives, and the phantom card is taken back.
  *
- * The allowance is filled through **one GraphQL request** rather than fifty trips through the UI:
- * the backend allows 120 GraphQL calls a minute, and this spec is about the fifty-first, not about
- * the fifty.
+ * The allowance is filled through **a few GraphQL requests** rather than fifty trips through the
+ * UI: the backend allows 120 GraphQL calls a minute, and this spec is about the fifty-first, not
+ * about the fifty. **Ten writes per request, not fifty** (2026-10-10): fifty aliased mutations in
+ * one document is the amplifier `GraphQlLimitsConfig` refuses, and a refused cleanup here left
+ * fifty goals behind that broke every spec after it.
  */
 
 const MAX_ACTIVE_GOALS = 50;
+/** Keep in step with `spira.graphql.max-mutation-fields`. */
+const MAX_MUTATIONS_PER_REQUEST = 10;
 
 /** Run a GraphQL document through the page's own session. */
 async function gql(page: import("@playwright/test").Page, query: string) {
@@ -28,6 +32,29 @@ async function gql(page: import("@playwright/test").Page, query: string) {
     });
     return res.json();
   }, query);
+}
+
+/** Run one aliased mutation field per item, ten to a request; returns every response's `data`. */
+async function batched<T>(
+  page: import("@playwright/test").Page,
+  items: T[],
+  field: (item: T, index: number) => string,
+): Promise<Record<string, { id: string }>> {
+  const data: Record<string, { id: string }> = {};
+  for (
+    let start = 0;
+    start < items.length;
+    start += MAX_MUTATIONS_PER_REQUEST
+  ) {
+    const block = items.slice(start, start + MAX_MUTATIONS_PER_REQUEST);
+    const res = (await gql(
+      page,
+      `mutation { ${block.map((item, i) => field(item, start + i)).join("\n")} }`,
+    )) as { data?: Record<string, { id: string }>; errors?: unknown[] };
+    expect(res.errors, JSON.stringify(res.errors)).toBeUndefined();
+    Object.assign(data, res.data);
+  }
+  return data;
 }
 
 test("the fifty-first goal is refused, and the optimistic card is taken back", async ({
@@ -54,25 +81,17 @@ test("the fifty-first goal is refused, and the optimistic card is taken back", a
     `the account already holds ${theirs.length} goal(s) this run did not create — ` +
       `filling to the cap would mean deleting them. Run this spec against an empty database.`,
   );
-  if (ids.length) {
-    await gql(
-      page,
-      `mutation { ${ids.map((id, i) => `d${i}: deleteGoal(id: "${id}")`).join("\n")} }`,
-    );
-  }
+  await batched(page, ids, (id, i) => `d${i}: deleteGoal(id: "${id}")`);
 
   const created: string[] = [];
   try {
-    const fill = (await gql(
+    const fill = await batched(
       page,
-      `mutation { ${Array.from(
-        { length: MAX_ACTIVE_GOALS },
-        (_, i) =>
-          `g${i}: createGoal(input: { title: "Cap filler ${i}", confidence: 5 }) { id }`,
-      ).join("\n")} }`,
-    )) as { data: Record<string, { id: string }> };
-    for (let i = 0; i < MAX_ACTIVE_GOALS; i++)
-      created.push(fill.data[`g${i}`].id);
+      Array.from({ length: MAX_ACTIVE_GOALS }, (_, i) => i),
+      (_, i) =>
+        `g${i}: createGoal(input: { title: "Cap filler ${i}", confidence: 5 }) { id }`,
+    );
+    for (let i = 0; i < MAX_ACTIVE_GOALS; i++) created.push(fill[`g${i}`].id);
 
     await page.reload();
     await page.waitForLoadState("networkidle");
@@ -104,11 +123,6 @@ test("the fifty-first goal is refused, and the optimistic card is taken back", a
       0,
     );
   } finally {
-    if (created.length) {
-      await gql(
-        page,
-        `mutation { ${created.map((id, i) => `d${i}: deleteGoal(id: "${id}")`).join("\n")} }`,
-      );
-    }
+    await batched(page, created, (id, i) => `d${i}: deleteGoal(id: "${id}")`);
   }
 });
