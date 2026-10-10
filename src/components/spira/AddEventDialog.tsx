@@ -80,8 +80,14 @@ export function AddEventDialog({
   );
 }
 
+/**
+ * What Upcoming is for, said where the user decides what goes in it (owner, 2026-10-10): the
+ * dates that must not be missed — a date of its own, or one belonging to a goal, target or task.
+ * **Nothing lands here by itself**: deadlines are not copied in, the user picks what matters.
+ */
 const DESCRIPTION =
-  "Keep an important date in view, or follow a goal, target or task by its deadline.";
+  "Use Upcoming for dates you simply can’t miss. Nothing gets added here automatically — " +
+  "you control what’s important, whether it’s a specific date or deadline for a goal or task.";
 
 /** The reference's field frame — 40px, a 1px `#9F9F9F` edge, 4px corners. */
 const FIELD =
@@ -248,7 +254,7 @@ function EventForm({
           titleComponent={DrawerTitle}
         />
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-8 pt-4">
-          <p className="text-[15px] leading-relaxed text-foreground/80">
+          <p className="text-pretty text-[15px] leading-relaxed text-foreground/80">
             {DESCRIPTION}
           </p>
           {fields}
@@ -293,7 +299,7 @@ function EventForm({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <DialogDescription className="mt-3 text-[15px] leading-relaxed text-foreground/80">
+      <DialogDescription className="mt-3 text-pretty text-[15px] leading-relaxed text-foreground/80">
         {DESCRIPTION}
       </DialogDescription>
       <div className="mt-5">{fields}</div>

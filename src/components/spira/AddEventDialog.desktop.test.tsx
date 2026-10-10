@@ -85,6 +85,14 @@ describe("AddEventDialog (laptop)", () => {
     expect(save).toBeEnabled();
   });
 
+  it("says what Upcoming is for, and that nothing is added to it automatically", () => {
+    const dialog = open();
+    expect(dialog).toHaveAccessibleDescription(/dates you simply can’t miss/);
+    expect(dialog).toHaveAccessibleDescription(
+      /Nothing gets added here automatically/,
+    );
+  });
+
   it("saves an important date trimmed, and closes", async () => {
     const user = userEvent.setup();
     const dialog = open();
