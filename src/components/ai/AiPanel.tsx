@@ -120,6 +120,7 @@ const chatToast = {
 // ── Types ─────────────────────────────────────────────────────────────────
 
 import { parseTranscript, type Msg } from "./transcript";
+import { sanitizeNoteHtml } from "@/lib/spira/safe-html";
 
 /**
  * How long the user may go quiet, once the session is in overtime, before the
@@ -3702,7 +3703,8 @@ function ContentModal({
           ) : html ? (
             <div
               className="tiptap-content prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: body }}
+              // The body may be the model's own words, so it is never trusted as markup.
+              dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(body) }}
             />
           ) : (
             <Markdown text={body} />

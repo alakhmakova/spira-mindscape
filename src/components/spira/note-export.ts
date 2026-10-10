@@ -14,6 +14,11 @@
  */
 
 import { getCsrfToken } from "@/lib/spira/auth";
+import {
+  htmlText,
+  inertContainer,
+  sanitizeNoteHtml,
+} from "@/lib/spira/safe-html";
 
 function escapeHtml(s: string): string {
   const d = document.createElement("div");
@@ -71,8 +76,9 @@ function prepareExportHtml(
   html: string,
   opts: { flattenLists?: boolean } = {},
 ): string {
-  const root = document.createElement("div");
-  root.innerHTML = html || "";
+  // Sanitized, and parsed where nothing in it can load or run — the result is written into a
+  // print window, which would otherwise execute whatever a stored note carries.
+  const root = inertContainer(sanitizeNoteHtml(html || ""));
 
   root.querySelectorAll('ul[data-type="taskList"]').forEach((ul) => {
     ul.removeAttribute("data-type");
@@ -149,9 +155,7 @@ function htmlToPlainText(html: string): string {
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "• ")
     .replace(/<\/(p|div|h[1-6]|li|blockquote|tr)>/gi, "\n");
-  const el = document.createElement("div");
-  el.innerHTML = withBreaks;
-  const text = el.textContent ?? "";
+  const text = htmlText(withBreaks);
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
