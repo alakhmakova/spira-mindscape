@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -73,6 +74,7 @@ public class UpcomingEventService {
             }
             case "goal" -> {
                 Goal goal = goalService.findById(require(input.goalId(), "goalId")); // owner-scoped
+                requireDeadline(goal.getDeadline(), "goal");
                 if (repository.existsByUserIdAndGoalId(user.getId(), goal.getId())) {
                     throw new IllegalArgumentException("This goal is already in Upcoming");
                 }
@@ -80,6 +82,7 @@ public class UpcomingEventService {
             }
             case "target" -> {
                 Target target = ownedTarget(require(input.targetId(), "targetId"), user.getId());
+                requireDeadline(target.getDeadline(), "target");
                 if (repository.existsByUserIdAndTargetId(user.getId(), target.getId())) {
                     throw new IllegalArgumentException("This target is already in Upcoming");
                 }
@@ -87,12 +90,14 @@ public class UpcomingEventService {
             }
             case "task" -> {
                 ChecklistItem item = ownedChecklistItem(require(input.taskId(), "taskId"), user.getId());
+                requireDeadline(item.getDeadline(), "task");
                 if (repository.existsByUserIdAndChecklistItemId(user.getId(), item.getId())) {
                     throw new IllegalArgumentException("This task is already in Upcoming");
                 }
                 event.setChecklistItem(item);
             }
-            default -> throw new IllegalArgumentException("Unknown event type: " + input.kind());
+            // A fixed message: the value the client sent is not echoed back.
+            default -> throw new IllegalArgumentException("Unknown event type");
         }
         return UpcomingEventView.of(repository.save(event));
     }
@@ -129,6 +134,16 @@ public class UpcomingEventService {
         return checklistItemRepository.findById(id)
                 .filter(item -> item.getTarget().getGoal().getUser().getId().equals(userId))
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + id));
+    }
+
+    /**
+     * A link stands for a deadline (owner, 2026-10-09: only goals, targets and tasks that have one
+     * can be added). The form only offers those; this refuses the same thing from any other client.
+     */
+    private static void requireDeadline(Instant deadline, String what) {
+        if (deadline == null) {
+            throw new IllegalArgumentException("This " + what + " has no deadline to add");
+        }
     }
 
     private static Long require(Long value, String name) {

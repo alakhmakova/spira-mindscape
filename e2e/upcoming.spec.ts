@@ -127,3 +127,41 @@ test("a goal's event carries its deadline both ways", async ({ page }) => {
       .first(),
   ).toContainText("Set deadline");
 });
+
+test.describe("on a phone", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("the form is a sheet with the Kale head, and an important date goes all the way", async ({
+    page,
+  }) => {
+    const name = `Phone date ${Date.now()}`;
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+
+    await upcoming(page).getByRole("button", { name: "Add event" }).tap();
+    const title = page.getByRole("heading", { name: "Add event" });
+    await expect(title).toBeVisible();
+    // The sheet's own Kale head (CLAUDE.md 3e), not the laptop's white modal head.
+    await expect(title.locator("..")).toHaveClass(/bg-primary/);
+
+    await page.getByLabel("Event name").fill(name);
+    // On a phone the date is a modal and a day is a draft; its foot commits it.
+    await page.getByRole("button", { name: "Pick a date" }).tap();
+    await page.getByRole("button", { name: "Today", exact: true }).tap();
+    await page.getByRole("button", { name: "Set deadline" }).tap();
+    await page.getByRole("button", { name: "Save" }).tap();
+    await expect(title).toBeHidden();
+
+    const row = upcoming(page).getByRole("listitem").filter({ hasText: name });
+    await expect(row).toContainText("Today");
+    await row
+      .getByRole("button", { name: `Remove "${name}" from Upcoming` })
+      .tap();
+    await page.getByRole("button", { name: "Yes, remove" }).tap();
+    await expect(row).toHaveCount(0);
+  });
+});

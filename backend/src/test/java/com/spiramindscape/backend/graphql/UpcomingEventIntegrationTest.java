@@ -103,6 +103,23 @@ class UpcomingEventIntegrationTest extends BaseGraphQlIntegrationTest {
     }
 
     @Test
+    @DisplayName("A goal, target or task without a deadline cannot be added")
+    void linkNeedsADeadline() {
+        String bare = graphQlTester.document("""
+                        mutation { createGoal(input: { title: "No deadline", confidence: 5 }) { id } }
+                        """)
+                .execute()
+                .path("createGoal.id").entity(String.class).get();
+        expectError("kind: \"goal\", goalId: " + bare, "This goal has no deadline");
+    }
+
+    @Test
+    @DisplayName("A date that is not ISO-8601 is refused before it reaches the service")
+    void malformedDate() {
+        expectError("kind: \"important\", title: \"Trip\", date: \"next tuesday\"", "Invalid date format");
+    }
+
+    @Test
     @DisplayName("The same item cannot be added twice")
     void noDuplicateLinks() {
         create("kind: \"goal\", goalId: " + goalId);

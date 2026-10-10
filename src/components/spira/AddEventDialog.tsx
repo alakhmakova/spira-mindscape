@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { X } from "@/components/spira/icons";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { useSpira } from "@/lib/spira/store";
 import {
   UPCOMING_CATEGORIES,
@@ -127,12 +128,15 @@ function EventForm({
   const word =
     UPCOMING_CATEGORIES.find((c) => c.kind === kind)?.singular.toLowerCase() ??
     "";
+  const titleMessage = lengthError(
+    title.trim(),
+    FIELD_LIMITS.upcomingTitle,
+    "Event name",
+  );
   const canSave =
     !saving &&
     !!date &&
-    (kind === "important"
-      ? title.trim().length > 0 && title.trim().length <= 200
-      : !!item);
+    (kind === "important" ? title.trim().length > 0 && !titleMessage : !!item);
 
   const save = async () => {
     if (!canSave || !date) return;
@@ -153,16 +157,28 @@ function EventForm({
 
       {kind === "important" ? (
         <Field label="Event name" htmlFor="event-name">
+          {/* No `maxLength`: a paste would be cut short without a word. Over the limit the
+              field says so and Save waits, as the goal form does (`lengthError`). */}
           <Input
             id="event-name"
             value={title}
-            maxLength={200}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void save();
             }}
+            aria-invalid={titleMessage ? true : undefined}
+            aria-describedby={titleMessage ? "event-name-error" : undefined}
             className={FIELD}
           />
+          {titleMessage ? (
+            <p
+              id="event-name-error"
+              role="alert"
+              className="mt-1.5 text-xs font-medium text-destructive"
+            >
+              {titleMessage}
+            </p>
+          ) : null}
         </Field>
       ) : (
         <Field label={`Choose ${word}`} htmlFor="event-item">

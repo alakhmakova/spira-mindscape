@@ -87,7 +87,10 @@ public class GraphQlExceptionHandler extends DataFetcherExceptionResolverAdapter
 
     private boolean isInvalidDateField(FieldError fieldError) {
         String field = fieldError.getField();
-        return (field.endsWith(".deadline") || field.endsWith(".achievedAt"))
+        // `.date` is the Upcoming column's important date (`CreateUpcomingEventInput`). Without it a
+        // malformed date there fell through to "Something went wrong" and an ERROR in the logs.
+        return (field.endsWith(".deadline") || field.endsWith(".achievedAt")
+                || field.endsWith(".date"))
                 && fieldError.getCodes() != null
                 && java.util.Arrays.asList(fieldError.getCodes()).contains("typeMismatch");
     }

@@ -38,5 +38,6 @@ describe("FIELD_LIMITS", () => {
     expect(FIELD_LIMITS.resourceUrl).toBe(1000);
     expect(FIELD_LIMITS.resourceNoteBody).toBe(50000);
     expect(FIELD_LIMITS.resourcePhone).toBe(50);
+    expect(FIELD_LIMITS.upcomingTitle).toBe(200);
   });
 });
