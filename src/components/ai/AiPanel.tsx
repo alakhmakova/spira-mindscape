@@ -1535,9 +1535,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       });
   }, []);
 
+  // Follow the conversation as it grows: a new turn, or the last one streaming in.
+  const lastContent = list[list.length - 1]?.content;
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
-  }, [list.length, list[list.length - 1]?.content]);
+  }, [list.length, lastContent]);
 
   // ── transcript persistence ────────────────────────────────────────────────
   // Reload the cached transcript when the scope (goal) changes. The initial

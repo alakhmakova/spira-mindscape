@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { OptionsList, moveInArray, reorderTargetIndex } from "./OptionsList";
+import { OptionsList } from "./OptionsList";
+import { moveInArray, reorderTargetIndex } from "./options-order";
 import { useSpira } from "@/lib/spira/store";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
 import type { Goal, Option, OptionStatus } from "@/lib/spira/types";

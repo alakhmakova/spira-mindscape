@@ -25,15 +25,17 @@ import {
 } from "@/lib/spira/links";
 import {
   ElementActionsMenu,
-  REVEAL_ON_ROW_ACTIVITY,
   ResourceLink,
+} from "@/components/spira/inline-resources";
+import {
+  REVEAL_ON_ROW_ACTIVITY,
   rowControlPlacement,
   useIsSingleLine,
   appendResourceToken,
   namesToTokens,
   tokensToNames,
   useInlineResources,
-} from "@/components/spira/inline-resources";
+} from "@/components/spira/inline-resources-shared";
 import { ConfirmDialog } from "@/components/spira/ConfirmDialog";
 import { titleFromUrl } from "@/lib/spira/resources";
 

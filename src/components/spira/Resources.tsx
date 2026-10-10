@@ -56,7 +56,7 @@ import { resourceTypeMeta } from "@/components/spira/resource-meta";
 import {
   InlineResourcesContextProvider,
   type InlineResourcesValue,
-} from "@/components/spira/inline-resources";
+} from "@/components/spira/inline-resources-shared";
 import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { SheetHead } from "./SheetHead";
