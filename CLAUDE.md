@@ -338,6 +338,7 @@ both unless it names a surface.
 | **"Where you are"** — the shape that is not a colour alone | Components and chrome → 3e-quinquies |
 | **The standing rail**, the brand row, and scrollbars | Components and chrome → 3e-sexies |
 | **Search fields** — and the word that empties one | Components and chrome → 3f |
+| **Upcoming** and its **Add event** form | Components and chrome → 3g |
 | Checking a UI change by looking at pixels | Components and chrome → 4 |
 | Menus and overlays are pure white | Components and chrome → 5 |
 | Dropdown / kebab menu anatomy | Components and chrome → 6 |
@@ -685,6 +686,12 @@ coach's own. Don't hand-roll a `<strong>`.
   `onSurface.copy(alpha = 0.8f)` message. Android's KDoc had claimed the ink for months while its
   span set only the weight — the same way the web's resource dialog claimed a rule the goal and
   target dialogs did not follow. A comment is not the behaviour; check the span.
+- **The X stands on the title's line, and only the title shares that line** (owner, 2026-10-09,
+  against a reference "Remove the single sign-on account?" dialog). The X used to be pinned into
+  the corner with the whole header padded `pr-8` clear of it, so it floated above the title and
+  every line of the question stopped 32px short of the card. In `ConfirmDialog` it is now the
+  last item of the title's row — a 28px box against the title's 28px line — and the sentence
+  under it runs the card's full width, under the X. Every confirm in the app goes through it.
 
 #### 3e. Sheets — one shape, two heads, on both surfaces (hard spec, 2026-08-22 — heads revised 2026-09-03)
 
@@ -1135,6 +1142,29 @@ Never hand-roll a clear control, and never put an X back inside a field.
 
 The X that **closes** a search stays exactly as it is — the white disc beside the field on Android,
 the corner button on the web. It is the one cross in the row.
+
+#### 3g. Upcoming and the Add event form (web, 2026-10-09)
+
+The All-goals page's right-hand column (`src/components/spira/Upcoming.tsx`), after a reference
+column of the same name. It shows **at most ten events across all its categories together**, the
+nearest first, from today on, and a category with nothing in it is not drawn at all. The categories
+are **Important dates · Goals · Targets · Tasks** — "Recurring" was one and is gone.
+
+- **An event is one of two shapes** (`src/lib/spira/upcoming.ts`, table `upcoming_event`, V23): an
+  *important date* (a name and a date of its own), or a **link** to a goal, target or checklist item
+  that has a deadline. A link stores the id only; **its date is the item's deadline, read live**, so
+  moving the deadline anywhere moves the event. Setting a different date in the Add event form IS
+  setting the item's deadline. Removing a link **clears that deadline** (server-side, in the same
+  transaction), and its confirm says so — naming the date — before it happens.
+- **The form is a modal on a laptop, a sheet on a phone.** Laptop: a ~706px white card, 4px corners,
+  20px padding, the title's row carrying the X (as 3d-bis), a sentence, then **"Type" as joined
+  segments** — 48px, a 1px `#BABABA` edge with a Kale word when not chosen, a 2px Kale edge on a
+  Kale-100 fill with a near-black word when chosen — and fields in the reference's frame: 40px, a
+  1px `#9F9F9F` edge, 4px corners, a 16px semibold label 12px above. Phone: a bottom drawer by the
+  sheet rules (3e) — Kale head, 20px gutter, Cancel / Save pinned at the foot — with the segments
+  two by two, since four do not fit across.
+- **"Add event" is a link, not a button**: Gravity's outline `circle-plus` at 16px in Kale, then the
+  underlined word. A filled disc read as a second, separate control.
 
 #### 3e-quater. Two things a headless host cannot see (hard rule, 2026-08-29)
 

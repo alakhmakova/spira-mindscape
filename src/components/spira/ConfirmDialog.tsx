@@ -71,18 +71,29 @@ export function ConfirmDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="bg-surface border-0 rounded-lg shadow-2xl w-[calc(100%-2rem)] max-w-[440px] sm:max-w-[600px] p-6">
-        <button
-          onClick={() => onOpenChange(false)}
-          className="absolute right-5 top-5 text-muted-foreground/70 hover:text-foreground transition-colors"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <AlertDialogHeader className="space-y-2 text-left pr-8">
-          <AlertDialogTitle className="font-sans font-semibold text-[20px] text-foreground tracking-tight break-words">
-            {title}
-          </AlertDialogTitle>
+        {/**
+         * **Only the title shares a row with the X; the sentence under it runs the card's full
+         * width** (owner, 2026-10-09, against the reference's "Remove the single sign-on account?").
+         * The X used to be pinned into the corner and the whole header padded `pr-8` to keep clear
+         * of it, so every line of the question stopped 32px short of the card's edge — and the X
+         * floated above the title instead of standing on its line. Now it is the last item of the
+         * title's own row, a 28px box against the title's 28px line, so it sits on the first line
+         * however far the title wraps.
+         */}
+        <AlertDialogHeader className="space-y-2 text-left">
+          <div className="flex items-start gap-4">
+            <AlertDialogTitle className="min-w-0 flex-1 font-sans font-semibold text-[20px] leading-7 text-foreground tracking-tight break-words">
+              {title}
+            </AlertDialogTitle>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="-mr-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
           {/* **A long word has to have somewhere to break.** A target named after a job advert
               carries its whole URL, and an unbreakable 130-character token made the grid column
               — and with it the footer — 735px wide inside a card clamped to 600px, so the buttons

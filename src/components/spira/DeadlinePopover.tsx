@@ -68,6 +68,7 @@ export function DeadlinePopover({
   side = "bottom",
   hideChevron = false,
   renderTrigger,
+  inputClassName,
 }: {
   iso?: string;
   achievedAt?: string;
@@ -83,6 +84,8 @@ export function DeadlinePopover({
   side?: "top" | "bottom";
   hideChevron?: boolean;
   renderTrigger?: () => React.ReactNode;
+  /** The `input` variant's field, restyled — the Add event form sets its frame to match its own fields. */
+  inputClassName?: string;
 }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
@@ -132,6 +135,7 @@ export function DeadlinePopover({
         className: cn(
           "w-full flex items-center h-11 bg-surface border border-input focus:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring rounded-md px-3.5 text-base text-left transition-colors",
           !date && "text-muted-foreground",
+          inputClassName,
         ),
         content: (
           <>

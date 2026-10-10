@@ -19,6 +19,10 @@ type Query {
     optionsByGoal(goalId: ID!): [Option!]!
     realityByGoal(goalId: ID!): Reality!
     realityItemById(id: ID!): RealityItem
+
+    # The All-goals page's Upcoming column. A link (kind goal | target | task) carries only the id
+    # of what it points at; its date is that item's deadline, read from the goal graph.
+    upcomingEvents: [UpcomingEvent!]!
 }
 
 type Mutation {
@@ -43,6 +47,31 @@ type Mutation {
     createResource(goalId: ID!, input: CreateResourceInput!): Resource!
     updateResource(id: ID!, input: UpdateResourceInput!): Resource!
     deleteResource(id: ID!): Boolean!
+
+    createUpcomingEvent(input: CreateUpcomingEventInput!): UpcomingEvent!
+    # Deleting a link also clears the deadline of the goal, target or task it points at.
+    deleteUpcomingEvent(id: ID!): Boolean!
+}
+
+type UpcomingEvent {
+    id: ID!
+    # important | goal | target | task
+    kind: String!
+    # Only for kind = important.
+    title: String
+    date: String
+    goalId: ID
+    targetId: ID
+    taskId: ID
+}
+
+input CreateUpcomingEventInput {
+    kind: String!
+    title: String
+    date: String
+    goalId: ID
+    targetId: ID
+    taskId: ID
 }
 
 type Goal {
