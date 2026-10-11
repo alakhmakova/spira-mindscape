@@ -1,8 +1,28 @@
 # Plan: reminders for Upcoming events
 
-Status: **plan only — nothing built** (owner, 2026-10-10: "По уведомлениям код не пиши, а только
-сделай план"). The look of the notification itself is decided later; this plan covers the
-mechanism, the form, the data, the delivery channels and the tests.
+Status: **the web is built** (2026-10-11, owner: "Реализуй уведомления") — §1, §2, §3, §4, §5a's
+mobile-web half and §5b, with the tests §7 lists for the web. **Email and the Android app are still
+deferred**, as decided. What it takes to switch Web Push on in production — VAPID keys in Secret
+Manager and the Cloud Scheduler job — is the owner's, and is written out in
+`docs/reminders-and-web-push.md`.
+
+Where the build differs from this plan, and why:
+
+- **`amount` can be 0** ("On the day at 09:00", "At the time of the event"); the plan's 1–999 is
+  what the Custom dialog asks for. The server accepts 0–999.
+- **The Custom dialog is a modal on a phone too**, not a sheet: it is a value picked inside a form
+  that is already open, which is CLAUDE.md 3e-ter's rule for the date picker.
+- **No Web Push library.** The encryption (RFC 8291) and VAPID (RFC 8292) are on the JDK's own
+  crypto in `WebPushCrypto.java`, checked byte for byte against the RFC's worked example —
+  `nl.martijndwars:web-push` would have brought BouncyCastle and an HTTP client for ~200 lines.
+- **A reminder found more than an hour late is marked without a push** (the server was down, or
+  the scheduler paused): a notification about a moment long gone is noise. It still shows on the
+  "decide now" page.
+- **A reminder never fires for a moment from before it existed** — "1 week before" added three
+  days ahead of the date stays silent rather than going off as it is saved.
+- **The big picture** (`public/images/reminder.png`) is not used yet: the owner supplies it.
+
+---
 
 **Priority: the web first. The Android app is planned here but NOT to be built yet** (owner,
 2026-10-10: "андроид пока делать не нужно, приоритет у веба"). Every Android section below is
