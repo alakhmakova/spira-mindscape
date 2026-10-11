@@ -4,17 +4,11 @@ import { useRef, useState } from "react";
 import { Bell } from "@/components/spira/icons";
 import type { DueReminder } from "@/lib/spira/api";
 import {
+  reminderWhen,
   useDueReminders,
   type ReminderAnswer,
 } from "@/lib/spira/due-reminders";
-import { UPCOMING_CATEGORIES, upcomingWhen } from "@/lib/spira/upcoming";
-
-/** "Today at 14:00", "Tomorrow", "Mon Oct 19" — the Upcoming column's own words. */
-export function reminderWhen(reminder: Pick<DueReminder, "date" | "time">) {
-  if (!reminder.date) return "";
-  const when = upcomingWhen(reminder.date);
-  return reminder.time ? `${when} at ${reminder.time}` : when;
-}
+import { UPCOMING_CATEGORIES } from "@/lib/spira/upcoming";
 
 /**
  * **Decide now** — a reminder that has gone off takes the whole of Spira until it is answered

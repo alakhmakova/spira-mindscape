@@ -212,3 +212,12 @@ export function deviceTimeZone(): string | undefined {
     return undefined;
   }
 }
+
+/** "Enter a number from 1 to 999", or nothing when the field is fine. */
+export function amountError(text: string): string | undefined {
+  const value = Number(text);
+  if (!/^\d{1,3}$/.test(text.trim()) || value < 1 || value > MAX_AMOUNT) {
+    return `Enter a number from 1 to ${MAX_AMOUNT}`;
+  }
+  return undefined;
+}

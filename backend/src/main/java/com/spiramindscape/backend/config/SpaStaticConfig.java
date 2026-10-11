@@ -40,7 +40,8 @@ public class SpaStaticConfig implements WebMvcConfigurer {
                             return requested; // a real static asset (js/css/svg/…)
                         }
                         // Don't turn API/GraphQL misses into the SPA shell.
-                        if (resourcePath.startsWith("api/") || resourcePath.startsWith("graphql")) {
+                        if (resourcePath.startsWith("api/") || resourcePath.startsWith("graphql")
+                                || resourcePath.startsWith("internal/")) {
                             return null;
                         }
                         // Any other path is a client-side route → serve the SPA shell.

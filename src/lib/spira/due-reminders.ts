@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 import { spiraApi, type DueReminder } from "./api";
+import { upcomingWhen } from "./upcoming";
 import { syncTimeZone } from "./upcoming-store";
+import { startWebPush } from "./web-push";
 
 /**
  * Reminders that have gone off and wait for an answer — what the full-screen "decide now" page
@@ -63,11 +65,12 @@ export const useDueReminders = create<DueState>((set, get) => ({
 /**
  * Keeps the due list fresh while a signed-in page is open: on start, every {@link POLL_MS}, when
  * the tab comes back to the front, and when the service worker says a reminder has just gone off.
- * Also tells the server the device's time zone once.
+ * Also tells the server the device's time zone once, and registers the service worker.
  */
 export function startDueReminderPolling(): () => void {
   const refresh = () => void useDueReminders.getState().refresh();
   void syncTimeZone();
+  void startWebPush();
   refresh();
   const timer = window.setInterval(refresh, POLL_MS);
   const onVisible = () => {
@@ -86,4 +89,11 @@ export function startDueReminderPolling(): () => void {
     window.removeEventListener("focus", refresh);
     navigator.serviceWorker?.removeEventListener("message", onMessage);
   };
+}
+
+/** "Today at 14:00", "Tomorrow", "Mon Oct 19" — the Upcoming column's own words. */
+export function reminderWhen(reminder: Pick<DueReminder, "date" | "time">) {
+  if (!reminder.date) return "";
+  const when = upcomingWhen(reminder.date);
+  return reminder.time ? `${when} at ${reminder.time}` : when;
 }

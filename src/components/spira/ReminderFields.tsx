@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,7 @@ import { CirclePlus, X } from "@/components/spira/icons";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DEFAULT_MINUTE,
-  MAX_AMOUNT,
+  amountError,
   MAX_REMINDERS,
   deviceTimeZone,
   minuteToTime,
@@ -32,6 +32,7 @@ import {
   type Reminder,
   type ReminderUnit,
 } from "@/lib/spira/reminders";
+import { pushState, type PushState } from "@/lib/spira/web-push";
 import { cn } from "@/lib/utils";
 import { SheetHead } from "./SheetHead";
 
@@ -120,6 +121,7 @@ export function RemindersField({
   const triggers = useRef<(HTMLButtonElement | null)[]>([]);
   const sentenceId = useId();
   const zone = deviceTimeZone();
+  const push = usePushState();
 
   const replace = (index: number, next: Reminder) => {
     const list = reminders.map((r, i) => (i === index ? next : r));
@@ -240,6 +242,11 @@ export function RemindersField({
       >
         {reminderSentence(date, time, reminders)}
       </p>
+      {reminders.length > 0 && PUSH_NOTE[push] ? (
+        <p className="mt-1 text-pretty text-sm leading-relaxed text-muted-foreground">
+          {PUSH_NOTE[push]}
+        </p>
+      ) : null}
 
       <CustomReminderDialog
         open={customFor !== null}
@@ -263,6 +270,32 @@ export function RemindersField({
       />
     </div>
   );
+}
+
+/**
+ * What this browser will do with a reminder, said under the sentence when it is not the obvious
+ * "a notification arrives". Permission is asked on Save (plan §5), never on page load.
+ */
+const PUSH_NOTE: Partial<Record<PushState, string>> = {
+  ask: "Saving will ask this browser to show notifications, so reminders reach you even with Spira closed.",
+  denied:
+    "Notifications are blocked for Spira in this browser, so reminders will show only inside Spira.",
+  unsupported:
+    "This browser can’t show notifications, so reminders will show only inside Spira. On an iPhone, add Spira to the Home Screen first.",
+};
+
+function usePushState(): PushState {
+  const [state, setState] = useState<PushState>("off");
+  useEffect(() => {
+    let live = true;
+    void pushState().then((s) => {
+      if (live) setState(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return state;
 }
 
 const UNITS: { unit: ReminderUnit; label: string; timedOnly: boolean }[] = [
@@ -323,15 +356,6 @@ export function CustomReminderDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** "Enter a number from 1 to 999", or nothing when the field is fine. */
-export function amountError(text: string): string | undefined {
-  const value = Number(text);
-  if (!/^\d{1,3}$/.test(text.trim()) || value < 1 || value > MAX_AMOUNT) {
-    return `Enter a number from 1 to ${MAX_AMOUNT}`;
-  }
-  return undefined;
 }
 
 function CustomReminderForm({

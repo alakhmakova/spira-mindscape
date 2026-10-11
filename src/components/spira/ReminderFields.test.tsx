@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { CustomReminderDialog, RemindersField } from "./ReminderFields";
 import {
-  CustomReminderDialog,
-  RemindersField,
   amountError,
-} from "./ReminderFields";
-import { defaultReminder, type Reminder } from "@/lib/spira/reminders";
+  defaultReminder,
+  type Reminder,
+} from "@/lib/spira/reminders";
 
 /**
  * The reminders block and the Custom dialog: the cap of five, the number's validation, and the

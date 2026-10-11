@@ -142,6 +142,28 @@ class RateLimitFilterTest {
     }
 
     @Test
+    @DisplayName("subscribing a browser to Web Push has its own small bucket")
+    void pushSubscribeIsThrottled() throws Exception {
+        // Each subscribe stores a row, and the dispatcher later POSTs to whatever it holds — so a
+        // flood here would be both storage and outbound traffic. Ten a minute is far above a browser.
+        FilterChain chain = mock(FilterChain.class);
+        for (int i = 0; i < 10; i++) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            filter.doFilter(pushSubscribe("5.5.5.5"), res, chain);
+            assertThat(res.getStatus()).isEqualTo(200);
+        }
+        MockHttpServletResponse blocked = new MockHttpServletResponse();
+        filter.doFilter(pushSubscribe("5.5.5.5"), blocked, chain);
+        assertThat(blocked.getStatus()).isEqualTo(429);
+    }
+
+    private MockHttpServletRequest pushSubscribe(String ip) {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/push/web/subscribe");
+        req.setRemoteAddr(ip);
+        return req;
+    }
+
+    @Test
     @DisplayName("unthrottled paths (e.g. GET /health) always pass")
     void unthrottledPaths() throws Exception {
         FilterChain chain = mock(FilterChain.class);

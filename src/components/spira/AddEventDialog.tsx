@@ -31,6 +31,7 @@ import {
   type UpcomingKind,
 } from "@/lib/spira/upcoming";
 import { useUpcoming } from "@/lib/spira/upcoming-store";
+import { enableWebPushFromGesture } from "@/lib/spira/web-push";
 import { cn } from "@/lib/utils";
 import { DeadlinePopover } from "./DeadlinePopover";
 import { EventTimeField, FIELD, RemindersField } from "./ReminderFields";
@@ -188,6 +189,9 @@ function EventForm({
 
   const save = async () => {
     if (!canSave || !date) return;
+    // Inside the click, before anything is awaited: the browser only shows its permission prompt
+    // for a gesture, and this is the moment the user can see why it is asking.
+    if (reminders.length > 0) enableWebPushFromGesture();
     setSaving(true);
     const schedule = { time: allDay ? undefined : time, reminders };
     let ok = false;
