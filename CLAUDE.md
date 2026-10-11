@@ -1150,7 +1150,7 @@ column of the same name. It shows **at most ten events across all its categories
 nearest first, from today on, and a category with nothing in it is not drawn at all. The categories
 are **Important dates · Goals · Targets · Tasks** — "Recurring" was one and is gone.
 
-- **An event is one of two shapes** (`src/lib/spira/upcoming.ts`, table `upcoming_event`, V30): an
+- **An event is one of two shapes** (`src/lib/spira/upcoming.ts`, table `upcoming_event`, V40): an
   *important date* (a name and a date of its own), or a **link** to a goal, target or checklist item
   that has a deadline. A link stores the id only; **its date is the item's deadline, read live**, so
   moving the deadline anywhere moves the event. Setting a different date in the Add event form IS

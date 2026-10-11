@@ -23,7 +23,7 @@ import org.hibernate.annotations.OnDeleteAction;
 import java.time.Instant;
 
 /**
- * One row of the All-goals page's Upcoming column (V30). Either a date of the user's own
+ * One row of the All-goals page's Upcoming column (V40). Either a date of the user's own
  * ({@code kind = important}: a title and a date) or a link to a goal, a target or a checklist item
  * ({@code kind = goal | target | task}), whose date is that item's deadline, read live.
  *
