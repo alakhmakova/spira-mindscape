@@ -7,14 +7,15 @@ import type { Goal, Option } from "@/lib/spira/types";
 import { FIELD_LIMITS } from "@/lib/spira/limits";
 import { cn } from "@/lib/utils";
 import { InlineText } from "./Inline";
+import { moveInArray, reorderTargetIndex } from "./options-order";
+import { ElementActionsMenu } from "@/components/spira/inline-resources";
 import {
-  ElementActionsMenu,
   REVEAL_ACTIVE,
   REVEAL_ON_ROW_HOVER,
   appendResourceToken,
   rowControlPlacement,
   useIsSingleLine,
-} from "@/components/spira/inline-resources";
+} from "@/components/spira/inline-resources-shared";
 
 // Vertical gap between cards (Tailwind space-y-3 = 0.75rem = 12px). Added to each card's
 // measured height to get the drag "step" — the distance the pointer travels to shuffle one slot.
@@ -25,32 +26,6 @@ const LIST_GAP_PX = 12;
 // move one slot — impossible on mobile when the card was taller than the screen. The reorder step
 // is capped at roughly the collapsed card height + gap so small finger moves reorder one slot.
 const DRAG_STEP_MAX_PX = 116;
-
-export function moveInArray<T>(arr: T[], from: number, to: number): T[] {
-  const next = [...arr];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return next;
-}
-
-/**
- * The slot a dragged card should occupy given how far the pointer has travelled.
- * `totalDeltaPx` is the pointer's Y displacement from where the drag started (any
- * page scroll during the drag is folded in by the caller); `stepPx` is the travel
- * that shuffles one slot. Rounds to the nearest slot and clamps to the list bounds
- * so a downward drag moves the card down and an upward drag moves it up. Extracted
- * (and exported) so this math — the source of the "down-drag froze" regression —
- * is unit-testable without real layout.
- */
-export function reorderTargetIndex(
-  fromIndex: number,
-  totalDeltaPx: number,
-  stepPx: number,
-  length: number,
-): number {
-  const slots = Math.round(totalDeltaPx / stepPx);
-  return Math.max(0, Math.min(length - 1, fromIndex + slots));
-}
 
 /**
  * The thumb lean an option carries — the smiley badge's three states, and the words the filter
@@ -78,7 +53,7 @@ export const OPTION_LEAN_CHOICES = [
   { value: "none", label: "Didn't try" },
 ] as const;
 
-export function matchesLean(opt: Option, filter: OptionLeanFilter): boolean {
+function matchesLean(opt: Option, filter: OptionLeanFilter): boolean {
   if (filter === "all") return true;
   return (opt.status || "none") === filter;
 }

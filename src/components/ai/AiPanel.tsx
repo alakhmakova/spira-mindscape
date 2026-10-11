@@ -120,6 +120,7 @@ const chatToast = {
 // ── Types ─────────────────────────────────────────────────────────────────
 
 import { parseTranscript, type Msg } from "./transcript";
+import { sanitizeNoteHtml } from "@/lib/spira/safe-html";
 
 /**
  * How long the user may go quiet, once the session is in overtime, before the
@@ -1535,9 +1536,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       });
   }, []);
 
+  // Follow the conversation as it grows: a new turn, or the last one streaming in.
+  const lastContent = list[list.length - 1]?.content;
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
-  }, [list.length, list[list.length - 1]?.content]);
+  }, [list.length, lastContent]);
 
   // ── transcript persistence ────────────────────────────────────────────────
   // Reload the cached transcript when the scope (goal) changes. The initial
@@ -3700,7 +3703,8 @@ function ContentModal({
           ) : html ? (
             <div
               className="tiptap-content prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: body }}
+              // The body may be the model's own words, so it is never trusted as markup.
+              dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(body) }}
             />
           ) : (
             <Markdown text={body} />

@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
  *
  * Android's editor says the same words for the same marks — keep the two in step.
  */
-export function describeMarks(names: string[]): string {
+function describeMarks(names: string[]): string {
   const WORDS: Record<string, string> = {
     bold: "Bold",
     italic: "Italic",

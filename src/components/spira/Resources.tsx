@@ -56,7 +56,7 @@ import { resourceTypeMeta } from "@/components/spira/resource-meta";
 import {
   InlineResourcesContextProvider,
   type InlineResourcesValue,
-} from "@/components/spira/inline-resources";
+} from "@/components/spira/inline-resources-shared";
 import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { SheetHead } from "./SheetHead";
@@ -84,6 +84,7 @@ import {
   syncGoogleDoc,
 } from "@/components/spira/note-export";
 import { toast } from "sonner";
+import { htmlText } from "@/lib/spira/safe-html";
 
 const typeMeta = resourceTypeMeta;
 
@@ -111,9 +112,9 @@ function validResourceEmail(value: string) {
 /* ── helpers: copy & download ─────────────────────── */
 
 function stripHtml(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return div.textContent || div.innerText || "";
+  // Read in an inert document: a live `div` would fetch an <img> in a stored note and run its
+  // `onerror` just to be copied as text.
+  return htmlText(html);
 }
 
 function downloadBlob(blob: Blob, filename: string) {

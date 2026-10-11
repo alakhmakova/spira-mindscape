@@ -1,4 +1,5 @@
 import { getCsrfToken } from "./auth";
+import type { UpcomingEventRecord } from "./upcoming";
 import type {
   ChecklistItem,
   Confidence,
@@ -877,4 +878,65 @@ export const spiraApi = {
       { id },
     );
   },
+
+  // ── Upcoming (the All-goals page's column) ──────────────────────────────────
+
+  async fetchUpcomingEvents(): Promise<UpcomingEventRecord[]> {
+    const data = await graphql<{ upcomingEvents: GraphqlUpcomingEvent[] }>(`
+      query UpcomingEvents {
+        upcomingEvents { ${UPCOMING_EVENT_FIELDS} }
+      }
+    `);
+    return data.upcomingEvents.map(toUpcomingEvent);
+  },
+
+  async createUpcomingEvent(
+    input: Omit<UpcomingEventRecord, "id">,
+  ): Promise<UpcomingEventRecord> {
+    const data = await graphql<{ createUpcomingEvent: GraphqlUpcomingEvent }>(
+      `
+        mutation CreateUpcomingEvent($input: CreateUpcomingEventInput!) {
+          createUpcomingEvent(input: $input) { ${UPCOMING_EVENT_FIELDS} }
+        }
+      `,
+      { input: cleanInput(input) },
+    );
+    return toUpcomingEvent(data.createUpcomingEvent);
+  },
+
+  /** Removes the event; for a link, the server also clears the deadline it stood for. */
+  async deleteUpcomingEvent(id: string): Promise<void> {
+    await graphql<{ deleteUpcomingEvent: boolean }>(
+      `
+        mutation DeleteUpcomingEvent($id: ID!) {
+          deleteUpcomingEvent(id: $id)
+        }
+      `,
+      { id },
+    );
+  },
 };
+
+const UPCOMING_EVENT_FIELDS = "id kind title date goalId targetId taskId";
+
+type GraphqlUpcomingEvent = {
+  id: string;
+  kind: string;
+  title: string | null;
+  date: string | null;
+  goalId: string | null;
+  targetId: string | null;
+  taskId: string | null;
+};
+
+function toUpcomingEvent(e: GraphqlUpcomingEvent): UpcomingEventRecord {
+  return {
+    id: e.id,
+    kind: e.kind as UpcomingEventRecord["kind"],
+    title: e.title ?? undefined,
+    date: e.date ?? undefined,
+    goalId: e.goalId ?? undefined,
+    targetId: e.targetId ?? undefined,
+    taskId: e.taskId ?? undefined,
+  };
+}

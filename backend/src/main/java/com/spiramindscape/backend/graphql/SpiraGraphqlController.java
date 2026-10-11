@@ -9,6 +9,7 @@ import com.spiramindscape.backend.goal.ConfidenceHistory;
 import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
+import com.spiramindscape.backend.graphql.input.CreateUpcomingEventInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
@@ -20,6 +21,8 @@ import com.spiramindscape.backend.resource.ResourceView;
 import com.spiramindscape.backend.target.ChecklistItem;
 import com.spiramindscape.backend.target.Target;
 import com.spiramindscape.backend.target.TargetService;
+import com.spiramindscape.backend.upcoming.UpcomingEventService;
+import com.spiramindscape.backend.upcoming.UpcomingEventView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.BatchMapping;
@@ -40,6 +43,7 @@ public class SpiraGraphqlController {
     private final RealityService realityService;
     private final TargetService targetService;
     private final ResourceService resourceService;
+    private final UpcomingEventService upcomingEventService;
 
     // Queries
 
@@ -94,6 +98,24 @@ public class SpiraGraphqlController {
     }
 
     // Goal mutations
+
+    @QueryMapping
+    public List<UpcomingEventView> upcomingEvents() {
+        return upcomingEventService.findAll();
+    }
+
+    // Upcoming mutations
+
+    @MutationMapping
+    public UpcomingEventView createUpcomingEvent(@Argument CreateUpcomingEventInput input) {
+        return upcomingEventService.create(input);
+    }
+
+    @MutationMapping
+    public Boolean deleteUpcomingEvent(@Argument Long id) {
+        upcomingEventService.delete(id);
+        return true;
+    }
 
     @MutationMapping
     public Goal createGoal(@Argument CreateGoalInput input) {

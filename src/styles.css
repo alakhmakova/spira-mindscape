@@ -846,6 +846,14 @@
       padding-top: 1.5rem;
       padding-bottom: 1.5rem;
     }
+    /* The All-goals page keeps the room its fixed "New goal" button needs (BUG-072). The rule
+       above set every page's foot to 1.5rem, and it outranks the page's own `pb-32`, so on a
+       phone that room was 24px and the button covered the last row — first a goal card's
+       "Start", then Upcoming's remove X (owner, 2026-10-11). 8rem = the button's 56px + its
+       20px inset + a clear gap. */
+    .spira-overview-inner {
+      padding-bottom: 8rem;
+    }
     .spira-overview-header {
       flex-direction: column;
       align-items: flex-start;

@@ -87,7 +87,9 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "text-muted-foreground/40 flex-1 select-none rounded-md text-[0.8rem] font-normal text-center",
+          // Full-strength muted ink, not `/40`: at 40% the day names sat at ~1.9:1 on white and
+          // failed WCAG 1.4.3 — they are text a reader needs to place a date, not decoration.
+          "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal text-center",
           defaultClassNames.weekday,
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
@@ -165,7 +167,7 @@ function Calendar({
                 "flex items-center justify-center pr-1",
               )}
             >
-              <span className="text-[11px] font-medium text-muted-foreground/40">
+              <span className="text-[11px] font-medium text-muted-foreground">
                 {children}
               </span>
             </td>
@@ -180,7 +182,7 @@ function Calendar({
                 "flex items-center justify-center pr-1",
               )}
             >
-              <span className="text-[11px] font-medium text-muted-foreground/40">
+              <span className="text-[11px] font-medium text-muted-foreground">
                 W
               </span>
             </th>

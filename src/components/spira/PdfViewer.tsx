@@ -112,6 +112,9 @@ export function PdfViewer({
   // Load the document once per dataUrl.
   useEffect(() => {
     let cancelled = false;
+    // The token is a counter, not a DOM node: the cleanup bumps it to void any render still in
+    // flight. Holding the ref object (not its value) keeps that, and says so to the linter.
+    const token = renderToken;
     setStatus("loading");
     setZoom(1);
     lastWidth.current = 0;
@@ -131,7 +134,7 @@ export function PdfViewer({
       });
     return () => {
       cancelled = true;
-      renderToken.current++;
+      token.current++;
       pdfRef.current = null;
       void task.destroy();
     };

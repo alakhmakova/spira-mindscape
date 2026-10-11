@@ -91,7 +91,9 @@ test("tap targets on a phone", async ({ page }) => {
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "All goals" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Goals", exact: true }),
+  ).toBeVisible();
   await measure(page, "All goals", aaa);
 
   await page.getByRole("button", { name: "New goal" }).first().click();

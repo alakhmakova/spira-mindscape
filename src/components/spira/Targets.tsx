@@ -75,6 +75,8 @@ import { InlineText } from "@/components/spira/Inline";
 import {
   AttachResourceButton,
   ElementActionsMenu,
+} from "@/components/spira/inline-resources";
+import {
   appendResourceToken,
   namesToTokens,
   tokensToNames,
@@ -82,7 +84,7 @@ import {
   useIsSingleLine,
   useReadableText,
   useTallText,
-} from "@/components/spira/inline-resources";
+} from "@/components/spira/inline-resources-shared";
 import { ConfirmDialog, QuotedName } from "@/components/spira/ConfirmDialog";
 import { FilteredEmptyNotice } from "@/components/spira/Notice";
 import { stripResourceTokens } from "@/lib/spira/links";

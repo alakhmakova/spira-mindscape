@@ -6,7 +6,7 @@ import { InlineText, InlineList } from "./Inline";
 import {
   InlineResourcesContextProvider,
   type InlineResourcesValue,
-} from "./inline-resources";
+} from "./inline-resources-shared";
 import type { Resource } from "@/lib/spira/types";
 
 const resources: Resource[] = [

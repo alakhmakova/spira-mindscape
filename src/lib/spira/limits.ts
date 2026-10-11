@@ -16,6 +16,7 @@
  *   - Resource.url (link)            → ResourceService.MAX_LINK_URL_LENGTH (1000)
  *   - Resource.phone                 → ResourceService.MAX_CONTACT_PHONE_LENGTH (50)
  *   - AI chat message                → ChatRequest.MAX_MESSAGE_CHARS (50000)
+ *   - Upcoming event name            → UpcomingEvent.MAX_TITLE_LENGTH (200)
  *
  * If any server limit changes, change it here too.
  */
@@ -35,6 +36,8 @@ export const FIELD_LIMITS = {
   // rejecting it is a 400 the user can do nothing with — which is exactly how a pasted job
   // advert took the whole panel down on 2026-09-08.
   chatMessage: 50000,
+  // The name of an important date in the All-goals page's Upcoming column.
+  upcomingTitle: 200,
 } as const;
 
 export type FieldLimitKey = keyof typeof FIELD_LIMITS;

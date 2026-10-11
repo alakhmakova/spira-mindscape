@@ -132,14 +132,9 @@ const ACCEPTED: AcceptedViolations = {
       "div.cursor....flex.relative": 1,
     },
   },
-  "Deadline popover": {
-    "color-contrast": {
-      // <th aria-label="Monday" class="text-muted-foreground/40 flex-1 select-none rounded-md text-[0.8rem] font-norma
-      "th.flex-1.font-normal.rdp-weekday.rounded-md.select-none.text-[0.8rem].text-center.text-muted-foreground/40": 7,
-      // <span class="text-[11px] font-medium text-muted-foreground/40">40</span>
-      "span.font-medium.text-[11px].text-muted-foreground/40": 6,
-    },
-  },
+  // The weekday names and week numbers used to be listed here at `/40` ink (~1.9:1); they are
+  // full-strength muted ink now (2026-10-10), so nothing on this card is accepted.
+  "Deadline popover": {},
   "New target sheet": {},
   "Add a resource sheet": {},
   "Delete confirm": {},
@@ -205,7 +200,9 @@ async function scan(page: Page, surface: string, within?: string) {
 async function dashboard(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "All goals" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Goals", exact: true }),
+  ).toBeVisible();
 }
 
 test.describe("WCAG 2.1 AA — the machine-checkable part, every surface", () => {
