@@ -2,7 +2,7 @@
 
 An event is an important date (a name and a date of its own) or a link to a goal, target or
 checklist item that has a deadline. These run the real HTTP + GraphQL + Postgres path, including
-the parts only a real database shows: the FK cascades of V23 and the deadline cleared in the same
+the parts only a real database shows: the FK cascades of V40 and the deadline cleared in the same
 transaction as a deleted link.
 """
 import pytest
