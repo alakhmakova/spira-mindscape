@@ -138,10 +138,14 @@ function GoalsOverview() {
     // shell's `bg-background` underneath was already white, and this covered it (owner,
     // 2026-08-21). White is the canvas; the cards are told apart by their hairline.
     <div className="relative min-h-screen">
-      {/* pb-24 (not py-*'s bottom) clears the fixed "New goal" FAB (h-14, bottom-5/-7): without
+      {/* pb-32 (not py-*'s bottom) clears the fixed "New goal" FAB (h-14, bottom-5/-7): without
           it, the last card in a short list sits directly under the circle and the FAB covers its
-          "Start" control (BUG-072, mobile viewport). */}
-      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 pt-8 pb-24 sm:px-6 sm:pt-12">
+          "Start" control (BUG-072, mobile viewport). It was pb-24 until Upcoming arrived below the
+          list: a row's remove X sits at the right edge, exactly where the circle is, and at 24 the
+          last row's X touched the FAB's top edge (owner's screenshot, 2026-10-11). Below a 760px
+          column `styles.css` sets this page's foot itself and outranks the class — the same
+          8rem lives there, and it is the one a phone actually gets. */}
+      <div className="spira-overview-inner mx-auto max-w-6xl space-y-8 px-4 pt-8 pb-32 sm:px-6 sm:pt-12">
         {/**
          * **The greeting, then the list under its own heading** (owner, 2026-10-09, after
          * `gusto/upcomingsynccalendar.png`). "All goals" was a title naming the page the user had
