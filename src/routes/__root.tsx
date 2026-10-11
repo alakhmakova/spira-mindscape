@@ -5,9 +5,12 @@ import {
   redirect,
   useRouterState,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AppShell } from "@/components/shell/AppShell";
+import { DecideNowGate } from "@/components/spira/DecideNow";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/lib/spira/auth";
+import { startDueReminderPolling } from "@/lib/spira/due-reminders";
 
 function NotFoundComponent() {
   return (
@@ -74,7 +77,15 @@ function RootComponent() {
   return (
     <AppShell>
       <Outlet />
+      <ReminderWatch />
+      <DecideNowGate suppressed={pathname.startsWith("/remind/")} />
       <Toaster />
     </AppShell>
   );
+}
+
+/** Keeps the due reminders fresh for every signed-in page (`due-reminders.ts`). */
+function ReminderWatch() {
+  useEffect(() => startDueReminderPolling(), []);
+  return null;
 }
