@@ -19,14 +19,21 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { FIELD_LIMITS, lengthError } from "@/lib/spira/limits";
 import { useSpira } from "@/lib/spira/store";
 import {
+  convertReminders,
+  defaultReminder,
+  type Reminder,
+} from "@/lib/spira/reminders";
+import {
   UPCOMING_CATEGORIES,
   linkableItems,
   linkedId,
+  type ResolvedUpcomingEvent,
   type UpcomingKind,
 } from "@/lib/spira/upcoming";
 import { useUpcoming } from "@/lib/spira/upcoming-store";
 import { cn } from "@/lib/utils";
 import { DeadlinePopover } from "./DeadlinePopover";
+import { EventTimeField, FIELD, RemindersField } from "./ReminderFields";
 import { SheetHead } from "./SheetHead";
 
 /**
@@ -47,13 +54,22 @@ import { SheetHead } from "./SheetHead";
  * - **Goal / Target / Task** asks which one, from the items that have a deadline and are not in
  *   Upcoming yet. The item's deadline becomes the event's date, and a date changed here becomes
  *   the item's new deadline — the event has no date of its own (see `upcoming.ts`).
+ *
+ * Under them, **when**: all day (the default) or at a time, and the **reminders** — one by default
+ * (on the day at 09:00, or 1 hour before), with a sentence saying exactly when it will arrive
+ * (specs/2026-10-10-upcoming-notifications/plan.md §2).
+ *
+ * Given an `editing` event it is **Edit event**: the type and a link's item are fixed, and Save
+ * replaces the event's time and reminders.
  */
 export function AddEventDialog({
   open,
   onOpenChange,
+  editing,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editing?: ResolvedUpcomingEvent | null;
 }) {
   const isMobile = useIsMobile();
   const close = () => onOpenChange(false);
@@ -62,7 +78,9 @@ export function AddEventDialog({
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent className="sheet-max mt-0 flex flex-col px-0">
-          {open ? <EventForm mobile onDone={close} /> : null}
+          {open ? (
+            <EventForm mobile editing={editing ?? undefined} onDone={close} />
+          ) : null}
         </DrawerContent>
       </Drawer>
     );
@@ -74,7 +92,9 @@ export function AddEventDialog({
         closeButton={false}
         className="modal-max w-[calc(100%-2rem)] max-w-[706px] gap-0 overflow-y-auto rounded-[4px] border-0 bg-white p-5 shadow-2xl sm:max-w-[706px] sm:rounded-[4px]"
       >
-        {open ? <EventForm onDone={close} /> : null}
+        {open ? (
+          <EventForm editing={editing ?? undefined} onDone={close} />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
@@ -89,42 +109,62 @@ const DESCRIPTION =
   "Use Upcoming for dates you simply can’t miss. Nothing gets added here automatically — " +
   "you control what’s important, whether it’s a specific date or deadline for a goal or task.";
 
-/** The reference's field frame — 40px, a 1px `#9F9F9F` edge, 4px corners. */
-const FIELD =
-  "h-10 rounded-[4px] border-[#9F9F9F] px-3 text-base focus-visible:border-primary";
+/** A time of day for a date that has just stopped being all day. */
+const DEFAULT_TIME = "09:00";
 
 function EventForm({
   mobile = false,
+  editing,
   onDone,
 }: {
   mobile?: boolean;
+  editing?: ResolvedUpcomingEvent;
   onDone: () => void;
 }) {
   const goals = useSpira((s) => s.goals);
   const events = useUpcoming((s) => s.events);
   const add = useUpcoming((s) => s.add);
+  const update = useUpcoming((s) => s.update);
 
-  const [kind, setKind] = useState<UpcomingKind>("important");
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState<string | undefined>();
-  const [itemId, setItemId] = useState<string>("");
+  const [kind, setKind] = useState<UpcomingKind>(editing?.kind ?? "important");
+  const [title, setTitle] = useState(
+    editing?.kind === "important" ? editing.title : "",
+  );
+  const [date, setDate] = useState<string | undefined>(editing?.date);
+  const [itemId, setItemId] = useState<string>(
+    editing ? (linkedId(editing.record) ?? "") : "",
+  );
+  const [allDay, setAllDay] = useState(!editing?.record.time);
+  const [time, setTime] = useState(editing?.record.time ?? DEFAULT_TIME);
+  const [reminders, setReminders] = useState<Reminder[]>(
+    editing ? (editing.record.reminders ?? []) : [defaultReminder(false)],
+  );
   const [saving, setSaving] = useState(false);
 
-  // Only what has a deadline, and not what is in Upcoming already.
+  // Only what has a deadline, and not what is in Upcoming already — except, when editing, the
+  // item this event already is.
   const choices = useMemo(() => {
+    const own = editing ? linkedId(editing.record) : undefined;
     const taken = new Set(
-      events.filter((e) => e.kind === kind).map((e) => linkedId(e)),
+      events
+        .filter((e) => e.kind === kind)
+        .map((e) => linkedId(e))
+        .filter((id) => id !== own),
     );
     return linkableItems(goals).filter(
       (item) => item.kind === kind && !taken.has(item.id),
     );
-  }, [goals, events, kind]);
+  }, [goals, events, kind, editing]);
   const item = choices.find((c) => c.id === itemId);
 
   const pickKind = (next: UpcomingKind) => {
     setKind(next);
     setItemId("");
     setDate(undefined);
+  };
+  const pickAllDay = (next: boolean) => {
+    setAllDay(next);
+    setReminders((current) => convertReminders(current, !next));
   };
   const pickItem = (id: string) => {
     setItemId(id);
@@ -139,27 +179,45 @@ function EventForm({
     FIELD_LIMITS.upcomingTitle,
     "Event name",
   );
+  const timeValid = allDay || /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
   const canSave =
     !saving &&
     !!date &&
+    timeValid &&
     (kind === "important" ? title.trim().length > 0 && !titleMessage : !!item);
 
   const save = async () => {
     if (!canSave || !date) return;
     setSaving(true);
-    const ok =
-      kind === "important"
-        ? await add({ kind: "important", title: title.trim(), date })
-        : item
-          ? await add({ kind: item.kind, item, date })
-          : false;
+    const schedule = { time: allDay ? undefined : time, reminders };
+    let ok = false;
+    if (editing) {
+      ok = await update(editing.id, {
+        ...schedule,
+        title: kind === "important" ? title.trim() : undefined,
+        date,
+        item: kind === "important" ? undefined : item,
+      });
+    } else if (kind === "important") {
+      ok = await add({
+        kind: "important",
+        title: title.trim(),
+        date,
+        ...schedule,
+      });
+    } else if (item) {
+      ok = await add({ kind: item.kind, item, date, ...schedule });
+    }
     setSaving(false);
     if (ok) onDone();
   };
+  const heading = editing ? "Edit event" : "Add event";
 
   const fields = (
     <div className="space-y-5">
-      <TypeChoice value={kind} onChange={pickKind} mobile={mobile} />
+      {editing ? null : (
+        <TypeChoice value={kind} onChange={pickKind} mobile={mobile} />
+      )}
 
       {kind === "important" ? (
         <Field label="Event name" htmlFor="event-name">
@@ -185,6 +243,16 @@ function EventForm({
               {titleMessage}
             </p>
           ) : null}
+        </Field>
+      ) : editing ? (
+        <Field
+          label={
+            UPCOMING_CATEGORIES.find((c) => c.kind === kind)?.singular ?? ""
+          }
+        >
+          <p className="break-words text-base text-foreground">
+            {item?.title ?? editing.title}
+          </p>
         </Field>
       ) : (
         <Field label={`Choose ${word}`} htmlFor="event-item">
@@ -242,6 +310,21 @@ function EventForm({
           />
         </Field>
       ) : null}
+
+      <EventTimeField
+        allDay={allDay}
+        time={time}
+        onAllDayChange={pickAllDay}
+        onTimeChange={setTime}
+      />
+
+      <RemindersField
+        reminders={reminders}
+        onChange={setReminders}
+        timed={!allDay}
+        date={date}
+        time={allDay || !timeValid ? undefined : time}
+      />
     </div>
   );
 
@@ -249,7 +332,7 @@ function EventForm({
     return (
       <>
         <SheetHead
-          title="Add event"
+          title={heading}
           onClose={onDone}
           titleComponent={DrawerTitle}
         />
@@ -288,7 +371,7 @@ function EventForm({
       {/* The title's row carries the X, as in every confirm dialog (`ConfirmDialog`). */}
       <div className="flex items-start gap-4">
         <DialogTitle className="min-w-0 flex-1 font-sans text-[20px] font-semibold leading-7 tracking-tight text-foreground">
-          Add event
+          {heading}
         </DialogTitle>
         <button
           type="button"

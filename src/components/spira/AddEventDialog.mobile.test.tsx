@@ -67,6 +67,9 @@ describe("AddEventDialog (phone)", () => {
       kind: "important",
       title: "Trip",
       date: D1,
+      time: undefined,
+      // Every new event carries the default reminder (plan §2).
+      reminders: [{ amount: 0, unit: "day", atMinuteOfDay: 540 }],
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

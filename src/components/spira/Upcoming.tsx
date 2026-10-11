@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
+  Bell,
   ChevronDown,
   ChevronUp,
   CirclePlus,
@@ -38,6 +39,7 @@ export function Upcoming({ className }: { className?: string }) {
   const load = useUpcoming((s) => s.load);
   const remove = useUpcoming((s) => s.remove);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<ResolvedUpcomingEvent | null>(null);
   const [removing, setRemoving] = useState<ResolvedUpcomingEvent | null>(null);
 
   useEffect(() => {
@@ -98,6 +100,7 @@ export function Upcoming({ className }: { className?: string }) {
               <UpcomingCategory
                 key={group.kind}
                 group={group}
+                onEdit={setEditing}
                 onRemove={setRemoving}
               />
             ))}
@@ -106,6 +109,13 @@ export function Upcoming({ className }: { className?: string }) {
       </div>
 
       <AddEventDialog open={adding} onOpenChange={setAdding} />
+      <AddEventDialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        editing={editing}
+      />
 
       <ConfirmDialog
         open={removing !== null}
@@ -152,9 +162,11 @@ function RemoveQuestion({ event }: { event: ResolvedUpcomingEvent }) {
 
 function UpcomingCategory({
   group,
+  onEdit,
   onRemove,
 }: {
   group: UpcomingGroup;
+  onEdit: (event: ResolvedUpcomingEvent) => void;
   onRemove: (event: ResolvedUpcomingEvent) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -179,14 +191,34 @@ function UpcomingCategory({
       <ul id={listId} hidden={!open} className="mt-1.5 space-y-2.5 pl-6">
         {group.events.map((event) => (
           <li key={event.id} className="flex items-start gap-2">
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            {/* The name and the line under it open the event for editing — its time and its
+                reminders (plan §2). A bell says it has reminders. */}
+            <button
+              type="button"
+              onClick={() => onEdit(event)}
+              aria-label={`Edit "${event.title}"`}
+              className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+            >
               <span className="break-words text-sm font-medium leading-snug text-foreground">
                 {event.title}
               </span>
-              <span className="text-sm leading-snug text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-sm leading-snug text-muted-foreground">
                 {upcomingWhen(event.date)}
+                {event.record.time ? ` at ${event.record.time}` : ""}
+                {event.record.reminders?.length ? (
+                  <Bell
+                    role="img"
+                    aria-hidden={false}
+                    aria-label={
+                      event.record.reminders.length === 1
+                        ? "1 reminder"
+                        : `${event.record.reminders.length} reminders`
+                    }
+                    className="h-3.5 w-3.5 shrink-0"
+                  />
+                ) : null}
               </span>
-            </div>
+            </button>
             {/* 24px, the 2.5.8 floor, and always there: a phone has no hover to reveal it on. */}
             <button
               type="button"

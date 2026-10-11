@@ -11,6 +11,7 @@
  * The column shows **at most ten** events across all its categories together, the nearest first,
  * from today on, and a category with nothing in it is not shown at all.
  */
+import type { Reminder } from "./reminders";
 import type { Goal } from "./types";
 
 export type UpcomingKind = "important" | "goal" | "target" | "task";
@@ -24,6 +25,9 @@ export type UpcomingEventRecord = {
   goalId?: string;
   targetId?: string;
   taskId?: string;
+  /** `HH:mm`, or absent for an all-day date — the entry's own, whatever its kind. */
+  time?: string;
+  reminders?: Reminder[];
 };
 
 /** An event ready to draw: its name and its date, whichever shape it came from. */

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { toast } from "sonner";
 import { spiraApi } from "./api";
 import { useSpira } from "./store";
+import { deviceTimeZone, type Reminder } from "./reminders";
 import type { Goal } from "./types";
 import {
   linkableItems,
@@ -12,10 +13,24 @@ import {
   type UpcomingEventRecord,
 } from "./upcoming";
 
+/** When an event happens and how it reminds: an optional `HH:mm` (absent = all day) and its reminders. */
+export type UpcomingSchedule = { time?: string; reminders: Reminder[] };
+
 /** What the Add event form saves: an important date, or a link with the date it should carry. */
-export type NewUpcomingEvent =
+export type NewUpcomingEvent = (
   | { kind: "important"; title: string; date: string }
-  | { kind: LinkableItem["kind"]; item: LinkableItem; date: string };
+  | { kind: LinkableItem["kind"]; item: LinkableItem; date: string }
+) &
+  UpcomingSchedule;
+
+/** What the form saves when it edits an event. */
+export type UpcomingEdit = UpcomingSchedule & {
+  /** Important dates only. */
+  title?: string;
+  date: string;
+  /** A link's item, so a changed date can move its deadline. */
+  item?: LinkableItem;
+};
 
 type UpcomingState = {
   events: UpcomingEventRecord[];
@@ -23,6 +38,8 @@ type UpcomingState = {
   load: () => Promise<void>;
   /** Saves a new event. Resolves `true` once the server has it, `false` (with a toast) if not. */
   add: (input: NewUpcomingEvent) => Promise<boolean>;
+  /** Saves an edit. Resolves `true` once the server has it, `false` (with a toast) if not. */
+  update: (id: string, input: UpcomingEdit) => Promise<boolean>;
   /** Removes an event — and, for a link, the deadline it stood for. */
   remove: (event: ResolvedUpcomingEvent) => Promise<void>;
 };
@@ -63,6 +80,22 @@ function setItemDeadline(
   });
 }
 
+let timeZoneSent: Promise<void> | null = null;
+
+/**
+ * Tells the server the device's zone, once per page load — reminders are computed in it, and
+ * "on the day at 09:00" means nothing without one. A failure is retried on the next call rather
+ * than remembered.
+ */
+export function syncTimeZone(): Promise<void> {
+  const zone = deviceTimeZone();
+  if (!zone) return Promise.resolve();
+  timeZoneSent ??= spiraApi.setTimeZone(zone).catch(() => {
+    timeZoneSent = null;
+  });
+  return timeZoneSent;
+}
+
 export const useUpcoming = create<UpcomingState>((set, get) => ({
   events: [],
   status: "idle",
@@ -80,9 +113,16 @@ export const useUpcoming = create<UpcomingState>((set, get) => ({
 
   add: async (input) => {
     try {
+      const schedule = { time: input.time, reminders: input.reminders };
+      if (input.reminders.length > 0) await syncTimeZone();
       let record: Omit<UpcomingEventRecord, "id">;
       if (input.kind === "important") {
-        record = { kind: "important", title: input.title, date: input.date };
+        record = {
+          kind: "important",
+          title: input.title,
+          date: input.date,
+          ...schedule,
+        };
       } else {
         const { item } = input;
         // The form shows the item's deadline as the event's date; a date the user changed there
@@ -95,10 +135,32 @@ export const useUpcoming = create<UpcomingState>((set, get) => ({
           goalId: item.kind === "goal" ? item.id : undefined,
           targetId: item.kind === "target" ? item.id : undefined,
           taskId: item.kind === "task" ? item.id : undefined,
+          ...schedule,
         };
       }
       const saved = await spiraApi.createUpcomingEvent(record);
       set((s) => ({ events: [...s.events, saved] }));
+      return true;
+    } catch (error) {
+      toast.error(messageOf(error));
+      return false;
+    }
+  },
+
+  update: async (id, input) => {
+    try {
+      if (input.reminders.length > 0) await syncTimeZone();
+      const { item } = input;
+      if (item && !sameDay(item.deadline, input.date)) {
+        setItemDeadline(item, input.date, useSpira.getState().goals);
+      }
+      const saved = await spiraApi.updateUpcomingEvent(id, {
+        title: item ? undefined : input.title,
+        date: item ? undefined : input.date,
+        time: input.time,
+        reminders: input.reminders,
+      });
+      set((s) => ({ events: s.events.map((e) => (e.id === id ? saved : e)) }));
       return true;
     } catch (error) {
       toast.error(messageOf(error));
