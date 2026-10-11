@@ -1,4 +1,4 @@
--- V23: the All-goals page's Upcoming column — dates the user has chosen to keep an eye on.
+-- V30: the All-goals page's Upcoming column — dates the user has chosen to keep an eye on.
 --
 -- Two shapes in one table, told apart by `kind`:
 --   * `important` — a date of the user's own: a title and a date, nothing else.

@@ -107,7 +107,7 @@ surfaces, "Add event — reminders" and "Custom reminder".
 
 ## 3. Data
 
-### `upcoming_reminder` (Flyway V24)
+### `upcoming_reminder` (Flyway V31)
 
 | Column | Notes |
 |---|---|
@@ -373,7 +373,7 @@ Spira, and it is the screen the owner will design later, as agreed.
 
 **The web first** (owner, 2026-10-10).
 
-1. **The form and the data**: optional time, reminders block, Custom dialog, V24, API, and the
+1. **The form and the data**: optional time, reminders block, Custom dialog, V31, API, and the
    in-app blocking "decide now" page. Useful on its own, all on existing infrastructure.
 2. **Web Push**: service worker, VAPID, subscriptions, Cloud Scheduler dispatcher, action buttons,
    and the notification tap that opens `/remind/$eventId` (§5a).
