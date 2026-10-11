@@ -23,6 +23,8 @@ type Query {
     # The All-goals page's Upcoming column. A link (kind goal | target | task) carries only the id
     # of what it points at; its date is that item's deadline, read from the goal graph.
     upcomingEvents: [UpcomingEvent!]!
+    # Events with a reminder that has gone off and is not answered yet — the "decide now" page.
+    dueReminders: [DueReminder!]!
 }
 
 type Mutation {
@@ -51,6 +53,12 @@ type Mutation {
     createUpcomingEvent(input: CreateUpcomingEventInput!): UpcomingEvent!
     # Deleting a link also clears the deadline of the goal, target or task it points at.
     deleteUpcomingEvent(id: ID!): Boolean!
+    # Replaces the event's time and reminders as sent; title and date apply to an important date only.
+    updateUpcomingEvent(id: ID!, input: UpdateUpcomingEventInput!): UpcomingEvent!
+    # done | open | snooze — answers every due reminder of the event. False when none was due.
+    answerReminder(eventId: ID!, action: String!): Boolean!
+    # The IANA zone the client runs in ("Europe/Berlin"); reminders are computed in it.
+    setTimeZone(zone: String!): Boolean!
 }
 
 type UpcomingEvent {
@@ -63,6 +71,39 @@ type UpcomingEvent {
     goalId: ID
     targetId: ID
     taskId: ID
+    # HH:mm, or null for an all-day date. The entry's own, for any kind.
+    time: String
+    reminders: [UpcomingReminder!]!
+}
+
+type UpcomingReminder {
+    id: ID!
+    # 0 = on the day (all day) / at the time (timed)
+    amount: Int!
+    # minute | hour | day | week
+    unit: String!
+    # All-day events only: minutes after midnight.
+    atMinuteOfDay: Int
+    # notification | email | fullscreen
+    channel: String!
+}
+
+type DueReminder {
+    eventId: ID!
+    kind: String!
+    title: String!
+    date: String
+    time: String
+    # The goal to open: the event's own goal, or the goal its target or task belongs to.
+    goalId: ID
+    firedAt: String!
+}
+
+input ReminderInput {
+    amount: Int!
+    unit: String!
+    atMinuteOfDay: Int
+    channel: String
 }
 
 input CreateUpcomingEventInput {
@@ -72,6 +113,15 @@ input CreateUpcomingEventInput {
     goalId: ID
     targetId: ID
     taskId: ID
+    time: String
+    reminders: [ReminderInput!]
+}
+
+input UpdateUpcomingEventInput {
+    title: String
+    date: String
+    time: String
+    reminders: [ReminderInput!]
 }
 
 type Goal {

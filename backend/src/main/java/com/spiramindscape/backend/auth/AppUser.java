@@ -52,6 +52,10 @@ public class AppUser implements Serializable {
     @Column(name = "preferred_ai_provider", length = 32)
     private String preferredAiProvider;
 
+    /** The IANA zone the user's client reports ("Europe/Berlin"), for reminders. Null until it does. */
+    @Column(name = "time_zone", length = 64)
+    private String timeZone;
+
     /**
      * Google OAuth refresh token, AES-256-GCM encrypted (see {@code EncryptionService}).
      * Null until the user grants offline access. Used to mint fresh Drive access
