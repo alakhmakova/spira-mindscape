@@ -77,8 +77,13 @@ export function startDueReminderPolling(): () => void {
     if (document.visibilityState === "visible") refresh();
   };
   const onMessage = (event: MessageEvent) => {
-    if ((event.data as { type?: string } | null)?.type === "reminders-changed")
-      refresh();
+    const data = event.data as { type?: string; eventId?: string } | null;
+    if (data?.type === "reminders-changed") refresh();
+    // A tapped notification, for a tab the worker could not navigate itself (one it does not
+    // control yet): the page goes to the "decide now" page on its own.
+    if (data?.type === "open-reminder" && data.eventId) {
+      window.location.assign(`/remind/${encodeURIComponent(data.eventId)}`);
+    }
   };
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("focus", refresh);

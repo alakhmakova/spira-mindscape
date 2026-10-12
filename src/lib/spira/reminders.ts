@@ -99,6 +99,12 @@ function dayOf(iso: string): { y: number; m: number; d: number } {
   if (bare)
     return { y: Number(bare[1]), m: Number(bare[2]) - 1, d: Number(bare[3]) };
   const t = new Date(iso);
+  // The Android app stores a day as midnight UTC, which west of Greenwich is the evening before;
+  // read that as its UTC day, as `ReminderSchedule.dayOf` does. A web day — local midnight — is
+  // only ever exactly 00:00 UTC in a zone at UTC+0, where both readings agree.
+  if (t.getTime() % 86_400_000 === 0) {
+    return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() };
+  }
   return { y: t.getFullYear(), m: t.getMonth(), d: t.getDate() };
 }
 

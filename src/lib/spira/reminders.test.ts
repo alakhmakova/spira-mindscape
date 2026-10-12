@@ -77,6 +77,12 @@ describe("fireAt", () => {
     );
   });
 
+  it("reads a day stored as UTC midnight (the Android app) as that UTC day", () => {
+    expect(
+      fireAt("2030-10-20T00:00:00.000Z", undefined, ALL_DAY_PRESETS[0]),
+    ).toEqual(new Date(2030, 9, 20, 9, 0));
+  });
+
   it("reads a bare YYYY-MM-DD as that day", () => {
     expect(fireAt("2030-06-19", undefined, ALL_DAY_PRESETS[0])).toEqual(
       new Date(2030, 5, 19, 9, 0),

@@ -3,6 +3,7 @@ package com.spiramindscape.backend.upcoming;
 import com.spiramindscape.backend.push.web.WebPushService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,6 +26,11 @@ import java.util.Set;
  * {@code last_fired_for}, which this run then sets — so two runs in the same minute send it once.
  * Marking happens in its own transaction, before any network call, so a slow push service never
  * holds the rows.
+ *
+ * <p>Rows carry an optimistic-lock version (V42). If a user answers between this run's read and
+ * its write, or a second run overlaps this one, the later write fails and its whole transaction
+ * rolls back <b>before anything is pushed</b>; the next minute's run starts again from what is
+ * stored. Nothing is lost and nothing is sent twice.
  */
 @Service
 public class ReminderDispatcher {
@@ -61,7 +67,19 @@ public class ReminderDispatcher {
 
     public Result dispatch(Instant now) {
         Set<Target> targets = new LinkedHashSet<>();
-        int fired = transactions.execute(status -> {
+        int fired;
+        try {
+            fired = mark(now, targets);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Someone else wrote one of these rows first; next minute's run picks up from there.
+            log.info("reminders_dispatch_conflict");
+            return new Result(0, 0);
+        }
+        return push(fired, targets);
+    }
+
+    private int mark(Instant now, Set<Target> targets) {
+        return transactions.execute(status -> {
             int count = 0;
             List<UpcomingReminder> reminders = reminderRepository.findAllForDispatch();
             for (UpcomingReminder reminder : reminders) {
@@ -86,7 +104,9 @@ public class ReminderDispatcher {
             }
             return count;
         });
+    }
 
+    private Result push(int fired, Set<Target> targets) {
         int pushed = 0;
         for (Target target : targets) {
             // The event id only: the service worker fetches the words over the user's session.

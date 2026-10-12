@@ -12,6 +12,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
@@ -82,6 +83,11 @@ public class UpcomingReminder {
 
     @Column(name = "snoozed_until")
     private Instant snoozedUntil;
+
+    /** Optimistic lock (V42): the dispatcher's write and a user's answer cannot overwrite each other. */
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

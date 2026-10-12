@@ -2,6 +2,7 @@ package com.spiramindscape.backend.push.web;
 
 import com.spiramindscape.backend.auth.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,6 +53,10 @@ public class WebPushController {
                     body.keys().p256dh(), body.keys().auth(), userAgent);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (DataIntegrityViolationException e) {
+            // Two tabs of one browser subscribed at once and the other stored this endpoint a
+            // moment earlier: the outcome the caller wanted is already true.
+            return ResponseEntity.noContent().build();
         }
         return ResponseEntity.noContent().build();
     }

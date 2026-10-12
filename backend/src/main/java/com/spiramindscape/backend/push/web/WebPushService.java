@@ -75,8 +75,10 @@ public class WebPushService {
     /**
      * Sends a payload to every browser the user has subscribed; drops the ones the push service
      * says are gone. Returns how many accepted it.
+     *
+     * <p>Deliberately <b>not</b> one transaction: it makes up to {@link #MAX_PER_USER} blocking
+     * HTTP calls, and a slow push service must not hold a database connection meanwhile.
      */
-    @Transactional
     public int sendToUser(Long userId, String json) {
         if (!properties.enabled()) {
             return 0;

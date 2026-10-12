@@ -50,7 +50,7 @@ public final class ReminderSchedule {
         if (eventDate == null) {
             return null;
         }
-        LocalDate day = eventDate.atZone(zone).toLocalDate();
+        LocalDate day = dayOf(eventDate, zone);
         if (eventTime != null) {
             ZonedDateTime at = ZonedDateTime.of(day, eventTime, zone);
             return switch (unit) {
@@ -73,11 +73,55 @@ public final class ReminderSchedule {
 
     /**
      * Whether a fire at {@code fireAt} counts at all. A reminder never fires for a moment from
-     * before it existed: "1 week before" added three days ahead of the date, or "on the day at
-     * 09:00" added at noon, stays silent rather than going off the instant it is saved.
+     * before it was last <i>set</i>: "1 week before" added three days ahead of the date, "on the
+     * day at 09:00" added at noon, a date edited into the past, or a linked deadline moved earlier
+     * on the goal page — each stays silent rather than going off the instant it changes, which is
+     * also what the form's sentence promises ("its moment has already passed").
+     *
+     * <p>"Set" is the latest of the reminder's creation, the event's last edit and the linked
+     * item's last edit. A fire that has already gone out stays armed whatever is edited after it,
+     * so an unanswered reminder does not vanish from "decide now" because a goal was renamed.
      */
     static boolean armed(UpcomingReminder reminder, Instant fireAt) {
-        return fireAt != null && !fireAt.isBefore(reminder.getCreatedAt());
+        if (fireAt == null) {
+            return false;
+        }
+        if (reminder.getLastFiredFor() != null && !reminder.getLastFiredFor().isBefore(fireAt)) {
+            return true;
+        }
+        return !fireAt.isBefore(armedSince(reminder));
+    }
+
+    static Instant armedSince(UpcomingReminder reminder) {
+        Instant since = reminder.getCreatedAt();
+        UpcomingEvent event = reminder.getEvent();
+        if (event != null) {
+            since = later(since, event.getUpdatedAt());
+            if (event.getGoal() != null) since = later(since, event.getGoal().getUpdatedAt());
+            if (event.getTarget() != null) since = later(since, event.getTarget().getUpdatedAt());
+            if (event.getChecklistItem() != null) since = later(since, event.getChecklistItem().getUpdatedAt());
+        }
+        return since;
+    }
+
+    private static Instant later(Instant a, Instant b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return b.isAfter(a) ? b : a;
+    }
+
+    /**
+     * The calendar day a stored date stands for. The web stores a day as the instant of local
+     * midnight on the device that picked it, which is read in the user's zone. The Android app
+     * stores it as midnight <b>UTC</b>; read in New York that is the evening before. An instant at
+     * exactly 00:00 UTC is therefore read as its UTC date — for a web user that only happens in a
+     * zone at UTC+0, where both readings agree.
+     */
+    public static LocalDate dayOf(Instant date, ZoneId zone) {
+        if (date.getEpochSecond() % 86_400 == 0) {
+            return date.atZone(ZoneOffset.UTC).toLocalDate();
+        }
+        return date.atZone(zone).toLocalDate();
     }
 
     /** The fire at {@code fireAt} has been answered (Done or Open). */

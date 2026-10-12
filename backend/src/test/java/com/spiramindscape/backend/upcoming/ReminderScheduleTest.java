@@ -200,6 +200,71 @@ class ReminderScheduleTest {
     }
 
     @Test
+    @DisplayName("A day stored as UTC midnight (the Android app) is that UTC day in any zone")
+    void utcMidnightIsItsUtcDay() {
+        ZoneId newYork = ZoneId.of("America/New_York");
+        Instant androidDeadline = Instant.parse("2030-10-20T00:00:00Z");
+        assertThat(ReminderSchedule.dayOf(androidDeadline, newYork)).isEqualTo(LocalDate.parse("2030-10-20"));
+        assertThat(ReminderSchedule.fireAt(androidDeadline, null, 0, "day", 540, newYork))
+                .isEqualTo(at("2030-10-20T09:00", newYork));
+        // A web day — local midnight — is still read in the user's zone.
+        assertThat(ReminderSchedule.dayOf(midnight("2030-10-20", newYork), newYork))
+                .isEqualTo(LocalDate.parse("2030-10-20"));
+        assertThat(ReminderSchedule.dayOf(midnight("2030-10-20", BERLIN), BERLIN))
+                .isEqualTo(LocalDate.parse("2030-10-20"));
+    }
+
+    @Test
+    @DisplayName("A date edited into the past, or a linked deadline moved earlier, does not fire for the past moment")
+    void editedIntoThePast() {
+        Goal goal = new Goal();
+        goal.setDeadline(midnight("2030-10-20", BERLIN));
+        UpcomingEvent event = new UpcomingEvent();
+        event.setKind("goal");
+        event.setGoal(goal);
+        UpcomingReminder r = new UpcomingReminder();
+        r.setEvent(event);
+        r.setAmount(1);
+        r.setUnit("day");
+        r.setAtMinuteOfDay(540);
+        r.setCreatedAt(Instant.parse("2030-10-01T00:00:00Z"));
+
+        // On Oct 15 at 14:00 the deadline is moved to Oct 15: "1 day before" is Oct 14, 09:00.
+        Instant now = at("2030-10-15T14:00", BERLIN);
+        goal.setDeadline(midnight("2030-10-15", BERLIN));
+        goal.setUpdatedAt(now);
+        Instant fire = ReminderSchedule.fireAt(r, BERLIN);
+        assertThat(ReminderSchedule.isFreshFire(r, fire, now)).isFalse();
+        assertThat(ReminderSchedule.isDue(r, fire, now)).isFalse();
+
+        // Moved later again, the new moment is in the future and fires when it comes.
+        goal.setDeadline(midnight("2030-10-25", BERLIN));
+        Instant later = ReminderSchedule.fireAt(r, BERLIN);
+        assertThat(ReminderSchedule.isFreshFire(r, later, later)).isTrue();
+    }
+
+    @Test
+    @DisplayName("A fire that has gone out stays due when the goal is edited afterwards")
+    void firedStaysArmed() {
+        Goal goal = new Goal();
+        goal.setDeadline(midnight("2030-10-20", BERLIN));
+        UpcomingEvent event = new UpcomingEvent();
+        event.setKind("goal");
+        event.setGoal(goal);
+        UpcomingReminder r = new UpcomingReminder();
+        r.setEvent(event);
+        r.setAmount(0);
+        r.setUnit("day");
+        r.setAtMinuteOfDay(540);
+        r.setCreatedAt(Instant.parse("2030-10-01T00:00:00Z"));
+        Instant fire = ReminderSchedule.fireAt(r, BERLIN);
+        r.setLastFiredFor(fire);
+        goal.setUpdatedAt(fire.plusSeconds(600)); // renamed after it went off
+
+        assertThat(ReminderSchedule.isDue(r, fire, fire.plusSeconds(900))).isTrue();
+    }
+
+    @Test
     @DisplayName("A link reads its item's deadline live")
     void linkReadsDeadline() {
         Goal goal = new Goal();

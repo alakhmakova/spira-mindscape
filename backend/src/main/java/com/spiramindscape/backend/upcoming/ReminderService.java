@@ -135,7 +135,7 @@ public class ReminderService {
         String when = "";
         Instant date = event.effectiveDate();
         if (date != null) {
-            LocalDate day = date.atZone(zone).toLocalDate();
+            LocalDate day = ReminderSchedule.dayOf(date, zone);
             long days = ChronoUnit.DAYS.between(now.atZone(zone).toLocalDate(), day);
             if (days == 0) when = "Today";
             else if (days == 1) when = "Tomorrow";
