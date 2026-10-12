@@ -10,6 +10,13 @@ import { test, expect } from "@playwright/test";
  * fetches is stubbed at the network so the words are known; `ReminderControllerIntegrationTest`
  * pins the real endpoint, owner-scoping included.
  */
+// **Full Chromium, not the headless shell.** Playwright's default headless browser is
+// `chrome-headless-shell`, which has no notification support at all: `showNotification` never
+// produces anything and `getNotifications()` stays empty — the same failure on all three CI
+// attempts, while a local run against full Chromium passed. `channel: "chromium"` runs the real
+// browser in its new headless mode; `npx playwright install chromium` already installs it.
+test.use({ channel: "chromium" });
+
 test("a push becomes a notification with the event's words and two buttons", async ({
   page,
   context,

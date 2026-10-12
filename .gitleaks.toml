@@ -118,6 +118,14 @@ regexes = [
   # A Secret Manager REFERENCE, not a value: `deploy.ps1` passes the name and Cloud Run resolves
   # it at deploy time. The password itself has never been in the repository.
   '''spira-db-password:latest''',
+  # The worked example of RFC 8291 (Web Push encryption), Appendix A — keys and an auth secret
+  # PUBLISHED IN THE STANDARD, so every implementation can be checked against the same bytes.
+  # `WebPushCryptoTest` does exactly that, and the reminders tests reuse the pair as fixtures.
+  # They are nobody's keys; a real VAPID pair lives only in Secret Manager.
+  '''yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw''',
+  '''BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8''',
+  '''BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4''',
+  '''BTBZMqHH6r4Tts7J_aSIgg''',
   # **A known disclosure, not a false positive** (BUG-095): `deploy.ps1` carries the production
   # Neon hostname in the clear, and has since 2026-06-04. It is not a credential — only the
   # password opens the database, and that one is in Secret Manager — but it does tell the world
