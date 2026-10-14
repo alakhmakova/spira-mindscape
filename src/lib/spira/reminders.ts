@@ -227,3 +227,32 @@ export function amountError(text: string): string | undefined {
   }
   return undefined;
 }
+
+/** The next moment any of these reminders goes off, or `undefined` when all have passed. */
+export function nextReminderAt(
+  dateIso: string,
+  time: string | undefined,
+  reminders: Reminder[] | undefined,
+  now: Date = new Date(),
+): Date | undefined {
+  let next: Date | undefined;
+  for (const r of reminders ?? []) {
+    const at = fireAt(dateIso, time, r);
+    if (at.getTime() >= now.getTime() && (!next || at < next)) next = at;
+  }
+  return next;
+}
+
+/**
+ * A moment as the Upcoming column says it: "Today at 13:00", "Tomorrow at 09:00", or the day
+ * with its weekday, "Mon Oct 19 at 09:00".
+ */
+export function momentLabel(at: Date, now: Date = new Date()): string {
+  const day = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(at) - day(now)) / 86_400_000);
+  const clock = format(at, "HH:mm");
+  if (days === 0) return `Today at ${clock}`;
+  if (days === 1) return `Tomorrow at ${clock}`;
+  return `${format(at, "EEE MMM d")} at ${clock}`;
+}

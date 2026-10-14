@@ -72,8 +72,10 @@ test("a timed event with a custom reminder, edited back to none", async ({
   await expect(dialog).toBeHidden();
 
   const row = upcoming(page).getByRole("listitem").filter({ hasText: name });
-  await expect(row).toContainText("Today at 21:30");
-  await expect(row.getByRole("img", { name: "2 reminders" })).toBeVisible();
+  // Two lines under the name: the calendar with the event's own time, and the bell with the
+  // nearest reminder still to come — 3 hours before 21:30, which the 5-minute one is not.
+  await expect(row).toContainText("Date: Today at 21:30");
+  await expect(row).toContainText("Next reminder: Today at 18:30");
 
   // What the server stored.
   const stored = await page.request.post("/graphql", {
@@ -109,7 +111,8 @@ test("a timed event with a custom reminder, edited back to none", async ({
   );
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(edit).toBeHidden();
-  await expect(row.getByRole("img", { name: /reminder/ })).toHaveCount(0);
+  await expect(row).toContainText("Date: Today at 21:30");
+  await expect(row).not.toContainText("Next reminder");
 
   await row
     .getByRole("button", { name: `Remove "${name}" from Upcoming` })

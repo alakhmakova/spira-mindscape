@@ -5,6 +5,8 @@ import {
   convertReminders,
   defaultReminder,
   fireAt,
+  momentLabel,
+  nextReminderAt,
   reminderLabel,
   reminderSentence,
   timeToMinute,
@@ -161,4 +163,35 @@ it("timeToMinute reads HH:mm only", () => {
   expect(timeToMinute("09:30")).toBe(570);
   expect(timeToMinute("24:00")).toBeUndefined();
   expect(timeToMinute("9:30")).toBeUndefined();
+});
+
+describe("the Upcoming column's two lines", () => {
+  const now = new Date(2030, 5, 17, 10, 0);
+
+  it("nextReminderAt picks the nearest moment still to come", () => {
+    const reminders = [
+      { amount: 1, unit: "week" as const, atMinuteOfDay: 540 }, // June 12 — gone
+      { amount: 1, unit: "day" as const, atMinuteOfDay: 540 }, // June 18 09:00
+      { amount: 0, unit: "day" as const, atMinuteOfDay: 540 }, // June 19 09:00
+    ];
+    expect(nextReminderAt(JUNE_19, undefined, reminders, now)).toEqual(
+      new Date(2030, 5, 18, 9, 0),
+    );
+    expect(
+      nextReminderAt(JUNE_19, undefined, [reminders[0]], now),
+    ).toBeUndefined();
+    expect(nextReminderAt(JUNE_19, undefined, undefined, now)).toBeUndefined();
+  });
+
+  it("momentLabel says today, tomorrow, or the day", () => {
+    expect(momentLabel(new Date(2030, 5, 17, 13, 0), now)).toBe(
+      "Today at 13:00",
+    );
+    expect(momentLabel(new Date(2030, 5, 18, 9, 0), now)).toBe(
+      "Tomorrow at 09:00",
+    );
+    expect(momentLabel(new Date(2030, 5, 24, 9, 0), now)).toBe(
+      "Mon Jun 24 at 09:00",
+    );
+  });
 });
