@@ -17,6 +17,20 @@ The workflow runs on:
 - manual trigger (`workflow_dispatch`);
 - nightly schedule (`0 3 * * *`, UTC).
 
+### When the nightly run goes red with no code change
+
+The nightly run scans dependencies and **fails on a CRITICAL advisory** (Trivy over Maven and npm,
+`npm audit`). So a red night on an unchanged `main` usually means a CVE was published against a
+dependency, not that anything broke — that was every red scheduled run of 2026-10-04…08
+(netty-handler, spring-webmvc, seroval). The gate is deliberate and stays.
+
+What answers it is **Dependabot** (`.github/dependabot.yml`): security updates arrive as a pull
+request as soon as a fix exists, and weekly version updates come grouped (a few PRs a week, majors
+separate). CI runs on each like on any PR; fixing is reviewing and merging. Security PRs need
+**Settings → Code security → Dependabot security updates** switched on — a repository setting,
+not something the file can do. A TipTap update also needs `npm run build:note-editor` committed to
+the same PR; CI's bundle check says so when it is missing.
+
 ## What CI Runs
 
 The pipeline's jobs: `frontend`, `backend`, `android`, `dependency-scan`, `e2e` (Python, after

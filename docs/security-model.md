@@ -64,6 +64,15 @@ The structured version (mapped to the OWASP Top 10 2025) lives in
 **Where:** `config/SecurityConfig.java`, `backend/.../db/migration/V14__spring_session.sql`,
 `auth/MobileAuthController.java`.
 
+**The one caller that is not a user: Cloud Scheduler** (reminders, 2026-10-11). It calls
+`POST /internal/reminders/dispatch` every minute. `/internal/**` has its **own security
+chain**, ahead of the user chain (`config/InternalSecurityConfig.java`): no session, no
+login, CSRF off — but not authentication. A request needs a Google-signed OIDC token for
+the configured audience, from the configured service account
+(`GoogleSchedulerTokenVerifier`); no token is 401, any other token 403, and with either
+setting empty every call is refused. The dev profiles' auto-login filters belong to the
+user chain and never reach it. `InternalSecurityIntegrationTest` pins all four cases.
+
 ---
 
 ## 3. Authorization — you only touch your own data
@@ -168,6 +177,15 @@ credentials. That's "server-side request forgery."
 - Blocks loopback, private ranges, link-local, and the metadata hosts.
 - **Does not auto-follow redirects** — a public URL could redirect to an
   internal one; Spira re-checks the address on every hop, max 3.
+
+**Web Push endpoints are the same threat from the other side.** A browser's push
+subscription is a URL the *client* hands us, and the reminders dispatcher later
+POSTs to it from inside Google's network. So `push/web/WebPushEndpoints.java`
+accepts **https only, on the browsers' own push services** — `fcm.googleapis.com`,
+`*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com` — with no
+userinfo and no other port, and the sender re-checks it before every send and never
+follows a redirect. `WebPushEndpointsTest` pins the metadata server and the suffix
+trick (`fcm.googleapis.com.evil.example`) as refused.
 
 ---
 
@@ -345,7 +363,8 @@ The full plan, the OWASP Top 10 2025 mapping, and the validation checklist are i
 | AI input safety + referral | `ai/safety/SafetyService.java`, `TextNormalizer.java` |
 | Abuse logging | `ai/safety/AbuseAuditLogger.java` |
 | Prompt-injection defense | `ai/chat/AiChatService.java` |
-| SSRF guard | `ai/chat/UrlReadService.java` |
+| SSRF guard | `ai/chat/UrlReadService.java`, `push/web/WebPushEndpoints.java` |
+| The scheduler's endpoint | `config/InternalSecurityConfig.java`, `config/GoogleSchedulerTokenVerifier.java` |
 | Rate limiting | `security/RateLimitFilter.java` |
 | GraphQL depth / complexity / alias caps | `graphql/GraphQlLimitsConfig.java` |
 | Untrusted note HTML | `src/lib/spira/safe-html.ts` |

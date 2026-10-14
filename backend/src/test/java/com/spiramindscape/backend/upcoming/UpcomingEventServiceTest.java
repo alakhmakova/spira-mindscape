@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +49,7 @@ class UpcomingEventServiceTest {
     @Mock private TargetRepository targetRepository;
     @Mock private ChecklistItemRepository checklistItemRepository;
     @Mock private CurrentUserProvider currentUserProvider;
+    @Mock private Clock clock;
 
     @InjectMocks private UpcomingEventService service;
 
@@ -59,6 +61,7 @@ class UpcomingEventServiceTest {
         me = user(1L);
         someoneElse = user(2L);
         when(currentUserProvider.getCurrentUser()).thenReturn(me);
+        when(clock.instant()).thenReturn(Instant.parse("2026-10-11T12:00:00Z"));
         when(repository.save(any(UpcomingEvent.class))).thenAnswer(inv -> {
             UpcomingEvent e = inv.getArgument(0);
             e.setId(100L);
@@ -108,15 +111,15 @@ class UpcomingEventServiceTest {
     @Test
     @DisplayName("The type is required, case does not matter, and an unknown one is refused without echoing it")
     void kind() {
-        assertRefused(new CreateUpcomingEventInput(null, "Trip", DEADLINE, null, null, null),
+        assertRefused(new CreateUpcomingEventInput(null, "Trip", DEADLINE, null, null, null, null, null),
                 "Event type is required");
-        assertRefused(new CreateUpcomingEventInput("recurring", "Trip", DEADLINE, null, null, null),
+        assertRefused(new CreateUpcomingEventInput("recurring", "Trip", DEADLINE, null, null, null, null, null),
                 "Unknown event type");
         assertThatThrownBy(() -> service.create(
-                new CreateUpcomingEventInput("<script>", "Trip", DEADLINE, null, null, null)))
+                new CreateUpcomingEventInput("<script>", "Trip", DEADLINE, null, null, null, null, null)))
                 .hasMessage("Unknown event type");
 
-        service.create(new CreateUpcomingEventInput(" IMPORTANT ", "Trip", DEADLINE, null, null, null));
+        service.create(new CreateUpcomingEventInput(" IMPORTANT ", "Trip", DEADLINE, null, null, null, null, null));
         assertThat(captureSaved().getKind()).isEqualTo("important");
     }
 
@@ -256,11 +259,11 @@ class UpcomingEventServiceTest {
     }
 
     private static CreateUpcomingEventInput important(String title, Instant date) {
-        return new CreateUpcomingEventInput("important", title, date, null, null, null);
+        return new CreateUpcomingEventInput("important", title, date, null, null, null, null, null);
     }
 
     private static CreateUpcomingEventInput link(String kind, Long goalId, Long targetId, Long taskId) {
-        return new CreateUpcomingEventInput(kind, null, null, goalId, targetId, taskId);
+        return new CreateUpcomingEventInput(kind, null, null, goalId, targetId, taskId, null, null);
     }
 
     private static AppUser user(Long id) {

@@ -24,6 +24,11 @@
       content="Spira is an AI-powered goal achievement system. Define meaningful goals, break them into targets, and execute with a calm, structured workspace."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Reminders (specs/2026-10-10-upcoming-notifications/plan.md §5b): the manifest names the app
+         and gives notifications their icon; an iPhone only delivers web notifications to a site
+         added to the Home Screen, which is what the touch icon is for. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

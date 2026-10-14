@@ -15,6 +15,7 @@ public interface UpcomingEventRepository extends JpaRepository<UpcomingEvent, Lo
             LEFT JOIN FETCH e.goal
             LEFT JOIN FETCH e.target
             LEFT JOIN FETCH e.checklistItem
+            LEFT JOIN FETCH e.reminders
             WHERE e.user.id = :userId
             ORDER BY e.createdAt ASC
             """)

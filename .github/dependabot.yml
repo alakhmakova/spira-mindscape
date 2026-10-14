@@ -1,0 +1,94 @@
+# Dependabot — dependency updates as pull requests (owner, 2026-10-14).
+#
+# Why: the nightly CI run (`schedule` in ci.yml) scans dependencies and FAILS on a CRITICAL
+# advisory (Trivy, npm audit). That gate is right — it is how we learn a dependency went bad —
+# but on its own it turns "a CVE was published overnight" into a red main with nothing to merge.
+# Dependabot turns the same news into a ready pull request: CI runs on it like on any other,
+# and fixing is reviewing and merging. The gate stays as it is; this is what answers it.
+#
+# Two kinds of PR come from here:
+#   * SECURITY updates — opened as soon as an advisory has a fix, whatever the schedule below.
+#     They need "Dependabot security updates" switched on in the repository's Settings →
+#     Code security; this file cannot do that.
+#   * VERSION updates — the weekly ones configured below, grouped so a week is a few PRs rather
+#     than dozens. Majors stay separate: they are the ones that need reading.
+#
+# Known extra step: an update to TipTap (the note editor) also needs the Android bundle rebuilt —
+# CI's "note-editor bundle matches its source" check fails on such a PR and says so. Check the
+# branch out, run `npm run build:note-editor`, commit the result to the same PR.
+
+version: 2
+
+updates:
+  # ── Web frontend (and the note-editor bundle built from it) ──────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies, web]
+    groups:
+      # Its own group: it is the one that needs the bundle rebuilt (see the header).
+      tiptap:
+        patterns: ["@tiptap/*", "prosemirror-*"]
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["@tiptap/*", "prosemirror-*"]
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # ── Backend (Spring Boot) ───────────────────────────────────────────────────────
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    groups:
+      maven-minor-and-patch:
+        update-types: [minor, patch]
+      maven-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # ── Android app ─────────────────────────────────────────────────────────────────
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies, android]
+    groups:
+      gradle-minor-and-patch:
+        update-types: [minor, patch]
+      gradle-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # ── Python E2E suite ────────────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /tests-e2e
+    schedule:
+      interval: monthly
+    labels: [dependencies, tests]
+    groups:
+      pip-all:
+        patterns: ["*"]
+
+  # ── The CI actions themselves (checkout, setup-node, cache …) ───────────────────
+  # Also what clears the "Node.js 20 is deprecated" warnings on every run.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]
+    groups:
+      actions-all:
+        patterns: ["*"]

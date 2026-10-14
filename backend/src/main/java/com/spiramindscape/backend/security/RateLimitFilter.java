@@ -55,6 +55,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** Deliberately low: a crash loop should report once, not hundreds of times. */
     @Value("${spira.ratelimit.client-errors-per-minute:10}")
     private int clientErrorsPerMinute;
+    /** A browser subscribes once and refreshes now and then; more than this is not a browser. */
+    @Value("${spira.ratelimit.push-subscribe-per-minute:10}")
+    private int pushSubscribePerMinute = 10;
+    /** The service worker's notice fetches and its Done / Snooze answers. */
+    @Value("${spira.ratelimit.reminders-per-minute:60}")
+    private int remindersPerMinute = 60;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -97,6 +103,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
         if ("POST".equals(method) && path.equals("/graphql")) {
             return new Limit("graphql", graphqlPerMinute);
+        }
+        if ("POST".equals(method) && path.startsWith("/api/push/web/")) {
+            return new Limit("push-subscribe", pushSubscribePerMinute);
+        }
+        if (path.startsWith("/api/reminders/")) {
+            return new Limit("reminders", remindersPerMinute);
         }
         if (path.startsWith("/oauth2/authorization")) {
             return new Limit("login", loginPerMinute);

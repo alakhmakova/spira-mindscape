@@ -103,13 +103,15 @@ describe("add", () => {
     });
     const ok = await useUpcoming
       .getState()
-      .add({ kind: "important", title: "Trip", date: D1 });
+      .add({ kind: "important", title: "Trip", date: D1, reminders: [] });
 
     expect(ok).toBe(true);
     expect(api.createUpcomingEvent).toHaveBeenCalledWith({
       kind: "important",
       title: "Trip",
       date: D1,
+      time: undefined,
+      reminders: [],
     });
     expect(useUpcoming.getState().events.map((e) => e.id)).toEqual(["e1"]);
   });
@@ -122,13 +124,15 @@ describe("add", () => {
     });
     await useUpcoming
       .getState()
-      .add({ kind: "goal", item: goalItem, date: D1 });
+      .add({ kind: "goal", item: goalItem, date: D1, reminders: [] });
 
     expect(api.createUpcomingEvent).toHaveBeenCalledWith({
       kind: "goal",
       goalId: "1",
       targetId: undefined,
       taskId: undefined,
+      time: undefined,
+      reminders: [],
     });
     expect(updateGoal).not.toHaveBeenCalled();
   });
@@ -141,7 +145,7 @@ describe("add", () => {
     });
     await useUpcoming
       .getState()
-      .add({ kind: "goal", item: goalItem, date: D2 });
+      .add({ kind: "goal", item: goalItem, date: D2, reminders: [] });
     expect(updateGoal).toHaveBeenCalledWith("1", { deadline: D2 });
   });
 
@@ -153,7 +157,7 @@ describe("add", () => {
     });
     await useUpcoming
       .getState()
-      .add({ kind: "task", item: taskItem, date: D2 });
+      .add({ kind: "task", item: taskItem, date: D2, reminders: [] });
 
     expect(updateTarget).toHaveBeenCalledWith("1", "10", {
       items: [{ id: "100", text: "Long run", done: false, deadline: D2 }],
@@ -166,7 +170,7 @@ describe("add", () => {
     );
     const ok = await useUpcoming
       .getState()
-      .add({ kind: "goal", item: goalItem, date: D1 });
+      .add({ kind: "goal", item: goalItem, date: D1, reminders: [] });
 
     expect(ok).toBe(false);
     expect(toastError).toHaveBeenCalledWith("This goal is already in Upcoming");

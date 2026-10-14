@@ -1,4 +1,5 @@
 import { getCsrfToken } from "./auth";
+import type { Reminder, ReminderUnit } from "./reminders";
 import type { UpcomingEventRecord } from "./upcoming";
 import type {
   ChecklistItem,
@@ -893,15 +894,105 @@ export const spiraApi = {
   async createUpcomingEvent(
     input: Omit<UpcomingEventRecord, "id">,
   ): Promise<UpcomingEventRecord> {
+    const { reminders, ...rest } = input;
     const data = await graphql<{ createUpcomingEvent: GraphqlUpcomingEvent }>(
       `
         mutation CreateUpcomingEvent($input: CreateUpcomingEventInput!) {
           createUpcomingEvent(input: $input) { ${UPCOMING_EVENT_FIELDS} }
         }
       `,
-      { input: cleanInput(input) },
+      {
+        input: cleanInput({
+          ...rest,
+          reminders: reminders?.map(toReminderInput),
+        }),
+      },
     );
     return toUpcomingEvent(data.createUpcomingEvent);
+  },
+
+  /**
+   * Edits an event. `time` and `reminders` are its whole schedule and replace what is stored;
+   * `title` and `date` apply to an important date only.
+   */
+  async updateUpcomingEvent(
+    id: string,
+    input: {
+      title?: string;
+      date?: string;
+      time?: string;
+      reminders: Reminder[];
+    },
+  ): Promise<UpcomingEventRecord> {
+    const data = await graphql<{ updateUpcomingEvent: GraphqlUpcomingEvent }>(
+      `
+        mutation UpdateUpcomingEvent($id: ID!, $input: UpdateUpcomingEventInput!) {
+          updateUpcomingEvent(id: $id, input: $input) { ${UPCOMING_EVENT_FIELDS} }
+        }
+      `,
+      {
+        id,
+        input: cleanInput({
+          ...input,
+          reminders: input.reminders.map(toReminderInput),
+        }),
+      },
+    );
+    return toUpcomingEvent(data.updateUpcomingEvent);
+  },
+
+  /** Events with a reminder that has gone off and is not answered yet. */
+  async fetchDueReminders(): Promise<DueReminder[]> {
+    const data = await graphql<{ dueReminders: GraphqlDueReminder[] }>(`
+      query DueReminders {
+        dueReminders {
+          eventId
+          kind
+          title
+          date
+          time
+          goalId
+          firedAt
+        }
+      }
+    `);
+    return data.dueReminders.map((d) => ({
+      eventId: d.eventId,
+      kind: d.kind as UpcomingEventRecord["kind"],
+      title: d.title,
+      date: d.date ?? undefined,
+      time: d.time ?? undefined,
+      goalId: d.goalId ?? undefined,
+      firedAt: d.firedAt,
+    }));
+  },
+
+  /** done | open | snooze — answers every due reminder of the event. */
+  async answerReminder(
+    eventId: string,
+    action: "done" | "open" | "snooze",
+  ): Promise<boolean> {
+    const data = await graphql<{ answerReminder: boolean }>(
+      `
+        mutation AnswerReminder($eventId: ID!, $action: String!) {
+          answerReminder(eventId: $eventId, action: $action)
+        }
+      `,
+      { eventId, action },
+    );
+    return data.answerReminder;
+  },
+
+  /** Tells the server the device's IANA zone, which reminders are computed in. */
+  async setTimeZone(zone: string): Promise<void> {
+    await graphql<{ setTimeZone: boolean }>(
+      `
+        mutation SetTimeZone($zone: String!) {
+          setTimeZone(zone: $zone)
+        }
+      `,
+      { zone },
+    );
   },
 
   /** Removes the event; for a link, the server also clears the deadline it stood for. */
@@ -917,7 +1008,8 @@ export const spiraApi = {
   },
 };
 
-const UPCOMING_EVENT_FIELDS = "id kind title date goalId targetId taskId";
+const UPCOMING_EVENT_FIELDS =
+  "id kind title date goalId targetId taskId time reminders { amount unit atMinuteOfDay }";
 
 type GraphqlUpcomingEvent = {
   id: string;
@@ -927,7 +1019,52 @@ type GraphqlUpcomingEvent = {
   goalId: string | null;
   targetId: string | null;
   taskId: string | null;
+  time?: string | null;
+  reminders?: GraphqlReminder[] | null;
 };
+
+type GraphqlReminder = {
+  amount: number;
+  unit: string;
+  atMinuteOfDay: number | null;
+};
+
+/** An event with a reminder that has gone off and is waiting for an answer. */
+export type DueReminder = {
+  eventId: string;
+  kind: UpcomingEventRecord["kind"];
+  title: string;
+  date?: string;
+  time?: string;
+  goalId?: string;
+  firedAt: string;
+};
+
+type GraphqlDueReminder = {
+  eventId: string;
+  kind: string;
+  title: string;
+  date: string | null;
+  time: string | null;
+  goalId: string | null;
+  firedAt: string;
+};
+
+function toReminderInput(r: Reminder) {
+  return cleanInput({
+    amount: r.amount,
+    unit: r.unit,
+    atMinuteOfDay: r.atMinuteOfDay,
+  });
+}
+
+function toReminder(r: GraphqlReminder): Reminder {
+  return {
+    amount: r.amount,
+    unit: r.unit as ReminderUnit,
+    atMinuteOfDay: r.atMinuteOfDay ?? undefined,
+  };
+}
 
 function toUpcomingEvent(e: GraphqlUpcomingEvent): UpcomingEventRecord {
   return {
@@ -938,5 +1075,7 @@ function toUpcomingEvent(e: GraphqlUpcomingEvent): UpcomingEventRecord {
     goalId: e.goalId ?? undefined,
     targetId: e.targetId ?? undefined,
     taskId: e.taskId ?? undefined,
+    time: e.time ?? undefined,
+    reminders: (e.reminders ?? []).map(toReminder),
   };
 }

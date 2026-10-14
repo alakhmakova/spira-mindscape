@@ -10,6 +10,7 @@ import com.spiramindscape.backend.graphql.input.CreateGoalInput;
 import com.spiramindscape.backend.graphql.input.CreateResourceInput;
 import com.spiramindscape.backend.graphql.input.CreateTargetInput;
 import com.spiramindscape.backend.graphql.input.CreateUpcomingEventInput;
+import com.spiramindscape.backend.graphql.input.UpdateUpcomingEventInput;
 import com.spiramindscape.backend.graphql.input.UpdateGoalInput;
 import com.spiramindscape.backend.graphql.input.UpdateOptionInput;
 import com.spiramindscape.backend.graphql.input.UpdateResourceInput;
@@ -21,6 +22,8 @@ import com.spiramindscape.backend.resource.ResourceView;
 import com.spiramindscape.backend.target.ChecklistItem;
 import com.spiramindscape.backend.target.Target;
 import com.spiramindscape.backend.target.TargetService;
+import com.spiramindscape.backend.upcoming.DueReminderView;
+import com.spiramindscape.backend.upcoming.ReminderService;
 import com.spiramindscape.backend.upcoming.UpcomingEventService;
 import com.spiramindscape.backend.upcoming.UpcomingEventView;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +47,7 @@ public class SpiraGraphqlController {
     private final TargetService targetService;
     private final ResourceService resourceService;
     private final UpcomingEventService upcomingEventService;
+    private final ReminderService reminderService;
 
     // Queries
 
@@ -104,6 +108,11 @@ public class SpiraGraphqlController {
         return upcomingEventService.findAll();
     }
 
+    @QueryMapping
+    public List<DueReminderView> dueReminders() {
+        return reminderService.due();
+    }
+
     // Upcoming mutations
 
     @MutationMapping
@@ -115,6 +124,21 @@ public class SpiraGraphqlController {
     public Boolean deleteUpcomingEvent(@Argument Long id) {
         upcomingEventService.delete(id);
         return true;
+    }
+
+    @MutationMapping
+    public UpcomingEventView updateUpcomingEvent(@Argument Long id, @Argument UpdateUpcomingEventInput input) {
+        return upcomingEventService.update(id, input);
+    }
+
+    @MutationMapping
+    public Boolean answerReminder(@Argument Long eventId, @Argument String action) {
+        return reminderService.answer(eventId, action);
+    }
+
+    @MutationMapping
+    public Boolean setTimeZone(@Argument String zone) {
+        return reminderService.setTimeZone(zone);
     }
 
     @MutationMapping

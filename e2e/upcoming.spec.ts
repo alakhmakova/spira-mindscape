@@ -79,7 +79,7 @@ test("a goal's event carries its deadline both ways", async ({ page }) => {
 
   const dialog = await openAddEvent(page);
   await dialog.getByRole("radio", { name: "Goal" }).click();
-  await dialog.getByRole("combobox").click();
+  await dialog.getByRole("combobox", { name: "Choose goal" }).click();
   await page.getByRole("option", { name: title }).click();
   await expect(dialog).toContainText(
     "Changing it moves the goal's deadline too.",
