@@ -240,7 +240,7 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
 
-    implementation("com.apollographql.apollo:apollo-runtime:4.1.0")
+    implementation("com.apollographql.apollo:apollo-runtime:5.2.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // `implementation`, not `debugImplementation`: Network.kt lives in the main source set,
     // so a debug-only dependency would break the release compile. BuildConfig.DEBUG is what
