@@ -72,3 +72,7 @@ Claude outputs/
 # copies OUTSIDE the working tree. Nothing in the app reads them any more.
 /grow/
 /backend/src/main/resources/books/*.txt
+
+# Python bytecode — rewritten on every test run, never source.
+__pycache__/
+*.pyc
