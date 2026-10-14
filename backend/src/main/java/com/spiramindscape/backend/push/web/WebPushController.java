@@ -61,6 +61,12 @@ public class WebPushController {
         return ResponseEntity.noContent().build();
     }
 
+    /** A test notification to the caller's own subscribed browsers (Settings → Notifications). */
+    @PostMapping("/test")
+    public WebPushService.TestResult test() {
+        return webPushService.sendTest(currentUserProvider.getCurrentUser().getId());
+    }
+
     @PostMapping("/unsubscribe")
     public ResponseEntity<Void> unsubscribe(@RequestBody(required = false) EndpointRequest body) {
         if (body == null || body.endpoint() == null) {

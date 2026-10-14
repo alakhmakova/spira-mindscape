@@ -33,6 +33,19 @@ self.addEventListener("push", (event) => {
   } catch {
     data = {};
   }
+  // Settings → Notifications → "Send a test notification": proves the whole path to this device.
+  if (data.type === "test") {
+    event.waitUntil(
+      self.registration.showNotification("Spira", {
+        body: "Test notification — your reminders will arrive like this.",
+        tag: "spira-test",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/badge-96.png",
+        data: { eventId: "" },
+      }),
+    );
+    return;
+  }
   const eventId = typeof data.eventId === "string" ? data.eventId : "";
   event.waitUntil(
     (async () => {
