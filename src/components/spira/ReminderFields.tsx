@@ -382,9 +382,7 @@ function CustomReminderForm({
       : timed
         ? "minute"
         : "day";
-  const [amount, setAmount] = useState(
-    initial && initial.amount > 0 ? String(initial.amount) : "1",
-  );
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "1");
   const [unit, setUnit] = useState<ReminderUnit>(startUnit);
   const [at, setAt] = useState(
     minuteToTime(initial?.atMinuteOfDay ?? DEFAULT_MINUTE),
@@ -436,10 +434,20 @@ function CustomReminderForm({
           }}
           aria-invalid={showError ? true : undefined}
           aria-describedby={
-            showError ? "custom-reminder-amount-error" : undefined
+            showError
+              ? "custom-reminder-amount-hint custom-reminder-amount-error"
+              : "custom-reminder-amount-hint"
           }
           className={cn(FIELD, "w-28")}
         />
+        <p
+          id="custom-reminder-amount-hint"
+          className="mt-1.5 text-xs text-muted-foreground"
+        >
+          {timed
+            ? "0 — at the time of the event itself."
+            : "0 — on the day of the event, at the time below."}
+        </p>
         {showError ? (
           <p
             id="custom-reminder-amount-error"

@@ -8,8 +8,10 @@ Manager and the Cloud Scheduler job — is the owner's, and is written out in
 
 Where the build differs from this plan, and why:
 
-- **`amount` can be 0** ("On the day at 09:00", "At the time of the event"); the plan's 1–999 is
-  what the Custom dialog asks for. The server accepts 0–999.
+- **`amount` can be 0** — "On the day at 09:00", and **"At the time of the event"**, which is the
+  first preset of a timed date (owner, 2026-10-14: a reminder at exactly the event's own date and
+  time). The Custom dialog takes 0–999 too, so an all-day date can be reminded on its own day at
+  any time. The server accepts 0–999.
 - **The Custom dialog is a modal on a phone too**, not a sheet: it is a value picked inside a form
   that is already open, which is CLAUDE.md 3e-ter's rule for the date picker.
 - **No Web Push library.** The encryption (RFC 8291) and VAPID (RFC 8292) are on the JDK's own

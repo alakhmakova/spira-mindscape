@@ -90,7 +90,7 @@ describe("CustomReminderDialog", () => {
     await user.clear(number);
     await user.tab();
     expect(screen.getByRole("alert").textContent).toBe(
-      "Enter a number from 1 to 999",
+      "Enter a number from 0 to 999",
     );
     expect(number.getAttribute("aria-invalid")).toBe("true");
     expect(
@@ -151,10 +151,10 @@ describe("CustomReminderDialog", () => {
   });
 });
 
-it("amountError accepts 1 to 999 only", () => {
+it("amountError accepts 0 to 999 — 0 is the event's own time", () => {
+  expect(amountError("0")).toBeUndefined();
   expect(amountError("1")).toBeUndefined();
   expect(amountError("999")).toBeUndefined();
-  expect(amountError("0")).toBeDefined();
   expect(amountError("")).toBeDefined();
   expect(amountError("1000")).toBeDefined();
 });

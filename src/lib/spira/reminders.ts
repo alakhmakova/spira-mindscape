@@ -36,6 +36,8 @@ export const ALL_DAY_PRESETS: Reminder[] = [
 ];
 
 export const TIMED_PRESETS: Reminder[] = [
+  // At the event's own date and time (owner, 2026-10-14). An all-day date's twin is "On the day".
+  { amount: 0, unit: "minute" },
   { amount: 5, unit: "minute" },
   { amount: 10, unit: "minute" },
   { amount: 1, unit: "hour" },
@@ -50,7 +52,7 @@ export function presetsFor(timed: boolean): Reminder[] {
 
 /** Every new event gets one (owner, 2026-10-10): on the day at 09:00, or 1 hour before. */
 export function defaultReminder(timed: boolean): Reminder {
-  return timed ? TIMED_PRESETS[2] : ALL_DAY_PRESETS[0];
+  return timed ? { amount: 1, unit: "hour" } : ALL_DAY_PRESETS[0];
 }
 
 /** A stable identity — the Select's value, and how duplicates are recognised. */
@@ -194,7 +196,7 @@ export function convertReminders(
     if (toTimed) {
       next =
         r.amount === 0
-          ? defaultReminder(true)
+          ? { amount: 0, unit: "minute" } // "on the day" becomes "at the time"
           : { amount: r.amount, unit: r.unit };
     } else if (r.unit === "minute" || r.unit === "hour") {
       next = defaultReminder(false);
@@ -219,11 +221,14 @@ export function deviceTimeZone(): string | undefined {
   }
 }
 
-/** "Enter a number from 1 to 999", or nothing when the field is fine. */
+/**
+ * "Enter a number from 0 to 999", or nothing when the field is fine. 0 is a real answer: at the
+ * event's own time, or on its own day at the time chosen (owner, 2026-10-14).
+ */
 export function amountError(text: string): string | undefined {
   const value = Number(text);
-  if (!/^\d{1,3}$/.test(text.trim()) || value < 1 || value > MAX_AMOUNT) {
-    return `Enter a number from 1 to ${MAX_AMOUNT}`;
+  if (!/^\d{1,3}$/.test(text.trim()) || value < 0 || value > MAX_AMOUNT) {
+    return `Enter a number from 0 to ${MAX_AMOUNT}`;
   }
   return undefined;
 }
