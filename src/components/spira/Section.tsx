@@ -42,7 +42,7 @@ export function Section({
                   !open && "-rotate-90",
                 )}
               />
-              {/* Regular serif weight — a section name is a heading, not a bold label (owner asked
+              {/* Regular weight — a section name is a heading, not a bold label (owner asked
               for these titles not to read as bold on mobile). */}
               <h2 className="font-heading text-2xl font-normal">{title}</h2>
               {typeof count === "number" && count > 0 && (
