@@ -50,7 +50,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install the Postgres client the server asks for
         env:
@@ -160,7 +160,7 @@ jobs:
           ls -la backup
 
       - name: Keep it
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # **No colons.** `github.run_started_at` is an ISO-8601 timestamp, and
           # `upload-artifact` rejects a name containing `:` — so the first run would have done
