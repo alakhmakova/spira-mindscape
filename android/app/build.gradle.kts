@@ -249,7 +249,7 @@ dependencies {
 
     // Firebase Crashlytics + Analytics (crash reporting). Active only when google-services.json
     // is present and the plugins above are applied; the libraries are harmless otherwise.
-    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation(platform("com.google.firebase:firebase-bom:35.0.0"))
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-analytics")
     // Push notifications (FCM). await() on the Firebase Task APIs comes from coroutines-play-services.
