@@ -241,11 +241,11 @@ dependencies {
     implementation(composeBom)
 
     implementation("com.apollographql.apollo:apollo-runtime:4.1.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
     // `implementation`, not `debugImplementation`: Network.kt lives in the main source set,
     // so a debug-only dependency would break the release compile. BuildConfig.DEBUG is what
     // keeps the interceptor from ever being installed in a release build.
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.5.0")
 
     // Firebase Crashlytics + Analytics (crash reporting). Active only when google-services.json
     // is present and the plugins above are applied; the libraries are harmless otherwise.
@@ -281,7 +281,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
     // Android stubs org.json in unit tests ("not mocked"); pull the real impl for JVM tests.
     testImplementation("org.json:json:20240303")
     // Robolectric provides a real Android runtime (Context/SharedPreferences) for JVM tests.
