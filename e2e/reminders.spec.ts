@@ -64,7 +64,7 @@ test("a timed event with a custom reminder, edited back to none", async ({
 
   await dialog.getByRole("button", { name: "Add reminder" }).click();
   await expect(dialog).toContainText(
-    "You’ll be reminded on June 19 at 18:30 and June 19 at 21:25.",
+    "You’ll be reminded on June 19 at 18:30 and June 19 at 21:30.",
   );
   await axeScan(page, "Add event — reminders", {}, '[role="dialog"]');
 
@@ -72,8 +72,10 @@ test("a timed event with a custom reminder, edited back to none", async ({
   await expect(dialog).toBeHidden();
 
   const row = upcoming(page).getByRole("listitem").filter({ hasText: name });
-  await expect(row).toContainText("Today at 21:30");
-  await expect(row.getByRole("img", { name: "2 reminders" })).toBeVisible();
+  // Two lines under the name: the calendar with the event's own time, and the bell with the
+  // nearest reminder still to come — 3 hours before 21:30, ahead of the one at the time itself.
+  await expect(row).toContainText("Date: Today at 21:30");
+  await expect(row).toContainText("Next reminder: Today at 18:30");
 
   // What the server stored.
   const stored = await page.request.post("/graphql", {
@@ -91,7 +93,7 @@ test("a timed event with a custom reminder, edited back to none", async ({
   expect(saved?.time).toBe("21:30");
   expect(saved?.reminders).toEqual([
     { amount: 3, unit: "hour", atMinuteOfDay: null },
-    { amount: 5, unit: "minute", atMinuteOfDay: null },
+    { amount: 0, unit: "minute", atMinuteOfDay: null },
   ]);
 
   // Edit: the same form, filled in; take both reminders away.
@@ -102,14 +104,15 @@ test("a timed event with a custom reminder, edited back to none", async ({
     .getByRole("button", { name: /Remove reminder: 3 hours before/ })
     .click();
   await edit
-    .getByRole("button", { name: /Remove reminder: 5 minutes before/ })
+    .getByRole("button", { name: /Remove reminder: At the time of the event/ })
     .click();
   await expect(edit).toContainText(
     "No reminder — this date will only show in Upcoming.",
   );
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(edit).toBeHidden();
-  await expect(row.getByRole("img", { name: /reminder/ })).toHaveCount(0);
+  await expect(row).toContainText("Date: Today at 21:30");
+  await expect(row).not.toContainText("Next reminder");
 
   await row
     .getByRole("button", { name: `Remove "${name}" from Upcoming` })

@@ -37,7 +37,7 @@ Without the setup below, steps 3–5 are simply off and step 6 still works — i
 | | Locally (`local` profile) | Production (Cloud Run) |
 |---|---|---|
 | Who runs the dispatcher | an in-process timer, every minute (`spira.reminders.local-scheduler=true`) | **Cloud Scheduler** → `POST /internal/reminders/dispatch` with an OIDC token |
-| Web Push | off unless the two `SPIRA_WEBPUSH_*` env vars are set | on once the keys are in Secret Manager |
+| Web Push | **on with no setup**: a key pair is created on first start in `~/.spira/vapid-keys.properties` (outside the repo) and reused after; the `SPIRA_WEBPUSH_*` env vars win if set | on once the keys are in Secret Manager; **off** (and the app says so) until then |
 | Why the difference | the app is always up | Cloud Run scales to zero, so an in-process timer would not run while nobody uses the app |
 
 ## 3. One-time setup (owner)
@@ -112,6 +112,11 @@ If that last command says you may not act as the service account, grant yourself
 sit far inside Cloud Run's free tier. The push services charge nothing.
 
 ### 3c. Check it
+
+**Settings → Notifications** says whether reminders can reach the device in hand and why not
+(push off on the server, plain http, a browser without push, permission blocked), and **Send a
+test notification** pushes through the whole path — server, push service, service worker — to
+every subscribed device of the account. Start there on a phone.
 
 ```
 gcloud scheduler jobs run spira-reminders --location europe-west1

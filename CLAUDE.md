@@ -1462,12 +1462,26 @@ values.
 
 #### Typography
 
-These are the **actual fonts we use** (loaded via Google Fonts on both web and Android):
+> **One face on every page (owner, 2026-10-14):** "на всех страницах оставь только основной шрифт и
+> убери отдельный шрифт для заголовков". **Headings are set in the main font** — the body face,
+> including whatever Settings → Fonts has chosen — and the "spira" wordmark stays **GCentra**
+> (`--font-wordmark`). On the web this is one token: `--font-heading: var(--font-sans)` in
+> `src/styles.css`, and `font-heading` / `h1–h3` follow it. **Android is not converted yet**
+> (`HeadingSerif` in `Type.kt` still draws ITC Clearface) — mirror it when next touching that file.
+>
+> **The serif is PARKED, not removed — keep it on record here, the owner may want it back.**
+> **ITC Clearface** (Bold + Bold Italic, licensed) with **Playfair Display** → Georgia as fallback:
+> its files stay in `public/fonts/` and `res/font/`, and its `@font-face` rules stay in
+> `styles.css` (a browser fetches a face only when something uses it, so they cost nothing). To
+> bring it back on the web: set `--font-heading` to `"ITC Clearface", "Playfair Display", Georgia,
+> serif` and restore `&family=Playfair+Display:wght@600;700` in the Google Fonts import at the top
+> of `styles.css` and in the `<link>` in `index.html`. The leading / tracking rules below were
+> written for it and still hold.
 
-| Role | Font (brand → loaded fallback) | Leading | Tracking |
+| Role | Font | Leading | Tracking |
 |---|---|---|---|
-| Headline | **ITC Clearface** (serif) → **Playfair Display** → Georgia | 110% | tight |
-| Body | **GCentra** (sans, Book 400 + Medium 500) → system sans | 130% | 0 |
+| Headline | **the main font** (web); ITC Clearface → Playfair Display → Georgia is **parked** | 110% | tight |
+| Body | **GCentra** (sans, Book 400 + Medium 500) → system sans — switchable in Settings → Fonts | 130% | 0 |
 
 The brand faces are **ITC Clearface** (headlines) and **GCentra** (body) — Gusto's **licensed**
 brand fonts, now **present** in `public/fonts/` (web) and `res/font/` (Android), so they render on
@@ -1490,8 +1504,8 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
 >
 > **The body face is switchable at runtime while the owner picks one** (GRO-122): **Settings →
 > Fonts** carries **many** candidates at once — fifteen as of 2026-08-17, grouped by whether they
-> have Cyrillic — and a tap re-fonts the whole app. It moves **only** the body face; headings stay
-> ITC Clearface.
+> have Cyrillic — and a tap re-fonts the whole app. Headings follow it on the web now (see "One
+> face on every page" above); on Android they still stay ITC Clearface.
 >
 > **Adding one more is a routine five-file operation, and it is NOT the brand-swap procedure.**
 > Both are written out in `docs/changing-fonts.md` — §1 to add a candidate, §3 to swap a brand face.
@@ -1507,8 +1521,9 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
   and body** so the hierarchy reads.
 - **Line length:** headlines are **3–5 words per line, max** — keep them short for impact. If it's
   long-form, it's body copy → set it in the body font, not the headline serif.
-- Headings use the serif; everything else uses the sans. If a heading font is ever swapped, change
-  **only** `HeadingSerif` in `Type.kt` — the leading/tracking/weight rules above stay.
+- Headings use the main font on the web (the serif is parked — see above). If a heading font is
+  ever swapped, change **only** `--font-heading` in `styles.css` / `HeadingSerif` in `Type.kt` — the
+  leading/tracking/weight rules above stay.
 
 #### Font loading strategy
 
@@ -1516,7 +1531,8 @@ heavier weight, so **bold/semibold text renders GCentra Medium** (no Roboto, no 
 claims `font-weight: 500 900`) and **ITC Clearface**, pointing at `public/fonts/…` (served at
 `/fonts/…`); the `--font-heading` / `--font-sans` / `--font-display` tokens list the brand font first,
 then system fallbacks (no Roboto). The Google Fonts `@import` (mirrored by the `<link>` in
-`index.html`) loads only **Playfair Display** + JetBrains Mono now.
+`index.html`) loads only JetBrains Mono now — Playfair Display is dropped from it while the serif is
+parked.
 
 **Android** (`Type.kt`): bundles **ITC Clearface** (headlines) and **GCentra** (body — Book + Medium,
 with Medium also registered at `FontWeight.Bold`) under `res/font/`; `HeadingSerif` = ITC Clearface,

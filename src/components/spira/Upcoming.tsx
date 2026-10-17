@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
   Bell,
+  Calendar,
   ChevronDown,
   ChevronUp,
   CirclePlus,
@@ -16,6 +17,7 @@ import {
   type UpcomingGroup,
 } from "@/lib/spira/upcoming";
 import { useUpcoming } from "@/lib/spira/upcoming-store";
+import { momentLabel, nextReminderAt } from "@/lib/spira/reminders";
 import { AddEventDialog } from "./AddEventDialog";
 import { ConfirmDialog, QuotedName } from "./ConfirmDialog";
 
@@ -191,32 +193,21 @@ function UpcomingCategory({
       <ul id={listId} hidden={!open} className="mt-1.5 space-y-2.5 pl-6">
         {group.events.map((event) => (
           <li key={event.id} className="flex items-start gap-2">
-            {/* The name and the line under it open the event for editing — its time and its
-                reminders (plan §2). A bell says it has reminders. */}
+            {/* The name and the lines under it open the event for editing — its time and its
+                reminders (plan §2). */}
             <button
               type="button"
               onClick={() => onEdit(event)}
               aria-label={`Edit "${event.title}"`}
+              // The label names the action; the date and the next reminder are read after it.
+              aria-describedby={`upcoming-when-${event.id}`}
               className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
             >
               <span className="break-words text-sm font-medium leading-snug text-foreground">
                 {event.title}
               </span>
-              <span className="flex items-center gap-1.5 text-sm leading-snug text-muted-foreground">
-                {upcomingWhen(event.date)}
-                {event.record.time ? ` at ${event.record.time}` : ""}
-                {event.record.reminders?.length ? (
-                  <Bell
-                    role="img"
-                    aria-hidden={false}
-                    aria-label={
-                      event.record.reminders.length === 1
-                        ? "1 reminder"
-                        : `${event.record.reminders.length} reminders`
-                    }
-                    className="h-3.5 w-3.5 shrink-0"
-                  />
-                ) : null}
+              <span id={`upcoming-when-${event.id}`} className="contents">
+                <EventWhen event={event} />
               </span>
             </button>
             {/* 24px, the 2.5.8 floor, and always there: a phone has no hover to reveal it on. */}
@@ -233,5 +224,33 @@ function UpcomingCategory({
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Two lines under an event's name (owner, 2026-10-14): **the calendar** — when the event is, with
+ * its time if it has one — and **the bell** — when the nearest reminder still to come goes off.
+ * The bell line is left out when there is no reminder, or when every one has already gone off:
+ * a time in the past there would read as a promise.
+ */
+function EventWhen({ event }: { event: ResolvedUpcomingEvent }) {
+  const { time, reminders } = event.record;
+  const next = nextReminderAt(event.date, time, reminders);
+  return (
+    <>
+      <span className="flex items-center gap-1.5 text-sm leading-snug text-muted-foreground">
+        <Calendar aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+        <span className="sr-only">Date: </span>
+        {upcomingWhen(event.date)}
+        {time ? ` at ${time}` : ""}
+      </span>
+      {next ? (
+        <span className="flex items-center gap-1.5 text-sm leading-snug text-muted-foreground">
+          <Bell aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="sr-only">Next reminder: </span>
+          {momentLabel(next)}
+        </span>
+      ) : null}
+    </>
   );
 }
