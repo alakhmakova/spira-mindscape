@@ -1987,6 +1987,30 @@ index document.
 
 ---
 
+## 🔑 `AI_ENCRYPTION_KEY` is never rotated casually (hard rule)
+
+**Do not rotate `AI_ENCRYPTION_KEY` without clearing `web_push_vapid_key` as well**: the stored
+private key can no longer be read, push turns off (the app says so), and deleting the row makes a
+fresh pair on the next push:
+
+```sql
+DELETE FROM web_push_vapid_key;
+```
+
+- **One key encrypts three things** (AES-256-GCM, `ai/crypto/EncryptionService`): users' AI
+  provider keys, the Google refresh token used for Docs export, and the server's own Web Push
+  private key (V43, `push/web/VapidKeyStore`). A rotation makes all three unreadable — users
+  re-add their AI keys and reconnect Google Docs; push needs the `DELETE` above.
+- **Phones do not come back by themselves.** The new pair is a new public key; each browser
+  re-subscribes only the next time Spira is opened in it, and until then it gets no notifications.
+  Say so to the owner, and have every device opened once.
+- Never suggest rotating it as a fix for anything else, and never change its value in
+  `application.properties` (the default there is the dev key only).
+
+Full context: `docs/reminders-and-web-push.md` §3a, `docs/deploy-gcp-cloud-run.md` §3.
+
+---
+
 ## Build / run reference
 
 **Start the database first** — the backend will not boot without it, and that is the single most

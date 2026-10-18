@@ -140,6 +140,10 @@ ai.encryption.key=${AI_ENCRYPTION_KEY:c3BpcmEtZGV2LW9ubHkta2V5LTMyYnl0ZXMteHl6ei
 
 - In development: the default hardcoded value is used (Base64 of a dev-only string)
 - In production: set the `AI_ENCRYPTION_KEY` environment variable to a fresh 32-byte Base64 value
+- **Never rotate it casually.** It also encrypts the Google refresh token and the server's Web Push
+  private key. After a change every stored AI key must be re-entered, and push stays off until
+  `DELETE FROM web_push_vapid_key;` — see
+  [reminders-and-web-push.md §3a](reminders-and-web-push.md#3a-vapid-keys--nothing-to-do).
 
 To generate a production key:
 ```bash

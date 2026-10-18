@@ -65,7 +65,16 @@ services see; it is optional too.
 
 **Do not rotate `AI_ENCRYPTION_KEY`** without clearing `web_push_vapid_key` as well: the stored
 private key can no longer be read, push turns off (the app says so), and deleting the row makes a
-fresh pair on the next push.
+fresh pair on the next push:
+
+```sql
+DELETE FROM web_push_vapid_key;
+```
+
+A new pair means a new public key, and every browser's subscription was made under the old one.
+Each browser re-subscribes by itself the **next time Spira is opened** in it; until then that
+device gets no notifications, though the in-app "decide now" page still appears whenever Spira is
+open. So after a rotation, open Spira once on every phone and laptop that should be reminded.
 
 ### 3b. Cloud Scheduler → the dispatcher
 
@@ -99,7 +108,12 @@ gcloud scheduler jobs create http spira-reminders --location europe-west1 `
 ```
 
 If that last command says you may not act as the service account, grant yourself
-`roles/iam.serviceAccountUser` on `spira-scheduler` and run it again.
+`roles/iam.serviceAccountUser` on `spira-scheduler` and run it again:
+
+```
+gcloud iam service-accounts add-iam-policy-binding spira-scheduler@<PROJECT_ID>.iam.gserviceaccount.com `
+  --member "user:<your Google account email>" --role roles/iam.serviceAccountUser
+```
 
 **Cost.** Cloud Scheduler gives three jobs free per billing account; 1,440 short wake-ups a day
 sit far inside Cloud Run's free tier. The push services charge nothing.
