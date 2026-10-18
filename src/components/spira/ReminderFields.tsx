@@ -242,9 +242,9 @@ export function RemindersField({
       >
         {reminderSentence(date, time, reminders)}
       </p>
-      {reminders.length > 0 && PUSH_NOTE[push] ? (
+      {reminders.length > 0 && push && PUSH_NOTE[push] ? (
         <p className="mt-1 text-pretty text-sm leading-relaxed text-muted-foreground">
-          {PUSH_NOTE[push]}
+          {push ? PUSH_NOTE[push] : null}
         </p>
       ) : null}
 
@@ -282,10 +282,14 @@ const PUSH_NOTE: Partial<Record<PushState, string>> = {
     "Notifications are blocked for Spira in this browser, so reminders will show only inside Spira.",
   unsupported:
     "This browser can’t show notifications, so reminders will show only inside Spira. On an iPhone, add Spira to the Home Screen first.",
+  insecure:
+    "Notifications need a secure (https) address, so on this one reminders will show only inside Spira.",
+  off: "Notifications to your phone or computer are not switched on for this Spira yet, so reminders will show only inside Spira.",
 };
 
-function usePushState(): PushState {
-  const [state, setState] = useState<PushState>("off");
+/** `null` until known, so no note flashes up and then changes. */
+function usePushState(): PushState | null {
+  const [state, setState] = useState<PushState | null>(null);
   useEffect(() => {
     let live = true;
     void pushState().then((s) => {
@@ -378,9 +382,7 @@ function CustomReminderForm({
       : timed
         ? "minute"
         : "day";
-  const [amount, setAmount] = useState(
-    initial && initial.amount > 0 ? String(initial.amount) : "1",
-  );
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "1");
   const [unit, setUnit] = useState<ReminderUnit>(startUnit);
   const [at, setAt] = useState(
     minuteToTime(initial?.atMinuteOfDay ?? DEFAULT_MINUTE),
@@ -432,10 +434,20 @@ function CustomReminderForm({
           }}
           aria-invalid={showError ? true : undefined}
           aria-describedby={
-            showError ? "custom-reminder-amount-error" : undefined
+            showError
+              ? "custom-reminder-amount-hint custom-reminder-amount-error"
+              : "custom-reminder-amount-hint"
           }
           className={cn(FIELD, "w-28")}
         />
+        <p
+          id="custom-reminder-amount-hint"
+          className="mt-1.5 text-xs text-muted-foreground"
+        >
+          {timed
+            ? "0 — at the time of the event itself."
+            : "0 — on the day of the event, at the time below."}
+        </p>
         {showError ? (
           <p
             id="custom-reminder-amount-error"

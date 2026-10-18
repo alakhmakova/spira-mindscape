@@ -96,6 +96,18 @@ class WebPushControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("A test push needs CSRF, and reports how many browsers it reached")
+    void testPush() throws Exception {
+        mockMvc.perform(post("/api/push/web/test").with(authentication(auth)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/push/web/test").with(authentication(auth)).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.subscriptions").value(0))
+                .andExpect(jsonPath("$.sent").value(0));
+    }
+
+    @Test
     @DisplayName("Anonymous is 401 and a missing CSRF token is 403; neither stores anything")
     void authAndCsrf() throws Exception {
         String ok = body("https://fcm.googleapis.com/fcm/send/abc", P256DH, AUTH);

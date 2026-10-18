@@ -72,6 +72,21 @@ public class WebPushService {
         }
     }
 
+    /** How a test push went: how many of the user's browsers are subscribed, and how many accepted it. */
+    public record TestResult(boolean enabled, int subscriptions, int sent) {}
+
+    /**
+     * A test notification to the caller's own browsers — the one way to tell, from a phone, whether
+     * push reaches it at all, without waiting for a reminder to come due.
+     */
+    public TestResult sendTest(Long userId) {
+        int subscriptions = repository.findByUserIdOrderByLastSeenAtDesc(userId).size();
+        if (!properties.enabled()) {
+            return new TestResult(false, subscriptions, 0);
+        }
+        return new TestResult(true, subscriptions, sendToUser(userId, "{\"type\":\"test\"}"));
+    }
+
     /**
      * Sends a payload to every browser the user has subscribed; drops the ones the push service
      * says are gone. Returns how many accepted it.

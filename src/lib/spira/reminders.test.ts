@@ -5,6 +5,8 @@ import {
   convertReminders,
   defaultReminder,
   fireAt,
+  momentLabel,
+  nextReminderAt,
   reminderLabel,
   reminderSentence,
   timeToMinute,
@@ -27,8 +29,9 @@ describe("presets", () => {
     ]);
   });
 
-  it("a timed date offers minutes and hours as well", () => {
+  it("a timed date offers the event's own time, then minutes and hours", () => {
     expect(TIMED_PRESETS.map((r) => reminderLabel(r, true))).toEqual([
+      "At the time of the event",
       "5 minutes before",
       "10 minutes before",
       "1 hour before",
@@ -81,6 +84,25 @@ describe("fireAt", () => {
     expect(
       fireAt("2030-10-20T00:00:00.000Z", undefined, ALL_DAY_PRESETS[0]),
     ).toEqual(new Date(2030, 9, 20, 9, 0));
+  });
+
+  it("0 is the event's own moment: its time, or its day at the chosen time", () => {
+    expect(fireAt(JUNE_19, "14:00", { amount: 0, unit: "minute" })).toEqual(
+      new Date(2030, 5, 19, 14, 0),
+    );
+    expect(
+      fireAt(JUNE_19, undefined, {
+        amount: 0,
+        unit: "day",
+        atMinuteOfDay: 18 * 60 + 30,
+      }),
+    ).toEqual(new Date(2030, 5, 19, 18, 30));
+    expect(
+      reminderLabel(
+        { amount: 0, unit: "day", atMinuteOfDay: 18 * 60 + 30 },
+        false,
+      ),
+    ).toBe("On the day at 18:30");
   });
 
   it("reads a bare YYYY-MM-DD as that day", () => {
@@ -161,4 +183,35 @@ it("timeToMinute reads HH:mm only", () => {
   expect(timeToMinute("09:30")).toBe(570);
   expect(timeToMinute("24:00")).toBeUndefined();
   expect(timeToMinute("9:30")).toBeUndefined();
+});
+
+describe("the Upcoming column's two lines", () => {
+  const now = new Date(2030, 5, 17, 10, 0);
+
+  it("nextReminderAt picks the nearest moment still to come", () => {
+    const reminders = [
+      { amount: 1, unit: "week" as const, atMinuteOfDay: 540 }, // June 12 — gone
+      { amount: 1, unit: "day" as const, atMinuteOfDay: 540 }, // June 18 09:00
+      { amount: 0, unit: "day" as const, atMinuteOfDay: 540 }, // June 19 09:00
+    ];
+    expect(nextReminderAt(JUNE_19, undefined, reminders, now)).toEqual(
+      new Date(2030, 5, 18, 9, 0),
+    );
+    expect(
+      nextReminderAt(JUNE_19, undefined, [reminders[0]], now),
+    ).toBeUndefined();
+    expect(nextReminderAt(JUNE_19, undefined, undefined, now)).toBeUndefined();
+  });
+
+  it("momentLabel says today, tomorrow, or the day", () => {
+    expect(momentLabel(new Date(2030, 5, 17, 13, 0), now)).toBe(
+      "Today at 13:00",
+    );
+    expect(momentLabel(new Date(2030, 5, 18, 9, 0), now)).toBe(
+      "Tomorrow at 09:00",
+    );
+    expect(momentLabel(new Date(2030, 5, 24, 9, 0), now)).toBe(
+      "Mon Jun 24 at 09:00",
+    );
+  });
 });

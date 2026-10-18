@@ -283,6 +283,9 @@ export async function clippedText(page: Page): Promise<string[]> {
       if (style.overflowY !== "hidden" && style.overflow !== "hidden") continue;
       if (style.webkitLineClamp !== "none") continue;
       if (style.textOverflow === "ellipsis") continue;
+      // A screen-reader-only label (Tailwind's `sr-only`: a 1×1 box, overflow hidden) is hidden
+      // from sight by design — it has no box to resize, and is read in full by assistive tech.
+      if (el.clientWidth <= 1 && el.clientHeight <= 1) continue;
       const hasOwnText = Array.from(el.childNodes).some(
         (node) => node.nodeType === 3 && (node.textContent ?? "").trim() !== "",
       );

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogOut } from "@/components/spira/icons";
 import { useAuth } from "@/lib/spira/auth";
 import {
@@ -14,6 +14,12 @@ import {
   ABOUT_SECTIONS,
 } from "@/lib/spira/about-content";
 import { ARTWORK_CREDITS } from "@/lib/spira/licences";
+import {
+  enableWebPush,
+  pushState,
+  sendTestPush,
+  type PushState,
+} from "@/lib/spira/web-push";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -22,7 +28,10 @@ export const Route = createFileRoute("/settings")({
   // route). Anything unrecognised falls back to My profile.
   validateSearch: (search: Record<string, unknown>): { tab?: TabId } => {
     const tab = search.tab;
-    return tab === "fonts" || tab === "about" || tab === "licences"
+    return tab === "notifications" ||
+      tab === "fonts" ||
+      tab === "about" ||
+      tab === "licences"
       ? { tab }
       : {};
   },
@@ -38,10 +47,11 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-type TabId = "profile" | "fonts" | "about" | "licences";
+type TabId = "profile" | "notifications" | "fonts" | "about" | "licences";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "profile", label: "My profile" },
+  { id: "notifications", label: "Notifications" },
   { id: "fonts", label: "Fonts" },
   { id: "about", label: "About Spira" },
   { id: "licences", label: "Licences" },
@@ -75,7 +85,9 @@ function SettingsPage() {
       <div
         role="tablist"
         aria-label="Settings sections"
-        className="mt-8 flex items-end gap-6 border-b hairline"
+        // Five tabs do not fit across a phone: the row scrolls inside itself rather than wrap
+        // a label onto two lines or push the page sideways (CLAUDE.md 3e-quinquies).
+        className="hide-scrollbar mt-8 flex items-end gap-6 overflow-x-auto border-b hairline"
       >
         {TABS.map((t) => {
           const active = t.id === tab;
@@ -86,7 +98,7 @@ function SettingsPage() {
               aria-selected={active}
               onClick={() => setTab(t.id)}
               className={cn(
-                "-mb-px border-b-[3px] px-1 pb-3 text-[15px] transition-colors",
+                "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-3 text-[15px] transition-colors",
                 active
                   ? "border-[#F45D48] font-bold text-foreground"
                   : "border-transparent font-medium text-muted-foreground hover:text-foreground",
@@ -101,6 +113,7 @@ function SettingsPage() {
       {tab === "profile" && (
         <ProfileTab email={user?.email ?? ""} name={user?.name ?? ""} />
       )}
+      {tab === "notifications" && <NotificationsTab />}
       {tab === "fonts" && <FontsTab />}
       {tab === "about" && <AboutTab />}
       {tab === "licences" && <LicencesTab />}
@@ -142,6 +155,106 @@ function ProfileTab({ email, name }: { email: string; name: string }) {
           Sign out
         </button>
       </div>
+    </div>
+  );
+}
+
+/** What this browser does with a reminder, in words — the state the Notifications tab reports. */
+const PUSH_STATUS: Record<PushState, string> = {
+  granted:
+    "On. Reminders reach this browser as notifications, even with Spira closed.",
+  ask: "Not set up in this browser yet. Allow notifications so reminders reach you with Spira closed.",
+  denied:
+    "Blocked in this browser’s settings. Reminders show only inside Spira until notifications are allowed for this site again.",
+  unsupported:
+    "This browser can’t receive notifications. On an iPhone, add Spira to the Home Screen (Share → Add to Home Screen) and open it from there.",
+  insecure:
+    "This address isn’t secure (https), and browsers allow notifications only on secure addresses.",
+  off: "Not switched on for this Spira: the server has no notification keys yet. Reminders show only inside Spira.",
+};
+
+/**
+ * Whether reminders can reach THIS device, and a way to prove it. A reminder that never arrived
+ * used to leave no clue why — server off, browser unsupported, permission refused and a
+ * subscription made under old keys all looked the same: nothing. This tab says which, and the
+ * test button sends a real push through the whole path to this device.
+ */
+function NotificationsTab() {
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    void pushState().then(setState);
+  }, []);
+
+  const allow = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      setState(await enableWebPush());
+    } catch {
+      setResult("Couldn’t subscribe this browser. Please try again.");
+    }
+    setBusy(false);
+  };
+
+  const test = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      // Make sure this browser's subscription is on the server first.
+      setState(await enableWebPush());
+      const r = await sendTestPush();
+      setResult(
+        !r.enabled
+          ? PUSH_STATUS.off
+          : r.sent > 0
+            ? `Sent to ${r.sent} ${r.sent === 1 ? "device" : "devices"}. It should appear within a few seconds.`
+            : r.subscriptions === 0
+              ? "No device of yours is subscribed yet."
+              : "None of your devices accepted it. Allow notifications here again and retry.",
+      );
+    } catch {
+      setResult("The test notification couldn’t be sent. Please try again.");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="space-y-8 pt-8" role="tabpanel">
+      <SettingRow label="This device">
+        <p className="text-[15px] text-foreground" aria-live="polite">
+          {state ? PUSH_STATUS[state] : "Checking…"}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {state === "ask" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void allow()}
+              className="h-11 rounded-md bg-primary px-5 text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+            >
+              Allow notifications
+            </button>
+          ) : null}
+          {state === "granted" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void test()}
+              className="h-11 rounded-md border-2 border-border px-5 text-[15px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+            >
+              Send a test notification
+            </button>
+          ) : null}
+        </div>
+        {result ? (
+          <p className="mt-3 text-sm text-foreground/80" role="status">
+            {result}
+          </p>
+        ) : null}
+      </SettingRow>
     </div>
   );
 }

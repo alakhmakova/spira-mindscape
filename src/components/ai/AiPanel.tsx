@@ -3679,7 +3679,7 @@ function ContentModal({
         style={{ animation: "slideUp 0.25s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-[#F3F3F3]">
-          <h3 className="font-['Playfair_Display'] text-[18px] font-semibold leading-[1.25] flex-1 break-words [overflow-wrap:anywhere]">
+          <h3 className="font-heading text-[18px] font-semibold leading-[1.25] flex-1 break-words [overflow-wrap:anywhere]">
             {title}
           </h3>
           <button
@@ -3811,22 +3811,22 @@ function Markdown({ text }: { text: string }) {
         ),
         li: ({ children }) => <li>{children}</li>,
         h1: ({ children }) => (
-          <div className="font-['Playfair_Display'] text-[19px] font-semibold mb-1.5 mt-3">
+          <div className="font-heading text-[19px] font-semibold mb-1.5 mt-3">
             {children}
           </div>
         ),
         h2: ({ children }) => (
-          <div className="font-['Playfair_Display'] text-[16.5px] font-semibold mb-1.5 mt-3">
+          <div className="font-heading text-[16.5px] font-semibold mb-1.5 mt-3">
             {children}
           </div>
         ),
         h3: ({ children }) => (
-          <div className="font-['Playfair_Display'] text-[15px] font-semibold mb-1.5 mt-2">
+          <div className="font-heading text-[15px] font-semibold mb-1.5 mt-2">
             {children}
           </div>
         ),
         h4: ({ children }) => (
-          <div className="font-['Playfair_Display'] text-[14px] font-semibold mb-1 mt-2">
+          <div className="font-heading text-[14px] font-semibold mb-1 mt-2">
             {children}
           </div>
         ),
@@ -4192,7 +4192,7 @@ function ProposalBody({
       </div>
       <div
         className={cn(
-          "font-['Playfair_Display'] font-semibold leading-[1.25]",
+          "font-heading font-semibold leading-[1.25]",
           compact ? "text-[16px]" : "text-[17px]",
         )}
       >
@@ -4250,7 +4250,7 @@ function InstructBox({
   }, []);
   return (
     <div className="flex flex-col gap-2">
-      <div className="font-['Playfair_Display'] text-[15px] font-semibold leading-[1.25]">
+      <div className="font-heading text-[15px] font-semibold leading-[1.25]">
         {headline}
       </div>
       <p className="text-[12px] text-[#003737]/55">
@@ -5046,7 +5046,7 @@ function CreateChecklistCard({
             <Ic path={meta.icon} size={12} /> {meta.label}
           </span>
         </div>
-        <div className="font-['Playfair_Display'] text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">
+        <div className="font-heading text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">
           {headline}
         </div>
         <CreateSettled p={p} isGoal={isGoal} onOpen={onOpen} />
@@ -5210,7 +5210,7 @@ function CreateConfirmCard({
           <Ic path={meta.icon} size={12} /> {meta.label}
         </span>
       </div>
-      <div className="font-['Playfair_Display'] text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">
+      <div className="font-heading text-[17px] font-semibold leading-[1.25] break-words [overflow-wrap:anywhere]">
         {headline}
       </div>
       {typeLine && (
@@ -5425,7 +5425,7 @@ function GrowStartOverlay({
         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.07em] font-bold text-[#005961]">
           GROW session
         </span>
-        <h3 className="font-['Playfair_Display'] text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
+        <h3 className="font-heading text-[22px] font-semibold mt-2.5 mb-1 leading-[1.18]">
           Focused time on a single goal
         </h3>
         <p className="text-[13.5px] text-[#003737]/60 mb-4 leading-[1.5]">
@@ -6027,7 +6027,7 @@ function EndConfirmDialog({
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1) both" }}
       >
-        <h3 className="font-['Playfair_Display'] text-[22px] font-semibold leading-[1.18] mb-2">
+        <h3 className="font-heading text-[22px] font-semibold leading-[1.18] mb-2">
           End this session?
         </h3>
         <p className="text-[13.5px] text-[#003737]/60 leading-[1.5] mb-4">
