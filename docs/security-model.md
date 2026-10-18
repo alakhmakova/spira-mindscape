@@ -227,6 +227,12 @@ token.
   never committed.
 - Connections are HTTPS (TLS terminated at Cloud Run).
 - The Google refresh token is stored encrypted too.
+- The server's Web Push (VAPID) **private key** is stored encrypted the same way
+  (`push/web/VapidKeyStore.java`, V43). It is the one secret the server makes for
+  itself rather than receiving from Secret Manager, so that push works with no
+  setup. Holding it alone sends nothing: a push also needs a browser's endpoint
+  and keys, which sit in the same database, and even then the worker shows only
+  what Spira itself returns for an event id over the user's own session.
 
 > Accepted limit: if the server *and* its secret key are both stolen, encryption
 > can't help — that's outside the threat model.

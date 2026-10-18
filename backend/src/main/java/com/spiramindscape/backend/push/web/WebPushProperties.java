@@ -7,10 +7,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.interfaces.ECPrivateKey;
@@ -20,80 +18,112 @@ import java.util.Properties;
 /**
  * The VAPID key pair and contact.
  *
- * <p><b>Production</b>: both keys come from the environment (the private one from Secret Manager)
- * and are never in the repo; with none configured, Web Push is off and the app says so.
+ * <p>Where the pair comes from, first match wins:
+ * <ol>
+ *   <li><b>The environment</b> ({@code SPIRA_WEBPUSH_PUBLIC_KEY} / {@code _PRIVATE_KEY}) — for a
+ *       deployment that keeps its pair in Secret Manager.</li>
+ *   <li><b>The database</b> ({@code web_push_vapid_key}, V43) — created on first use and reused
+ *       by every instance and every later start. This is what makes push work in production with
+ *       no setup: it used to be off until the owner generated keys and put them in Secret Manager
+ *       by hand, and the disk is no place for them there, since Cloud Run's is per instance and
+ *       short-lived and the key would change under every subscription.</li>
+ * </ol>
  *
- * <p><b>Locally</b> ({@code spira.webpush.auto-generate-keys=true}, set by the {@code local}
- * profile): with no keys in the environment, a pair is generated on first start and kept in
- * {@code ~/.spira/vapid-keys.properties}, outside the repository, readable by the owner only.
- * The same pair is reused on every later start, because a browser subscribed under one public key
- * stops receiving pushes the moment it changes. Push therefore works on a local run with no setup
- * at all — it used to be silently off there, which is how a test on a phone got nothing.
- * Never in production: Cloud Run's disk is per instance and short-lived, so the key would change
- * under every subscription.
+ * <p>When the database has no pair yet and a pair from the old local key file
+ * ({@code ~/.spira/vapid-keys.properties}) exists, that pair is the one stored, so browsers
+ * already subscribed on a local run keep receiving pushes.
+ *
+ * <p>Read lazily, not in the constructor: a database that is briefly unreachable leaves push off
+ * for that call and is tried again on the next, instead of failing the start.
  */
 @Component
 public class WebPushProperties {
 
     private static final Logger log = LoggerFactory.getLogger(WebPushProperties.class);
 
-    private final String publicKey;
-    private final String privateKey;
+    private final String envPublicKey;
+    private final String envPrivateKey;
     private final String subject;
+    private final VapidKeyStore store;
+    private final Path legacyKeyFile;
+
+    private volatile String[] pair;
 
     public WebPushProperties(
             @Value("${spira.webpush.public-key:}") String publicKey,
             @Value("${spira.webpush.private-key:}") String privateKey,
             @Value("${spira.webpush.subject:mailto:noreply@spira.app}") String subject,
-            @Value("${spira.webpush.auto-generate-keys:false}") boolean autoGenerate,
+            VapidKeyStore store,
             @Value("${spira.webpush.key-file:${user.home}/.spira/vapid-keys.properties}") String keyFile) {
-        String pub = publicKey.trim();
-        String priv = privateKey.trim();
-        if ((pub.isEmpty() || priv.isEmpty()) && autoGenerate) {
-            String[] pair = localPair(Path.of(keyFile));
-            if (pair != null) {
-                pub = pair[0];
-                priv = pair[1];
-            }
-        }
-        this.publicKey = pub;
-        this.privateKey = priv;
+        this.envPublicKey = publicKey.trim();
+        this.envPrivateKey = privateKey.trim();
         this.subject = subject.trim();
+        this.store = store;
+        this.legacyKeyFile = Path.of(keyFile);
     }
 
-    /** The stored local pair, or a new one written there. Null if neither works (push stays off). */
-    static String[] localPair(Path file) {
+    /** {public, private}, or null when no pair can be had right now (push stays off). */
+    private String[] pair() {
+        String[] current = pair;
+        if (current != null) {
+            return current;
+        }
+        synchronized (this) {
+            if (pair == null) {
+                pair = resolve();
+            }
+            return pair;
+        }
+    }
+
+    private String[] resolve() {
+        if (!envPublicKey.isEmpty() && !envPrivateKey.isEmpty()) {
+            return new String[] {envPublicKey, envPrivateKey};
+        }
         try {
-            if (Files.isReadable(file)) {
-                Properties stored = new Properties();
-                try (Reader in = Files.newBufferedReader(file)) {
-                    stored.load(in);
-                }
-                String pub = stored.getProperty("public-key", "").trim();
-                String priv = stored.getProperty("private-key", "").trim();
-                WebPushCrypto.publicKey(WebPushCrypto.decode(pub));
-                WebPushCrypto.privateKey(WebPushCrypto.decode(priv));
-                return new String[] {pub, priv};
+            String[] stored = store.loadOrCreate(this::freshPair);
+            return stored != null && !stored[0].isBlank() && !stored[1].isBlank() ? stored : null;
+        } catch (RuntimeException e) {
+            log.warn("web_push_keys_unavailable reason=database", e);
+            return null;
+        }
+    }
+
+    private String[] freshPair() {
+        String[] legacy = legacyPair(legacyKeyFile);
+        if (legacy != null) {
+            log.info("web_push_keys_created source=local_file");
+            return legacy;
+        }
+        try {
+            KeyPair kp = WebPushCrypto.newKeyPair();
+            log.info("web_push_keys_created source=generated");
+            return new String[] {
+                    WebPushCrypto.encode(WebPushCrypto.uncompressed((ECPublicKey) kp.getPublic())),
+                    WebPushCrypto.encode(scalar((ECPrivateKey) kp.getPrivate())),
+            };
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("cannot generate a VAPID key pair", e);
+        }
+    }
+
+    /** The pair from the pre-V43 local key file, or null if there is none or it is unusable. */
+    static String[] legacyPair(Path file) {
+        if (!Files.isReadable(file)) {
+            return null;
+        }
+        try {
+            Properties stored = new Properties();
+            try (Reader in = Files.newBufferedReader(file)) {
+                stored.load(in);
             }
-            KeyPair pair = WebPushCrypto.newKeyPair();
-            String pub = WebPushCrypto.encode(WebPushCrypto.uncompressed((ECPublicKey) pair.getPublic()));
-            String priv = WebPushCrypto.encode(scalar((ECPrivateKey) pair.getPrivate()));
-            Files.createDirectories(file.getParent());
-            Properties out = new Properties();
-            out.setProperty("public-key", pub);
-            out.setProperty("private-key", priv);
-            try (Writer w = Files.newBufferedWriter(file)) {
-                out.store(w, "Spira local Web Push (VAPID) keys - local development only, never commit");
-            }
-            try {
-                Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
-            } catch (UnsupportedOperationException | IOException ignored) {
-                // Windows: the file sits in the user's own profile folder, which is private already.
-            }
-            log.info("web_push_local_keys_created path={}", file);
+            String pub = stored.getProperty("public-key", "").trim();
+            String priv = stored.getProperty("private-key", "").trim();
+            WebPushCrypto.publicKey(WebPushCrypto.decode(pub));
+            WebPushCrypto.privateKey(WebPushCrypto.decode(priv));
             return new String[] {pub, priv};
         } catch (IOException | GeneralSecurityException | IllegalArgumentException e) {
-            log.warn("web_push_local_keys_unavailable path={}", file, e);
+            log.warn("web_push_local_keys_unusable path={}", file, e);
             return null;
         }
     }
@@ -107,11 +137,12 @@ public class WebPushProperties {
     }
 
     public boolean enabled() {
-        return !publicKey.isEmpty() && !privateKey.isEmpty();
+        return pair() != null;
     }
 
     public String publicKey() {
-        return publicKey;
+        String[] p = pair();
+        return p == null ? "" : p[0];
     }
 
     public String subject() {
@@ -119,6 +150,10 @@ public class WebPushProperties {
     }
 
     public ECPrivateKey signingKey() throws GeneralSecurityException {
-        return WebPushCrypto.privateKey(WebPushCrypto.decode(privateKey));
+        String[] p = pair();
+        if (p == null) {
+            throw new GeneralSecurityException("no VAPID key pair");
+        }
+        return WebPushCrypto.privateKey(WebPushCrypto.decode(p[1]));
     }
 }

@@ -9,39 +9,46 @@ contributors — human or agent — should read this top-to-bottom, then `README
 
 ---
 
-## 🔒 Commit policy (hard rule)
+## 🔒 Commit policy (hard rule, revised by the owner 2026-10-10)
 
-**Claude must never create commits or push.** The user commits everything manually.
+**Claude may commit and push its own work, as the owner, onto a working branch.** It used to be
+forbidden outright and every change went over as a patch file for the owner to apply; the owner
+lifted that on 2026-10-10 ("измени правило … все закоммить отдельными коммитами пошагово").
 
-- ❌ Do not run `git commit`, `git push`, `git add` (for staging a commit), `git merge`,
-  `git rebase`, `git reset --hard`, `git cherry-pick`, `git tag`, or `gh pr create` /
-  `gh pr merge`.
-- ✅ Read-only git is fine: `git status`, `git diff`, `git log`, `git show`, `git branch`
-  (listing).
-- ⚠️ **A hook enforces this on the owner's machine, and only there** (corrected 2026-08-30).
-  `.claude/settings.json` registers a `PreToolUse` hook on Bash — `.claude/hooks/block-git-write.js`
-  — which exits 2 on every writing form listed above. It fired for real on 2026-08-30.
-  - **But `.claude/` is gitignored** (`.gitignore` line 26) and none of it is committed, so a
-    fresh clone or another machine has **no** hook and nothing but this rule. The rule is the
-    authority; the hook is a safety net that may not be there.
-  - This entry has now been wrong in both directions: it once claimed a hook that did not exist,
-    and was then "corrected" to deny the one that does. The fact that reconciles them is that
-    the file lives **on disk and not in git** — run `ls .claude/` before believing either claim.
-  - **It matches the raw command text, not the intent**, and scans the whole string so
-    `cd x; <write command>` is caught too. That also means a heredoc *quoting* one of those
-    commands is blocked — editing this very section from Bash fails. Use Edit/Write for it.
+- ✅ `git add`, `git commit` and `git push` **to a working branch** (a feature branch or the
+  session's `claude/…` branch) — **one commit per logical step**, each one building and passing
+  its checks on its own, rather than one commit for a day's work.
+- ❌ Still only when the owner asks, never on Claude's own initiative: **`git merge`**, merging a
+  PR (`gh pr merge`), **anything that rewrites published history** (`git rebase` of pushed
+  commits, `git reset --hard` onto a different commit, `git commit --amend` of a pushed commit,
+  **`git push --force`** in any form), **`git tag`**, and **releases** (see "Cutting a release"
+  below — that order still stands). Opening a PR is fine when asked.
+- ❌ **Never push to `main`** directly; it only moves by a merged PR.
+- ✅ Read-only git is always fine: `git status`, `git diff`, `git log`, `git show`, `git branch`.
+- ⚠️ **The hook on the owner's machine still blocks every write.** `.claude/settings.json`
+  registers a `PreToolUse` hook on Bash — `.claude/hooks/block-git-write.js` — which exits 2 on
+  `git commit`, `git push`, `git add` and the rest. **`.claude/` is gitignored**, so this file
+  cannot change it: until the owner edits or removes that hook, a local session still cannot
+  commit, and a cloud session (which has no `.claude/`) can.
+  - It matches the raw command text, not the intent, and scans the whole string, so a heredoc
+    *quoting* one of those commands is blocked too — edit this section with Edit/Write.
   - The same untracked `settings.json` runs the `Stop` hooks named below, so if lint and the
     unit tests never seem to run at the end of a turn, this is why.
 
-When work is ready, summarize what changed and let the user commit.
-
-**Claude never appears as a contributor** (owner, 2026-10-09). If the owner explicitly asks the
-agent to commit, the commit is authored as the owner — `Anastasiya Lakhmakova
+**Claude never appears as a contributor** (owner, 2026-10-09). Every commit is authored **and
+committed** as the owner — `Anastasiya Lakhmakova
 <101577820+alakhmakova@users.noreply.github.com>`, never `Claude <noreply@anthropic.com>` — and
 carries **no `Co-Authored-By: Claude` and no `Claude-Session:` trailer**, whatever a session's
-default attribution says. Either one puts Claude in the repository's contributor list. A fix
-handed over as a file is a plain `git diff` (applied with `git apply`), not `git format-patch`
-output, which carries the author with it.
+default attribution says. Either one puts Claude in the repository's contributor list. Set the
+identity on the command itself so a machine's global config cannot leak in:
+
+```
+git -c user.name="Anastasiya Lakhmakova" \
+    -c user.email="101577820+alakhmakova@users.noreply.github.com" commit -m "…"
+```
+
+A fix handed over as a file is still a plain `git diff` (applied with `git apply`), not
+`git format-patch` output, which carries the author with it.
 
 ### Cutting a release (hard order, owner 2026-08-30)
 
@@ -83,8 +90,9 @@ and the remote still holds the original until it is pushed.
 
 - ✅ The agent may run `git filter-repo` (or BFG) and inspect the result: `git log`, `git
   show`, `git cat-file`, verifying the paths are gone.
-- ❌ **`git push` stays absolutely forbidden, `--force` included.** That is the irreversible,
-  public step, and it is the owner's to take. The agent prints the command; the owner runs it.
+- ❌ **Pushing a rewrite stays the owner's** — it is a `--force` push, which the commit policy
+  above keeps for the owner. That is the irreversible, public step: the agent prints the
+  command; the owner runs it.
 - Before any rewrite: the working tree must be committed or stashed **by the owner**
   (`filter-repo` refuses to run on a dirty repo), and the agent must state plainly what will
   change — every SHA from the first affected commit onward, a force-push required, and any
@@ -166,7 +174,8 @@ Follow this sequence for any code change, small or large:
 7. **Document** — for a **big** step (new module, new auth/deploy path, architectural "why"),
    propose an entry in `docs/` or `specs/` and ask the user. Skip docs for small edits
    (renames, styling, bugfixes) — code, git history, and tests cover those.
-8. **Hand off — don't commit.** The user commits.
+8. **Commit and push, step by step** — as the owner, onto the working branch, one commit per
+   logical step (see the commit policy). No merge, no force-push, no tag unless asked.
 
 ---
 
@@ -1975,6 +1984,30 @@ Conventions for the mirrored issues, so a re-sync stays consistent:
 user plainly that the mirror is now stale. Same for adding a new bug file: it needs a new issue.
 And when a file is added to or renamed in `docs/` / `specs/`, fix its row in the Docs and Specs
 index document.
+
+---
+
+## 🔑 `AI_ENCRYPTION_KEY` is never rotated casually (hard rule)
+
+**Do not rotate `AI_ENCRYPTION_KEY` without clearing `web_push_vapid_key` as well**: the stored
+private key can no longer be read, push turns off (the app says so), and deleting the row makes a
+fresh pair on the next push:
+
+```sql
+DELETE FROM web_push_vapid_key;
+```
+
+- **One key encrypts three things** (AES-256-GCM, `ai/crypto/EncryptionService`): users' AI
+  provider keys, the Google refresh token used for Docs export, and the server's own Web Push
+  private key (V43, `push/web/VapidKeyStore`). A rotation makes all three unreadable — users
+  re-add their AI keys and reconnect Google Docs; push needs the `DELETE` above.
+- **Phones do not come back by themselves.** The new pair is a new public key; each browser
+  re-subscribes only the next time Spira is opened in it, and until then it gets no notifications.
+  Say so to the owner, and have every device opened once.
+- Never suggest rotating it as a fix for anything else, and never change its value in
+  `application.properties` (the default there is the dev key only).
+
+Full context: `docs/reminders-and-web-push.md` §3a, `docs/deploy-gcp-cloud-run.md` §3.
 
 ---
 

@@ -137,6 +137,12 @@ Flyway runs on startup and applies all migrations (`V1..V12`) to the empty Neon 
 AI keys are encrypted at rest with `AI_ENCRYPTION_KEY` (32 bytes, Base64). Never
 use the dev default in production. Generate one:
 
+> ⚠️ **Generate it once and keep it.** The same key also encrypts the Google refresh token and the
+> server's Web Push private key. Changing it later makes all three unreadable: users must add their
+> AI keys again and reconnect Google Docs, and push turns off until you run
+> `DELETE FROM web_push_vapid_key;` — see
+> [reminders-and-web-push.md §3a](reminders-and-web-push.md#3a-vapid-keys--nothing-to-do).
+
 ```powershell
 # 32 random bytes, Base64-encoded
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
@@ -314,7 +320,7 @@ Two values depend on the URL you just got, so set them **after** the first deplo
 | Logged in but every POST is 403 | CSRF cookie not sent/echoed. With single origin it works; if you split domains, you need `SameSite=None; Secure` + cross-site fetch credentials. |
 | `FlywayException` on first boot | Neon DB not empty or wrong `DATABASE_URL`. For a fresh deploy the DB should be empty; see [`flyway-guide.md`](./flyway-guide.md). |
 | Cold start feels slow | Expected at `min-instances 0`. Set `--min-instances 1` to trade a little free-tier budget for warmth. |
-| AI keys can't be decrypted after redeploy | `AI_ENCRYPTION_KEY` changed. It must stay constant across deploys. |
+| AI keys can't be decrypted after redeploy, or push turned off | `AI_ENCRYPTION_KEY` changed. It must stay constant across deploys. Users re-add their AI keys; for push, `DELETE FROM web_push_vapid_key;` and open Spira once on each device (reminders-and-web-push.md §3a). |
 | Container fails to start, "port" error | Spring must listen on `$PORT`. `application.properties` already uses `server.port=${PORT:8080}`; don't hard-code the port. |
 
 ---

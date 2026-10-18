@@ -30,14 +30,15 @@ owner can do** in Google Cloud. The design and the decisions behind it are in
    app (`DecideNow.tsx`) until it is answered. Due is the server's fact, so answering on the laptop
    releases the phone.
 
-Without the setup below, steps 3–5 are simply off and step 6 still works — inside Spira only.
+Without the Cloud Scheduler job below (production only), step 3 never runs, so steps 3–5 are off
+and step 6 still works — inside Spira only.
 
 ## 2. Where it runs
 
 | | Locally (`local` profile) | Production (Cloud Run) |
 |---|---|---|
 | Who runs the dispatcher | an in-process timer, every minute (`spira.reminders.local-scheduler=true`) | **Cloud Scheduler** → `POST /internal/reminders/dispatch` with an OIDC token |
-| Web Push | **on with no setup**: a key pair is created on first start in `~/.spira/vapid-keys.properties` (outside the repo) and reused after; the `SPIRA_WEBPUSH_*` env vars win if set | on once the keys are in Secret Manager; **off** (and the app says so) until then |
+| Web Push | **on with no setup**: the server creates a key pair on first use and keeps it in the database; the `SPIRA_WEBPUSH_*` env vars win if set | **on with no setup** too: the same stored pair, shared by every instance |
 | Why the difference | the app is always up | Cloud Run scales to zero, so an in-process timer would not run while nobody uses the app |
 
 ## 3. One-time setup (owner)
@@ -46,33 +47,34 @@ All of this happens in Google Cloud, which the agent cannot reach. Project and r
 `docs/deploy-gcp-cloud-run.md` (`europe-west1`, service `spira`). PowerShell-friendly: one command
 per line.
 
-### 3a. VAPID keys → Secret Manager
+### 3a. VAPID keys — nothing to do
 
-The keys tell the push services which server is sending. The **private key is a secret**; it
-never goes in the repository, a chat or a log.
+The keys tell the push services which server is sending. **The server makes its own pair** the
+first time it needs one and keeps it in the database (`web_push_vapid_key`, V43), the private key
+encrypted with the same key as the AI provider keys (`AI_ENCRYPTION_KEY`). Every instance and
+every later start reads that one row, so the pair never changes under a subscription. On a local
+run the first start adopts the pair from the old `~/.spira/vapid-keys.properties`, if there is
+one, so browsers already subscribed there keep working.
 
+**Optional — pinning a pair of your own.** `SPIRA_WEBPUSH_PUBLIC_KEY` + `SPIRA_WEBPUSH_PRIVATE_KEY`
+in the environment win over the stored pair (generate one with `npx web-push generate-vapid-keys`;
+the private key goes in Secret Manager, never the repo). Switching from the stored pair to a pinned
+one, or back, changes the public key: browsers re-subscribe on their next visit, and until then
+they get nothing. `SPIRA_WEBPUSH_SUBJECT` (`mailto:<your address>`) is the contact the push
+services see; it is optional too.
+
+**Do not rotate `AI_ENCRYPTION_KEY`** without clearing `web_push_vapid_key` as well: the stored
+private key can no longer be read, push turns off (the app says so), and deleting the row makes a
+fresh pair on the next push:
+
+```sql
+DELETE FROM web_push_vapid_key;
 ```
-npx web-push generate-vapid-keys
-```
 
-It prints a *Public Key* and a *Private Key*, both base64url. Keep this pair forever: browsers
-subscribed with one public key stop receiving pushes when it changes, until they re-subscribe
-(Spira re-subscribes on the next visit, so changing it is recoverable, not catastrophic).
-
-```
-# paste the PRIVATE key into a file, then:
-gcloud secrets create spira-webpush-private-key --data-file=<file>
-# delete the file afterwards
-gcloud run services update spira --region europe-west1 `
-  --update-secrets "SPIRA_WEBPUSH_PRIVATE_KEY=spira-webpush-private-key:latest" `
-  --update-env-vars "SPIRA_WEBPUSH_PUBLIC_KEY=<the public key>,SPIRA_WEBPUSH_SUBJECT=mailto:<your address>"
-```
-
-Use **`--update-*`**, not `--set-*`: `--set-secrets` replaces every secret binding on the
-service, including the database password (see the deploy guide's warning).
-
-The runtime service account needs `roles/secretmanager.secretAccessor` on the new secret, as it
-has on the others.
+A new pair means a new public key, and every browser's subscription was made under the old one.
+Each browser re-subscribes by itself the **next time Spira is opened** in it; until then that
+device gets no notifications, though the in-app "decide now" page still appears whenever Spira is
+open. So after a rotation, open Spira once on every phone and laptop that should be reminded.
 
 ### 3b. Cloud Scheduler → the dispatcher
 
@@ -106,7 +108,12 @@ gcloud scheduler jobs create http spira-reminders --location europe-west1 `
 ```
 
 If that last command says you may not act as the service account, grant yourself
-`roles/iam.serviceAccountUser` on `spira-scheduler` and run it again.
+`roles/iam.serviceAccountUser` on `spira-scheduler` and run it again:
+
+```
+gcloud iam service-accounts add-iam-policy-binding spira-scheduler@<PROJECT_ID>.iam.gserviceaccount.com `
+  --member "user:<your Google account email>" --role roles/iam.serviceAccountUser
+```
 
 **Cost.** Cloud Scheduler gives three jobs free per billing account; 1,440 short wake-ups a day
 sit far inside Cloud Run's free tier. The push services charge nothing.
@@ -151,6 +158,7 @@ minutes before", allow notifications when Save asks, lock the phone, and wait.
 | The dispatcher | `upcoming/ReminderDispatcher.java`, `LocalReminderScheduler.java` |
 | The scheduler's endpoint and its security chain | `upcoming/ReminderDispatchController.java`, `config/InternalSecurityConfig.java` |
 | Encryption and VAPID | `push/web/WebPushCrypto.java` (checked against RFC 8291's own example) |
+| Where the key pair comes from | `push/web/WebPushProperties.java`, `VapidKeyStore.java` |
 | Endpoint allowlist (SSRF) | `push/web/WebPushEndpoints.java` |
 | Subscriptions | `push/web/WebPushService.java`, `WebPushController.java` |
 | Service worker | `public/sw.js` |

@@ -170,7 +170,7 @@ const PUSH_STATUS: Record<PushState, string> = {
     "This browser can’t receive notifications. On an iPhone, add Spira to the Home Screen (Share → Add to Home Screen) and open it from there.",
   insecure:
     "This address isn’t secure (https), and browsers allow notifications only on secure addresses.",
-  off: "Not switched on for this Spira: the server has no notification keys yet. Reminders show only inside Spira.",
+  off: "The server can’t send notifications right now. Reminders show only inside Spira until it can — try again in a minute.",
 };
 
 /**
