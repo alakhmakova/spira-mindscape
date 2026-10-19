@@ -18,7 +18,10 @@ import {
 } from "@/lib/spira/upcoming";
 import { useUpcoming } from "@/lib/spira/upcoming-store";
 import { momentLabel, nextReminderAt } from "@/lib/spira/reminders";
+import { pushState, type PushState } from "@/lib/spira/web-push";
 import { AddEventDialog } from "./AddEventDialog";
+import { NotificationsHint } from "./NotificationsHint";
+import { shouldOfferNotificationsHint } from "@/lib/spira/notifications-hint";
 import { ConfirmDialog, QuotedName } from "./ConfirmDialog";
 
 /**
@@ -43,6 +46,19 @@ export function Upcoming({ className }: { className?: string }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ResolvedUpcomingEvent | null>(null);
   const [removing, setRemoving] = useState<ResolvedUpcomingEvent | null>(null);
+  // Read ahead of the click: the press must decide at once whether the hint comes first.
+  const [push, setPush] = useState<PushState | null>(null);
+  const [hinting, setHinting] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void pushState()
+      .then((state) => live && setPush(state))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (status === "idle") void load();
@@ -61,7 +77,13 @@ export function Upcoming({ className }: { className?: string }) {
         </h2>
         <button
           type="button"
-          onClick={() => setAdding(true)}
+          // The first press in a browser without notifications shows the hint first; closing
+          // it carries on to the form (`NotificationsHint.tsx`).
+          onClick={() =>
+            shouldOfferNotificationsHint(push)
+              ? setHinting(true)
+              : setAdding(true)
+          }
           // **An outline circle with a plus, then the word** (owner, 2026-10-09, after the
           // reference's "Add custom earning type" row): Gravity's `circle-plus` at 16px in the
           // link's own Kale — not a filled disc, which read as a separate button — and the word
@@ -110,6 +132,15 @@ export function Upcoming({ className }: { className?: string }) {
         )}
       </div>
 
+      {hinting ? (
+        <NotificationsHint
+          onDismiss={() => {
+            setHinting(false);
+            setAdding(true);
+          }}
+          onLeave={() => setHinting(false)}
+        />
+      ) : null}
       <AddEventDialog open={adding} onOpenChange={setAdding} />
       <AddEventDialog
         open={editing !== null}

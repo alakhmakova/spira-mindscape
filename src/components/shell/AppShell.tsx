@@ -648,6 +648,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => void navigate({ to: "/settings" })}
               aria-label="Account settings"
               title="Account settings"
+              // What the "Turn on notifications" hint circles (`NotificationsHint.tsx`).
+              data-hint-target="account"
               className="shrink-0 rounded-full outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               {/* **A drawn face, not initials, when Google has no photo** (owner, 2026-10-07,

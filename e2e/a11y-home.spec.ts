@@ -1,6 +1,6 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { axeScan, type AcceptedViolations } from "./a11y-helpers";
-import { createGoal, stubAiProvider } from "./helpers";
+import { createGoal, skipNotificationsHint, stubAiProvider } from "./helpers";
 
 /**
  * The All-goals page and **everything it opens**, measured as accessibility surfaces of their own
@@ -25,6 +25,11 @@ import { createGoal, stubAiProvider } from "./helpers";
  */
 
 const PHONE = { width: 390, height: 844 };
+
+// Add event shows a one-time hint first in a browser without notifications; not under test here.
+test.beforeEach(async ({ page }) => {
+  await skipNotificationsHint(page);
+});
 const LAPTOP = { width: 1440, height: 900 };
 
 const DIALOG = '[role="dialog"]';

@@ -14,7 +14,7 @@ import {
   Search,
   SlidersHorizontal,
   SquareDashed,
-  Trash2,
+  TrashCan,
   TriangleAlert,
   X,
 } from "@/components/spira/icons";

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Trash2,
+  TrashCan,
   Download,
   Copy,
   Check,
@@ -836,7 +836,7 @@ function ResourceCard({
             className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground/60 hover:text-destructive transition-colors"
             title="Remove"
           >
-            <Trash2 className="h-3 w-3" />
+            <TrashCan className="h-3 w-3" />
           </button>
         </div>
       )}

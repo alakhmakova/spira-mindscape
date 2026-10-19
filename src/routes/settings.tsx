@@ -480,11 +480,13 @@ function LicencesTab() {
       <SettingRow label="Artwork">
         <div className="max-w-prose space-y-4">
           {ARTWORK_CREDITS.map((credit) => (
-            <div key={credit.author}>
+            // Keyed by the work: two lines share an author.
+            <div key={credit.work}>
               <p className="text-[15px] leading-[1.62] text-foreground">
                 {credit.work} by {credit.author} from{" "}
                 <a
                   href={credit.href}
+                  title={`${credit.work} Icons`}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"

@@ -1,7 +1,7 @@
 /**
  * **What Spira has to say about other people's work**, and the one place it is said.
  *
- * Both drawings are Noun Project works under **CC BY 3.0**, whose clause 4(c) asks for the
+ * Every drawing here is a Noun Project work under **CC BY 3.0**, whose clause 4(c) asks for the
  * author, the title and the licensor's URI to be given "in any reasonable manner" — reasonable
  * *to the medium*. The medium is an app its users never see the source of, and the credit the
  * download carries (two `<text>` lines under the drawing) is stripped in `FlowerArt.tsx` and
@@ -13,7 +13,7 @@
  * the middle of it. This tab is also where anything else third-party goes as it arrives — the
  * Gravity UI icon set (MIT), the brand fonts.
  *
- * **Two lines, and that is the whole of it.** A third Noun Project drawing — a sprout
+ * **One line per drawing that ships** — three since the bin, used everywhere (2026-10-19). An earlier Noun Project drawing — a sprout
  * (`noun_Plant_7436720.svg`) — used to head the GROW start overlay's kicker and had no credit;
  * the owner took it off the kicker on 2026-10-09 ("там ничего не нужно") and `SproutArt.tsx` was
  * deleted with it. It is in the git history if it is ever wanted back, and it would need its
@@ -50,6 +50,15 @@ export const ARTWORK_CREDITS: ArtworkCredit[] = [
     author: "Firda Wahyu Dianti",
     where: "Spira's own mark — the sprout in the browser tab.",
     href: "https://thenounproject.com/browse/icons/term/plant/",
+    licence: "CC BY 3.0",
+  },
+  {
+    // Owner, 2026-10-19: the app's one bin. Redrawn on the icon set's 16 grid (`TrashCan`) — an
+    // adaptation, which CC BY allows, and which still owes the credit.
+    work: "Trash",
+    author: "Gregor Cresnar",
+    where: "The bin on every Delete and Clear button.",
+    href: "https://thenounproject.com/browse/icons/term/trash/",
     licence: "CC BY 3.0",
   },
 ];

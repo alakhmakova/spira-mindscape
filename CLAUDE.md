@@ -428,6 +428,13 @@ Per `specs/2026-06-07-ai-assistant-cards-and-drawers/requirements.md` and the ic
   - **The two surfaces move together now.** A glyph the owner picks goes to **both**; the web module
     mirrors the Android names where they overlap (`Trophy` → `chart-column`, `SlidersHorizontal` →
     `bars-descending-align-center`, and so on) so a change lands the same on the phone and the laptop.
+  - **The bin is the one glyph that is not Gravity** (owner, 2026-10-19): "Trash" by Gregor
+    Cresnar (Noun Project, CC BY 3.0) replaces `trash-bin` on **every** delete and clear, on both
+    surfaces — web `TrashCan` (`Trash2` is gone) and the AI panel's `PATHS.trash`, Android
+    `SpiraIcons.Trash`. It is **redrawn on Gravity's grid** (16 box, 1.5 wall, round ends; the
+    download's line is 0.7 at this size), so it sits in the set like any other glyph. CC BY owes
+    the credit line, which is in Settings → Licences (`src/lib/spira/licences.ts`); a drawing
+    from outside Gravity never ships without one.
   - **Take the glyph Gravity already has.** If it has nothing that suits, **ask the owner** rather
     than drawing one or reaching into another set. Six marks had no Gravity equivalent (a brain, a
     marker, a calendar-plus, a leaf) and the owner chose the substitutes.
@@ -1576,11 +1583,19 @@ one from either table.**
 | **Parsnip** (warm-grey background) | `100 #FBFAFA` · `200 #F8F5F2` |
 | **Salt** (neutral grey) | `200 #FBFAFA` · `300 #F4F4F3` · `400 #EAEAEA` · `500 #DCDCDC` · `600 #BABABC` · `700 #919197` · `800 #6C6C72` · `900 #525257` · `1000 #222525` |
 | **Pepper** (deep navy surface) | `#1A2332` |
+| **Countdown** (a filled pill and its type) | fill `#FFF2D4` · type `#876413` |
 | **White** | `#FFFFFF` |
 
 Typography colour is **Salt-1000 `#222525`** on light. Ginger/Parsnip have only the two light
 tints shown (there is no darker Ginger/Parsnip — for a stronger tone use Salt or Kale).
 
+> **The Countdown pair `#FFF2D4` / `#876413` was added on 2026-10-18** (owner, given verbatim) for
+> the goal card's countdown on the **mobile web** — a filled capsule with the type in the dark
+> step, 4.9:1. Its blue twin, for "Set deadline" on the same card, is taken from the info ramp
+> rather than added: info-200 `#EBF1FF` / info-900 `#006CC1`, 4.7:1. This filled, coloured-type
+> capsule is the owner's exception for that one card, not a second pill shape — everywhere else a
+> pill is still the outline of 3c.
+>
 > **`Pepper #1A2332` was added on 2026-10-07** (owner), for the goal page's section-nav band, and
 > it is a colour of its own rather than a step on a ramp. It is the **nearest thing the palette had
 > to a dark surface** and still not the same: `info-1200 #1E2633` sits 5.1 away in RGB and

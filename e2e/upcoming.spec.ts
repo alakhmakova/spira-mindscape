@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createGoal } from "./helpers";
+import { createGoal, skipNotificationsHint } from "./helpers";
 
 /**
  * **Upcoming** — the All-goals page's right-hand column and its Add event form (owner,
@@ -25,6 +25,11 @@ async function openAddEvent(page: Page) {
 const upcoming = (page: Page) => page.getByRole("region", { name: "Upcoming" });
 
 test.use({ viewport: LAPTOP });
+
+// Add event shows a one-time hint first in a browser without notifications; not under test here.
+test.beforeEach(async ({ page }) => {
+  await skipNotificationsHint(page);
+});
 
 test("an important date is added, shown as Today, and removed", async ({
   page,

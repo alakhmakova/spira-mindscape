@@ -4,7 +4,7 @@ import {
   CirclePlus,
   Info,
   Paperclip,
-  Trash2,
+  TrashCan,
   X,
 } from "@/components/spira/icons";
 import { Kebab, KebabVertical } from "@/components/spira/icons";
@@ -177,7 +177,7 @@ export function ElementActionsMenu({
               onClick={onDelete}
               className="gap-2.5 rounded-lg px-3 py-2.5 text-sm text-destructive focus:text-destructive"
             >
-              <Trash2 className="h-4 w-4" />
+              <TrashCan className="h-4 w-4" />
               {deleteLabel}
             </DropdownMenuItem>
           )}

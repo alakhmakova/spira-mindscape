@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { X, Calendar, AlertTriangle } from "@/components/spira/icons";
+import { X, Calendar, AlertTriangle, TrashCan } from "@/components/spira/icons";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Goal } from "@/lib/spira/types";
 import {
@@ -65,6 +65,17 @@ function stripeColour(progress: number, isOverdue: boolean) {
   if (isOverdue) return OVERDUE_RED;
   return progress > 0 ? STRIPE_MOVING : STRIPE_IDLE;
 }
+
+/**
+ * PHONE ONLY — the countdown and "Set deadline" set as capsules (owner, 2026-10-18), on a laptop
+ * they stay plain words. The colours are hers and are a **filled capsule with coloured type**,
+ * which is NOT the app's `Pill` (an outline with near-black words, CLAUDE.md 3c): the countdown is
+ * `#FFF2D4` / `#876413` — a yellow pair she gave verbatim, added to the palette for this — and
+ * "Set deadline" is the matching blue from the info ramp, info-200 `#EBF1FF` / info-900
+ * `#006CC1`. Both carry type at over 4.5:1.
+ */
+const PHONE_PILL =
+  "max-sm:inline-flex max-sm:h-6 max-sm:items-center max-sm:rounded-full max-sm:px-2.5";
 
 /** How much of a goal's description the card shows before "View full goal description". */
 const DESCRIPTION_LINES = 2;
@@ -134,7 +145,9 @@ function StatCell({ label, children }: { label: string; children: ReactNode }) {
     // own the three cells are a list, and a list reads down its left edge; across the foot of a
     // wide card they are the reference's three centred columns. The phone's gutter is the body's
     // own 20px, so the labels line up with the goal's title above them.
-    <div className="relative flex min-w-0 flex-col justify-center gap-[3px] px-5 py-2.5 text-left sm:items-center sm:px-2 sm:py-0 sm:text-center">
+    // **On a phone the stacked cells are ruled apart** (owner, 2026-10-18) — a line between each
+    // and the next, in the wedge's own grey, none under the last.
+    <div className="relative flex min-w-0 flex-col justify-center gap-[3px] px-5 py-2.5 text-left max-sm:border-b max-sm:border-[#D6D6D6] max-sm:last:border-b-0 sm:items-center sm:px-2 sm:py-0 sm:text-center">
       <span className="text-[13px] leading-none text-muted-foreground">
         {label}
       </span>
@@ -143,10 +156,11 @@ function StatCell({ label, children }: { label: string; children: ReactNode }) {
       </span>
       {/* Drawn rather than a border: a triangle has no border form, and `clip-path` keeps it out
           of the layout so the cell's own text is unaffected by it. **Bigger on a phone** (owner,
-          2026-10-09) — at 10x8 it was a speck against a 56px row. */}
+          2026-10-09, and bigger again 2026-10-18) — at 10x8 it was a speck against a 56px row,
+          and at 16x14 still read as a corner of the grey rather than as a mark. */}
       <span
         aria-hidden="true"
-        className="absolute bottom-0 right-0 h-3.5 w-4 sm:h-2 sm:w-[10px]"
+        className="absolute bottom-0 right-0 h-5 w-6 sm:h-2 sm:w-[10px]"
         style={{
           backgroundColor: WEDGE,
           clipPath: "polygon(100% 0, 100% 100%, 0 100%)",
@@ -196,12 +210,36 @@ export function GoalCard({ goal }: { goal: Goal }) {
   const [confirm, setConfirm] = useState(false);
 
   const [expanded, setExpanded] = useState(false);
+  // The phone's stats drawer — the band and the big ring, folded away until the corner badge
+  // opens them (owner, 2026-10-18). A laptop always shows both and ignores this.
+  const [statsOpen, setStatsOpen] = useState(false);
   const descriptionRef = useRef<HTMLParagraphElement>(null);
   const descriptionClamped = useOverflowing(
     descriptionRef,
     DESCRIPTION_LINES,
     Boolean(goal.description),
   );
+  const showDescriptionToggle = Boolean(
+    goal.description && (descriptionClamped || expanded),
+  );
+
+  // PHONE ONLY, and only while the details are open — delete, as a bin at the right of the body,
+  // ON A LINE OF ITS TEXT (owner, 2026-10-19): the "View full goal description" row when there is
+  // one, the title's first line otherwise. It sat absolutely in the body's bottom corner before,
+  // which put it under the last line of text rather than beside it. `-my-1` keeps its 32px hit
+  // area from making either row taller, so opening the details does not shift a word; `-mr-10`
+  // reaches through the body's 48px right padding to the card's edge.
+  const phoneBin = statsOpen ? (
+    <button
+      type="button"
+      onClick={() => setConfirm(true)}
+      className="relative z-10 -my-1 -mr-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground sm:hidden"
+      aria-label={`Delete "${goal.title || "Untitled goal"}"`}
+      title="Delete goal"
+    >
+      <TrashCan className="h-4 w-4" />
+    </button>
+  ) : null;
 
   const displayDate =
     completed && goal.achievedAt ? goal.achievedAt : goal.deadline;
@@ -234,7 +272,10 @@ export function GoalCard({ goal }: { goal: Goal }) {
         // taller than the body and the band together. With auto rows the surplus went into the
         // band's row while the band itself stayed 48px, which left a white strip under every
         // card's band (owner, 2026-10-09). A flexible first row takes all of it instead.
-        "group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-[4px] border bg-card text-card-foreground shadow-[var(--card-shadow)] transition-shadow hover:shadow-[var(--card-shadow-hover)] sm:grid-cols-[minmax(0,1fr)_228px] sm:grid-rows-[1fr_auto]",
+        // **`overflow-visible` on a phone** — the progress badge hangs off the top-right corner
+        // there, the way the padlock does on a target card; the cells round their own corners
+        // instead (`max-sm:rounded-*` below) so nothing square pokes past the card's 4px.
+        "group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] overflow-visible rounded-[4px] sm:overflow-hidden border bg-card text-card-foreground shadow-[var(--card-shadow)] transition-shadow hover:shadow-[var(--card-shadow-hover)] sm:grid-cols-[minmax(0,1fr)_228px] sm:grid-rows-[1fr_auto]",
       )}
       style={
         {
@@ -245,19 +286,36 @@ export function GoalCard({ goal }: { goal: Goal }) {
       }
     >
       {/* Over the body's grey and the band's, so `z-[2]` — above the stretched link's overlay
-          (`z-[1]`), which would otherwise paint the band over its lower end. */}
+          (`z-[1]`), which would otherwise paint the band over its lower end.
+          **Placed on the grid**, so its `top`/`bottom` measure the grid AREA rather than the
+          card: on a phone it is row 1 alone and stops at the body, leaving the opened stats
+          without a stripe (owner, 2026-10-18 — the reference's "Hide all" card); on a laptop it
+          spans both rows, as before. Both row lines are written out: for an absolutely placed
+          item an `auto` end line means the card's own edge, so `row-start-1` alone ran on to
+          the bottom. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-1 left-[3px] top-1 z-[2] w-[5px] rounded-full"
+        className="pointer-events-none absolute bottom-1 left-[3px] top-1 z-[2] col-start-1 w-[5px] rounded-full [grid-row:1/2] sm:[grid-row:1/3]"
         style={{ backgroundColor: stripeColour(progress, isOverdue) }}
       />
 
       {/* BODY — what the goal is. Full width on a phone, the top-left cell on a laptop. */}
       <div
-        className="col-span-2 col-start-1 row-start-1 min-w-0 sm:col-span-1"
+        className={cn(
+          "col-span-2 col-start-1 row-start-1 min-w-0 max-sm:rounded-t-[3px] sm:col-span-1",
+          !statsOpen && "max-sm:rounded-b-[3px]",
+        )}
         style={{ backgroundColor: BODY }}
       >
-        <div className="flex h-full flex-col gap-2 p-5 pr-12 sm:p-6 sm:pr-6">
+        {/* When the card ends on "View/Hide full goal description" the link's own `py-1.5` and
+            the body's 20px stacked into a gap under it that read as an empty row (owner,
+            2026-10-18), so on a phone the body then closes up to 10px. */}
+        <div
+          className={cn(
+            "flex h-full flex-col gap-2 p-5 pr-12 sm:p-6 sm:pr-6",
+            showDescriptionToggle && "max-sm:pb-2.5",
+          )}
+        >
           {/* Where the reference card carries a logo: the deadline, or the offer to set one.
               Both triggers carry `py-1`: the line of text is 20px on its own, and a control
               owes 24x24 (WCAG 2.2 AA, 2.5.8). `e2e/a11y-target-size.spec.ts` measures it. */}
@@ -268,7 +326,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
             onChange={(next) => updateGoal(goal.id, { deadline: next })}
             renderTrigger={() =>
               deadlineInfo ? (
-                <span className="relative z-10 flex min-w-0 items-center gap-2.5 py-1 text-[13px] font-medium transition-opacity hover:opacity-70">
+                <span className="relative z-10 flex min-w-0 items-center gap-2.5 py-1 text-[13px] font-medium transition-opacity hover:opacity-70 max-sm:flex-wrap max-sm:gap-y-1.5">
                   <span
                     className="flex items-center gap-1.5"
                     style={{
@@ -277,23 +335,39 @@ export function GoalCard({ goal }: { goal: Goal }) {
                         : "var(--muted-foreground)",
                     }}
                   >
+                    {/* Lifted half a pixel, not dropped one: measured in Montserrat at 13px,
+                        the glyph's ink then centres on the capitals' exactly (9.25 / 9.25 at 4x).
+                        The old `translate-y-[1px]` sat it 1.5px low (owner, 2026-10-18). */}
                     {isOverdue ? (
-                      <AlertTriangle className="h-3.5 w-3.5 translate-y-[1px]" />
+                      <AlertTriangle className="h-3.5 w-3.5 -translate-y-[0.5px]" />
                     ) : (
-                      <Calendar className="h-3.5 w-3.5 translate-y-[1px] opacity-70" />
+                      <Calendar className="h-3.5 w-3.5 -translate-y-[0.5px] opacity-70" />
                     )}
                     {completed
                       ? deadlineInfo.dateStr
                       : `Due date ${deadlineInfo.dateStr}`}
                   </span>
-                  <span className="h-3.5 w-px shrink-0 bg-border" />
-                  <span className="truncate font-semibold text-foreground">
+                  <span className="h-3.5 w-px shrink-0 bg-border max-sm:hidden" />
+                  <span
+                    className={cn(
+                      "truncate font-semibold text-foreground",
+                      PHONE_PILL,
+                      "max-sm:bg-[#FFF2D4] max-sm:text-[#876413]",
+                    )}
+                  >
                     {completed ? "Achieved" : deadlineInfo.countdown}
                   </span>
                 </span>
               ) : (
                 <span className="relative z-10 inline-flex items-center py-1 text-[13px] font-medium text-muted-foreground transition-opacity hover:opacity-70">
-                  Set deadline
+                  <span
+                    className={cn(
+                      PHONE_PILL,
+                      "max-sm:bg-[#EBF1FF] max-sm:font-semibold max-sm:text-[#006CC1]",
+                    )}
+                  >
+                    Set deadline
+                  </span>
                 </span>
               )
             }
@@ -301,19 +375,22 @@ export function GoalCard({ goal }: { goal: Goal }) {
 
           {/* 18px and bolder than the body, with the body's own ink — the reference's own
               hierarchy (title cap height 13px at near-black #2B2B2D, description 15px grey). */}
-          <h3 className="line-clamp-2 text-lg font-semibold leading-snug text-foreground">
-            <Link
-              to="/goals/$goalId"
-              params={{ goalId: goal.id }}
-              // **`after:z-[1]`, not a bare overlay** — the stat cells and the progress ring are
-              // positioned boxes LATER in the DOM, so at `z-auto` they paint over an overlay that
-              // has none and swallow the click, leaving the bottom half of a `cursor-pointer` card
-              // doing nothing. 1 is still under the `z-10` controls that must stay clickable.
-              className="after:absolute after:inset-0 after:z-[1]"
-            >
-              {goal.title}
-            </Link>
-          </h3>
+          <div className="flex items-start gap-2">
+            <h3 className="line-clamp-2 min-w-0 flex-1 text-lg font-semibold leading-snug text-foreground">
+              <Link
+                to="/goals/$goalId"
+                params={{ goalId: goal.id }}
+                // **`after:z-[1]`, not a bare overlay** — the stat cells and the progress ring are
+                // positioned boxes LATER in the DOM, so at `z-auto` they paint over an overlay that
+                // has none and swallow the click, leaving the bottom half of a `cursor-pointer` card
+                // doing nothing. 1 is still under the `z-10` controls that must stay clickable.
+                className="after:absolute after:inset-0 after:z-[1]"
+              >
+                {goal.title}
+              </Link>
+            </h3>
+            {showDescriptionToggle ? null : phoneBin}
+          </div>
 
           {goal.description ? (
             <p
@@ -335,16 +412,19 @@ export function GoalCard({ goal }: { goal: Goal }) {
            * It appears only when the text is actually longer than its two lines, measured rather
            * than assumed; a word that promises more and shows nothing is worse than no word.
            */}
-          {goal.description && (descriptionClamped || expanded) ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="relative z-10 w-fit py-1.5 text-sm font-semibold leading-[15px] text-primary underline decoration-1 underline-offset-[3px] transition-opacity hover:opacity-70"
-            >
-              {expanded
-                ? "Hide full goal description"
-                : "View full goal description"}
-            </button>
+          {showDescriptionToggle ? (
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="relative z-10 w-fit py-1.5 text-sm font-semibold leading-[15px] text-primary underline decoration-1 underline-offset-[3px] transition-opacity hover:opacity-70"
+              >
+                {expanded
+                  ? "Hide full goal description"
+                  : "View full goal description"}
+              </button>
+              {phoneBin}
+            </div>
           ) : null}
         </div>
       </div>
@@ -355,7 +435,11 @@ export function GoalCard({ goal }: { goal: Goal }) {
        * corner wedge. 48px per row is the height measured in the reference.
        */}
       <div
-        className="col-start-1 row-start-2 grid grid-cols-1 sm:h-12 sm:grid-cols-3"
+        id={`goal-stats-${goal.id}`}
+        className={cn(
+          "col-start-1 row-start-2 grid-cols-1 max-sm:rounded-bl-[3px] sm:grid sm:h-12 sm:grid-cols-3",
+          statsOpen ? "grid" : "hidden",
+        )}
         style={{ backgroundColor: WELL }}
       >
         <StatCell label="Created">{formatCreated(goal.createdAt)}</StatCell>
@@ -378,7 +462,8 @@ export function GoalCard({ goal }: { goal: Goal }) {
        */}
       <div
         className={cn(
-          "col-start-2 row-start-2 flex flex-col items-center justify-center gap-2.5 border-l border-t border-border/60 bg-white px-6 py-5 sm:row-span-2 sm:row-start-1 sm:border-t-0 sm:py-6",
+          "col-start-2 row-start-2 flex-col items-center justify-center gap-2.5 border-l border-t border-border/60 bg-white px-6 py-5 max-sm:rounded-br-[3px] sm:row-span-2 sm:row-start-1 sm:flex sm:border-t-0 sm:py-6",
+          statsOpen ? "flex" : "hidden",
         )}
       >
         <span className="text-sm text-muted-foreground">Progress</span>
@@ -409,6 +494,53 @@ export function GoalCard({ goal }: { goal: Goal }) {
       </div>
 
       {/**
+       * PHONE ONLY — the progress badge hanging off the top-right corner, and the toggle for the
+       * stats under the body (owner, 2026-10-18). **The same chrome as the padlock on a target
+       * card and the smiley on an option card** (`Targets.tsx`, `OptionsList.tsx`): a white plate,
+       * a hairline ring, a soft shadow, half off the corner. Inside it is the card's own ring at a
+       * smaller size, so it cannot disagree with the big one it opens. **44px** — it was cut to
+       * the option smiley's 28px for a day and the percentage inside became unreadable (5–7px
+       * type), so it went back (owner, 2026-10-18).
+       *
+       * **Open, the ring becomes an X** (owner, 2026-10-18): the big ring below is already showing
+       * the number, so the corner turns into the way to put the details away. **And the plate
+       * shrinks to the option smiley's 28px with it** (owner, 2026-10-19): the 44px plate is
+       * there to carry a legible percentage, and an X at that size was the loudest thing on the
+       * card.
+       */}
+      <button
+        type="button"
+        onClick={() => setStatsOpen((v) => !v)}
+        aria-expanded={statsOpen}
+        aria-controls={`goal-stats-${goal.id}`}
+        aria-label={
+          statsOpen
+            ? "Hide progress details"
+            : `Show progress details, ${percentLabel}%`
+        }
+        className={cn(
+          "absolute z-10 grid place-items-center rounded-full border border-border bg-white shadow-sm sm:hidden",
+          statsOpen ? "-right-2 -top-2 h-7 w-7" : "-right-3 -top-3 h-11 w-11",
+        )}
+      >
+        {statsOpen ? (
+          <X className="h-4 w-4 text-foreground" />
+        ) : (
+          <ProgressRing value={progress} tone="deep" size={38} stroke={4}>
+            <span
+              aria-hidden="true"
+              className={cn(
+                "num font-semibold leading-none text-foreground",
+                percentLabel.length > 4 ? "text-[7px]" : "text-[10px]",
+              )}
+            >
+              {percentLabel}%
+            </span>
+          </ProgressRing>
+        )}
+      </button>
+
+      {/**
        * **Last in the card, not first** (owner, 2026-09-30, found with a keyboard).
        *
        * It used to sit in the header row, which put it ahead of the goal's own name in the DOM —
@@ -423,7 +555,9 @@ export function GoalCard({ goal }: { goal: Goal }) {
        */}
       <button
         onClick={() => setConfirm(true)}
-        className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-secondary/50 hover:text-muted-foreground"
+        // Laptop only: on a phone the corner is the progress badge's, and delete is the bin in
+        // the opened details instead (above).
+        className="absolute right-4 top-4 z-10 hidden h-8 w-8 sm:flex items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-secondary/50 hover:text-muted-foreground"
         // The name carries the goal, so it is unambiguous wherever focus lands and whatever is
         // read out before it.
         aria-label={`Delete "${goal.title || "Untitled goal"}"`}

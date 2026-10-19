@@ -21,6 +21,15 @@ for (const viewport of [
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
+    // On a phone delete is the bin inside the card's folded details, so open them first through
+    // the progress badge in the card's corner (owner, 2026-10-18).
+    if (viewport.width < 640) {
+      await page
+        .locator("div.group")
+        .filter({ has: page.getByRole("link", { name: title }) })
+        .getByRole("button", { name: /^Show progress details/ })
+        .click();
+    }
     await page.getByRole("button", { name: `Delete "${title}"` }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();

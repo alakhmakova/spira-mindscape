@@ -926,17 +926,38 @@ export const Target = make(
   </>,
 );
 /* gravity: target */
-export const Trash2 = make(
+/**
+ * The app's ONE bin, wherever something is deleted — **not Gravity**: "Trash" by Gregor Cresnar,
+ * Noun Project, CC BY 3.0, picked by the owner on 2026-10-19 to replace Gravity's `trash-bin`
+ * everywhere, and credited in Settings → Licences (`licences.ts`). The download draws a 3.3 wall
+ * on a 55-wide glyph, which is a 0.7 line at this size; it is redrawn here on the set's own grid
+ * instead — a 16 box, a 1.5 wall, round ends — keeping its shape: a lid wider than the can, a
+ * squared handle, and a tapered can with no lines inside it, open at the top. The AI panel's
+ * `PATHS.trash` and Android's `SpiraIcons.Trash` carry the same three paths.
+ */
+export const TrashCan = make(
   <>
     <path
       fill="currentColor"
       fillRule="evenodd"
       clipRule="evenodd"
-      d="M9 2H7a.5.5 0 0 0-.5.5V3h3v-.5A.5.5 0 0 0 9 2m2 1v-.5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2V3H2.251a.75.75 0 0 0 0 1.5h.312l.317 7.625A3 3 0 0 0 5.878 15h4.245a3 3 0 0 0 2.997-2.875l.318-7.625h.312a.75.75 0 0 0 0-1.5zm.936 1.5H4.064l.315 7.562A1.5 1.5 0 0 0 5.878 13.5h4.245a1.5 1.5 0 0 0 1.498-1.438zm-6.186 2v5a.75.75 0 0 0 1.5 0v-5a.75.75 0 0 0-1.5 0m3.75-.75a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5a.75.75 0 0 1 .75-.75"
+      d="M5.5 3V2.5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2V3H9v-.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5V3z"
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M2.5 3h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1 0-1.5"
+    />
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M2.93 6.25L3.51 13a2 2 0 0 0 2 2h4.98a2 2 0 0 0 2-2l.58-6.75a.75.75 0 0 0-1.5 0L10.99 13a.5.5 0 0 1-.5.5H5.51a.5.5 0 0 1-.5-.5l-.58-6.75a.75.75 0 0 0-1.5 0"
     />
   </>,
 );
-/* gravity: trash-bin */
+/* noun project: Trash by Gregor Cresnar (CC BY 3.0), redrawn on the 16 grid */
 export const TriangleAlert = make(
   <>
     <path

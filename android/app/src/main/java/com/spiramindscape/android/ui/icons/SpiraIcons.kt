@@ -42,14 +42,19 @@ object SpiraIcons {
             "L 3.47 4.53 a .75 .75 0 0 1 0 -1.06",
     )
 
-    /** Gravity `trash-bin` */
+    /**
+     * The app's one bin — **not Gravity**: "Trash" by Gregor Cresnar, Noun Project, CC BY 3.0
+     * (owner, 2026-10-19, replacing Gravity's `trash-bin` everywhere). Redrawn on Gravity's own
+     * grid — a 16 box, a 1.5 wall, round ends — since the download's line is 0.7 at this size. The
+     * same three paths as the web's `TrashCan` (`icons.tsx`); credited on the web's Settings →
+     * Licences.
+     */
     val Trash = gravity(
-        "M 9 2 H 7 a .5 .5 0 0 0 -.5 .5 V 3 h 3 v -.5 A .5 .5 0 0 0 9 2 m 2 1 v -.5 a 2 2 0 0 0 -2 -2 H 7 " +
-            "a 2 2 0 0 0 -2 2 V 3 H 2.251 a .75 .75 0 0 0 0 1.5 h .312 l .317 7.625 A 3 3 0 0 0 5.878 15 h " +
-            "4.245 a 3 3 0 0 0 2.997 -2.875 l .318 -7.625 h .312 a .75 .75 0 0 0 0 -1.5 z m .936 1.5 H 4.064 " +
-            "l .315 7.562 A 1.5 1.5 0 0 0 5.878 13.5 h 4.245 a 1.5 1.5 0 0 0 1.498 -1.438 z m -6.186 2 v 5 a " +
-            ".75 .75 0 0 0 1.5 0 v -5 a .75 .75 0 0 0 -1.5 0 m 3.75 -.75 a .75 .75 0 0 1 .75 .75 v 5 a .75 " +
-            ".75 0 0 1 -1.5 0 v -5 a .75 .75 0 0 1 .75 -.75",
+        "M 5.5 3 V 2.5 a 2 2 0 0 1 2 -2 h 1 a 2 2 0 0 1 2 2 V 3 H 9 v -.5 a .5 .5 0 0 0 -.5 -.5 h -1 " +
+            "a .5 .5 0 0 0 -.5 .5 V 3 z",
+        "M 2.5 3 h 11 a .75 .75 0 0 1 0 1.5 h -11 a .75 .75 0 0 1 0 -1.5",
+        "M 2.93 6.25 L 3.51 13 a 2 2 0 0 0 2 2 h 4.98 a 2 2 0 0 0 2 -2 l .58 -6.75 a .75 .75 0 0 0 -1.5 0 " +
+            "L 10.99 13 a .5 .5 0 0 1 -.5 .5 H 5.51 a .5 .5 0 0 1 -.5 -.5 l -.58 -6.75 a .75 .75 0 0 0 -1.5 0",
     )
 
     /** Gravity `chevron-down` */

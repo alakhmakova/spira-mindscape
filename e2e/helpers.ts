@@ -260,3 +260,18 @@ export async function chooseElementMenuItem(
       .click({ timeout: 3000 });
   }).toPass({ timeout: 30_000 });
 }
+
+/**
+ * Marks the one-time "Turn on notifications" hint as already shown in this page's browser, so a
+ * spec that presses "Add event" gets the form at once (`NotificationsHint.tsx`). The hint has its
+ * own spec, `notifications-hint.spec.ts`.
+ */
+export async function skipNotificationsHint(page: Page) {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("spira:notifications-hint-seen", "1");
+    } catch {
+      // A page without storage never shows the hint anyway.
+    }
+  });
+}

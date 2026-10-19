@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { axeScan } from "./a11y-helpers";
+import { skipNotificationsHint } from "./helpers";
 
 /**
  * Reminders in the Add event form, end to end against the real backend
@@ -13,6 +14,11 @@ import { axeScan } from "./a11y-helpers";
 
 const LAPTOP = { width: 1440, height: 900 };
 test.use({ viewport: LAPTOP });
+
+// Add event shows a one-time hint first in a browser without notifications; not under test here.
+test.beforeEach(async ({ page }) => {
+  await skipNotificationsHint(page);
+});
 
 const upcoming = (page: Page) => page.getByRole("region", { name: "Upcoming" });
 
