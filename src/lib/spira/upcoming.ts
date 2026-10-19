@@ -16,6 +16,12 @@ import type { Goal } from "./types";
 
 export type UpcomingKind = "important" | "goal" | "target" | "task";
 
+/**
+ * The user's answer to an event (owner, 2026-10-19). A `pending` event stands in the column; a
+ * `done` or `wont_do` one leaves it and keeps its mark on the Important events timeline.
+ */
+export type UpcomingStatus = "pending" | "done" | "wont_do";
+
 /** An event as the server stores it. A link carries ids only — see the file comment. */
 export type UpcomingEventRecord = {
   id: string;
@@ -28,6 +34,9 @@ export type UpcomingEventRecord = {
   /** `HH:mm`, or absent for an all-day date — the entry's own, whatever its kind. */
   time?: string;
   reminders?: Reminder[];
+  /** Absent on a record made before V44 — read as `pending`. */
+  status?: UpcomingStatus;
+  resolvedAt?: string;
 };
 
 /** An event ready to draw: its name and its date, whichever shape it came from. */
@@ -182,8 +191,9 @@ export function linkedId(record: UpcomingEventRecord): string | undefined {
 
 /**
  * The events the column draws: each link resolved against the goal graph, anything that has
- * passed or lost its deadline dropped, the nearest {@link UPCOMING_LIMIT} kept, and grouped by
- * category in the column's order with the empty categories left out.
+ * passed, lost its deadline or been settled (Done / Won't do) dropped, the nearest
+ * {@link UPCOMING_LIMIT} kept, and grouped by category in the column's order with the empty
+ * categories left out.
  *
  * A link whose item is gone, or whose deadline was cleared somewhere else, simply does not show:
  * the server removes it with a deleted item, and a deadline set again brings it back.
@@ -194,10 +204,33 @@ export function resolveUpcoming(
   today: Date = new Date(),
   limit: number = UPCOMING_LIMIT,
 ): UpcomingGroup[] {
+  const nearest = resolveAll(records, goals)
+    .filter(
+      (e) =>
+        (e.record.status ?? "pending") === "pending" &&
+        daysUntil(e.date, today) >= 0,
+    )
+    .slice(0, limit);
+
+  return UPCOMING_CATEGORIES.map(({ kind, label }) => ({
+    kind,
+    label,
+    events: nearest.filter((e) => e.kind === kind),
+  })).filter((group) => group.events.length > 0);
+}
+
+/**
+ * Every event with a name and a date, links resolved against the goal graph, in date order —
+ * settled ones included. A link whose item is gone or has lost its deadline has no date to stand
+ * at, so it is left out, as in the column.
+ */
+export function resolveAll(
+  records: UpcomingEventRecord[],
+  goals: Goal[],
+): ResolvedUpcomingEvent[] {
   const byKindAndId = new Map(
     linkableItems(goals).map((item) => [`${item.kind}:${item.id}`, item]),
   );
-
   const resolved: ResolvedUpcomingEvent[] = [];
   for (const record of records) {
     let title: string | undefined;
@@ -210,23 +243,15 @@ export function resolveUpcoming(
       title = item?.title;
       date = item?.deadline;
     }
-    if (!title || !date || daysUntil(date, today) < 0) continue;
+    if (!title || !date) continue;
     resolved.push({ id: record.id, kind: record.kind, title, date, record });
   }
-
-  const nearest = resolved
-    .sort(
-      (a, b) =>
-        localDay(a.date).getTime() - localDay(b.date).getTime() ||
-        a.title.localeCompare(b.title),
-    )
-    .slice(0, limit);
-
-  return UPCOMING_CATEGORIES.map(({ kind, label }) => ({
-    kind,
-    label,
-    events: nearest.filter((e) => e.kind === kind),
-  })).filter((group) => group.events.length > 0);
+  return resolved.sort(
+    (a, b) =>
+      localDay(a.date).getTime() - localDay(b.date).getTime() ||
+      (a.record.time ?? "").localeCompare(b.record.time ?? "") ||
+      a.title.localeCompare(b.title),
+  );
 }
 
 /** Whether two ISO strings fall on the same local calendar day. */

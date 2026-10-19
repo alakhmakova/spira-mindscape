@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatPercent,
   goalProgress,
-  goalProgressSteps,
+  formatGoalPercent,
   isProgressLocked,
   relockOnCompletion,
   progressSteps,
@@ -233,7 +233,7 @@ describe("formatPercent", () => {
   });
 });
 
-describe("progressSteps / goalProgressSteps", () => {
+describe("progressSteps", () => {
   const numeric = (start: number, total: number): Target => ({
     id: "n",
     type: "numeric",
@@ -249,11 +249,30 @@ describe("progressSteps / goalProgressSteps", () => {
     expect(progressSteps(numeric(500, 0))).toBe(500);
     expect(progressSteps(binaryTarget(false))).toBe(1);
   });
+});
 
-  it("a goal takes the finest target, divided across the mean", () => {
-    const goal = goalWithTargets([numeric(0, 1_000), binaryTarget(false)]);
-    // Two targets, the finer one with 1 000 steps → each step moves the mean by 1/2 000.
-    expect(goalProgressSteps(goal)).toBe(2_000);
-    expect(goalProgressSteps(goalWithTargets([]))).toBe(0);
+describe("formatGoalPercent", () => {
+  it("is always a whole number, however fine the targets underneath", () => {
+    // A 1 000-step target a third of the way, beside an untouched binary one: 16.65 %.
+    const goal = goalWithTargets([
+      {
+        id: "n",
+        type: "numeric",
+        title: "Save",
+        current: 333,
+        start: 0,
+        total: 1_000,
+      },
+      binaryTarget(false),
+    ]);
+    expect(formatGoalPercent(goalProgress(goal))).toBe("17");
+    expect(formatGoalPercent(0.4249)).toBe("42");
+  });
+
+  it("prints 0 and 100 only when they are true", () => {
+    expect(formatGoalPercent(0)).toBe("0");
+    expect(formatGoalPercent(1)).toBe("100");
+    expect(formatGoalPercent(0.0004)).toBe("1");
+    expect(formatGoalPercent(0.9996)).toBe("99");
   });
 });

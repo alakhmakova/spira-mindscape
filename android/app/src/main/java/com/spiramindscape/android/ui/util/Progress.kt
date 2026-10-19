@@ -1,6 +1,5 @@
 package com.spiramindscape.android.ui.util
 
-import com.spiramindscape.android.data.goals.GoalDetail
 import com.spiramindscape.android.data.goals.TargetItem
 import kotlin.math.abs
 import kotlin.math.min
@@ -38,13 +37,15 @@ fun progressSteps(target: TargetItem): Int = when (target) {
 }
 
 /**
- * The same for a goal: its progress is the mean over targets, so the finest-grained target sets
- * the resolution and the mean divides each step by the number of targets.
+ * A GOAL's progress as the percentage to show — **always a whole number** (owner, 2026-10-19),
+ * mirroring the web's `formatGoalPercent`. The decimals [formatPercent] gives a fine-grained
+ * *target* stay on the target. Only a genuine 0 and a genuine 1 print "0" and "100": a goal that
+ * has moved shows at least 1, one that is not finished at most 99.
  */
-fun goalProgressSteps(goal: GoalDetail): Int {
-    if (goal.targets.isEmpty()) return 0
-    val finest = goal.targets.maxOf { progressSteps(it) }
-    return (goal.targets.size.toLong() * finest).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+fun formatGoalPercent(fraction: Float): String {
+    val clamped = fraction.toDouble().coerceIn(0.0, 1.0)
+    if (clamped == 0.0 || clamped == 1.0) return (clamped * 100).toInt().toString()
+    return Math.round(clamped * 100).toInt().coerceIn(1, 99).toString()
 }
 
 /** Trailing zeros carry no information: "50.00" is noise where "50" says the same thing. */

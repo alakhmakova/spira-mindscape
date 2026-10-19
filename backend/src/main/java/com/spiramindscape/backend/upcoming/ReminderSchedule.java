@@ -86,6 +86,10 @@ public final class ReminderSchedule {
         if (fireAt == null) {
             return false;
         }
+        // A settled event (Done or Won't do) never reminds again, whatever its reminders say.
+        if (reminder.getEvent() != null && !reminder.getEvent().isPending()) {
+            return false;
+        }
         if (reminder.getLastFiredFor() != null && !reminder.getLastFiredFor().isBefore(fireAt)) {
             return true;
         }
@@ -124,7 +128,20 @@ public final class ReminderSchedule {
         return date.atZone(zone).toLocalDate();
     }
 
-    /** The fire at {@code fireAt} has been answered (Done or Open). */
+    /**
+     * Whether a fire lands on the event's own day, in the user's zone. That decides what the
+     * reminder offers (owner, 2026-10-19): ahead of the day it only informs — "I know" or Snooze —
+     * and on the day it asks for a decision — Snooze or Open.
+     */
+    public static boolean onTheDay(UpcomingEvent event, Instant fireAt, ZoneId zone) {
+        Instant date = event.effectiveDate();
+        if (date == null || fireAt == null) {
+            return false;
+        }
+        return fireAt.atZone(zone).toLocalDate().equals(dayOf(date, zone));
+    }
+
+    /** The fire at {@code fireAt} has been answered (I know, Open, or the old Done). */
     static boolean answered(UpcomingReminder reminder, Instant fireAt) {
         return reminder.getAnsweredAt() != null
                 && reminder.getLastFiredFor() != null

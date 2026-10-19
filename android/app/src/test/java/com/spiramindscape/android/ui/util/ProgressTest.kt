@@ -103,4 +103,20 @@ class ProgressTest {
         assertFalse(isProgressLocked(checklist(done = 2, of = 2, locked = false)))
         assertTrue(isProgressLocked(checklist(done = 0, of = 2, locked = true)))
     }
+
+    // ── formatGoalPercent ────────────────────────────────────────────────────
+
+    @Test
+    fun `a goal's percent is always a whole number`() {
+        assertEquals("17", formatGoalPercent(0.1665f))
+        assertEquals("42", formatGoalPercent(0.4249f))
+    }
+
+    @Test
+    fun `a goal prints 0 and 100 only when they are true`() {
+        assertEquals("0", formatGoalPercent(0f))
+        assertEquals("100", formatGoalPercent(1f))
+        assertEquals("1", formatGoalPercent(0.0004f))
+        assertEquals("99", formatGoalPercent(0.9996f))
+    }
 }

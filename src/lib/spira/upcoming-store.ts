@@ -11,6 +11,7 @@ import {
   type LinkableItem,
   type ResolvedUpcomingEvent,
   type UpcomingEventRecord,
+  type UpcomingStatus,
 } from "./upcoming";
 
 /** When an event happens and how it reminds: an optional `HH:mm` (absent = all day) and its reminders. */
@@ -42,6 +43,14 @@ type UpcomingState = {
   update: (id: string, input: UpcomingEdit) => Promise<boolean>;
   /** Removes an event — and, for a link, the deadline it stood for. */
   remove: (event: ResolvedUpcomingEvent) => Promise<void>;
+  /**
+   * Settles an event — Done or Won't do (owner, 2026-10-19). Optimistic: it leaves the column at
+   * once and comes back, with a toast, if the server refused. Resolves whether it was saved.
+   */
+  resolve: (
+    id: string,
+    status: Exclude<UpcomingStatus, "pending">,
+  ) => Promise<boolean>;
 };
 
 function messageOf(error: unknown) {
@@ -163,6 +172,26 @@ export const useUpcoming = create<UpcomingState>((set, get) => ({
       set((s) => ({ events: s.events.map((e) => (e.id === id ? saved : e)) }));
       return true;
     } catch (error) {
+      toast.error(messageOf(error));
+      return false;
+    }
+  },
+
+  resolve: async (id, status) => {
+    const previous = get().events;
+    set({
+      events: previous.map((e) =>
+        e.id === id
+          ? { ...e, status, resolvedAt: new Date().toISOString() }
+          : e,
+      ),
+    });
+    try {
+      const saved = await spiraApi.resolveUpcomingEvent(id, status);
+      set((s) => ({ events: s.events.map((e) => (e.id === id ? saved : e)) }));
+      return true;
+    } catch (error) {
+      set({ events: previous });
       toast.error(messageOf(error));
       return false;
     }

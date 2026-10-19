@@ -87,6 +87,23 @@ public class UpcomingEvent {
     @OnDelete(action = OnDeleteAction.CASCADE)
     private ChecklistItem checklistItem;
 
+    /**
+     * The user's answer to the event itself (V44): {@code pending}, {@code done} or {@code wont_do}.
+     * A settled event leaves the Upcoming column, stays on the timeline, and never reminds again.
+     */
+    @Column(nullable = false, length = 16)
+    private String status = STATUS_PENDING;
+
+    /** When {@link #status} was settled; null while pending. */
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
+
+    public static final String STATUS_PENDING = "pending";
+
+    public boolean isPending() {
+        return STATUS_PENDING.equals(status);
+    }
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

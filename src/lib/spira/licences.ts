@@ -13,7 +13,7 @@
  * the middle of it. This tab is also where anything else third-party goes as it arrives — the
  * Gravity UI icon set (MIT), the brand fonts.
  *
- * **One line per drawing that ships** — three since the bin, used everywhere (2026-10-19). An earlier Noun Project drawing — a sprout
+ * **One line per drawing that ships** — five since the bin and the reminder picture (2026-10-19). An earlier Noun Project drawing — a sprout
  * (`noun_Plant_7436720.svg`) — used to head the GROW start overlay's kicker and had no credit;
  * the owner took it off the kicker on 2026-10-09 ("там ничего не нужно") and `SproutArt.tsx` was
  * deleted with it. It is in the git history if it is ever wanted back, and it would need its
@@ -59,6 +59,24 @@ export const ARTWORK_CREDITS: ArtworkCredit[] = [
     author: "Gregor Cresnar",
     where: "The bin on every Delete and Clear button.",
     href: "https://thenounproject.com/browse/icons/term/trash/",
+    licence: "CC BY 3.0",
+  },
+  {
+    // Owner, 2026-10-19: the bell and the pencil are combined and coloured into one picture
+    // (`public/illustrations/reminder.*`) — an adaptation, so each drawing keeps its own line.
+    work: "Bell",
+    author: "Ladang Visual",
+    where:
+      "The bell in the reminder picture — on every notification and on an event's card.",
+    href: "https://thenounproject.com/browse/icons/term/bell/",
+    licence: "CC BY 3.0",
+  },
+  {
+    work: "Pencil",
+    author: "Ladang Visual",
+    where:
+      "The pencil and paper in the reminder picture — on every notification and on an event's card.",
+    href: "https://thenounproject.com/browse/icons/term/pencil/",
     licence: "CC BY 3.0",
   },
 ];

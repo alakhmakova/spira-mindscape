@@ -15,6 +15,8 @@ public record DueReminderView(
         Instant date,
         String time,
         Long goalId,
-        Instant firedAt
+        Instant firedAt,
+        /** Whether this fire is on the event's own day — see {@link ReminderSchedule#onTheDay}. */
+        boolean onTheDay
 ) {
 }

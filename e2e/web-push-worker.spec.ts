@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 
 /**
  * The service worker's half of a reminder (`public/sw.js`), in real Chromium: a push that carries
- * nothing but an event id becomes a notification with the event's words, its two buttons and the
- * icons — fetched over the session, never from the push itself.
+ * nothing but an event id becomes a notification with the event's words, its two buttons, the
+ * illustration as its big picture and the badge — fetched over the session, never from the push.
  *
  * The push is delivered through the DevTools protocol (`ServiceWorker.deliverPushMessage`), which
  * is exactly what a push service hands the browser, without a push service. The notice the worker
@@ -64,6 +64,7 @@ test("a push becomes a notification with the event's words and two buttons", asy
         body: n.body,
         tag: n.tag,
         icon: n.icon,
+        image: (n as Notification & { image?: string }).image,
         badge: n.badge,
         requireInteraction: n.requireInteraction,
         actions: (
@@ -81,9 +82,12 @@ test("a push becomes a notification with the event's words and two buttons", asy
     body: "Today at 14:00 · Important date",
     tag: "reminder-77",
     requireInteraction: true,
-    actions: ["Done", "Snooze 10 min"],
+    // Ahead of the event's day (the stub says nothing of the day): it only informs.
+    actions: ["I know", "Snooze…"],
     data: { eventId: "77" },
   });
-  expect(notification.icon).toMatch(/\/icons\/icon-192\.png$/);
+  // The picture goes under the text, and nothing stands in the icon's place on the right.
+  expect(notification.image).toMatch(/\/illustrations\/reminder\.png$/);
+  expect(notification.icon).toBe("");
   expect(notification.badge).toMatch(/\/icons\/badge-96\.png$/);
 });
