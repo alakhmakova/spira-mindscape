@@ -11,7 +11,7 @@ import {
   History,
   Plus,
   Sparkles,
-  Trash2,
+  TrashCan,
   X,
 } from "@/components/spira/icons";
 import { useSpira } from "@/lib/spira/store";
@@ -161,7 +161,7 @@ function GoalWorkspace() {
             className="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-destructive border-2 border-transparent hover:border-destructive/30"
             aria-label="Delete goal"
           >
-            <Trash2 className="h-4 w-4" />
+            <TrashCan className="h-4 w-4" />
           </button>
         </div>
 

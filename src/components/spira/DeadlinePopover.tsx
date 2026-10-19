@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Calendar as CalendarIcon,
-  Trash2,
+  TrashCan,
   X,
   ChevronRight,
 } from "@/components/spira/icons";
@@ -408,7 +408,7 @@ export function DeadlinePopover({
                     onClick={() => setPicked(undefined)}
                     className="h-8 inline-flex items-center gap-1.5 text-sm font-semibold text-destructive/80 hover:text-destructive transition-colors"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Clear
+                    <TrashCan className="h-3.5 w-3.5" /> Clear
                   </button>
                 )}
               </div>
@@ -536,7 +536,7 @@ export function DeadlinePopover({
               }}
               className="h-6 inline-flex items-center gap-1.5 text-xs font-semibold text-destructive/80 hover:text-destructive transition-colors"
             >
-              <Trash2 className="h-3 w-3" /> Clear
+              <TrashCan className="h-3 w-3" /> Clear
             </button>
           ) : (
             <div />
