@@ -1,6 +1,6 @@
 import { getCsrfToken } from "./auth";
 import type { Reminder, ReminderUnit } from "./reminders";
-import type { UpcomingEventRecord } from "./upcoming";
+import type { UpcomingEventRecord, UpcomingStatus } from "./upcoming";
 import type {
   ChecklistItem,
   Confidence,
@@ -953,6 +953,7 @@ export const spiraApi = {
           time
           goalId
           firedAt
+          onTheDay
         }
       }
     `);
@@ -964,21 +965,39 @@ export const spiraApi = {
       time: d.time ?? undefined,
       goalId: d.goalId ?? undefined,
       firedAt: d.firedAt,
+      onTheDay: d.onTheDay,
     }));
   },
 
-  /** done | open | snooze — answers every due reminder of the event. */
+  /** dismiss ("I know") | open | snooze — answers every due reminder of the event. A snooze may name its
+   *  length, a number and a unit; without one the server snoozes for ten minutes. */
   async answerReminder(
     eventId: string,
-    action: "done" | "open" | "snooze",
+    action: "dismiss" | "open" | "snooze",
+    snooze?: { amount: number; unit: string },
   ): Promise<boolean> {
     const data = await graphql<{ answerReminder: boolean }>(
       `
-        mutation AnswerReminder($eventId: ID!, $action: String!) {
-          answerReminder(eventId: $eventId, action: $action)
+        mutation AnswerReminder(
+          $eventId: ID!
+          $action: String!
+          $snoozeAmount: Int
+          $snoozeUnit: String
+        ) {
+          answerReminder(
+            eventId: $eventId
+            action: $action
+            snoozeAmount: $snoozeAmount
+            snoozeUnit: $snoozeUnit
+          )
         }
       `,
-      { eventId, action },
+      {
+        eventId,
+        action,
+        snoozeAmount: snooze?.amount ?? null,
+        snoozeUnit: snooze?.unit ?? null,
+      },
     );
     return data.answerReminder;
   },
@@ -995,6 +1014,22 @@ export const spiraApi = {
     );
   },
 
+  /** Settles an event — Done or Won't do. It leaves Upcoming and keeps its mark on the timeline. */
+  async resolveUpcomingEvent(
+    id: string,
+    status: Exclude<UpcomingStatus, "pending">,
+  ): Promise<UpcomingEventRecord> {
+    const data = await graphql<{ resolveUpcomingEvent: GraphqlUpcomingEvent }>(
+      `
+        mutation ResolveUpcomingEvent($id: ID!, $status: String!) {
+          resolveUpcomingEvent(id: $id, status: $status) { ${UPCOMING_EVENT_FIELDS} }
+        }
+      `,
+      { id, status },
+    );
+    return toUpcomingEvent(data.resolveUpcomingEvent);
+  },
+
   /** Removes the event; for a link, the server also clears the deadline it stood for. */
   async deleteUpcomingEvent(id: string): Promise<void> {
     await graphql<{ deleteUpcomingEvent: boolean }>(
@@ -1009,7 +1044,7 @@ export const spiraApi = {
 };
 
 const UPCOMING_EVENT_FIELDS =
-  "id kind title date goalId targetId taskId time reminders { amount unit atMinuteOfDay }";
+  "id kind title date goalId targetId taskId time reminders { amount unit atMinuteOfDay } status resolvedAt";
 
 type GraphqlUpcomingEvent = {
   id: string;
@@ -1021,6 +1056,8 @@ type GraphqlUpcomingEvent = {
   taskId: string | null;
   time?: string | null;
   reminders?: GraphqlReminder[] | null;
+  status?: string | null;
+  resolvedAt?: string | null;
 };
 
 type GraphqlReminder = {
@@ -1038,6 +1075,8 @@ export type DueReminder = {
   time?: string;
   goalId?: string;
   firedAt: string;
+  /** On the event's own day the reminder asks for a decision; ahead of it, it only informs. */
+  onTheDay: boolean;
 };
 
 type GraphqlDueReminder = {
@@ -1048,6 +1087,7 @@ type GraphqlDueReminder = {
   time: string | null;
   goalId: string | null;
   firedAt: string;
+  onTheDay: boolean;
 };
 
 function toReminderInput(r: Reminder) {
@@ -1077,5 +1117,7 @@ function toUpcomingEvent(e: GraphqlUpcomingEvent): UpcomingEventRecord {
     taskId: e.taskId ?? undefined,
     time: e.time ?? undefined,
     reminders: (e.reminders ?? []).map(toReminder),
+    status: (e.status as UpcomingStatus | null) ?? "pending",
+    resolvedAt: e.resolvedAt ?? undefined,
   };
 }

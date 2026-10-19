@@ -3,9 +3,8 @@ import { X, Calendar, AlertTriangle, TrashCan } from "@/components/spira/icons";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Goal } from "@/lib/spira/types";
 import {
-  formatPercent,
+  formatGoalPercent,
   goalProgress,
-  goalProgressSteps,
   targetProgress,
 } from "@/lib/spira/progress";
 import { ProgressRing } from "./ProgressBar";
@@ -250,7 +249,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
   // the same reading the target card and the goal's own percentage use, so the cell cannot
   // disagree with the ring beside it.
   const targetsDone = goal.targets.filter((t) => targetProgress(t) >= 1).length;
-  const percentLabel = formatPercent(progress, goalProgressSteps(goal));
+  const percentLabel = formatGoalPercent(progress);
 
   return (
     <div
@@ -475,9 +474,8 @@ export function GoalCard({ goal }: { goal: Goal }) {
          * that pair, and `ProgressBar.tsx` says what it cost to add it.
          */}
         <ProgressRing value={progress} tone="deep">
-          {/* The inner disc is 74px across and `formatPercent` can return ">99.99" — six
-              characters that do not fit at 18px. The step down is by length, not by value, so a
-              one-decimal percentage keeps the big number. */}
+          {/* The inner disc is 74px across. A goal's percent is a whole number now
+              (`formatGoalPercent`), so only "100" steps down; the step is by length, not value. */}
           <span
             className={cn(
               "num font-semibold text-foreground",

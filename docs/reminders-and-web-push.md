@@ -21,10 +21,29 @@ owner can do** in Google Cloud. The design and the decisions behind it are in
    hour late is marked without a push.
 4. **The push carries the event id and nothing else.** The service worker (`public/sw.js`)
    fetches the words — `GET /api/reminders/{id}/notice` — over the user's own session, and shows
-   the notification: the event's name, "Today at 14:00 · Goal", the sprout icon, the status-bar
-   badge, and **Done** / **Snooze 10 min**.
-5. **A button answers without opening Spira** (`POST /api/reminders/{id}/answer`). A tap on the
-   notification opens Spira on `/remind/{id}`, the full-screen "decide now" page.
+   the notification: the event's name, "Today at 14:00 · Goal", the bell-and-pencil illustration
+   as its big picture under the text (`public/illustrations/reminder.png`, 1024×512 — there is no
+   `icon`, owner 2026-10-19), the status-bar badge, and two buttons that depend on **when** the
+   reminder is (the notice's `onTheDay`, owner 2026-10-19):
+   - **ahead of the event's day** it only informs — **I know** / **Snooze…**. I know is answered
+     without opening Spira (`POST /api/reminders/{id}/answer`, `dismiss`); the next reminder, if
+     any, still comes;
+   - **on the day** it asks for a decision — **Open** / **Snooze…**. Open lands on
+     `/remind/{id}?open=1`, which answers the reminder and brings up the event's own card:
+     **Done**, **Won't do** or **Postpone** (`EventDecision.tsx`).
+5. **Snooze…** opens Spira on `/remind/{id}?snooze=1`, where the user sets how long — any number
+   from 1 to 999 of minutes, hours, days, weeks or months (`SnoozePicker` in `DecideNow.tsx`). The
+   server counts days, weeks and months on the user's calendar (`ReminderService.snoozeUntil`). A
+   tap on the notification itself opens `/remind/{id}`, the full-screen "decide now" page, which
+   offers the same answers as the buttons.
+
+   **A reminder is not the event.** Answering a reminder (I know, Open, Snooze) never settles the
+   event; only its card does. Done and Won't do set `upcoming_event.status` (V44, `done` /
+   `wont_do`): the event leaves the Upcoming column, keeps its mark on the **Important events
+   timeline** (the All-goals page's Timeline tab), and none of its reminders fires again
+   (`ReminderSchedule.armed`). Done on a link ticks a task or a binary target; a goal, a numeric
+   or a checklist target opens on its goal page for the user to mark. Postpone is the event's own
+   form.
 6. **The page does not depend on push at all.** Every signed-in page asks for the due list every
    30 seconds and whenever it comes back to the front, and a due, unanswered reminder covers the
    app (`DecideNow.tsx`) until it is answered. Due is the server's fact, so answering on the laptop

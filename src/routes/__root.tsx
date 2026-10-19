@@ -8,6 +8,7 @@ import {
 import { useEffect } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { DecideNowGate } from "@/components/spira/DecideNow";
+import { EventDecisionHost } from "@/components/spira/EventDecision";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/lib/spira/auth";
 import { startDueReminderPolling } from "@/lib/spira/due-reminders";
@@ -79,6 +80,7 @@ function RootComponent() {
       <Outlet />
       <ReminderWatch />
       <DecideNowGate suppressed={pathname.startsWith("/remind/")} />
+      <EventDecisionHost />
       <Toaster />
     </AppShell>
   );

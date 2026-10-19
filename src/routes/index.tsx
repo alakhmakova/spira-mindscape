@@ -10,7 +10,7 @@ import {
 import { TabBar } from "@/components/spira/TabBar";
 import { GoalCard } from "@/components/spira/GoalCard";
 import { FilteredEmptyNotice } from "@/components/spira/Notice";
-import { GoalsTable } from "@/components/spira/GoalsTable";
+import { ImportantEventsTimeline } from "@/components/spira/ImportantEventsTimeline";
 import { NewGoalSheet } from "@/components/spira/NewGoalSheet";
 import { Upcoming } from "@/components/spira/Upcoming";
 import { useAuth } from "@/lib/spira/auth";
@@ -127,11 +127,6 @@ function GoalsOverview() {
     goalDeadline,
   ]);
 
-  const filteredGoalIds = useMemo(
-    () => new Set(filtered.map((goal) => goal.id)),
-    [filtered],
-  );
-
   return (
     // **No page fill.** This carried a hardcoded `bg-[#F4F4F3]/80` — Salt-300 at 80% — painted
     // straight into the markup, past every token. It is what actually made the app read grey: the
@@ -180,7 +175,7 @@ function GoalsOverview() {
           <div className="min-w-0 space-y-5">
             <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-6 gap-y-3">
               <h2 className="text-xl font-medium leading-tight text-foreground">
-                {viewMode === "cards" ? "Goals" : "Timeline"}
+                {viewMode === "cards" ? "Goals" : "Important events timeline"}
               </h2>
               {/* **Tabs, not a segmented control** — the same row Android draws on a goal
                   (`GrowTabsRow`): the word alone, with a Guava underline on the current one. */}
@@ -203,12 +198,16 @@ function GoalsOverview() {
             </div>
             {viewMode === "table" ? (
               <p className="-mt-2 text-sm text-muted-foreground">
-                Goals, targets and tasks with deadlines, ordered by the nearest
-                date.
+                Every date from Upcoming, in order. Mark each one when its day
+                comes.
               </p>
             ) : null}
 
-            {isLoading && !hasLoaded ? (
+            {/* The timeline is Upcoming's, not the goals' (owner, 2026-10-19), so it stands
+                whatever the goal list is doing — loading, filtered or empty. */}
+            {viewMode === "table" ? (
+              <ImportantEventsTimeline />
+            ) : isLoading && !hasLoaded ? (
               /* ── Loading ── */
               <div
                 className="surface-card p-12 flex flex-col items-center gap-4"
@@ -287,7 +286,7 @@ function GoalsOverview() {
                   </>
                 )}
               </div>
-            ) : viewMode === "cards" ? (
+            ) : (
               /* One goal per row (owner, 2026-10-09): the card is a two-column spread — what the
              goal is on the left, how far it has come on the right — so it takes the width. */
               <div className="flex flex-col gap-4 sm:gap-5">
@@ -295,8 +294,6 @@ function GoalsOverview() {
                   <GoalCard key={goal.id} goal={goal} />
                 ))}
               </div>
-            ) : (
-              <GoalsTable goals={goals} filteredGoalIds={filteredGoalIds} />
             )}
           </div>
 

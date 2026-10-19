@@ -41,6 +41,7 @@ public class UpcomingEventService {
     private static final Pattern HH_MM = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
     private static final Set<String> UNITS = Set.of("minute", "hour", "day", "week");
     private static final Set<String> CHANNELS = Set.of("notification", "email", "fullscreen");
+    private static final Set<String> RESOLVED_STATUSES = Set.of("done", "wont_do");
 
     private final UpcomingEventRepository repository;
     private final GoalService goalService;
@@ -246,6 +247,29 @@ public class UpcomingEventService {
             throw new IllegalArgumentException("Event time must be HH:mm");
         }
         return LocalTime.parse(trimmed);
+    }
+
+    /**
+     * Settles the event (owner, 2026-10-19): {@code done} or {@code wont_do}. It leaves the Upcoming
+     * column, stays on the timeline with its mark, and its reminders never fire again. Ticking a
+     * linked task or target is the client's, through the goal store, as every goal edit is.
+     */
+    @Transactional
+    public UpcomingEventView resolve(Long id, String status) {
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        if (!RESOLVED_STATUSES.contains(normalized)) {
+            throw new IllegalArgumentException("Unknown event status");
+        }
+        Long userId = currentUserProvider.getCurrentUser().getId();
+        UpcomingEvent event = repository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Upcoming event not found: " + id));
+        Instant now = clock.instant();
+        event.setStatus(normalized);
+        event.setResolvedAt(now);
+        for (UpcomingReminder reminder : event.getReminders()) {
+            reminder.setSnoozedUntil(null); // nothing left to come back for
+        }
+        return UpcomingEventView.of(repository.save(event));
     }
 
     /**

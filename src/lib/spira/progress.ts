@@ -57,11 +57,17 @@ export function progressSteps(t: Target): number {
   return t.items.length;
 }
 
-/** The same for a goal: its progress is the mean over targets, so the finest-grained target
- *  sets the resolution and the mean divides each step by the number of targets. */
-export function goalProgressSteps(g: Goal): number {
-  if (g.targets.length === 0) return 0;
-  return g.targets.length * Math.max(...g.targets.map(progressSteps));
+/**
+ * A GOAL's progress as the percentage to show — **always a whole number** (owner, 2026-10-19:
+ * "должно быть всегда целое число именно для прогресса goal"). The decimals {@link formatPercent}
+ * gives a fine-grained *target* stay on the target; a goal is the mean of several and reads as a
+ * whole percent. As there, only a genuine 0 and a genuine 1 print "0" and "100": a goal that has
+ * moved shows at least 1, one that is not finished at most 99.
+ */
+export function formatGoalPercent(fraction: number): string {
+  const clamped = Math.max(0, Math.min(1, fraction));
+  if (clamped === 0 || clamped === 1) return String(clamped * 100);
+  return String(Math.min(99, Math.max(1, Math.round(clamped * 100))));
 }
 
 /** Trailing zeros carry no information: "50.00" is noise where "50" says the same thing. */

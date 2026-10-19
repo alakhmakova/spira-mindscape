@@ -20,7 +20,9 @@ public record UpcomingEventView(
         Long targetId,
         Long taskId,
         String time,
-        List<UpcomingReminderView> reminders
+        List<UpcomingReminderView> reminders,
+        String status,
+        Instant resolvedAt
 ) {
     static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -34,7 +36,9 @@ public record UpcomingEventView(
                 event.getTarget() == null ? null : event.getTarget().getId(),
                 event.getChecklistItem() == null ? null : event.getChecklistItem().getId(),
                 formatTime(event.getEventTime()),
-                event.getReminders().stream().map(UpcomingReminderView::of).toList());
+                event.getReminders().stream().map(UpcomingReminderView::of).toList(),
+                event.getStatus(),
+                event.getResolvedAt());
     }
 
     static String formatTime(LocalTime time) {

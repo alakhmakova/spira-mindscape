@@ -4,6 +4,7 @@ import {
   UPCOMING_LIMIT,
   daysUntil,
   linkableItems,
+  resolveAll,
   resolveUpcoming,
   sameDay,
   upcomingWhen,
@@ -172,5 +173,33 @@ describe("resolveUpcoming", () => {
       TODAY,
     );
     expect(groups.map((g) => g.kind)).toEqual(["important", "goal"]);
+  });
+});
+
+describe("settled events (Done / Won't do)", () => {
+  it("leave the column", () => {
+    const groups = resolveUpcoming(
+      [
+        { ...important("done", 1), status: "done" },
+        { ...important("wont", 2), status: "wont_do" },
+        important("open", 3),
+      ],
+      [],
+      TODAY,
+    );
+    expect(groups.flatMap((g) => g.events).map((e) => e.id)).toEqual(["open"]);
+  });
+
+  it("stay on the timeline, past ones too, in date order", () => {
+    const all = resolveAll(
+      [
+        important("later", 4),
+        { ...important("done", -3), status: "done" },
+        important("overdue", -1),
+        { ...important("wont", 2), status: "wont_do" },
+      ],
+      [],
+    );
+    expect(all.map((e) => e.id)).toEqual(["done", "overdue", "wont", "later"]);
   });
 });

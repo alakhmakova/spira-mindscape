@@ -12,6 +12,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -152,6 +153,117 @@ class UpcomingReminderIntegrationTest extends BaseGraphQlIntegrationTest {
         assertThat(answer(id, "done")).isTrue();
         assertThat(dueCount()).isZero();
         assertThat(answer(id, "done")).as("answering twice is harmless").isFalse();
+    }
+
+    private void snooze(String id, String args) {
+        graphQlTester.document("mutation { answerReminder(eventId: %s, action: \"snooze\", %s) }".formatted(id, args))
+                .execute().path("answerReminder").entity(Boolean.class).isEqualTo(true);
+    }
+
+    private void expectSnoozeError(String id, String args, String messagePart) {
+        graphQlTester.document("mutation { answerReminder(eventId: %s, action: \"snooze\", %s) }".formatted(id, args))
+                .execute()
+                .errors().satisfy(errors -> assertThat(errors)
+                        .anyMatch(e -> e.getMessage().contains(messagePart)));
+    }
+
+    @Test
+    @DisplayName("A snooze lasts the number and unit the user chose; months follow the calendar")
+    void snoozeForChosenLength() {
+        String id = birthday("{ amount: 0, unit: \"day\", atMinuteOfDay: 540 }");
+        now(NINE_AM);
+
+        snooze(id, "snoozeAmount: 3, snoozeUnit: \"hour\"");
+        Instant noon = NINE_AM.plusSeconds(3 * 3600);
+        now(noon.minusSeconds(1));
+        assertThat(dueCount()).isZero();
+        now(noon);
+        assertThat(dueCount()).isEqualTo(1);
+
+        // Two calendar months in the user's zone: noon on June 19 is due again at noon on Aug 19.
+        snooze(id, "snoozeAmount: 2, snoozeUnit: \"month\"");
+        Instant august = noon.atZone(ZoneId.of("Europe/Berlin")).plusMonths(2).toInstant();
+        now(august.minusSeconds(1));
+        assertThat(dueCount()).isZero();
+        now(august);
+        assertThat(dueCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A snooze needs a number from 1 to 999 and a known unit, together")
+    void snoozeValidation() {
+        String id = birthday("{ amount: 0, unit: \"day\", atMinuteOfDay: 540 }");
+        now(NINE_AM);
+        expectSnoozeError(id, "snoozeAmount: 0, snoozeUnit: \"day\"", "from 1 to 999");
+        expectSnoozeError(id, "snoozeAmount: 1000, snoozeUnit: \"day\"", "from 1 to 999");
+        expectSnoozeError(id, "snoozeAmount: 2, snoozeUnit: \"year\"", "Unknown snooze unit");
+        expectSnoozeError(id, "snoozeAmount: 2", "both a number and a unit");
+        assertThat(dueCount()).as("a refused snooze changes nothing").isEqualTo(1);
+    }
+
+    private String resolve(String id, String status) {
+        return graphQlTester.document(
+                        "mutation { resolveUpcomingEvent(id: %s, status: \"%s\") { status resolvedAt } }"
+                                .formatted(id, status))
+                .execute().path("resolveUpcomingEvent.status").entity(String.class).get();
+    }
+
+    @Test
+    @DisplayName("Ahead of the day a reminder only informs: I know settles it, and the next one still fires")
+    void iKnowAheadOfTheDay() {
+        String id = birthday("{ amount: 1, unit: \"day\", atMinuteOfDay: 540 }, "
+                + "{ amount: 0, unit: \"day\", atMinuteOfDay: 540 }");
+
+        now(NINE_AM.minusSeconds(86_400));
+        graphQlTester.document("{ dueReminders { eventId onTheDay } }").execute()
+                .path("dueReminders[0].onTheDay").entity(Boolean.class).isEqualTo(false);
+        assertThat(answer(id, "dismiss")).isTrue();
+        assertThat(dueCount()).isZero();
+
+        now(NINE_AM);
+        graphQlTester.document("{ dueReminders { eventId onTheDay } }").execute()
+                .path("dueReminders[0].eventId").entity(String.class).isEqualTo(id)
+                .path("dueReminders[0].onTheDay").entity(Boolean.class).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("A settled event leaves Upcoming's pending list, keeps its mark, and never reminds again")
+    void resolveSettlesTheEvent() {
+        String id = birthday("{ amount: 0, unit: \"day\", atMinuteOfDay: 540 }, "
+                + "{ amount: 0, unit: \"day\", atMinuteOfDay: 600 }");
+        graphQlTester.document("{ upcomingEvents { status resolvedAt } }").execute()
+                .path("upcomingEvents[0].status").entity(String.class).isEqualTo("pending")
+                .path("upcomingEvents[0].resolvedAt").valueIsNull();
+
+        now(NINE_AM);
+        assertThat(dueCount()).isEqualTo(1);
+        assertThat(resolve(id, "wont_do")).isEqualTo("wont_do");
+        assertThat(dueCount()).as("a settled event is not due").isZero();
+        now(NINE_AM.plusSeconds(3600));
+        assertThat(dueCount()).as("its later reminder does not fire either").isZero();
+
+        graphQlTester.document("{ upcomingEvents { status resolvedAt } }").execute()
+                .path("upcomingEvents[0].status").entity(String.class).isEqualTo("wont_do")
+                .path("upcomingEvents[0].resolvedAt").entity(String.class).isEqualTo(NINE_AM.toString());
+
+        graphQlTester.document("mutation { resolveUpcomingEvent(id: %s, status: \"maybe\") { id } }".formatted(id))
+                .execute()
+                .errors().satisfy(errors -> assertThat(errors)
+                        .anyMatch(e -> e.getMessage().contains("Unknown event status")));
+    }
+
+    @Test
+    @DisplayName("Another user cannot settle someone's event")
+    void resolveIsOwnerScoped() {
+        String id = birthday("");
+        setCurrentUser(createAdditionalUser("other-sub-2", "other2@example.com"));
+        graphQlTester.document("mutation { resolveUpcomingEvent(id: %s, status: \"done\") { id } }".formatted(id))
+                .execute()
+                .errors().satisfy(errors -> assertThat(errors)
+                        .anyMatch(e -> e.getMessage().contains("not found")));
+        setCurrentUser(testUser);
+        graphQlTester.document("{ upcomingEvents { status } }").execute()
+                .path("upcomingEvents[0].status").entity(String.class).isEqualTo("pending");
     }
 
     @Test

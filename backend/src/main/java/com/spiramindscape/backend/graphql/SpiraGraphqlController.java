@@ -121,6 +121,11 @@ public class SpiraGraphqlController {
     }
 
     @MutationMapping
+    public UpcomingEventView resolveUpcomingEvent(@Argument Long id, @Argument String status) {
+        return upcomingEventService.resolve(id, status);
+    }
+
+    @MutationMapping
     public Boolean deleteUpcomingEvent(@Argument Long id) {
         upcomingEventService.delete(id);
         return true;
@@ -132,8 +137,9 @@ public class SpiraGraphqlController {
     }
 
     @MutationMapping
-    public Boolean answerReminder(@Argument Long eventId, @Argument String action) {
-        return reminderService.answer(eventId, action);
+    public Boolean answerReminder(@Argument Long eventId, @Argument String action,
+                                  @Argument Integer snoozeAmount, @Argument String snoozeUnit) {
+        return reminderService.answer(eventId, action, snoozeAmount, snoozeUnit);
     }
 
     @MutationMapping

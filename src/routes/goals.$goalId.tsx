@@ -15,11 +15,7 @@ import {
   X,
 } from "@/components/spira/icons";
 import { useSpira } from "@/lib/spira/store";
-import {
-  formatPercent,
-  goalProgress,
-  goalProgressSteps,
-} from "@/lib/spira/progress";
+import { formatGoalPercent, goalProgress } from "@/lib/spira/progress";
 import { ProgressBar } from "@/components/spira/ProgressBar";
 import { DeadlinePopover } from "@/components/spira/DeadlinePopover";
 import { Section } from "@/components/spira/Section";
@@ -189,11 +185,7 @@ function GoalWorkspace() {
 
         {/* Three KPI cards: Progress · Confidence · Deadline */}
         <div className="spira-kpi-grid grid gap-4">
-          <ProgressKpi
-            value={progress}
-            steps={goalProgressSteps(goal)}
-            onJump={jumpToTargets}
-          />
+          <ProgressKpi value={progress} onJump={jumpToTargets} />
           <ConfidenceKpi
             value={goal.confidence}
             onChange={changeConfidence}
@@ -416,17 +408,9 @@ function KpiCard({
   );
 }
 
-function ProgressKpi({
-  value,
-  steps,
-  onJump,
-}: {
-  value: number;
-  /** How many increments the goal's progress has — decides the decimals (`formatPercent`). */
-  steps: number;
-  onJump: () => void;
-}) {
-  const pct = formatPercent(value, steps);
+function ProgressKpi({ value, onJump }: { value: number; onJump: () => void }) {
+  // A goal's progress is always a whole percent (owner, 2026-10-19).
+  const pct = formatGoalPercent(value);
   return (
     <KpiCard
       label="Progress"

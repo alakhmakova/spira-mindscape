@@ -1181,6 +1181,18 @@ are **Important dates · Goals · Targets · Tasks** — "Recurring" was one and
   two by two, since four do not fit across.
 - **"Add event" is a link, not a button**: Gravity's outline `circle-plus` at 16px in Kale, then the
   underlined word. A filled disc read as a second, separate control.
+- **An event is settled on its own card, never by a reminder** (owner, 2026-10-19). A reminder
+  ahead of the event's day offers **I know / Snooze…**; one on the day offers **Snooze… / Open**,
+  and Open brings up the card (`EventDecision.tsx`): the reminder picture, then **Done**,
+  **Won't do** (the wording — not "I am not going to do") and **Postpone**, which is the event's
+  own form. A settled event leaves Upcoming and stays on the timeline.
+- **The All-goals Timeline tab is the "Important events timeline"** — Upcoming's events on a rail,
+  after the reference's payroll timeline (`ImportantEventsTimeline.tsx`; the goals-deadline table it
+  replaced is gone). Done is a solid Kale mark with a white tick, Won't do a solid grey one with a
+  white cross, pending a white mark in a 2px ring — Kale for the next one in line only, grey
+  (`#919197`) for every pending event after it; the rail under a settled event is solid,
+  under a pending one dashed. **Let's do it** — white, Kale on hover — stands only under a pending
+  event and opens the same card as Open.
 
 #### 3e-quater. Two things a headless host cannot see (hard rule, 2026-08-29)
 

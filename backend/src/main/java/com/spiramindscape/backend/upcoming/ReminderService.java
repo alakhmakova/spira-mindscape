@@ -30,7 +30,16 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ReminderService {
 
+    /** A Snooze with no length named — the notification's own button used to send exactly this. */
     public static final Duration SNOOZE = Duration.ofMinutes(10);
+
+    /**
+     * A chosen Snooze is a number and a unit, both the user's (owner, 2026-10-19: "пусть
+     * пользователь реально сам выберет и цифру и в чем исчисляется"). The number runs to 999, the
+     * same bound a reminder's own "before" has.
+     */
+    public static final int MAX_SNOOZE_AMOUNT = 999;
+    public static final List<String> SNOOZE_UNITS = List.of("minute", "hour", "day", "week", "month");
 
     private static final DateTimeFormatter FAR_DATE =
             DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH);
@@ -56,7 +65,7 @@ public class ReminderService {
             UpcomingEvent event = reminder.getEvent();
             DueReminderView view = new DueReminderView(event.getId(), event.getKind(), titleOf(event),
                     event.effectiveDate(), UpcomingEventView.formatTime(event.getEventTime()),
-                    goalIdOf(event), fireAt);
+                    goalIdOf(event), fireAt, ReminderSchedule.onTheDay(event, fireAt, zone));
             byEvent.merge(event.getId(), view,
                     (a, b) -> a.firedAt().isAfter(b.firedAt()) ? a : b); // the latest fire speaks for the event
         }
@@ -66,21 +75,45 @@ public class ReminderService {
     }
 
     /**
-     * Answers every due reminder of one event. {@code done} and {@code open} settle it;
-     * {@code snooze} quiets it for {@link #SNOOZE}, after which it goes off again. Returns whether
+     * Answers every due reminder of one event. {@code dismiss} ("I know", a reminder ahead of the
+     * day) and {@code open} (on the day — the event's own card opens) settle the reminder, and so
+     * does {@code done}, which older service workers still send; the next reminder, if any, still
+     * fires. {@code snooze} quiets it for {@link #SNOOZE}, after which it goes off again. None of
+     * them settles the EVENT — that is {@code UpcomingEventService.resolve}. Returns whether
      * anything was due — answering twice, from two devices, is harmless.
      */
     @Transactional
     public boolean answer(Long eventId, String action) {
+        return answer(eventId, action, null, null);
+    }
+
+    /**
+     * As {@link #answer(Long, String)}, with the Snooze's length — {@code snoozeAmount} (1 to
+     * {@link #MAX_SNOOZE_AMOUNT}) of {@code snoozeUnit} (one of {@link #SNOOZE_UNITS}), or both
+     * {@code null} for the default {@link #SNOOZE}. Ignored for any other answer.
+     */
+    @Transactional
+    public boolean answer(Long eventId, String action, Integer snoozeAmount, String snoozeUnit) {
         String normalized = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
-        if (!List.of("done", "open", "snooze").contains(normalized)) {
+        if (!List.of("dismiss", "done", "open", "snooze").contains(normalized)) {
             throw new IllegalArgumentException("Unknown reminder answer");
+        }
+        String unit = snoozeUnit == null ? null : snoozeUnit.trim().toLowerCase(Locale.ROOT);
+        if ((snoozeAmount == null) != (unit == null)) {
+            throw new IllegalArgumentException("A snooze needs both a number and a unit");
+        }
+        if (snoozeAmount != null && (snoozeAmount < 1 || snoozeAmount > MAX_SNOOZE_AMOUNT)) {
+            throw new IllegalArgumentException("Snooze must be from 1 to " + MAX_SNOOZE_AMOUNT);
+        }
+        if (unit != null && !SNOOZE_UNITS.contains(unit)) {
+            throw new IllegalArgumentException("Unknown snooze unit");
         }
         AppUser user = freshUser();
         UpcomingEvent event = eventRepository.findByIdAndUserId(eventId, user.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Upcoming event not found: " + eventId));
         ZoneId zone = ReminderSchedule.zone(user.getTimeZone());
         Instant now = clock.instant();
+        Instant snoozeUntil = snoozeUntil(now, zone, snoozeAmount, unit);
         boolean any = false;
         for (UpcomingReminder reminder : event.getReminders()) {
             Instant fireAt = ReminderSchedule.fireAt(reminder, zone);
@@ -93,13 +126,32 @@ public class ReminderService {
             }
             if (normalized.equals("snooze")) {
                 reminder.setAnsweredAt(null);
-                reminder.setSnoozedUntil(now.plus(SNOOZE));
+                reminder.setSnoozedUntil(snoozeUntil);
             } else {
                 reminder.setAnsweredAt(now);
                 reminder.setSnoozedUntil(null);
             }
         }
         return any;
+    }
+
+    /**
+     * When a snooze of {@code amount} {@code unit} from {@code now} runs out. Minutes and hours are
+     * elapsed time; days, weeks and months are the user's calendar, so "1 day" at 21:00 is 21:00
+     * tomorrow across a daylight-saving change, and "1 month" on Jan 31 is the last day of February.
+     */
+    static Instant snoozeUntil(Instant now, ZoneId zone, Integer amount, String unit) {
+        if (amount == null) {
+            return now.plus(SNOOZE);
+        }
+        return switch (unit) {
+            case "minute" -> now.plus(Duration.ofMinutes(amount));
+            case "hour" -> now.plus(Duration.ofHours(amount));
+            case "day" -> now.atZone(zone).plusDays(amount).toInstant();
+            case "week" -> now.atZone(zone).plusWeeks(amount).toInstant();
+            case "month" -> now.atZone(zone).plusMonths(amount).toInstant();
+            default -> throw new IllegalArgumentException("Unknown snooze unit");
+        };
     }
 
     /** Records the IANA zone the client runs in. Region ids only ("Europe/Berlin"), never offsets. */
@@ -152,7 +204,20 @@ public class ReminderService {
             case "task" -> "Task";
             default -> "Important date";
         };
-        return new ReminderNotice(event.getId(), titleOf(event), when.isEmpty() ? what : when + " · " + what);
+        return new ReminderNotice(event.getId(), titleOf(event), when.isEmpty() ? what : when + " · " + what,
+                onTheDay(event, zone, now));
+    }
+
+    /** Whether the notification being shown now is the event's on-the-day one: its latest fire. */
+    private static boolean onTheDay(UpcomingEvent event, ZoneId zone, Instant now) {
+        Instant latest = null;
+        for (UpcomingReminder reminder : event.getReminders()) {
+            Instant fireAt = ReminderSchedule.fireAt(reminder, zone);
+            if (fireAt != null && !fireAt.isAfter(now) && (latest == null || fireAt.isAfter(latest))) {
+                latest = fireAt;
+            }
+        }
+        return ReminderSchedule.onTheDay(event, latest == null ? now : latest, zone);
     }
 
     static String titleOf(UpcomingEvent event) {

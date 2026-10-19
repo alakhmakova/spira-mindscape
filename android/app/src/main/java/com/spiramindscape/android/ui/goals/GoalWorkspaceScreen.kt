@@ -137,8 +137,7 @@ import com.spiramindscape.android.ui.theme.SpiraRadii
 import com.spiramindscape.android.ui.theme.spiraExtras
 import com.spiramindscape.android.ui.util.FieldLimits
 import com.spiramindscape.android.ui.util.deadlineCountdownParts
-import com.spiramindscape.android.ui.util.formatPercent
-import com.spiramindscape.android.ui.util.goalProgressSteps
+import com.spiramindscape.android.ui.util.formatGoalPercent
 import kotlin.math.roundToInt
 
 /**
@@ -1025,7 +1024,7 @@ private fun GoalHeader(goal: GoalDetail, actions: GoalWorkspaceActions) {
         )
 
         StatCard(
-            statValue = "${formatPercent(goal.progress, goalProgressSteps(goal))}%",
+            statValue = "${formatGoalPercent(goal.progress)}%",
             statCaption = if (goal.achieved) "Achieved" else "Progress across all targets",
         ) {
             FieldLabel("Description")

@@ -69,18 +69,12 @@ const ACCEPTED: AcceptedViolations = {
       "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
     },
   },
+  // The Important events timeline (2026-10-19) replaced the goals-deadline table and its three
+  // muted spans per row; only the header's avatar, on every page, is left.
   Timeline: {
     "color-contrast": {
-      // <span class="font-medium text-muted-foreground/50 text-[12px]">Deadline</span>
-      "span.font-medium.text-[12px].text-muted-foreground/50": 3,
-      // <span>Nov 4, 2026</span>
-      span: 3,
-      // <span class="font-semibold text-muted-foreground/70">28d left</span>
-      "span.font-semibold.text-muted-foreground/70": 3,
       // <span class="grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-white/15 text-sm font-semi
       "span.bg-white/15.border.border-white/40.font-semibold.grid.h-9.place-items-center.rounded-full.text-sm.text-white.w-9": 1,
-      // <span class="num text-[11px] font-bold tabular-nums text-muted-foreground/60">20%</span>
-      "span.font-bold.num.tabular-nums.text-[11px].text-muted-foreground/60": 1,
     },
   },
   "Filter panel": {},
@@ -214,10 +208,12 @@ test.describe("WCAG 2.1 AA — the machine-checkable part, every surface", () =>
     await dashboard(page);
     await scan(page, "All goals");
 
-    // Timeline is a different rendering of the same data — a table, with its own header cells.
-    // The view switcher is a `role="tablist"`, so these are tabs and not buttons.
+    // Timeline is Upcoming's events on a rail. The view switcher is a `role="tablist"`, so these
+    // are tabs and not buttons.
     await page.getByRole("tab", { name: "Timeline" }).click();
-    await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Important events timeline" }),
+    ).toBeVisible();
     await scan(page, "Timeline");
     await page.getByRole("tab", { name: "Cards", exact: true }).click();
 

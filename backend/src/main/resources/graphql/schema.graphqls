@@ -53,10 +53,15 @@ type Mutation {
     createUpcomingEvent(input: CreateUpcomingEventInput!): UpcomingEvent!
     # Deleting a link also clears the deadline of the goal, target or task it points at.
     deleteUpcomingEvent(id: ID!): Boolean!
+    # Settles the event: done | wont_do. It leaves Upcoming, stays on the timeline, never reminds again.
+    resolveUpcomingEvent(id: ID!, status: String!): UpcomingEvent!
     # Replaces the event's time and reminders as sent; title and date apply to an important date only.
     updateUpcomingEvent(id: ID!, input: UpdateUpcomingEventInput!): UpcomingEvent!
-    # done | open | snooze — answers every due reminder of the event. False when none was due.
-    answerReminder(eventId: ID!, action: String!): Boolean!
+    # dismiss ("I know") | open | snooze (done still accepted) — answers every due reminder of the
+    # event, not the event itself. False when none was due.
+    # For a snooze only: snoozeAmount (1-999) of snoozeUnit (minute | hour | day | week | month),
+    # both or neither; absent means 10 minutes.
+    answerReminder(eventId: ID!, action: String!, snoozeAmount: Int, snoozeUnit: String): Boolean!
     # The IANA zone the client runs in ("Europe/Berlin"); reminders are computed in it.
     setTimeZone(zone: String!): Boolean!
 }
@@ -74,6 +79,10 @@ type UpcomingEvent {
     # HH:mm, or null for an all-day date. The entry's own, for any kind.
     time: String
     reminders: [UpcomingReminder!]!
+    # pending | done | wont_do
+    status: String!
+    # When the status was settled; null while pending.
+    resolvedAt: String
 }
 
 type UpcomingReminder {
@@ -97,6 +106,9 @@ type DueReminder {
     # The goal to open: the event's own goal, or the goal its target or task belongs to.
     goalId: ID
     firedAt: String!
+    # On the event's own day the reminder asks for a decision (Snooze / Open); ahead of it, it
+    # only informs (I know / Snooze).
+    onTheDay: Boolean!
 }
 
 input ReminderInput {
