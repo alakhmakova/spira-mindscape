@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'
@@ -78,10 +78,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -93,7 +93,7 @@ jobs:
       # in 13s, before a single test ran). Caching the unpacked distribution means the normal
       # path downloads nothing; on a cache miss ./mvnw retries across two mirrors.
       - name: Cache Maven distribution (wrapper)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             backend/.mvn/wrapper/apache-maven-*
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload backend coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-jacoco-report
           path: backend/target/site/jacoco
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload backend test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-surefire-reports
           path: backend/target/surefire-reports
@@ -133,7 +133,7 @@ jobs:
 
       - name: Upload backend Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-allure-results
           path: backend/target/allure-results
@@ -151,16 +151,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # google-services.json is gitignored (holds an API key) and absent here, so the app
       # module skips the Crashlytics/Analytics plugins (see android/app/build.gradle.kts) and
@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload Android coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-jacoco-report
           path: android/app/build/reports/jacoco/jacocoDebugReport
@@ -183,7 +183,7 @@ jobs:
 
       - name: Upload Android test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-test-results
           path: android/app/build/reports/tests
@@ -201,7 +201,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # gitleaks reads the git HISTORY, not just the working tree: a secret removed in a
           # later commit is still a leak, and a shallow clone would report the repository clean.
@@ -241,14 +241,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Trivy resolves the Java dependency tree from local Maven cache. Populate
       # ~/.m2 here (cached across runs by setup-java) so Trivy never reaches out
       # to Maven Central — the shared runner IP gets 429-rate-limited there,
       # which crashed the scan as a FATAL error (not a vuln finding).
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -256,7 +256,7 @@ jobs:
 
       # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
       - name: Cache Maven distribution (wrapper)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             backend/.mvn/wrapper/apache-maven-*
@@ -311,10 +311,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -322,7 +322,7 @@ jobs:
 
       # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
       - name: Cache Maven distribution (wrapper)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             backend/.mvn/wrapper/apache-maven-*
@@ -371,7 +371,7 @@ jobs:
           exit 1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -385,7 +385,7 @@ jobs:
 
       - name: Upload E2E Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-allure-results
           path: e2e-allure-results
@@ -427,17 +427,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'
@@ -448,7 +448,7 @@ jobs:
       # The browser binary comes from Playwright's own CDN and changes only when the package does,
       # so cache it: a hit turns the download below into a no-op.
       - name: Cache Playwright browser
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -482,7 +482,7 @@ jobs:
 
       # Same reason as in the backend job: cache Apache Maven itself, not just ~/.m2.
       - name: Cache Maven distribution (wrapper)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             backend/.mvn/wrapper/apache-maven-*
@@ -534,7 +534,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -562,19 +562,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # This job runs with `if: always()`, so an upstream job may have failed before
       # producing results. Missing artifacts must not fail the report itself.
       - name: Download backend Allure results
-        uses: actions/download-artifact@v4.1.3
+        uses: actions/download-artifact@v8.0.2
         continue-on-error: true
         with:
           name: backend-allure-results
           path: allure-input/backend
 
       - name: Download E2E Allure results
-        uses: actions/download-artifact@v4.1.3
+        uses: actions/download-artifact@v8.0.2
         continue-on-error: true
         with:
           name: e2e-allure-results
@@ -582,7 +582,7 @@ jobs:
 
       # Allure's CLI is a JVM tool.
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -625,7 +625,7 @@ jobs:
           ls -la allure-report | head
 
       - name: Upload Allure report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-report
           path: allure-report
@@ -654,20 +654,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Exchanges the GitHub OIDC token for GCP credentials (no key file). The
       # provider resource name and deployer SA email are non-secret repo Variables
       # set by the one-time setup script.
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       # Build-from-source deploy (same root Dockerfile as the manual deploy). No
       # --set-env-vars / --set-secrets here on purpose: env vars and Secret Manager
